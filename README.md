@@ -23,28 +23,24 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 
 ## Working features
 
-- Editable monthly draft, regeneration, locked assignments and local demo publication.
-- Primary-engineer swaps by desktop drag or long-touch drag, plus a keyboard-accessible picker. Every drop opens a review; locks are respected and availability conflicts require an explicit override. Emergency cover stays on its original duty block.
-- One primary engineer per duty and an optional emergency second engineer.
-- Batch availability and preferences: tap multiple dates, use an explicit date range, or hold and drag across consecutive days. Add an optional note to the selected dates, then save. The manager can edit every demo person.
-- Team membership activation and seniority order using arrows; admin participates normally.
-- Manual special blocks: inclusive first/last duty dates, ending 09:00 after the final day. Total fairness points = 1 base point + selected extra points.
-- Local browser saving and JSON backup export.
-- Seven-column monthly grids on mobile and desktop, English/Hebrew RTL switching.
+- Editable monthly drafts, varied regeneration, and local demo publication.
+- Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
+- Manual weekend editor: change the whole weekend, Friday only, or Saturday only. Changing one day preserves the other day. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
+- Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Select disconnected dates in “Select several” mode; tap selected dates again to deselect, or clear the selection. Hold and drag for a consecutive range. Descriptions appear on calendar dates.
+- Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.
+- Distinct engineer colors with contrasting text. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.
 
 ## Scheduling rules and defaults
 
-- Every calendar date is covered, including holidays. No automatic holiday exceptions.
-- Standard duty: 09:00 to next-day 09:00 in Asia/Jerusalem. Dates are local calendar dates, not 24-hour UTC arithmetic; calendar feed conversion will apply DST when implemented.
-- Weekend: Friday 09:00 through Sunday 09:00, one block and one fairness point. Friday and Saturday must both be available.
-- Special blocks replace the normal blocks they touch, can cross a month boundary, and have 0–20 extra points with up to 14 days in the demo. The same engineer covers the whole block. These UI limits are demo defaults.
-- Duty identity and accounting belong to the starting month. A block carried into the following month is displayed there but must be edited in its starting month. If the earlier month has not been scheduled, the block remains open until that month is generated.
-- The second engineer receives the same points and is retained across regeneration.
-- Seniority is a soft weight from 1.00 (most senior) to 1.12 (newest), not a promise of a fixed extra assignment. No tenure dates are stored.
-- Historical fairness carries forward as deviation from the weighted share of each prior generated month. Participation in a historical month is inferred from assignments for this demo; new members do not inherit a duty debt for months before they joined. Explicit membership snapshots should replace this inference in the database milestone.
-- The seeded multi-start heuristic first addresses duties with few available candidates and high points, randomizes equally constrained duty order, then balances weighted load and penalizes short gaps while lightly rewarding preferences. The UI supplies a fresh cryptographic random seed on each generation, mixed with the month. A small near-optimal candidate pool and a penalty for retaining the current arrangement create variety without relaxing hard constraints; deterministic seeds remain available for reproducible tests. It is not a proof of the mathematically optimal schedule. Unavailable primary assignments are never created automatically; a manager can explicitly override them.
-- Consecutive duties are allowed when required and surfaced for review. Locked assignments are preserved, even when they have an explicit availability override.
-- Special-block edits clear overlapping assignments; review/regenerate before publishing. Editing an assignment crossing months also returns the affected month to draft.
+- Every calendar date is covered, including holidays. Standard duty runs 09:00 to next-day 09:00 in Asia/Jerusalem. Dates are local calendar dates; a future calendar integration will apply timezone/DST conversion.
+- A full weekend is Friday 09:00 through Sunday 09:00, worth one point. A split weekend is two independent 09:00–09:00 duties worth half a point each. Either half counts as that engineer’s one weekend for the month; covering both halves is still one weekend. Emergency cover also counts toward the cap.
+- Generation never assigns a primary engineer to more than one weekend in a month. If availability or team capacity prevents coverage, it leaves the duty open for a manager decision. Manual edits can explicitly approve a second-weekend exception. Existing emergency assignments are retained for manager review.
+- Special ranges create independent daily duties. Extra points are added **per date**: weekday 1 + extra, Friday/Saturday 0.5 + extra. Weekend special dates retain the weekend cap and always display separately. The demo supports 0–20 extra points and ranges up to 14 days. Removing extra points from a date preserves its assignment and the remaining special dates.
+- Weekend identity and point accounting belong to the month containing Friday, including a Saturday in the next month. Edit either half in Friday’s month. Other duties belong to their own date’s month. Prior-month carried coverage is preserved when generating a new month.
+- Each month is balanced independently. Past-month points and gaps do not affect generation. All-month totals remain available for reference. Seniority is a soft weight from 1.00 (most senior) to 1.22 (newest), plus a small preference for giving the indivisible remainder to newer engineers. Availability, weekend capacity, and high-point special dates can require exceptions.
+- Generation balances points and spacing, lightly rewards preferences, and explores randomized candidate schedules. Each generation uses a fresh cryptographic seed mixed with the month; deterministic seeds support regression tests. This is a heuristic, not a guarantee of the mathematically optimal schedule. Unavailable primary assignments are never created automatically.
+- Consecutive duties are allowed when needed. Regeneration replaces manual primary assignments; there is no hidden assignment lock. Emergency second engineers receive the same points and are retained.
+- Adding a special range clears affected assignments for review. Assignment edits return affected months to draft. Existing version-1 browser data migrates to daily special coverage, preserves notes and assignments, removes obsolete locks, and reopens drafts for review.
 
 ## Demo boundary / next milestone
 
@@ -52,4 +48,4 @@ Browser storage is device-local demo state, not a shared team database. There is
 
 Next: Google sign-in plus manager approval, Supabase with row-level access controls and membership snapshots, draft/published history, approved swaps, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, and backup restoration. On iOS web push requires adding the app to the Home Screen and granting permission.
 
-No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by 26 automated checks; type checking and the production build are additional validation gates.
+No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by automated regression checks; type checking and the production build are additional validation gates.
