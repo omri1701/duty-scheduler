@@ -151,3 +151,34 @@
  .toolbar-actions{grid-template-columns:1fr 1fr auto}
  .toolbar-actions button:first-child svg{display:none}
 }
+/* Soft ownership colors and a quieter, compact calendar. */
+.calendar-grid .assignment-chip{box-shadow:none;border:1px solid #0000000a!important;font-weight:600;border-radius:7px}
+.calendar-grid .day-cell{min-height:110px;gap:8px;padding-block:10px}
+.calendar-grid .combined-weekend{background:#edf4f0}
+.calendar-grid .weekend{background:#edf4f0}
+.calendar-grid .special{background:#fff2d4}
+.calendar-grid .day-meta{font-size:12px;color:#657b6f}
+.calendar-grid .combined-weekend .date-line{justify-content:flex-start}
+.calendar-grid .combined-weekend .weekend-word{margin-inline-start:auto}
+.calendar-grid .day-cell .date-line{min-height:20px}
+.constraint-popover-title>button{display:grid;place-items:center;min-width:44px;min-height:44px}
+.constraint-popover .remove-constraint{background:#fff0ec;border:1px solid #cc8272;color:#8d382b;min-height:44px;white-space:normal;gap:6px;font-weight:600}
+.constraint-popover .remove-constraint:hover{background:#ffdfd7}
+.constraint-popover-actions>button:last-child{min-height:44px;min-width:76px}
+.constraint-choices button{min-height:44px;font-size:14px}
+.constraint-editor .availability-day{transition:background-color 100ms ease,box-shadow 100ms ease}
+.constraint-editor .availability-grid.gesture-active .availability-day{transition:none}
+.selection-count{font-size:12px;font-weight:600;color:#346451;min-height:18px}
+.emergency-editor{border:1px solid #dce4df;border-radius:9px;padding:12px;font-size:14px;color:#5a7062}
+.emergency-editor summary{cursor:pointer;min-height:24px}
+.emergency-editor>div{display:grid;gap:12px;padding-top:12px}
+@media(max-width:600px){
+ .calendar-grid .day-cell{min-height:88px;gap:6px;padding-block:8px}
+ .calendar-grid .day-meta{font-size:12px;text-align:start;padding-inline:3px}
+ .calendar-grid .combined-weekend .date-line{justify-content:center;padding-inline:0}
+ .calendar-grid .combined-weekend .weekend-word{margin-inline-start:4px}
+ .availability-tools{margin-bottom:12px;gap:4px}
+ .availability-tools .gesture-hint{font-size:12px}
+ .constraint-editor .availability-day{touch-action:pan-y;min-height:105px}
+ .constraint-popover{padding:14px;gap:12px}
+}

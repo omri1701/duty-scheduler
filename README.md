@@ -25,10 +25,10 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 
 - Editable monthly drafts, varied regeneration, and local demo publication.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
-- Manual weekend editor: change the whole weekend, Friday only, or Saturday only. Changing one day preserves the other day. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
-- Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Select disconnected dates in “Select several” mode; tap selected dates again to deselect, or clear the selection. Hold and drag for a consecutive range. Descriptions appear on calendar dates.
+- Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
+- Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action is prominently displayed. Descriptions appear on calendar dates.
 - Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.
-- Distinct engineer colors with contrasting text. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.
+- Distinct pastel engineer colors with contrasting text, compact dates, and no repeated duty times. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.
 
 ## Scheduling rules and defaults
 

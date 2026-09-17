@@ -39,19 +39,30 @@ export function setWeekendAssignment(s:State,friday:string,scope:'all'|'fri'|'sa
  if(scope!=='fri')assignments[saturday]={...assignment};
  return normalizeWeekends({...s,assignments,splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
 }
+/** Expand the displayed weekend into two editable days without changing saved state. */
+export function weekendAssignments(s:State,friday:string):[Assignment,Assignment]{
+ const fri={...(s.assignments[friday]??{primary:''})};
+ const split=blocks(friday.slice(0,7),s.specials,s.splitWeekends).some(b=>b.id===addDays(friday,1));
+ return [fri,{...(split?s.assignments[addDays(friday,1)]??{primary:''}:fri)}];
+}
+/** Save both days atomically; never merge halfway through an edit. */
+export function setWeekendAssignments(s:State,friday:string,fri:Assignment,sat:Assignment):State{
+ return normalizeWeekends({...s,assignments:{...s.assignments,[friday]:{...fri},[addDays(friday,1)]:{...sat}},splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
+}
 export function weekendCounts(s:State,month:string){
  const bs=blocks(month,s.specials,s.splitWeekends).filter(b=>ownerMonth(b)===month&&b.weekendId);
  return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id||s.assignments[b.id]?.secondary===p.id).map(b=>b.weekendId)).size]));
 }
-export const COLORS=['#2458cf','#ed8524','#803bb1','#13866f','#cf334a','#c6a42b','#c8519c','#638628','#1c9bc5','#97502d','#536477','#5340dd'];
+export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9'];
 export function ink(color:string){const rgb=color.slice(1).match(/../g)?.map(v=>{const n=parseInt(v,16)/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4})??[0,0,0];return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>0.179?'#101827':'#fff'}
 export function migrate(s:State):State{
- if(s.version>=2)return s;
+ if(s.version>=3)return s;
+ if(s.version===2)return {...s,version:3,team:s.team.map((p,i)=>({...p,color:COLORS[i%COLORS.length]}))};
  const assignments=Object.fromEntries(Object.entries(s.assignments).map(([id,a])=>{const {locked,...rest}=a;return[id,rest]}));
  for(const sp of s.specials){const a=s.assignments[sp.start];if(a)for(const d of dates(sp.start,sp.end))assignments[d]={primary:a.primary,secondary:a.secondary,override:a.override};}
  // A special Saturday can split a previously combined Friday duty.
  for(const m of Object.keys(s.months))for(const b of blocks(m,s.specials,s.splitWeekends))if(b.weekendId&&b.start!==b.weekendId&&!assignments[b.id]&&assignments[b.weekendId])assignments[b.id]={...assignments[b.weekendId]};
- return {...s,version:2,team:s.team.map((p,i)=>({...p,color:COLORS[i%COLORS.length]})),assignments,months:Object.fromEntries(Object.entries(s.months).map(([m,v])=>[m,{...v,status:'draft'}]))};
+ return {...s,version:3,team:s.team.map((p,i)=>({...p,color:COLORS[i%COLORS.length]})),assignments,months:Object.fromEntries(Object.entries(s.months).map(([m,v])=>[m,{...v,status:'draft'}]))};
 }
 export const unavailable=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).filter(d=>c[id]?.[d]==='no');
 export const preferred=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).some(d=>c[id]?.[d]==='prefer');
@@ -115,7 +126,7 @@ export function demo():State{
  const names=['Alex Morgan','Noa Levin','Daniel Cohen','Maya Shalev','Ethan Katz','Tamar Bar','Amit Halevi','Yael Sela','Omer Tal','Lior Ben-Ami','Roni Shaham','Yuval Or'];
  const team=names.map((name,i)=>({id:'e'+i,name,color:COLORS[i%COLORS.length],active:true}));
  const constraints:Constraints={};team.forEach((p,i)=>{constraints[p.id]={[`2026-10-${String(2+i).padStart(2,'0')}`]:'no',[`2026-10-${String(18+i%8).padStart(2,'0')}`]:'prefer'};});
- return {version:2,team,specials:[],constraints,assignments:{},months:{'2026-10':{deadline:'2026-09-25',status:'draft'}}};
+ return {version:3,team,specials:[],constraints,assignments:{},months:{'2026-10':{deadline:'2026-09-25',status:'draft'}}};
 }
 
 export function applyConstraints(s:State,person:string,selected:string[],kind:'no'|'prefer'|'clear',note=''):State{
