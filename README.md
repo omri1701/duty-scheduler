@@ -1,6 +1,6 @@
 # Duty — team rota
 
-Milestone 1: a mobile-first, bilingual English/Hebrew scheduling demo for one engineering team. The initial October 2026 draft has 12 fictional engineers. Alex Morgan is both the manager and a participating engineer.
+A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. The separate `/demo` route retains the fictional 12-engineer example and device-local storage.
 
 ## Run locally
 
@@ -19,11 +19,13 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. No Supabase credentials or production team data are required at this stage.
+The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. The demo needs no credentials. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the manager reservation.
 
 ## Working features
 
-- Editable monthly drafts, varied regeneration, and local demo publication.
+- Shared monthly drafts, varied regeneration and manager-controlled publication, with a separate offline demo.
+- Google sign-in with pending membership approval, one participating manager, engineer-specific constraints and server-enforced deadlines.
+- Atomic saves with stale-revision checks, private manager drafts and preserved published schedules during edits.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action is prominently displayed. Descriptions appear on calendar dates.
@@ -42,10 +44,10 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 - Consecutive duties are allowed when needed. Regeneration replaces manual primary assignments; there is no hidden assignment lock. Emergency second engineers receive the same points and are retained.
 - Adding a special range clears affected assignments for review. Assignment edits return affected months to draft. Existing version-1 browser data migrates to daily special coverage, preserves notes and assignments, removes obsolete locks, and reopens drafts for review.
 
-## Demo boundary / next milestone
+## Current boundary / next milestone
 
-Browser storage is device-local demo state, not a shared team database. There is no real authentication, employee permission enforcement, push delivery, calendar subscription, or swap service. Publication changes demo status only and does not notify anyone. The selected constraint deadline is recorded; admins can still edit after it.
+The real workspace uses Supabase; `/demo` remains browser-local. Google credentials and the confirmed manager email still need configuration before real sign-in can be verified. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
 
-Next: Google sign-in plus manager approval, Supabase with row-level access controls and membership snapshots, draft/published history, approved swaps, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, and backup restoration. On iOS web push requires adding the app to the Home Screen and granting permission.
+Next: employee swap requests with approval, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, audit history and backup restoration. Publication does not send notifications yet.
 
 No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by automated regression checks; type checking and the production build are additional validation gates.

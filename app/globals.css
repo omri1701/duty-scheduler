@@ -182,3 +182,19 @@
  .constraint-editor .availability-day{touch-action:pan-y;min-height:105px}
  .constraint-popover{padding:14px;gap:12px}
 }
+.workspace-controls{border:0;padding:0;margin:0;min-width:0}
+.workspace-controls:disabled{opacity:.75}
+.access-page{min-height:100dvh;display:grid;place-items:center;padding:24px;background:#f3f7f4}
+.access-card{width:min(100%,430px);padding:30px;background:#fff;border:1px solid #dce4df;border-radius:18px;display:grid;gap:20px;box-shadow:0 12px 40px #254b3610}
+.access-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.access-card h1{font-size:26px;line-height:1.2;letter-spacing:-.6px;font-weight:650}
+.access-card p{font-size:16px;line-height:1.6;color:#65776b}
+.access-card small{font-size:14px;overflow-wrap:anywhere}
+.access-card>a{font-size:14px;color:#4a7358;text-align:center;text-decoration:underline}
+.access-card>button,.access-actions>button{min-height:44px}
+.access-actions{display:flex;gap:10px;flex-wrap:wrap}
+.membership-requests{margin-top:28px;display:grid;gap:12px}
+.membership-requests h3{font-size:18px;font-weight:600}
+.membership-request{display:flex;align-items:center;gap:10px;padding:14px;border:1px solid #dce4df;border-radius:8px}
+.membership-request>div{flex:1;min-width:0}.membership-request small{display:block;overflow-wrap:anywhere;color:#6b7e70;font-size:13px}
+@media(max-width:600px){.membership-request{flex-wrap:wrap}.membership-request>div{min-width:100%}.top-actions{gap:3px}.top-actions>button:last-child{padding-inline:6px;font-size:12px}.access-card{padding:24px}}
