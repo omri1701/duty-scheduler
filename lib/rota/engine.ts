@@ -1,4 +1,4 @@
-export type Engineer = { id: string; name: string; color: string; active: boolean };
+export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string };
 export type Special = { id: string; title: string; start: string; end: string; extra: number };
 export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string };
 export type Assignment = { primary: string; secondary?: string; locked?: boolean; override?: boolean };

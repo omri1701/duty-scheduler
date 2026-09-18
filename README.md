@@ -19,13 +19,16 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the manager reservation.
+The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
 
 ## Working features
 
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
-- Google sign-in with pending membership approval, one participating manager, engineer-specific constraints and server-enforced deadlines.
-- Atomic saves with stale-revision checks, private manager drafts and preserved published schedules during edits.
+- Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
+- Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
+- Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
+- Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
+- Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action is prominently displayed. Descriptions appear on calendar dates.
@@ -46,8 +49,8 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 
 ## Current boundary / next milestone
 
-The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials and the confirmed manager email still need configuration before real sign-in can be verified. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
+The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials still need configuration before real sign-in can be verified; the first signed-in account then needs explicit admin approval. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
 
-Next: employee swap requests with approval, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, audit history and backup restoration. Publication does not send notifications yet.
+Next: employee swap requests with approval, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, full action audit logs and backup restoration. Publication does not send notifications yet.
 
 No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by automated regression checks; type checking and the production build are additional validation gates.

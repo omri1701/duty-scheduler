@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {User,SupabaseClient} from '@supabase/supabase-js';
 import {getSupabase,signInWithGoogle} from '@/lib/supabase/client';
-import {fromSnapshot,schedulePayload,type Snapshot} from '@/lib/supabase/snapshot';
+import {fromSnapshot,schedulePayload,canManage,type Snapshot} from '@/lib/supabase/snapshot';
 import type {State} from '@/lib/rota/engine';
 export function useTeamWorkspace(){
  const [client,setClient]=useState<SupabaseClient|null>(null),[user,setUser]=useState<User|null>(null),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
@@ -23,12 +23,16 @@ export function useTeamWorkspace(){
   try{const r=await operation(client,snapshot.revision);if(r.error)throw r.error;await refresh(client,user.id)}catch(e){const message=(e as {message?:string}).message??'Could not save. Please try again.';setError(message);await refresh(client,user.id).catch(()=>{});throw Error(message)}finally{lock.current=false;setSaving(false)}
  }
  const me=snapshot?.members.find(m=>m.id===user?.id);
- return {user,me,snapshot,loading,saving,error,clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
+ return {user,me,snapshot,loading,saving,error,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   async refresh(){if(client&&user)await refresh(client,user.id)},
   async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError((e as Error).message)}},
   async signOut(){if(client){const {error}=await client.auth.signOut();if(error)setError(error.message)}},
   save:(s:State,publish?:string)=>mutate((c,revision)=>c.rpc('duty_save_schedule',{p_state:schedulePayload(s),p_revision:revision,p_publish:publish??null})),
   constraints:(person:string,days:string[],kind:string,note:string)=>mutate((c,revision)=>c.rpc('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note,p_revision:revision})),
+  rename:(name:string)=>mutate((c,revision)=>c.rpc('duty_rename_self',{p_name:name,p_revision:revision})),
+  setRole:(person:string,role:string)=>mutate((c,revision)=>c.rpc('duty_set_role',{p_member:person,p_role:role,p_revision:revision})),
+  restore:(publication:string)=>mutate((c,revision)=>c.rpc('duty_restore_publication',{p_publication:publication,p_revision:revision})),
+  deleteVersion:(publication:string)=>mutate((c,revision)=>c.rpc('duty_delete_publication',{p_publication:publication,p_revision:revision})),
   review:(person:string,status:'approved'|'rejected')=>mutate((c,revision)=>c.rpc('duty_review_member',{p_member:person,p_status:status,p_revision:revision})),
  };
 }

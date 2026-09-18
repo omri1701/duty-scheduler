@@ -1,63 +1,78 @@
 # Supabase setup
 
-The live app uses the **Duty Scheduler** Supabase project (`ukxxpbivgxyxharhxgqf`). The database schema is installed; the Site runtime has its project URL and publishable key. Google OAuth and the manager email reservation must be completed before real sign-ins work. No fictional demo accounts or schedules are imported into the database.
+Project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). The Site runtime already has its public project URL and publishable key. No service-role key is used by the app. Google credentials must be configured before the first login.
 
-## 1. Enable Google sign-in
+## 1. Create the Google OAuth client
 
-Follow [Supabase's Google provider setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
+Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
-In Google Cloud, configure the OAuth consent screen and create an OAuth client of type **Web application**:
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create or select a project, such as **Duty Scheduler**.
+2. Open **Google Auth Platform** and configure the app branding/contact details. Choose an audience that allows the team's Google accounts. For a testing app, add your Google email under **Audience → Test users**; add teammates when ready.
+3. Under **Data Access**, use only `openid`, `userinfo.email` and `userinfo.profile`.
+4. Under **Clients**, create an OAuth client of type **Web application** with these exact values:
 
-- Authorized JavaScript origin: `https://duty-rota.keshet-mako-7367.chatgpt.site`
-- Authorized redirect URI: `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback`
-- Request only the normal sign-in scopes (openid, email, profile); calendar access is not needed.
-- If the Google consent screen remains in Testing, add the manager and engineers as test users.
+| Setting | Value |
+|---|---|
+| Authorized JavaScript origin | `https://duty-rota.keshet-mako-7367.chatgpt.site` |
+| Authorized redirect URI | `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback` |
 
-In Supabase → Authentication → Sign In / Providers → Google, enable Google and enter the OAuth client ID and client secret. Keep the secret in Supabase, never in this repository or chat.
+## 2. Configure Supabase
 
-In Supabase → Authentication → URL Configuration:
+In **Authentication → Sign In / Providers → Google**, enable Google and enter the client ID and secret from Google Cloud. Enter the secret only in Supabase, never in this repository or chat.
 
-- Site URL: `https://duty-rota.keshet-mako-7367.chatgpt.site`
-- Redirect URLs: `https://duty-rota.keshet-mako-7367.chatgpt.site/`
-- For local development only, add the exact localhost origin/port used by `pnpm dev`.
+In **Authentication → URL Configuration** set:
 
-The current Site remains owner-private. Team members also need access through Sites sharing, or the app must be hosted at a team-accessible URL. A hosting change requires updating Google origins and Supabase redirect URLs.
+| Setting | Value |
+|---|---|
+| Site URL | `https://duty-rota.keshet-mako-7367.chatgpt.site` |
+| Allowed redirect URL | `https://duty-rota.keshet-mako-7367.chatgpt.site/` |
 
-## 2. Reserve the manager's verified Google email
+## 3. First login and explicit admin promotion
 
-Confirm the actual manager email before executing this in Supabase SQL Editor; account ownership in ChatGPT is not used to infer it:
+After both dashboards are configured, open the app and choose **Continue with Google**. This Google account can be different from the ChatGPT account. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
-```sql
-insert into duty_private.manager_identity (email)
-values (lower('REPLACE_WITH_MANAGER_GOOGLE_EMAIL'));
-```
+The first account is **not** automatically made admin. Identify and confirm its actual account ID/email, then use a trusted SQL connection to promote that exact row in `duty_members` and increment `duty_workspace.revision` in one transaction. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
-This is a one-time reservation, not an invitation. The manager receives the role after signing in with that verified email. Everyone else starts pending. There can be only one manager, who is also an active engineer. If already waiting for approval when the email is reserved, reload the app or sign out and in again.
+Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.
 
-## 3. First team setup
+The current Site is owner-private. Team members also need Sites access or an agreed team-accessible hosting URL. Changing hosting requires updating the Google origin and Supabase redirect URLs.
 
-1. Sign in as manager.
-2. Let engineers sign in and approve them in **Team & fairness → Join requests**.
-3. Drag the team into seniority order (senior first, newest last).
-4. Set the month deadline, collect constraints, generate a draft, review and publish.
-5. Engineers see only published assignments. When you reopen a draft, they keep seeing the previous publication until you publish again.
+## Current database
 
-## Local development
+| Table | Purpose |
+|---|---|
+| `auth.users` (Supabase-owned) | Verified login identities; not application-managed sample users. |
+| `duty_members` | Profile, role FK, approval-status FK, active flag, seniority order and color. Deactivation retains history. |
+| `duty_workspace` | One revision counter for atomic saves and stale-edit detection. |
+| `duty_months` | Deadline, status FK, generated flag, current publication FK and monotonic version sequence. |
+| `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
+| `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
+| `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
+| `duty_roles` | Engineer/admin definitions and the admin capability. |
+| `duty_member_statuses` | Pending, approved and declined definitions. |
+| `duty_month_statuses` | Draft and published definitions. |
+| `duty_constraint_types` | Unavailable and preferred definitions. |
 
-The app uses real Supabase accounts and starts with no assignments. The demo route is removed. For local development, create an ignored `.env.local`:
+The former `manager_identity`, `duty_specials` and `duty_split_weekends` tables have been removed. Their old creation statements remain in historical migrations so the repository can reproduce the schema in order.
 
-```dotenv
-SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_PUBLIC_KEY
-```
+A regular duty spans one date; an intact weekend spans Friday through Sunday and is one stored row. Split or special weekend dates use separate rows in the same duty table. Extra points belong to the duty date and survive changing the assigned engineer. Selecting a special range in the UI sets those dates' extra points together.
 
-The `/api/config` route exposes only these public client values. All database reads require a user session and row-level permissions. No service-role key is needed. The browser talks directly to Supabase with its own session.
+Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
 
-## Migrations and verification
+## Permissions and validation
 
-Migration source is under `supabase/migrations`. Files were created with the Supabase CLI and their version prefixes reconciled to the versions returned by the connected project's migration runner. Do not reapply them to the live project. For a separate development project, apply migrations in order using the Supabase CLI or SQL Editor.
+- Pending/rejected/inactive accounts see only their own membership record and harmless lookup definitions.
+- Approved active engineers see current published duties and their own constraints. Notes are visible only to that engineer and admins.
+- Admins see drafts/history and manage approvals, roles, deactivation, deadlines, duties and publications.
+- Client table writes are denied. Checked RPCs enforce permissions and lock/check the global revision. Profiles and roles have separate checked operations.
+- Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
+- Refresh runs on focus and every 30 seconds while the app is visible.
 
-`supabase/tests/access.sql` verifies permissions and publication rules with synthetic users inside a transaction that rolls back. It deliberately refuses to run after a real manager reservation exists; use a separate empty development project then. It sends no invitations or emails.
+Migrations under `supabase/migrations` are already applied to the connected project. They were created with the Supabase CLI and reconciled to the remote migration version IDs. Apply them in order only to a separate new development project. The consolidation migration deliberately refuses to discard unexpected pre-existing schedule data.
+
+`supabase/tests/access.sql` creates synthetic auth/member records inside one transaction and rolls everything back; it sends no email and refuses to run on a project with real members. Use an empty development project after real onboarding begins. Checks cover explicit first-admin promotion, multiple admins, last-admin protection, FK values, own-name edits, private notes, stale revisions, publication versions, stable points, boundary-weekend restores, deletion and deactivation.
+
+The security advisor reports no findings. The fresh, empty database has informational [unused-index notices](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index); foreign-key indexes are retained for real usage.
 
 ```sh
 node --test tests/*.test.mjs
@@ -65,16 +80,6 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-## Permissions and persistence
+For local development, create an ignored `.env.local` with `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, and allow the actual localhost URL in the provider settings. The app has no demo login or local-data fallback.
 
-- Pending/rejected/inactive users can see their own membership record only.
-- Active approved engineers can read team profiles, month settings and published schedules; their own constraints stay visible only to themselves and the manager.
-- Only the manager can approve members, reorder/activate engineers, change deadlines, edit or generate drafts, and publish.
-- Client table writes are denied. Checked RPCs perform atomic changes and reject stale workspace revisions instead of silently overwriting another user's save.
-- Deadline checks run on the database using the date in Asia/Jerusalem, including the deadline day. Published months close employee constraint edits; the manager can reopen them.
-- The app refreshes on window focus and every 30 seconds while visible. Save errors remain visible and do not show a success message.
-- Publications preserve the latest published snapshot per month, not an unlimited audit history. Managers continue editing separate draft rows.
-
-The private manager reservation table intentionally has RLS with no client policy and no client table grants: this is deny-all, not a missing access rule. Supabase reports it as informational ([RLS with no policy](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)). Indexes on the empty project may also be reported as [unused](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index); retain the foreign-key/query indexes as team data grows.
-
-Push notifications, personal calendar subscriptions, employee swap requests, backup restoration and audit history remain future work. Google sign-in must be checked end-to-end after credentials and the manager email are configured.
+Push notifications, calendar subscriptions, employee swap requests and full action audit logs remain future work. Real Google OAuth must be checked after provider setup; database role tests do not replace that check.
