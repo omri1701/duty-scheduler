@@ -1,7 +1,7 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import type {User,SupabaseClient} from '@supabase/supabase-js';
-import {getSupabase} from '@/lib/supabase/client';
+import {getSupabase,signInWithGoogle} from '@/lib/supabase/client';
 import {fromSnapshot,schedulePayload,type Snapshot} from '@/lib/supabase/snapshot';
 import type {State} from '@/lib/rota/engine';
 export function useTeamWorkspace(){
@@ -25,7 +25,7 @@ export function useTeamWorkspace(){
  const me=snapshot?.members.find(m=>m.id===user?.id);
  return {user,me,snapshot,loading,saving,error,clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   async refresh(){if(client&&user)await refresh(client,user.id)},
-  async signIn(){try{const c=client??await getSupabase();const {error}=await c.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin+'/'}});if(error)throw error}catch(e){setError((e as Error).message)}},
+  async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError((e as Error).message)}},
   async signOut(){if(client){const {error}=await client.auth.signOut();if(error)setError(error.message)}},
   save:(s:State,publish?:string)=>mutate((c,revision)=>c.rpc('duty_save_schedule',{p_state:schedulePayload(s),p_revision:revision,p_publish:publish??null})),
   constraints:(person:string,days:string[],kind:string,note:string)=>mutate((c,revision)=>c.rpc('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note,p_revision:revision})),

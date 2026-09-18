@@ -44,7 +44,7 @@ This is a one-time reservation, not an invitation. The manager receives the role
 
 ## Local development
 
-The demo works at `/demo` without Supabase configuration. For the real workspace, create an ignored `.env.local`:
+The app uses real Supabase accounts and starts with no assignments. The demo route is removed. For local development, create an ignored `.env.local`:
 
 ```dotenv
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co

@@ -1,6 +1,6 @@
 # Duty — team rota
 
-A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. The separate `/demo` route retains the fictional 12-engineer example and device-local storage.
+A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. The app starts empty and uses real, approved accounts only. No assignments are generated until the manager clicks Generate.
 
 ## Run locally
 
@@ -19,11 +19,11 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. The demo needs no credentials. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the manager reservation.
+The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the manager reservation.
 
 ## Working features
 
-- Shared monthly drafts, varied regeneration and manager-controlled publication, with a separate offline demo.
+- Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, one participating manager, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private manager drafts and preserved published schedules during edits.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
@@ -46,7 +46,7 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 
 ## Current boundary / next milestone
 
-The real workspace uses Supabase; `/demo` remains browser-local. Google credentials and the confirmed manager email still need configuration before real sign-in can be verified. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
+The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials and the confirmed manager email still need configuration before real sign-in can be verified. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
 
 Next: employee swap requests with approval, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, audit history and backup restoration. Publication does not send notifications yet.
 
