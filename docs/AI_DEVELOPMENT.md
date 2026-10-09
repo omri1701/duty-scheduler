@@ -39,6 +39,7 @@ settings are defaults, subject to live parent overrides; keep permissions tight.
 | `scheduling-regression` | Generation, points, weekends, constraints or month ownership |
 | `code-change-validation` | Code/config edits or review; select relevant checks |
 | `security-review` | Auth/RLS/RPC, permissions, private data, migrations or CI trust boundaries |
+| `feature-delivery` | Explicitly authorized end-to-end Git delivery through a PR; no implicit commit/push permission |
 
 Skill metadata is discovered initially; full instructions load when selected.
 Skills do not spawn agents themselves, and checks already completed for the same

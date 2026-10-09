@@ -27,6 +27,9 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 ## Task routing
 
+- For explicitly authorized end-to-end Git delivery, use
+  [feature-delivery](.agents/skills/feature-delivery/SKILL.md).
+
 - The primary agent implements and owns validation. Small, clear changes stay
   in one agent; skip elaborate planning, delegation and full-suite repetition.
 - Use the code-change-validation skill for code/config changes, scheduling-regression
