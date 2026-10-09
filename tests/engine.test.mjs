@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {addDays,blocks,dates,demo,generate,totals,unavailable,allKnownBlocks,weekendCounts,setWeekendAssignment,normalizeWeekends,migrate,ownerMonth,weekendAssignments,setWeekendAssignments,COLORS} from '../lib/rota/engine.ts';
+import {addDays,blocks,dates,demo,generate,totals,unavailable,allKnownBlocks,weekendCounts,setWeekendAssignment,migrate,ownerMonth,weekendAssignments,setWeekendAssignments,COLORS} from '../lib/rota/engine.ts';
 function run(s,m='2026-10'){const r=generate(s,m);s.assignments=r.assignments;s.months[m]={deadline:m+'-01',status:'draft',generated:true};return r}
+test('February 29, 2028 is covered exactly once with normal weekday points',()=>{
+ const day='2028-02-29',covering=blocks('2028-02',[]).filter(b=>dates(b.start,b.end).includes(day));
+ assert.equal(covering.length,1);
+ assert.equal(covering[0].kind,'day');
+ assert.equal(covering[0].points,1);
+});
 test('a whole weekend has one owner, one point and ends Sunday at 09:00',()=>{const b=blocks('2026-10',[]).find(b=>b.start==='2026-10-02');assert.deepEqual({...b},{id:'2026-10-02',start:'2026-10-02',end:'2026-10-04',points:1,kind:'weekend',weekendId:'2026-10-02'});});
 test('cross-month weekend is canonical, never split or assigned twice',()=>{const a=blocks('2026-07',[]).find(b=>b.start==='2026-07-31'),b=blocks('2026-08',[]).find(b=>b.start==='2026-07-31');assert.deepEqual(a,b);const s=demo();run(s,'2026-07');const who=s.assignments[a.id].primary;run(s,'2026-08');assert.equal(s.assignments[a.id].primary,who);assert.equal(allKnownBlocks(s).filter(b=>b.id===a.id).length,1)});
 test('special dates are independent duties with extra points per day',()=>{const sp={id:'sp',title:'Holiday',start:'2026-10-05',end:'2026-10-07',extra:2};const bs=blocks('2026-10',[sp]);assert.equal(bs.find(b=>b.id===sp.start).points,3);assert.equal(bs.filter(b=>b.start>sp.start&&b.start<sp.end).length,1);assert.equal(bs.flatMap(b=>dates(b.start,b.end)).length,31)});

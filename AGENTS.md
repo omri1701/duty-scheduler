@@ -19,6 +19,11 @@ and Supabase. Prefer correctness and security with minimal context and agents.
   when behavior changes; avoid duplicate project summaries.
 - Reuse available context. Re-read only for changes or specific uncertainty;
   keep tool output bounded and batch independent reads/checks where useful.
+- Prefer scoped searches and bounded excerpts over printing entire
+  files. Avoid rereading instructions already available in context.
+- Keep successful test output minimal; inspect detailed logs only
+  for failures. Preserve command exit codes and test results.
+- Reuse completed checks for unchanged code rather than rerunning them.
 
 ## Task routing
 
