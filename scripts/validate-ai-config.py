@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = {"gpt-6.1-sol": {"low", "medium", "high"}, "gpt-6-luna": {"high"}}
-SKILLS = {"scheduling-regression", "code-change-validation", "security-review"}
+SKILLS = {"scheduling-regression", "code-change-validation", "security-review", "feature-delivery"}
 
 
 def require(condition, message):
@@ -60,7 +60,7 @@ def validate(root=ROOT):
         check_model(agent, path.name)
 
     paths = sorted((root / ".agents/skills").glob("*/SKILL.md"))
-    require({path.parent.name for path in paths} == SKILLS, "Expected three project skills")
+    require({path.parent.name for path in paths} == SKILLS, "Expected the documented project skills")
     for path in paths:
         text = path.read_text(encoding="utf-8")
         match = re.fullmatch(r'---\nname: ([a-z0-9-]{1,64})\ndescription: ("[^\n]*")\n---\n\n(.+)',
@@ -81,7 +81,7 @@ def validate(root=ROOT):
                  "tests/engine.test.mjs", "tests/gesture.test.mjs", "tests/snapshot.test.mjs",
                  "supabase/tests/access.sql", ".github/workflows/quality.yml"):
         require((root / path).is_file(), f"Missing referenced path: {path}")
-    print(f"AI config valid: 2 agents, 3 skills, {len(instructions.split())} root words")
+    print(f"AI config valid: 2 agents, {len(SKILLS)} skills, {len(instructions.split())} root words")
 
 
 if __name__ == "__main__":

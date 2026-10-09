@@ -44,38 +44,5 @@
         "endColumn": 273
       }
     ]
-  },
-  {
-    "file": "components/rota/workspace.tsx",
-    "sha256": "9fb9145bb52d98aa16e550cc2944299dd5daf57384486ec43ca257b3c8d682b7",
-    "errors": [
-      {
-        "ruleId": "@next/next/no-html-link-for-pages",
-        "line": 69,
-        "column": 30,
-        "endLine": 69,
-        "endColumn": 83
-      },
-      {
-        "ruleId": "react-hooks/refs",
-        "line": 77,
-        "column": 14,
-        "endLine": 77,
-        "endColumn": 28
-      }
-    ]
-  },
-  {
-    "file": "hooks/use-hold-drag.ts",
-    "sha256": "d9146607dfed67494007214d9f3c3de0c746eab33bb9471e873d7a4f84f9aa24",
-    "errors": [
-      {
-        "ruleId": "react-hooks/refs",
-        "line": 5,
-        "column": 92,
-        "endLine": 5,
-        "endColumn": 106
-      }
-    ]
   }
 ]
