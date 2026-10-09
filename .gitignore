@@ -40,8 +40,21 @@ next-env.d.ts
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
-/.agents/
-/.codex/
+# Share only reviewed AI instructions; keep credentials and local state ignored.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/scheduling-regression/
+!/.agents/skills/code-change-validation/
+!/.agents/skills/security-review/
+/.agents/skills/*/*
+!/.agents/skills/*/SKILL.md
+/.codex/*
+!/.codex/config.toml
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/qa.toml
+!/.codex/agents/security.toml
 /outputs/
 /work/
 
