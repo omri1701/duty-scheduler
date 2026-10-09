@@ -28,6 +28,7 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
+- Published duty swap requests: approved members request two future primary duties in one published month; admins approve or reject and requesters can cancel. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Only admin consent is required in version 1.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
