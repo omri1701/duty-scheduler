@@ -80,6 +80,41 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-For local development, create an ignored `.env.local` with `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, and allow the actual localhost URL in the provider settings. The app has no demo login or local-data fallback.
+## Local development with the existing hosted project
+
+1. Copy `.env.local.example` to `.env.local` at the repository root. Set
+   `SUPABASE_URL` to your existing project's URL and `SUPABASE_PUBLISHABLE_KEY`
+   to its publishable key (`sb_publishable_...`), available in the Supabase
+   project's Connect dialog / API Keys settings. Do not use an anon JWT,
+   secret/service-role key or Google client secret. Fill these in locally only;
+   `.env.local` is ignored by Git.
+2. In Supabase **Authentication → URL Configuration**, add
+   `http://localhost:5173/` to **Redirect URLs**. Keep the deployed Site URL and
+   existing redirect entries. If you use another hostname or port, add its
+   exact origin with a trailing slash instead.
+3. In the existing Google OAuth web client, add `http://localhost:5173` under
+   **Authorized JavaScript origins**. Keep the hosted Supabase callback
+   `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback` under
+   **Authorized redirect URIs**; the database/Auth service is still hosted,
+   so no localhost Supabase callback or local Google secret is needed. Ensure
+   Google is enabled in Supabase and your account is an allowed test user if
+   the Google app is in testing. See [Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
+4. Restart `pnpm dev` and open `http://localhost:5173`. In browser DevTools,
+   confirm `/api/config` returns **200** (do not copy its response into logs or
+   chat), then choose **Continue with Google** using your existing account.
+   Confirm the redirect returns to localhost and your approved workspace opens;
+   pending accounts still require manager approval. Reload to verify the session
+   persists. Use the same hostname throughout the login flow.
+
+`/api/config` returns **503** when its URL is missing or its key is missing or
+does not begin with `sb_publishable_`. The deployed runtime's bindings are not
+downloaded into a local checkout. Vinext loads `.env.local`, and Cloudflare's
+local worker environment also reads it; no `VITE_` or `NEXT_PUBLIC_` prefix is
+needed. Avoid mixing `.dev.vars` with `.env.local`: Cloudflare prioritizes
+`.dev.vars` and skips dotenv files when it exists. Restart after changing local
+configuration. See [Cloudflare environment loading](https://developers.cloudflare.com/workers/local-development/environment-variables/).
+
+Local login uses the same accounts, permissions and live team data as deployment.
+The app has no demo login or local-data fallback.
 
 Push notifications, calendar subscriptions, employee swap requests and full action audit logs remain future work. Real Google OAuth must be checked after provider setup; database role tests do not replace that check.
