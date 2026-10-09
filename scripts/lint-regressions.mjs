@@ -1,5 +1,5 @@
 // Reject new lint errors while keeping pre-existing errors visible and reviewable.
-// A baseline applies only to the exact original file bytes; never refresh it to pass.
+// A baseline applies only to original source (normalizing CRLF); never refresh it to pass.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -28,7 +28,8 @@ for (const result of results) {
   const errors = result.messages.filter(message => message.severity === 2);
   warnings += result.warningCount;
   const entry = expected.get(file);
-  const hash = createHash('sha256').update(readFileSync(result.filePath)).digest('hex');
+  const source = readFileSync(result.filePath, 'utf8').replace(/\r\n/g, '\n');
+  const hash = createHash('sha256').update(source).digest('hex');
   const remaining = new Set(entry?.sha256 === hash ? entry.errors.map(signature) : []);
   for (const error of errors) {
     if (remaining.delete(signature(error))) {

@@ -77,8 +77,9 @@ to your GitHub plan; no paid service was added.
 
 `pnpm lint` currently reports seven pre-existing errors (React hooks and a link rule) and six warnings
 on the initial base `304d894`. `node scripts/lint-regressions.mjs` prints those known
-errors and fails on new errors. `scripts/lint-baseline.json` records exact file
-hashes and diagnostic locations; changing a baseline file invalidates its allowance.
+errors and fails on new errors. `scripts/lint-baseline.json` records source hashes
+and diagnostic locations; changing source invalidates its allowance. CRLF/LF line
+endings are normalized so Windows checkouts can use the same baseline.
 Rules remain enabled, and raw `pnpm lint` remains unchanged. Remove baseline entries
 as the affected components are fixed; never regenerate/add allowances to pass CI.
 This avoids unrelated application edits while establishing a usable new gate.
