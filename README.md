@@ -28,7 +28,7 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
-- Published duty swap requests: approved members request two future primary duties in one published month; admins approve or reject and requesters can cancel. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Only admin consent is required in version 1.
+- Published duty swap requests: approved members drag their future primary duty onto another engineer’s duty (or select two dates with the keyboard). The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
@@ -54,6 +54,6 @@ The application uses React and TypeScript with the supplied Vinext/Vite runtime 
 
 The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials still need configuration before real sign-in can be verified; the first signed-in account then needs explicit admin approval. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
 
-Next: employee swap requests with approval, PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, full action audit logs and backup restoration. Publication does not send notifications yet.
+Next: PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, full action audit logs and backup restoration. Publication does not send notifications yet.
 
 No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by automated regression checks; type checking and the production build are additional validation gates.

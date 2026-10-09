@@ -34,7 +34,11 @@ export function useTeamWorkspace(){
   restore:(publication:string)=>mutate((c,revision)=>c.rpc('duty_restore_publication',{p_publication:publication,p_revision:revision})),
   deleteVersion:(publication:string)=>mutate((c,revision)=>c.rpc('duty_delete_publication',{p_publication:publication,p_revision:revision})),
   requestSwap:(from:string,to:string,explanation:string)=>mutate((c,revision)=>c.rpc('duty_request_swap',{p_from:from,p_to:to,p_explanation:explanation,p_revision:revision})),
-  resolveSwap:(id:string,action:'approve'|'reject'|'cancel',overrideReason='')=>mutate((c,revision)=>c.rpc('duty_resolve_swap',{p_request:id,p_action:action,p_revision:revision,p_override_reason:overrideReason})),
+  async resolveSwap(id:string,action:'accept'|'decline'|'approve'|'reject'|'cancel',overrideReason=''){
+   let invalidated=false;
+   await mutate((c,revision)=>c.rpc('duty_resolve_swap',{p_request:id,p_action:action,p_revision:revision,p_override_reason:overrideReason}).then(result=>{invalidated=result.data==='invalidated';return result}));
+   if(invalidated)throw Error('This request was invalidated because its published duties are no longer eligible.');
+  },
   review:(person:string,status:'approved'|'rejected')=>mutate((c,revision)=>c.rpc('duty_review_member',{p_member:person,p_status:status,p_revision:revision})),
  };
 }

@@ -48,7 +48,7 @@ The current Site is owner-private. Team members also need Sites access or an agr
 | `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
 | `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
 | `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
-| `duty_swap_requests` | Own/admin-visible requests, source version/duty FKs, date/member snapshots, resolution and explicit override audit reason. |
+| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent, resolution and override audit reason. |
 | `duty_roles` | Engineer/admin definitions and the admin capability. |
 | `duty_member_statuses` | Pending, approved and declined definitions. |
 | `duty_month_statuses` | Draft and published definitions. |
@@ -122,29 +122,64 @@ Push notifications, calendar subscriptions and full action audit logs remain fut
 
 ## Published duty swaps: migration and verification
 
-The feature adds **`supabase/migrations/20261009145431_published_duty_swaps.sql`**.
-It has not been applied to the hosted project. The earlier migrations above remain
-historical; do not replay them against the existing project.
+The feature requires both new migrations, in this order:
+
+1. `supabase/migrations/20261009145431_published_duty_swaps.sql`
+2. `supabase/migrations/20261009161959_swap_consent_and_reassignment.sql`
+
+Neither is applied to the hosted project. Read-only catalog and migration-history
+checks on 2026-10-09 confirmed that `public.duty_request_swap` and
+`public.duty_resolve_swap` do not exist and history ends at `20260918133851`.
+This is the cause of the schema-cache error. The client parameter names match
+`duty_request_swap(p_from uuid,p_to uuid,p_explanation text,p_revision bigint)`;
+parameter order in the error is immaterial. Reloading the cache cannot create a
+missing function. The migration explicitly grants execution to `authenticated`,
+and its checked operations still require approved active membership.
 
 Swap requests are independent of drafts. Both duties must start after today in
 Asia/Jerusalem and belong to the same owning month (Saturday belongs to Friday).
 Combined weekends swap as whole duties; split Friday/Saturday rows stay split.
-Request submission checks availability, active approved members, emergency-role
-duplication, overlapping dates and weekend caps. Approval rechecks all of these
-under the workspace revision lock. A source version superseded or deleted after
-submission cannot be approved; reject/cancel it and submit a new request.
-An admin can explicitly override availability on approval with a required reason,
-recorded alongside the approving admin, time and resulting publication. Weekend
-caps follow the existing draft-swap rule: a swap cannot increase an engineer's
-weekend count above one. Consecutive duties remain allowed. Constraint notes are
-never included in requests. Other engineers cannot read a request or its explanation.
-Admin rejection and requester cancellation leave all assignments unchanged.
-Version deletion retains request dates/members/status, with deleted version/duty
-references set to NULL. Approval preserves every existing version and copies only
-the current published rows; it leaves draft rows and the month's draft status intact.
-Admins see their draft calendar; the Swap Requests picker always uses live published
-duties, including when a draft has been reopened. Restore the new version explicitly
-if you want those swapped assignments in a draft before a later ordinary publication.
+Creation checks availability, approved active members, emergency-role duplication,
+no overlapping duties and weekend caps. Engineers drag their own primary duty
+onto another engineer's duty using the existing desktop/mobile long-press gesture.
+Keyboard users select their own date with Enter/Space, then another engineer's
+date; Escape cancels selection. Dropping opens an EN/HE confirmation with both
+dates/engineers and an optional explanation; submission never changes assignments.
+Admins retain draft editing and can switch their calendar to Published to request
+swaps using the authoritative publication instead of draft rows.
+
+Workflow: `awaiting_engineer` -> counterpart Accept -> `awaiting_admin` -> admin
+Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject yields
+`rejected`; requester Cancel in either pending state yields `cancelled`. Only final
+approval copies the current publication into a new immutable version. Availability
+conflicts added after creation can be acknowledged at consent but require an
+explicit admin override reason at approval. Weekend caps follow the draft-swap
+rule: a swap cannot increase an engineer's weekend count above one. Secondary
+cover, special date points/spans, draft rows/status and historical versions remain
+intact. Constraint notes are never copied into requests.
+
+Original dates and exclusive ends identify slots across publication copies. Every
+live publication-pointer change (including ordinary publication or live-version
+deletion) reconciles pending requests under the existing workspace lock. If the
+counterpart duty changes from B to C, `other_id` becomes C, status returns to
+`awaiting_engineer` and `accepted_by`/`accepted_at` are cleared. C must explicitly
+accept. If the requester loses their original slot, a slot disappears/changes span,
+a date expires on revalidation, or no live publication remains, the request becomes
+`invalidated`. Unrelated slot changes preserve consent. Resolution revalidates
+current owners and uses the current publication; global revision checks reject
+stale concurrent actions before any writes. Deleting the original source version
+sets its historical FKs to NULL but retains dates/members and does not destroy a
+valid request against unchanged current slots. Existing v1 approvals keep their
+historical audit records; consent is never fabricated for them. Existing pending
+v1 requests require consent, and duplicate pending slot pairs retain the newest
+request while older duplicates become Invalidated.
+
+RLS allows engineers to read initiated requests and incoming requests currently
+requiring their consent; approved admins additionally see requests awaiting admin
+approval. A former counterpart immediately loses incoming visibility on reassignment.
+The compact list spans all months, puts the current user's actions first and is
+entirely absent when that user has no visible requests. Polling/focus refresh uses
+the existing 30-second mechanism; no push/email notifications are sent.
 
 ### Empty local Supabase database (PowerShell)
 
@@ -161,6 +196,9 @@ pnpm dlx supabase --workdir $swapTestRoot start
 # Use the local DB URL printed by start (normally port 54322).
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/access.sql
 psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/swaps.sql
+psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/swap-upgrade.sql
+# Run only after both rollback fixtures finish. Use the actual local DB container name.
+node supabase/tests/swap-races.mjs supabase_db_<disposable-project>
 pnpm dlx supabase --workdir $swapTestRoot stop
 ```
 
@@ -169,43 +207,95 @@ that port in both `psql` commands. `start` applies migrations only in this local
 instance. Both SQL tests refuse real members and roll their fixtures back. Never
 point these fixtures at your existing hosted project or run `db reset --linked`.
 
+`swap-upgrade.sql` rebuilds the swap feature inside a rollback transaction, then
+applies the actual v1/v2 migrations with synthetic historical resolutions and
+duplicate pending rows. It verifies unchanged audit/history data and fresh consent.
+`swap-races.mjs` uses two real PostgreSQL connections for approve/approve,
+approve/cancel and consent/reassignment races, creates only synthetic fixtures in
+an empty disposable local container, and cleans them up after each case.
+
+The optional browser regression is `tests/browser/swaps.mjs`. With Playwright
+available externally (do not add it to application dependencies), run `pnpm build`,
+then `pnpm start` in a separate terminal and `node tests/browser/swaps.mjs`.
+Use `DUTY_PREVIEW_URL` if the preview is not at `http://127.0.0.1:8787`, and
+`DUTY_CHROME_PATH` for another installed Chrome path. Its four browser contexts
+mock every Supabase endpoint with synthetic data; it tests UI/gesture wiring,
+not database permissions or real-device touch behavior. `NODE_PATH` can point to
+an existing external Playwright installation.
+
 ### Apply to your existing hosted project yourself
 
-After reviewing the PR and local tests, back up the database. In your Supabase
-project's SQL Editor, open the exact new migration above, review it and execute it
-**once**. It creates the request table, policies, checked RPCs and extends `duty_load`;
-it does not rewrite schedules. Keep a record of this migration's version
-`20261009145431`. If you maintain CLI migration history, use
-`supabase migration repair 20261009145431 --status applied --linked` afterward
-only once you have confirmed the SQL succeeded and the CLI is linked to the intended
-project. This repair records history; it does not apply SQL. Do not run the fixture
-tests on the hosted project. Do not deploy automatically; restarting local `pnpm dev`
-is enough to test the branch against a project where you have applied the migration.
+1. Review the PR and back up the intended database. Confirm the project's URL
+   matches your local configuration; the existing project ref is
+   `ukxxpbivgxyxharhxgqf`. Never run fixture tests on the hosted project.
+2. In that project's SQL Editor run these **read-only** diagnostics:
 
-### Three-browser acceptance check
+   ```sql
+   select version,name from supabase_migrations.schema_migrations order by version;
+   select n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),p.proargnames,
+          has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated_execute
+   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public' and p.proname in ('duty_request_swap','duty_resolve_swap');
+   ```
 
-Use three separate browser profiles: approved admin A, approved engineer B and
-approved engineer C. For isolated UI testing, configure the local app against a
-separate development Supabase project with those three accounts; pointing at the
-hosted project means UI actions change real data.
+3. If the first migration is absent and the swap functions/table are absent,
+   open `20261009145431_published_duty_swaps.sql` from this branch. Paste its
+   **entire contents**, wrapped with `BEGIN;` before and `COMMIT;` after, and run
+   once. Then run the entire `20261009161959_swap_consent_and_reassignment.sql`
+   the same way, once. Do not replay earlier migrations. If the original swap
+   migration is already applied, run only the consent/reassignment migration.
+   If history and actual schema disagree, stop and reconcile the discrepancy
+   before applying either file; do not blindly rerun a partially applied migration.
+4. Re-run the function diagnostic: confirm exactly the documented argument names
+   and `authenticated_execute=true`. The follow-up migration sends
+   `NOTIFY pgrst, 'reload schema';`. If the functions exist with correct grants
+   but PostgREST still reports a schema-cache miss, run that statement manually
+   and retry after the reload. This refresh is the documented
+   [Supabase schema-cache procedure](https://supabase.com/docs/guides/troubleshooting/refresh-postgrest-schema).
+5. If using CLI migration history, inspect `supabase migration repair --help` and
+   verify the CLI is linked to the intended project. **Only after successful SQL
+   and schema verification**, record each manually applied migration:
 
-1. A publishes a future month with duties for B/C, a combined weekend, split weekend
-   and a special date. Record the version number, date points and emergency cover.
-2. B taps an owned future calendar duty, chooses C's duty, adds an explanation and
-   submits. Verify pending count, unchanged publication, persistence after refresh
-   and sign-out/sign-in. C sees no request or explanation. B can cancel; repeat and
-   have A reject. Both actions preserve the schedule and show a persisted status.
-3. Submit again. A reopens the draft and changes an unrelated date. Approve from
-   Swap Requests. Verify a new version, exchanged primaries, identical secondary
-   assignments/points/weekend spans, unchanged draft and preserved older version.
-   B/C refresh or refocus to see the swap; polling also refreshes within 30 seconds.
-4. Try a second-weekend swap, unavailable dates, emergency-role duplication,
-   today's duty and an inactive participant. These must fail safely. After a valid
-   request, A adds a conflicting availability constraint; approval fails until A
-   explicitly selects the override and supplies an audit reason.
-5. Create competing requests against one version. Approve one, then try the other
-   after refresh: it must fail as stale. Check double approval and cancel/approve
-   races using two profiles; only one terminal resolution can succeed. Supersede
-   the source via ordinary publication and verify its pending requests cannot approve.
-6. Repeat at narrow mobile width in English/Hebrew: check RTL, wrapped names,
-   keyboard focus, labelled selections, dialog close and real-device taps/scrolling.
+   ```sh
+   supabase migration repair 20261009145431 --status applied --linked
+   supabase migration repair 20261009161959 --status applied --linked
+   ```
+
+   Repair records history; it does not execute migration SQL. Record only versions
+   actually applied, and do not use `db reset --linked` or replay the historical
+   consolidation migration. No remote migration, cache reload, history repair,
+   production write or deployment was performed by this implementation task.
+6. Restart local `pnpm dev` and repeat the acceptance checks below in a separate
+   development project. Testing against the hosted project changes real data.
+
+### Four-browser acceptance check
+
+Use separate browser profiles for approved admin, engineer A, engineer B and
+engineer C in an isolated development project. Do not use real member data.
+
+1. Publish a future month with A/B/C duties, a combined weekend, split weekend,
+   special date and secondary cover. Record version/points and retain an unrelated
+   edited draft. Verify Swap Requests is absent when no visible requests exist.
+2. A drags their own future duty X onto B's Y on desktop. Confirm both dates and
+   engineers, add an explanation, then Cancel: no request or schedule change.
+   Repeat, Confirm Request, refresh: A sees Awaiting Engineer, B sees Accept/Decline,
+   and admin sees no approval action. Today's/past duties and non-owned drag sources
+   are ineligible. Try mobile long press, native scrolling and Escape/keyboard
+   two-date selection; real-device behavior needs a physical phone check.
+3. B declines: A sees Declined, assignments unchanged. Request again, B accepts:
+   A sees Awaiting Admin, admin sees Approve/Reject, and B's consent action disappears.
+   Admin rejects: A sees Rejected, assignments unchanged. Test A cancelling in both
+   pending stages. Switch calendar months: actionable requests remain visible.
+4. A requests X/Y again and B accepts. Before admin approves it, C requests their Z
+   with B's Y, B accepts and admin approves C's request. A's original request now
+   targets C, returns to Awaiting Engineer and disappears from B's incoming list and
+   admin's approval list. C explicitly accepts; only then can admin approve A's
+   request. Verify X/Y current owners, a new version, unchanged secondary cover,
+   points/spans/draft and all earlier versions. Unrelated publication changes must
+   keep consent; reassignment of A's source duty must show Invalidated.
+5. From two profiles act on the same revision concurrently: only one resolution
+   commits, the other must refresh. Test approval before consent via RPC, another
+   engineer's consent attempt, inactive/pending users, second weekends, duplicate
+   emergency roles, conflicts requiring audited override and deleted/live versions.
+   Use `access.sql`, `swaps.sql` and the local-container race test for DB enforcement;
+   browser mock checks do not prove database RLS or real Google authentication.
