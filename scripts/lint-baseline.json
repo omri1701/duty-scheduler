@@ -1,0 +1,81 @@
+[
+  {
+    "file": "components/rota/availability-editor.tsx",
+    "sha256": "1908d4ef1ff00414c5060dc1999cde40685b24ff2691246c7a5bd7639b011cf7",
+    "errors": [
+      {
+        "ruleId": "react-hooks/refs",
+        "line": 11,
+        "column": 81,
+        "endLine": 11,
+        "endColumn": 101
+      },
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "line": 13,
+        "column": 17,
+        "endLine": 13,
+        "endColumn": 29
+      }
+    ]
+  },
+  {
+    "file": "components/rota/profile-dialog.tsx",
+    "sha256": "12bfaf0151959d12596e21d101cbd809defac09e8dd8e5c02aa50f0e47bd7826",
+    "errors": [
+      {
+        "ruleId": "react-hooks/set-state-in-effect",
+        "line": 9,
+        "column": 26,
+        "endLine": 9,
+        "endColumn": 33
+      }
+    ]
+  },
+  {
+    "file": "components/rota/team-list.tsx",
+    "sha256": "801d6289406e0e5997484f8ec6c12de770147b7099f6230243c26c5376c4d20e",
+    "errors": [
+      {
+        "ruleId": "react-hooks/refs",
+        "line": 14,
+        "column": 256,
+        "endLine": 14,
+        "endColumn": 273
+      }
+    ]
+  },
+  {
+    "file": "components/rota/workspace.tsx",
+    "sha256": "9fb9145bb52d98aa16e550cc2944299dd5daf57384486ec43ca257b3c8d682b7",
+    "errors": [
+      {
+        "ruleId": "@next/next/no-html-link-for-pages",
+        "line": 69,
+        "column": 30,
+        "endLine": 69,
+        "endColumn": 83
+      },
+      {
+        "ruleId": "react-hooks/refs",
+        "line": 77,
+        "column": 14,
+        "endLine": 77,
+        "endColumn": 28
+      }
+    ]
+  },
+  {
+    "file": "hooks/use-hold-drag.ts",
+    "sha256": "d9146607dfed67494007214d9f3c3de0c746eab33bb9471e873d7a4f84f9aa24",
+    "errors": [
+      {
+        "ruleId": "react-hooks/refs",
+        "line": 5,
+        "column": 92,
+        "endLine": 5,
+        "endColumn": 106
+      }
+    ]
+  }
+]
