@@ -66,10 +66,16 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 ## Verification and delivery
 
+- Behavior-preserving migrations and refactors must retain the browser/visual
+  baseline in `tests/browser` alongside existing unit regressions. Run
+  `pnpm test:e2e:ci` after the production build; see README for deterministic
+  fixtures, snapshot review/update commands and the manual checklist. Never
+  regenerate snapshots simply to pass a framework migration or hide a regression.
+
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
   Use deterministic seeds and relevant documented invariants for scheduling tests.
-- Start with affected tests. Use README/package commands; there is no package
-  test script. Type-check TypeScript changes and lint relevant code. Build for
+- Start with affected tests. Use README/package commands (`pnpm test:unit` for
+  the existing Node regressions). Type-check TypeScript changes and lint relevant code. Build for
   runtime/dependency/configuration/integration changes and required CI gates.
 - UI changes need relevant browser/manual checks where available; gesture
   simulations do not prove real-device correctness. Docs-only edits need no build.

@@ -62,6 +62,12 @@ Publishing creates a new immutable version and copies its duty rows, keeping act
 
 ## Permissions and validation
 
+The [browser regression baseline](../README.md#regression-baseline-before-nextjs)
+uses intercepted synthetic auth/RPC responses and blocks external browser requests.
+It needs no hosted project or Google credentials and must remain offline through
+framework migrations. Its UI/client-contract assertions do not replace the SQL
+permission and transaction checks below; never run those against real members.
+
 - Pending/rejected/inactive accounts see only their own membership record and harmless lookup definitions.
 - Approved active engineers see current published duties and their own constraints. Notes are visible only to that engineer and admins.
 - Admins see drafts/history and manage approvals, roles, deactivation, deadlines, duties and publications.

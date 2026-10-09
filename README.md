@@ -23,6 +23,96 @@ pnpm build
 
 The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
 
+## Regression baseline before Next.js
+
+Behavior-preserving migrations and refactors must pass this baseline against the
+production build without changing the reference screenshots to conceal differences.
+Phase 1 changes testing only; the application still runs on Vinext/Vite.
+
+```sh
+pnpm test:unit
+pnpm exec tsc --noEmit
+node scripts/lint-regressions.mjs
+pnpm build
+pnpm test:e2e:ci
+```
+
+`test:e2e:ci` requires Docker and uses the pinned Playwright 1.63.0 Ubuntu Noble
+image (including Chromium and fonts). It starts the existing production preview,
+reuses the build and installed dependencies, and stops the preview afterwards.
+Quality CI runs this same command with two workers, a single retry, pnpm caching
+and failure traces/reports. There is no second browser installation or build.
+For native local debugging, run `pnpm exec playwright install chromium` once,
+then `pnpm test:e2e` or `pnpm test:e2e --headed --project=desktop` after building.
+Windows has separate reference images; Linux CI images are canonical. Other host
+platforms can use Docker instead of creating another snapshot set.
+
+The synthetic browser fixtures in `tests/browser/fixtures.ts` intercept configuration,
+auth and RPC requests, block external requests, and use only `example.invalid`
+identities. No `.env.local`, hosted records, Google credentials or database fixtures
+are needed. Each test owns its backend; multi-account flows use separate browser
+contexts. Unexpected RPCs, client revisions and browser errors fail the test.
+The date is fixed at 9 October 2026, the initial calendar at November 2026, and
+generation uses seed 1701. Locale, Israel time zone, light theme, reduced motion,
+device scale and viewport (1440×1000 / 390×844) are fixed; screenshots wait for
+fonts and disable animations/carets. The pinned container fixes font rendering.
+
+Coverage reuses the 53 existing Node tests for engine rules, snapshot conversion,
+gesture state transitions and published swap eligibility. Playwright promotes the
+former optional swap browser script into supported tests and adds access/approval
+states, disabled Google provider and synthetic PKCE handoff, month navigation,
+empty generation, draft editing/publication, constraints,
+history restore/deletion confirmation, split-weekend edits, keyboard dialogs,
+desktop drag and simulated mobile long press, published
+swap consent/decline/cancel/admin review, changed-counterpart consent, invalidation,
+Hebrew and RTL. Visuals
+cover access, pending approval, admin draft, duty editor, history, engineer
+publication, availability and swap confirmation/requests, including desktop/mobile
+English and Hebrew calendars. There are 48 browser cases (one intentionally skipped
+desktop case for mobile-only touch) and 24 snapshots per operating system.
+Behavior assertions use roles/labels; date keys identify gesture targets because
+their accessible names change with assignment and language.
+
+### Intentional snapshot updates and migration comparison
+
+```sh
+# Canonical Linux snapshots, only after reviewing an intentional UI change:
+pnpm test:e2e:ci visual.spec.ts --update-snapshots
+# Windows reference set when developing natively on Windows:
+pnpm test:e2e:update
+# Compare (does not update missing or mismatched snapshots):
+pnpm test:e2e:ci
+pnpm test:e2e:report
+```
+
+Review and commit the affected PNGs in `tests/browser/snapshots` with the reason
+for each change. Keep the pinned image and Playwright version in sync. Before the
+Next.js conversion, retain these fixtures, tests and images; update only the preview
+launch adapter for the new runtime, then run the same suite against its production
+build. `DUTY_E2E_URL` can select an already-running local production preview, for
+example `http://host.docker.internal:3000` from Docker Desktop. Never point it at
+a shared/live site. Inspect actual/expected/diff images and traces from the HTML
+report or the `browser-baseline` CI artifact; classify differences before accepting
+them. CI must compare committed images, never regenerate them automatically.
+
+### Manual release checklist and limits
+
+- On real iOS Safari and Android Chrome: tap versus scroll, long press, drag/drop,
+  scroll during a drag, touch cancellation, availability range selection, pinch/zoom,
+  keyboard opening and Hebrew RTL at narrow widths. Synthetic TouchEvents and
+  Chromium mobile emulation do not prove real-device behavior.
+- With explicitly authorized test accounts: real Google OAuth redirect/PKCE,
+  denial, session expiry/refresh and sign-out, pending-to-approved onboarding, and
+  two real sessions seeing persistence/stale-revision conflicts. CI never attempts
+  real Google login or shared database writes.
+- Check screen-reader announcements, contrast, zoom and keyboard focus after
+  dismissing dialogs in English/Hebrew. Current duty editor does not restore focus
+  to the calendar button on Escape; retain this known gap for a separate UI fix.
+- Verify database permissions and atomic publication/swap/history rules only in an
+  empty development project following [Supabase setup](docs/SUPABASE_SETUP.md).
+  Browser RPC fakes verify client contracts and UI responses, not RLS, PostgreSQL
+  transactions or concurrency enforcement. No hosted SQL tests were run here.
+
 ## Working features
 
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.

@@ -18,7 +18,7 @@ jobs:
   quality:
     name: quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       CI: "true"
       TZ: UTC
@@ -34,6 +34,14 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           run_install: false # Reads the exact packageManager version in package.json.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Validate AI configuration
@@ -46,3 +54,17 @@ jobs:
         run: node scripts/lint-regressions.mjs
       - name: Production build
         run: pnpm build
+      - name: Browser and visual regression baseline
+        # Reuses build and JS dependencies. The pinned image supplies Chromium
+        # and fonts once; do not also run playwright install.
+        run: pnpm test:e2e:ci
+      - name: Retain browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-baseline
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
