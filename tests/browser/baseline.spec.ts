@@ -4,10 +4,11 @@ test('signed out, OAuth denial, provider configuration and PKCE handoff', async 
   await openApp('signed-out');
   await expect(page.getByRole('heading', {level: 1})).toContainText('duty calendar');
   await page.goto('/?error_description=Synthetic%20OAuth%20denied');
-  await expect(page.getByRole('alert')).toHaveText('Synthetic OAuth denied');
+  // Next.js also provides an accessibility route announcer outside the main region.
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText('Synthetic OAuth denied');
   await expect(page.getByRole('button', {name: 'Continue with Google'})).toBeEnabled();
   await page.getByRole('button', {name: 'Continue with Google'}).click();
-  await expect(page.getByRole('alert')).toHaveText('Google sign-in is not enabled yet. The manager needs to finish the Google setup in Supabase.');
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText('Google sign-in is not enabled yet. The manager needs to finish the Google setup in Supabase.');
   backend.googleEnabled = true;
   const secureContext = await page.evaluate(() => window.isSecureContext);
   await page.getByRole('button', {name: 'Continue with Google'}).click();

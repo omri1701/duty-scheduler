@@ -1,6 +1,6 @@
 # Duty Scheduler
 
-Mobile-first English/Hebrew team rota using React, TypeScript, Vinext/Vite
+Mobile-first English/Hebrew team rota using React, TypeScript, Next.js App Router
 and Supabase. Prefer correctness and security with minimal context and agents.
 
 ## Scope and context
@@ -13,7 +13,7 @@ and Supabase. Prefer correctness and security with minimal context and agents.
   docs/SUPABASE_SETUP.md for auth, persistence, migrations or database tests;
   docs/AI_DEVELOPMENT.md only for AI setup, routing or troubleshooting.
 - package.json defines scripts and package-manager configuration. Preserve the
-  Vinext/Vite runtime; do not assume standard Next.js commands.
+  native Next.js runtime and documented development port.
 - Treat docs as intended behavior and code/tests as evidence. Surface meaningful
   conflicts instead of silently changing business rules. Update existing docs
   when behavior changes; avoid duplicate project summaries.
