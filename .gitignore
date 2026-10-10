@@ -53,6 +53,7 @@ next-env.d.ts
 !/.agents/skills/scheduling-regression/
 !/.agents/skills/code-change-validation/
 !/.agents/skills/security-review/
+!/.agents/skills/feature-delivery/
 /.agents/skills/*/*
 !/.agents/skills/*/SKILL.md
 /.codex/*

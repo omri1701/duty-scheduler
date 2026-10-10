@@ -17,10 +17,8 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 - Treat docs as intended behavior and code/tests as evidence. Surface meaningful
   conflicts instead of silently changing business rules. Update existing docs
   when behavior changes; avoid duplicate project summaries.
-- Reuse available context. Re-read only for changes or specific uncertainty;
-  keep tool output bounded and batch independent reads/checks where useful.
-- Prefer scoped searches and bounded excerpts over printing entire
-  files. Avoid rereading instructions already available in context.
+- Reuse available context; re-read only for changes or specific uncertainty.
+  Batch independent reads/checks and prefer bounded excerpts over whole files.
 - Keep successful test output minimal; inspect detailed logs only
   for failures. Preserve command exit codes and test results.
 - Reuse completed checks for unchanged code rather than rerunning them.
@@ -29,7 +27,6 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 - For explicitly authorized end-to-end Git delivery, use
   [feature-delivery](.agents/skills/feature-delivery/SKILL.md).
-
 - The primary agent implements and owns validation. Small, clear changes stay
   in one agent; skip elaborate planning, delegation and full-suite repetition.
 - Use the code-change-validation skill for code/config changes, scheduling-regression
@@ -66,7 +63,7 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 ## Verification and delivery
 
-- Behavior-preserving migrations and refactors must retain the browser/visual
+- Behavior-preserving application migrations and refactors must retain the browser/visual
   baseline in `tests/browser` alongside existing unit regressions. Run
   `pnpm test:e2e:ci` after the production build; see README for deterministic
   fixtures, snapshot review/update commands and the manual checklist. Never
@@ -74,9 +71,9 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
   Use deterministic seeds and relevant documented invariants for scheduling tests.
-- Start with affected tests. Use README/package commands (`pnpm test:unit` for
-  the existing Node regressions). Type-check TypeScript changes and lint relevant code. Build for
-  runtime/dependency/configuration/integration changes and required CI gates.
+- Start with affected checks selected by code-change-validation; use README/package
+  commands. Documentation and AI infrastructure alone need no local application
+  tests/build; PR Quality CI still applies.
 - UI changes need relevant browser/manual checks where available; gesture
   simulations do not prove real-device correctness. Docs-only edits need no build.
 - Review the final diff for correctness, permissions, data loss, missing tests

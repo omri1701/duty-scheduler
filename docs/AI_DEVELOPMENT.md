@@ -27,17 +27,14 @@ Root `AGENTS.md` supplies the routing policy; `.codex/config.toml` sets defaults
 and caps active child agents at one. `.codex/agents/*.toml` defines the two
 read-only reviewers. No custom developer or architect is needed yet.
 
-Small tasks stay in the primary session. Complex behavioral changes get a QA
-review once a diff exists; material security changes get a Security review.
-Both run sequentially only for distinct risks. Hand off exact paths/diff,
-acceptance criteria and existing results. Reviewers never spawn children or edit;
-the primary agent fixes findings and runs missing checks. Read-only sandbox
-settings are defaults, subject to live parent overrides; keep permissions tight.
+Follow root routing for review scope and handoff; ordinary tasks stay in the
+primary session. Reviewer read-only settings are defaults subject to live parent
+overrides, not proof of enforced read-only execution.
 
 | Skill under `.agents/skills/` | Trigger |
 | --- | --- |
 | `scheduling-regression` | Generation, points, weekends, constraints or month ownership |
-| `code-change-validation` | Code/config edits or review; select relevant checks |
+| `code-change-validation` | Code/config edits, diff reviews or authorized PR delivery; select relevant checks |
 | `security-review` | Auth/RLS/RPC, permissions, private data, migrations or CI trust boundaries |
 | `feature-delivery` | Explicitly authorized end-to-end Git delivery through a PR; no implicit commit/push permission |
 
@@ -93,6 +90,48 @@ remain in README.md/package.json. After the first successful workflow run, an
 owner should require its `quality` check and PR review in branch protection;
 adding a workflow alone does not prevent merging failures.
 
+Select local checks with code-change-validation; it distinguishes application PRs
+from documentation/AI infrastructure. Every PR requires successful Quality CI on
+its final head. CI triggers and application coverage are unchanged.
+
+## Verified evidence and runtime limits
+
+Audit date: 2026-10-10, base `develop` at `6aab26b`.
+
+The audit aligned `.gitignore` with the four existing skills: `feature-delivery`
+was tracked but its directory remained ignored, causing ordinary staging to fail.
+
+- [#2](https://github.com/omri1701/duty-scheduler/pull/2) established the setup but
+  explicitly lacked runtime, skill-selection, delegation and token evidence.
+- [#4](https://github.com/omri1701/duty-scheduler/pull/4),
+  [#5](https://github.com/omri1701/duty-scheduler/pull/5),
+  [#6](https://github.com/omri1701/duty-scheduler/pull/6) and
+  [#7](https://github.com/omri1701/duty-scheduler/pull/7) report focused reviews and
+  preserved browser baselines; [#8](https://github.com/omri1701/duty-scheduler/pull/8)
+  reports a Security-found stale join-error race reproduced, fixed and re-reviewed.
+  GitHub Actions confirms successful Quality runs on all six final PR heads.
+  Fetched discussions contain no reviewer transcripts or skill execution traces.
+  PR descriptions support reported outcomes, not verified agent/model execution.
+- Installed JetBrains-bundled Codex CLI `0.160.1`: its bundled catalog advertises
+  both configured models and efforts. No inference or account-entitlement test ran.
+  App-server `skills/list` discovered all four project skills enabled without errors;
+  discovery does not establish invocation or effectiveness.
+- App-server `config/read` with repository `cwd` and `includeLayers: true` showed
+  the standalone CLI project layer disabled for missing project trust. Consequently
+  its repository model/login/concurrency defaults were not effective in that probe.
+  This does not establish IntelliJ's active session settings. Persistent trust and
+  authentication were left unchanged; the CLI diagnostic reported ChatGPT auth.
+
+When defaults appear ignored, check `codex --version`, then inspect the effective
+config and each layer's `disabledReason` through
+[app-server configuration inspection](https://learn.chatgpt.com/docs/app-server).
+Trust the reviewed project in the client used for work and start a fresh session;
+verify effective settings there. Schema/metadata validation alone cannot do this.
+Historical session logs and token measurements were not available for this audit;
+shorter instructions must not be reported as measured token savings. Keep the
+single-primary workflow and current reviewers until measured task outcomes justify
+more orchestration; use the small comparison below before changing model defaults.
+
 ## Small routing and usage check
 
 In a fresh chat on a disposable local branch, ask:
@@ -116,7 +155,7 @@ than a smaller parent transcript.
 
 ## Official references
 
-Verified 2026-10-09; update deliberately when the installed runtime changes:
+Checked 2026-10-10 against official guidance; update when the runtime changes:
 
 - [Project instructions](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
 - [Configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
