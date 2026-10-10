@@ -1,0 +1,8 @@
+# Shared defaults; trusted local Codex projects only. See docs/AI_DEVELOPMENT.md.
+model = "gpt-6.1-sol"
+model_reasoning_effort = "low"
+forced_login_method = "chatgpt"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 1
