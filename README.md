@@ -23,7 +23,7 @@ pnpm build
 
 The application uses native Next.js 16 App Router, React 19, TypeScript and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
 
-## Native Next.js runtime and eventual Vercel deployment
+## Native Next.js runtime and Vercel deployment
 
 Copy `.env.example` to `.env.local` and set `SUPABASE_URL` and
 `SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). Next.js loads these server
@@ -48,12 +48,13 @@ The repository is ready to import into Vercel using its **Next.js** framework
 preset, Node 24, `pnpm build` and the default install/output settings. Set
 `ENABLE_EXPERIMENTAL_COREPACK=1` so Vercel uses the exact pnpm version in
 `package.json`; see [Vercel build configuration](https://vercel.com/docs/builds/configure-a-build#corepack).
-Configure the two application server environment variables in each intended
-Vercel environment. It needs no Workers adapter or custom hosting configuration.
-Before an eventual deployment, explicitly approve and configure the deployed
-origin in Google OAuth and the exact trailing-slash redirect in Supabase; see
-[Supabase setup](docs/SUPABASE_SETUP.md). This migration does not deploy or change
-those live settings. Production configuration can differ from build-time values.
+Configure the two application server variables separately: Production uses the
+existing production Supabase project; Preview and Development use an independent
+development project. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
+approval-gated `develop` to `master` transition, environment scopes and rollback.
+It needs no Workers adapter. Preserve production OAuth settings; configure the
+development origin and exact trailing-slash redirect independently using
+[Supabase setup](docs/SUPABASE_SETUP.md). Configuration is read at request time.
 
 ## Browser and visual regression baseline
 
@@ -179,7 +180,7 @@ them. CI must compare committed images, never regenerate them automatically.
 
 ## Current boundary / next milestone
 
-The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials still need configuration before real sign-in can be verified; the first signed-in account then needs explicit admin approval. A future team deployment requires a separately approved hosting change and matching OAuth origins/redirect URLs.
+The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain in automated tests and isolated development environments only. Production is reserved for approved users and real schedules. The first signed-in account needs explicit admin approval. Live hosting and Google OAuth settings must be verified separately; repository tests do not prove real sign-in. See [the deployment runbook](docs/DEPLOYMENT.md).
 
 Next: PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, full action audit logs and backup restoration. Publication does not send notifications yet.
 

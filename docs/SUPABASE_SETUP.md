@@ -1,6 +1,6 @@
 # Supabase setup
 
-Project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). Native Next.js reads its public project URL and publishable key from server environment variables. No service-role key is used by the app. Google credentials must be configured before the first login.
+Production project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). Native Next.js reads its public project URL and publishable key from server environment variables. No service-role key is used by the app. Preserve this project's database and existing authentication. Use [the deployment runbook](DEPLOYMENT.md) to initialize a separate development project from migrations without copying users/data. The Google setup below describes production; development uses its own client and project callback.
 
 ## 1. Create the Google OAuth client
 
@@ -75,11 +75,11 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-Migrations through `20260918133851` are already applied to the connected project. The new swap migration is unapplied; see its steps below. Earlier migrations were created with the Supabase CLI and reconciled to the remote migration version IDs. Apply the full sequence only to a separate new development project. The consolidation migration deliberately refuses to discard unexpected pre-existing schedule data.
+On 2026-10-10, authenticated migration-history metadata confirmed all eight committed versions, through `20261009161959`, recorded in production. This supersedes the earlier missing-swap diagnosis; history alone does not prove schema equality. Apply the full sequence only to a separate empty development project. Never replay production migrations. The consolidation migration deliberately refuses pre-existing schedule data.
 
 `supabase/tests/access.sql` creates synthetic auth/member records inside one transaction and rolls everything back; it sends no email and refuses to run on a project with real members. Use an empty development project after real onboarding begins. Checks cover explicit first-admin promotion, multiple admins, last-admin protection, FK values, own-name edits, private notes, stale revisions, publication versions, stable points, boundary-weekend restores, deletion and deactivation.
 
-The security advisor reports no findings. The fresh, empty database has informational [unused-index notices](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index); foreign-key indexes are retained for real usage.
+An earlier empty-database audit reported no security-advisor findings and informational [unused-index notices](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index). That historical result is not a current production audit; foreign-key indexes are retained for real usage.
 
 ```sh
 node --test tests/*.test.mjs
@@ -87,29 +87,29 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-## Local development with the existing hosted project
+## Local development with the separate development project
 
 1. Copy `.env.example` to `.env.local` at the repository root. Set
-   `SUPABASE_URL` to your existing project's URL and `SUPABASE_PUBLISHABLE_KEY`
+   `SUPABASE_URL` to the approved development project's URL and `SUPABASE_PUBLISHABLE_KEY`
    to its publishable key (`sb_publishable_...`), available in the Supabase
    project's Connect dialog / API Keys settings. Do not use an anon JWT,
    secret/service-role key or Google client secret. Fill these in locally only;
    `.env.local` is ignored by Git.
-2. In Supabase **Authentication → URL Configuration**, add
+2. In development Supabase **Authentication → URL Configuration**, add
    `http://localhost:5173/` to **Redirect URLs**. Keep the deployed application URL and
    existing redirect entries. If you use another hostname or port, add its
    exact origin with a trailing slash instead.
-3. In the existing Google OAuth web client, add `http://localhost:5173` under
+3. In the separate development Google OAuth web client, add `http://localhost:5173` under
    **Authorized JavaScript origins**. Keep the hosted Supabase callback
-   `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback` under
+   `https://<DEV_REF>.supabase.co/auth/v1/callback` under
    **Authorized redirect URIs**; the database/Auth service is still hosted,
    so no localhost Supabase callback or local Google secret is needed. Ensure
    Google is enabled in Supabase and your account is an allowed test user if
    the Google app is in testing. See [Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
 4. Restart `pnpm dev` and open `http://localhost:5173`. In browser DevTools,
    confirm `/api/config` returns **200** (do not copy its response into logs or
-   chat), then choose **Continue with Google** using your existing account.
-   Confirm the redirect returns to localhost and your approved workspace opens;
+   chat), then choose **Continue with Google** using a dedicated test account.
+   Confirm the redirect returns to localhost and your development workspace opens;
    pending accounts still require manager approval. Reload to verify the session
    persists. Use the same hostname throughout the login flow.
 
@@ -126,7 +126,8 @@ Google secrets stay in Supabase. Approve the hosting change separately before
 adding the new Google origin and Supabase redirect; do not remove existing
 entries during this framework migration. No database migration is required.
 
-Local login uses the same accounts, permissions and live team data as deployment.
+Local login uses independent development identities and synthetic schedules.
+Do not configure localhost against production or add local redirects to its client.
 The app has no demo login or local-data fallback.
 
 Push notifications, calendar subscriptions and full action audit logs remain future work. Real Google OAuth must be checked after provider setup; database role tests do not replace that check.
@@ -138,10 +139,9 @@ The feature requires both new migrations, in this order:
 1. `supabase/migrations/20261009145431_published_duty_swaps.sql`
 2. `supabase/migrations/20261009161959_swap_consent_and_reassignment.sql`
 
-Neither is applied to the hosted project. Read-only catalog and migration-history
-checks on 2026-10-09 confirmed that `public.duty_request_swap` and
-`public.duty_resolve_swap` do not exist and history ends at `20260918133851`.
-This is the cause of the schema-cache error. The client parameter names match
+Both versions are now recorded in production history (2026-10-10 metadata audit).
+The older 2026-10-09 missing-function diagnosis is historical. On a new development
+project apply the full ordered sequence, not only these two files. The client parameter names match
 `duty_request_swap(p_from uuid,p_to uuid,p_explanation text,p_revision bigint)`;
 parameter order in the error is immaterial. Reloading the cache cannot create a
 missing function. The migration explicitly grants execution to `authenticated`,
@@ -234,50 +234,25 @@ mock every Supabase endpoint with synthetic data; it tests UI/gesture wiring,
 not database permissions or real-device touch behavior. `NODE_PATH` can point to
 an existing external Playwright installation.
 
-### Apply to your existing hosted project yourself
+### Read-only hosted migration diagnostics
 
-1. Review the PR and back up the intended database. Confirm the project's URL
-   matches your local configuration; the existing project ref is
-   `ukxxpbivgxyxharhxgqf`. Never run fixture tests on the hosted project.
-2. In that project's SQL Editor run these **read-only** diagnostics:
+All eight versions are already recorded in production. Do not apply or repair them
+again. If a schema-cache or RPC error occurs, inspect history and function metadata
+in the explicitly identified project before proposing a separately approved fix:
 
-   ```sql
-   select version,name from supabase_migrations.schema_migrations order by version;
-   select n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),p.proargnames,
-          has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated_execute
-   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-   where n.nspname='public' and p.proname in ('duty_request_swap','duty_resolve_swap');
-   ```
+```sql
+select version,name from supabase_migrations.schema_migrations order by version;
+select n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),p.proargnames,
+       has_function_privilege('authenticated',p.oid,'EXECUTE') as authenticated_execute
+from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+where n.nspname='public' and p.proname in ('duty_request_swap','duty_resolve_swap');
+```
 
-3. If the first migration is absent and the swap functions/table are absent,
-   open `20261009145431_published_duty_swaps.sql` from this branch. Paste its
-   **entire contents**, wrapped with `BEGIN;` before and `COMMIT;` after, and run
-   once. Then run the entire `20261009161959_swap_consent_and_reassignment.sql`
-   the same way, once. Do not replay earlier migrations. If the original swap
-   migration is already applied, run only the consent/reassignment migration.
-   If history and actual schema disagree, stop and reconcile the discrepancy
-   before applying either file; do not blindly rerun a partially applied migration.
-4. Re-run the function diagnostic: confirm exactly the documented argument names
-   and `authenticated_execute=true`. The follow-up migration sends
-   `NOTIFY pgrst, 'reload schema';`. If the functions exist with correct grants
-   but PostgREST still reports a schema-cache miss, run that statement manually
-   and retry after the reload. This refresh is the documented
-   [Supabase schema-cache procedure](https://supabase.com/docs/guides/troubleshooting/refresh-postgrest-schema).
-5. If using CLI migration history, inspect `supabase migration repair --help` and
-   verify the CLI is linked to the intended project. **Only after successful SQL
-   and schema verification**, record each manually applied migration:
-
-   ```sh
-   supabase migration repair 20261009145431 --status applied --linked
-   supabase migration repair 20261009161959 --status applied --linked
-   ```
-
-   Repair records history; it does not execute migration SQL. Record only versions
-   actually applied, and do not use `db reset --linked` or replay the historical
-   consolidation migration. No remote migration, cache reload, history repair,
-   production write or deployment was performed by this implementation task.
-6. Restart local `pnpm dev` and repeat the acceptance checks below in a separate
-   development project. Testing against the hosted project changes real data.
+History/schema disagreement requires investigation, not blind replay or history
+repair. Cache reload cannot create missing functions. No remote SQL, history repair
+or cache reload is part of this preparation. Use the development runbook for fresh
+initialization and a separate approved migration plan for future production changes.
+Run the acceptance checks below only in an isolated development project.
 
 ### Four-browser acceptance check
 
