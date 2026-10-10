@@ -1,6 +1,6 @@
 # Supabase setup
 
-Project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). The Site runtime already has its public project URL and publishable key. No service-role key is used by the app. Google credentials must be configured before the first login.
+Project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). Native Next.js reads its public project URL and publishable key from server environment variables. No service-role key is used by the app. Google credentials must be configured before the first login.
 
 ## 1. Create the Google OAuth client
 
@@ -13,7 +13,7 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 
 | Setting | Value |
 |---|---|
-| Authorized JavaScript origin | `https://duty-rota.keshet-mako-7367.chatgpt.site` |
+| Authorized JavaScript origin | `https://<approved-app-host>` |
 | Authorized redirect URI | `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
@@ -24,18 +24,18 @@ In **Authentication → URL Configuration** set:
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://duty-rota.keshet-mako-7367.chatgpt.site` |
-| Allowed redirect URL | `https://duty-rota.keshet-mako-7367.chatgpt.site/` |
+| Site URL | `https://<approved-app-host>` |
+| Allowed redirect URL | `https://<approved-app-host>/` |
 
 ## 3. First login and explicit admin promotion
 
-After both dashboards are configured, open the app and choose **Continue with Google**. This Google account can be different from the ChatGPT account. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
+After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
 The first account is **not** automatically made admin. Identify and confirm its actual account ID/email, then use a trusted SQL connection to promote that exact row in `duty_members` and increment `duty_workspace.revision` in one transaction. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
 Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.
 
-The current Site is owner-private. Team members also need Sites access or an agreed team-accessible hosting URL. Changing hosting requires updating the Google origin and Supabase redirect URLs.
+Use the separately approved application origin for the values above. Preserve existing authorized origins and redirect entries until a hosting change is approved. Changing hosting requires updating the Google origin and Supabase redirect URLs; this migration does not change those live settings.
 
 ## Current database
 
@@ -89,14 +89,14 @@ pnpm build
 
 ## Local development with the existing hosted project
 
-1. Copy `.env.local.example` to `.env.local` at the repository root. Set
+1. Copy `.env.example` to `.env.local` at the repository root. Set
    `SUPABASE_URL` to your existing project's URL and `SUPABASE_PUBLISHABLE_KEY`
    to its publishable key (`sb_publishable_...`), available in the Supabase
    project's Connect dialog / API Keys settings. Do not use an anon JWT,
    secret/service-role key or Google client secret. Fill these in locally only;
    `.env.local` is ignored by Git.
 2. In Supabase **Authentication → URL Configuration**, add
-   `http://localhost:5173/` to **Redirect URLs**. Keep the deployed Site URL and
+   `http://localhost:5173/` to **Redirect URLs**. Keep the deployed application URL and
    existing redirect entries. If you use another hostname or port, add its
    exact origin with a trailing slash instead.
 3. In the existing Google OAuth web client, add `http://localhost:5173` under
@@ -114,12 +114,17 @@ pnpm build
    persists. Use the same hostname throughout the login flow.
 
 `/api/config` returns **503** when its URL is missing or its key is missing or
-does not begin with `sb_publishable_`. The deployed runtime's bindings are not
-downloaded into a local checkout. Vinext loads `.env.local`, and Cloudflare's
-local worker environment also reads it; no `VITE_` or `NEXT_PUBLIC_` prefix is
-needed. Avoid mixing `.dev.vars` with `.env.local`: Cloudflare prioritizes
-`.dev.vars` and skips dotenv files when it exists. Restart after changing local
-configuration. See [Cloudflare environment loading](https://developers.cloudflare.com/workers/local-development/environment-variables/).
+does not begin with `sb_publishable_`. Native Next.js loads `.env.local`; no
+`NEXT_PUBLIC_` prefix is needed. The route reads the server environment per request
+and returns `Cache-Control: no-store` for both success and errors. Restart after
+changing local configuration. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables).
+
+For eventual Vercel hosting, select the standard Next.js preset and configure
+`SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
+Use Node 24 and set `ENABLE_EXPERIMENTAL_COREPACK=1` to select the pinned pnpm version.
+Google secrets stay in Supabase. Approve the hosting change separately before
+adding the new Google origin and Supabase redirect; do not remove existing
+entries during this framework migration. No database migration is required.
 
 Local login uses the same accounts, permissions and live team data as deployment.
 The app has no demo login or local-data fallback.

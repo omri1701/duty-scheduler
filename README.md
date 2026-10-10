@@ -10,7 +10,7 @@ Requires Node 22.13+ (Node 24 recommended) and the pnpm version declared in pack
 
 ```sh
 pnpm install
-pnpm dev
+pnpm dev # http://localhost:5173
 ```
 
 Scheduling tests use Node 24's built-in TypeScript stripping:
@@ -21,13 +21,37 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-The application uses React and TypeScript with the supplied Vinext/Vite runtime and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. Sites build and hosting configuration is included for the private review demo. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
+The application uses native Next.js 16 App Router, React 19, TypeScript and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
 
-## Regression baseline before Next.js
+## Native Next.js runtime and eventual Vercel deployment
+
+Copy `.env.example` to `.env.local` and set `SUPABASE_URL` and
+`SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`). Next.js loads these server
+variables; `/api/config` exposes only the existing public client configuration at
+request time with `Cache-Control: no-store`, including configuration errors.
+No `NEXT_PUBLIC_` prefix, service-role key or Google secret is needed. The browser
+retains Supabase PKCE, local session persistence and direct RLS-protected RPC calls.
+
+`pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
+`pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
+For a different production port, use `pnpm exec next start --port 3000`.
+
+The repository is ready to import into Vercel using its **Next.js** framework
+preset, Node 24, `pnpm build` and the default install/output settings. Set
+`ENABLE_EXPERIMENTAL_COREPACK=1` so Vercel uses the exact pnpm version in
+`package.json`; see [Vercel build configuration](https://vercel.com/docs/builds/configure-a-build#corepack).
+Configure the two application server environment variables in each intended
+Vercel environment. It needs no Workers adapter or custom hosting configuration.
+Before an eventual deployment, explicitly approve and configure the deployed
+origin in Google OAuth and the exact trailing-slash redirect in Supabase; see
+[Supabase setup](docs/SUPABASE_SETUP.md). This migration does not deploy or change
+those live settings. Production configuration can differ from build-time values.
+
+## Browser and visual regression baseline
 
 Behavior-preserving migrations and refactors must pass this baseline against the
 production build without changing the reference screenshots to conceal differences.
-Phase 1 changes testing only; the application still runs on Vinext/Vite.
+The Phase 1 baseline from PR #4 is retained unchanged for the native Next.js migration.
 
 ```sh
 pnpm test:unit
@@ -38,7 +62,7 @@ pnpm test:e2e:ci
 ```
 
 `test:e2e:ci` requires Docker and uses the pinned Playwright 1.63.0 Ubuntu Noble
-image (including Chromium and fonts). It starts the existing production preview,
+image (including Chromium and fonts). It starts a native Next.js production server on port 8787,
 reuses the build and installed dependencies, and stops the preview afterwards.
 Quality CI runs this same command with two workers, a single retry, pnpm caching
 and failure traces/reports. There is no second browser installation or build.
@@ -57,8 +81,9 @@ generation uses seed 1701. Locale, Israel time zone, light theme, reduced motion
 device scale and viewport (1440×1000 / 390×844) are fixed; screenshots wait for
 fonts and disable animations/carets. The pinned container fixes font rendering.
 
-Coverage reuses the 53 existing Node tests for engine rules, snapshot conversion,
-gesture state transitions and published swap eligibility. Playwright promotes the
+Coverage reuses the 53 original Node tests for engine rules, snapshot conversion,
+gesture state transitions and published swap eligibility, plus the runtime
+configuration regression. Playwright promotes the
 former optional swap browser script into supported tests and adds access/approval
 states, disabled Google provider and synthetic PKCE handoff, month navigation,
 empty generation, draft editing/publication, constraints,
@@ -86,10 +111,11 @@ pnpm test:e2e:report
 ```
 
 Review and commit the affected PNGs in `tests/browser/snapshots` with the reason
-for each change. Keep the pinned image and Playwright version in sync. Before the
-Next.js conversion, retain these fixtures, tests and images; update only the preview
-launch adapter for the new runtime, then run the same suite against its production
-build. `DUTY_E2E_URL` can select an already-running local production preview, for
+for each change. Keep the pinned image and Playwright version in sync. The native
+Next.js server uses the original fixtures and reference images. The preview
+launcher runs native Next.js; OAuth error assertions are scoped to the main region
+to distinguish app alerts from Next.js's hidden accessibility route announcer.
+`DUTY_E2E_URL` can select an already-running local production preview, for
 example `http://host.docker.internal:3000` from Docker Desktop. Never point it at
 a shared/live site. Inspect actual/expected/diff images and traces from the HTML
 report or the `browser-baseline` CI artifact; classify differences before accepting
@@ -142,7 +168,7 @@ them. CI must compare committed images, never regenerate them automatically.
 
 ## Current boundary / next milestone
 
-The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials still need configuration before real sign-in can be verified; the first signed-in account then needs explicit admin approval. The current Site is owner-private; team access requires sharing or a separately agreed hosting change.
+The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain only in automated tests. Google credentials still need configuration before real sign-in can be verified; the first signed-in account then needs explicit admin approval. A future team deployment requires a separately approved hosting change and matching OAuth origins/redirect URLs.
 
 Next: PWA/Web Push with scheduled delivery, personal revocable calendar feed URLs, full action audit logs and backup restoration. Publication does not send notifications yet.
 

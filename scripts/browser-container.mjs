@@ -13,7 +13,7 @@ process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 try {
   if (!external) {
-    server = spawn(process.execPath, ['--import', './scripts/sites-env.mjs', './node_modules/wrangler/bin/wrangler.js', 'dev', '--config', 'dist/server/wrangler.json', '--local', '--persist-to', '.wrangler/state', '--ip', '0.0.0.0', '--port', '8787', '--inspector-port', '0'], {cwd: root, stdio: 'inherit', env: {...process.env, CLOUDFLARE_CF_FETCH_ENABLED: 'false', WRANGLER_SEND_METRICS: 'false'}});
+    server = spawn(process.execPath, ['./node_modules/next/dist/bin/next', 'start', '--hostname', '0.0.0.0', '--port', '8787'], {cwd: root, stdio: 'inherit', env: process.env});
     server.on('error', error => {serverError = error;});
     let ready = false;
     for (let attempt = 0; attempt < 120; attempt++) {

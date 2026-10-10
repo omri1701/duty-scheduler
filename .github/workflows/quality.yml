@@ -22,8 +22,6 @@ jobs:
     env:
       CI: "true"
       TZ: UTC
-      CLOUDFLARE_CF_FETCH_ENABLED: "false"
-      WRANGLER_SEND_METRICS: "false"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

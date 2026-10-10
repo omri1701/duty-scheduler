@@ -24,8 +24,7 @@ export default defineConfig({
     {name: 'mobile', use: {browserName: 'chromium', viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, deviceScaleFactor: 1}},
   ],
   webServer: external ? undefined : {
-    command: 'pnpm start --port 8787', url: 'http://127.0.0.1:8787',
+    command: 'node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 8787', url: 'http://127.0.0.1:8787',
     reuseExistingServer: false, timeout: 120_000,
-    env: {CLOUDFLARE_CF_FETCH_ENABLED: 'false', WRANGLER_SEND_METRICS: 'false'},
   },
 });
