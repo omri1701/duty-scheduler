@@ -1,6 +1,7 @@
 'use client';
 import {useState} from 'react';
 import {Trash2} from 'lucide-react';
+import {shortDate} from '@/lib/date-format';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
@@ -16,7 +17,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  const day=(start:string):Duty=>({...duty,id:start,start,end:addDays(start,1)});
  const edits=weekend?[{block:day(friday),assignment:fri},{block:day(addDays(friday,1)),assignment:sat}]:[{block:duty,assignment:fri}];
  const name=(id:string)=>state.team.find(p=>p.id===id)?.name??id;
- const fmt=(d:string)=>new Date(d+'T12:00:00Z').toLocaleDateString(lang==='en'?'en-GB':'he-IL',{day:'numeric',month:'short'});
+ const fmt=(d:string)=>shortDate(d,lang);
  const conflicts=edits.flatMap(({block,assignment})=>[assignment.primary,assignment.secondary].filter((id):id is string=>!!id).flatMap(id=>unavailable(block,id,state.constraints).map(date=>`${name(id)} · ${fmt(date)}${state.constraintNotes?.[id]?.[date]?' · '+state.constraintNotes[id][date]:''}`)));
  const duplicate=edits.some(({assignment:a})=>a.primary&&a.primary===a.secondary);
  function change(s:State,approved=false){const clean=(a:Assignment):Assignment=>({primary:a.primary,secondary:a.secondary,override:approved||undefined});return weekend?setWeekendAssignments(s,friday,clean(fri),clean(sat)):{...s,assignments:{...s.assignments,[duty.id]:clean(fri)}}}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fromSnapshot,schedulePayload,canManage} from '../lib/supabase/snapshot.ts';
-import {addDays,blocks,totals,generate} from '../lib/rota/engine.ts';
+import {addDays,blocks,totals} from '../lib/rota/engine.ts';
 const member=(id,role='engineer',status='approved')=>({id,email:id+'@example.invalid',name:id,role,status,active:true,seniority:1,color:'#adc9ee'});
 const row=(day,primary='admin',publication=null,options={})=>({id:(publication??'draft')+'-'+day,publication_id:publication,day,end_day:addDays(day,1),primary_id:primary,secondary_id:null,manager_override:false,title:'',extra_points:0,points:1,...options});
 function fixture(){return {revision:4,members:[member('admin','admin'),member('engineer'),member('waiting','engineer','pending')],roles:[{code:'admin',label:'Admin',can_manage:true},{code:'engineer',label:'Engineer',can_manage:false}],memberStatuses:[],monthStatuses:[],constraintTypes:[],months:[{month:'2026-10',deadline:'2026-09-24',status:'draft',generated:true,current_publication_id:'v2',publication_sequence:2}],constraints:[{member_id:'engineer',day:'2026-10-01',kind:'no',note:'Vacation'}],assignments:[row('2026-10-01','admin'),row('2026-10-01','admin','v1'),row('2026-10-01','engineer','v2')],publications:[{id:'v1',month:'2026-10',version:1,published_at:'2026-09-20',published_by:'admin'},{id:'v2',month:'2026-10',version:2,published_at:'2026-09-21',published_by:'admin'}]}}

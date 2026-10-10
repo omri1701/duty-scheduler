@@ -51,7 +51,9 @@ those live settings. Production configuration can differ from build-time values.
 
 Behavior-preserving migrations and refactors must pass this baseline against the
 production build without changing the reference screenshots to conceal differences.
-The Phase 1 baseline from PR #4 is retained unchanged for the native Next.js migration.
+The Phase 1 reference screenshots from PR #4 remain unchanged through the native
+Next.js migration and codebase cleanup. The lint baseline is empty; both
+`pnpm lint` and the CI lint regression gate enforce the enabled rules.
 
 ```sh
 pnpm test:unit
@@ -90,10 +92,11 @@ empty generation, draft editing/publication, constraints,
 history restore/deletion confirmation, split-weekend edits, keyboard dialogs,
 desktop drag and simulated mobile long press, published
 swap consent/decline/cancel/admin review, changed-counterpart consent, invalidation,
-Hebrew and RTL. Visuals
+Hebrew and RTL, profile reopening, availability reset when editing closes, and
+team pointer/touch reorder announcements. Visuals
 cover access, pending approval, admin draft, duty editor, history, engineer
 publication, availability and swap confirmation/requests, including desktop/mobile
-English and Hebrew calendars. There are 48 browser cases (one intentionally skipped
+English and Hebrew calendars. There are 54 browser cases (one intentionally skipped
 desktop case for mobile-only touch) and 24 snapshots per operating system.
 Behavior assertions use roles/labels; date keys identify gesture targets because
 their accessible names change with assignment and language.

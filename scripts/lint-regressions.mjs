@@ -1,4 +1,4 @@
-// Reject new lint errors while keeping pre-existing errors visible and reviewable.
+// Reject lint errors. The resolved baseline is empty; do not add allowances.
 // A baseline applies only to original source (normalizing CRLF); never refresh it to pass.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const baseline = JSON.parse(readFileSync(new URL('./lint-baseline.json', import.meta.url), 'utf8'));
 const eslint = fileURLToPath(new URL('../node_modules/eslint/bin/eslint.js', import.meta.url));
-const run = spawnSync(process.execPath, [eslint, '.', '--ignore-pattern', 'dist',
-  '--ignore-pattern', '.next', '--format', 'json'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+const run = spawnSync(process.execPath, [eslint, '.', '--format', 'json'],
+  { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 if (run.error || ![0, 1].includes(run.status)) {
   console.error(run.error?.message || run.stderr || 'ESLint did not complete');
   process.exit(1);

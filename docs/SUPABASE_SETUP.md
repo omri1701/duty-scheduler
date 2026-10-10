@@ -62,7 +62,7 @@ Publishing creates a new immutable version and copies its duty rows, keeping act
 
 ## Permissions and validation
 
-The [browser regression baseline](../README.md#regression-baseline-before-nextjs)
+The [browser regression baseline](../README.md#browser-and-visual-regression-baseline)
 uses intercepted synthetic auth/RPC responses and blocks external browser requests.
 It needs no hosted project or Google credentials and must remain offline through
 framework migrations. Its UI/client-contract assertions do not replace the SQL

@@ -76,17 +76,13 @@ type checking, a lint regression gate and the production build. It uses a read-o
 no application secrets, no AI and no deployment. GitHub Actions usage is subject
 to your GitHub plan; no paid service was added.
 
-`pnpm lint` currently reports seven pre-existing errors (React hooks and a link rule) and six warnings
-on the initial base `304d894`. `node scripts/lint-regressions.mjs` prints those known
-errors and fails on new errors. `scripts/lint-baseline.json` records source hashes
-and diagnostic locations; changing source invalidates its allowance. CRLF/LF line
-endings are normalized so Windows checkouts can use the same baseline.
-Rules remain enabled, and raw `pnpm lint` remains unchanged. Remove baseline entries
-as the affected components are fixed; never regenerate/add allowances to pass CI.
-This avoids unrelated application edits while establishing a usable new gate.
+`pnpm lint` and `node scripts/lint-regressions.mjs` pass without error allowances.
+`scripts/lint-baseline.json` is empty after resolving the React Hooks debt; never
+regenerate or add allowances to pass CI. Hook rules also apply to the retained UI
+components.
 
-The engine's default seed is deterministic; existing multi-seed tests cover
-variation. Production generation behavior is unchanged. Database RLS/OAuth and
+Existing deterministic multi-seed tests cover scheduling variation; production
+generation uses fresh cryptographic seeds. Database RLS/OAuth and
 real-device gestures are not covered by this CI. Follow the existing Supabase
 setup document for isolated database checks; never use the live project.
 
