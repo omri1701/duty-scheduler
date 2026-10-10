@@ -11,20 +11,15 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // Generated artifacts left by the retired runtime in existing checkouts.
+    "dist/**",
+    ".vinext/**",
+    ".wrangler/**",
+    ".sites-runtime/**",
     "playwright-report/**",
     "test-results/**",
     "next-env.d.ts",
   ]),
-  {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
-    rules: {
-      // These files are vendored verbatim from shadcn@4.17.0. Keep the
-      // registry source intact while applying the stricter rules to app code.
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/set-state-in-effect": "off",
-    },
-  },
 ]);
 
 export default eslintConfig;
