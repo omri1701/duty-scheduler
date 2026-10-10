@@ -6,6 +6,32 @@ export type DutyRow={id:string;publication_id:string|null;day:string;end_day:str
 export type Publication={id:string;month:string;version:number;published_at:string;published_by:string};
 export type SwapRequest={id:string;month:string;source_publication_id:string|null;requester_id:string;other_id:string;from_day:string;from_end_day:string;to_day:string;to_end_day:string;explanation:string;status:'awaiting_engineer'|'awaiting_admin'|'approved'|'declined'|'rejected'|'cancelled'|'invalidated';accepted_by:string|null;accepted_at:string|null;created_at:string;resolved_at:string|null;resolved_by:string|null;result_publication_id:string|null;override_reason:string};
 export type Snapshot={swapRequests?:SwapRequest[];revision:number|null;members:Member[];months:{month:string;deadline:string;status:'draft'|'published';generated:boolean;current_publication_id:string|null;publication_sequence:number}[];constraints:{member_id:string;day:string;kind:'no'|'prefer';note:string}[];assignments:DutyRow[];publications:Publication[];roles:Role[];memberStatuses:Lookup[];monthStatuses:Lookup[];constraintTypes:Lookup[]};
+type Check = (value: unknown) => boolean;
+const text: Check = value => typeof value === 'string';
+const number: Check = value => typeof value === 'number' && Number.isFinite(value);
+const boolean: Check = value => typeof value === 'boolean';
+const nullableText: Check = value => value === null || text(value);
+const revision: Check = value => value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
+const oneOf = (...values: string[]): Check => value => typeof value === 'string' && values.includes(value);
+const record = (shape: Record<string, Check>): Check => value => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.entries(shape).every(([key, check]) => check((value as Record<string, unknown>)[key]));
+const rows = (shape: Record<string, Check>): Check => value => Array.isArray(value) && value.every(record(shape));
+const lookup = {code: text, label: text};
+const snapshotChecks = {
+ revision,
+ members: rows({id:text,email:text,name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
+ months: rows({month:text,deadline:text,status:oneOf('draft','published'),generated:boolean,current_publication_id:nullableText,publication_sequence:number}),
+ constraints: rows({member_id:text,day:text,kind:oneOf('no','prefer'),note:text}),
+ assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,manager_override:boolean,title:text,extra_points:number,points:number}),
+ publications: rows({id:text,month:text,version:number,published_at:text,published_by:text}),
+ roles: rows({...lookup,can_manage:boolean}),
+ memberStatuses: rows(lookup), monthStatuses: rows(lookup), constraintTypes: rows(lookup),
+ swapRequests: value => value === undefined || rows({id:text,month:text,source_publication_id:nullableText,requester_id:text,other_id:text,from_day:text,from_end_day:text,to_day:text,to_end_day:text,explanation:text,status:oneOf('awaiting_engineer','awaiting_admin','approved','declined','rejected','cancelled','invalidated'),accepted_by:nullableText,accepted_at:nullableText,created_at:text,resolved_at:nullableText,resolved_by:nullableText,result_publication_id:nullableText,override_reason:text})(value),
+} satisfies Record<keyof Snapshot, Check>;
+// Validate the JSON boundary without changing it, logging it, or involving storage.
+export function readSnapshot(value: unknown): Snapshot {
+ if (!record(snapshotChecks)(value)) throw Error('Invalid team data. Please refresh and try again.');
+ return value as Snapshot;
+}
 export function canManage(raw:Snapshot,userId:string){const me=raw.members.find(m=>m.id===userId);return !!raw.roles.find(r=>r.code===me?.role)?.can_manage}
 function rowOwner(row:DutyRow){return (dayOf(row.day)===6?addDays(row.day,-1):row.day).slice(0,7)}
 function applyRows(state:State,rows:DutyRow[]){

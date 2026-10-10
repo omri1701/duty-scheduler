@@ -32,6 +32,14 @@ request time with `Cache-Control: no-store`, including configuration errors.
 No `NEXT_PUBLIC_` prefix, service-role key or Google secret is needed. The browser
 retains Supabase PKCE, local session persistence and direct RLS-protected RPC calls.
 
+`useTeamWorkspace` keeps its public API while `lib/supabase/session.ts` observes
+and verifies auth separately from `lib/supabase/workspace.ts` data operations.
+Workspace requests and save locks belong to one identity; stale completions cannot
+restore data after sign-out. Refreshes during a save share its final reload, and
+mutations use the last accepted snapshot revision through the typed checked RPC
+surface in `lib/supabase/rpc.ts`. Snapshot validation/conversion remains pure;
+synthetic Node regressions cover session, refresh/save and failed-recovery races.
+
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 For a different production port, use `pnpm exec next start --port 3000`.
