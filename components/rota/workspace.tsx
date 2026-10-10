@@ -1,115 +1,429 @@
 'use client';
-import {useEffect,useMemo,useRef,useState} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {CalendarDays,ChevronLeft,ChevronRight,Check,Plus,Sparkles,Users,SlidersHorizontal,Info,Download,CheckCircle2,Globe,ArrowRight} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Tabs,TabsList,TabsTrigger,TabsContent} from '@/components/ui/tabs';
-import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
-import {DutyEditor} from '@/components/rota/duty-editor';
-import {ProfileDialog} from '@/components/rota/profile-dialog';
-import {PublicationHistory} from '@/components/rota/publication-history';
-import {SwapRequests} from '@/components/rota/swap-requests';
-import {publishedSwapDuties,eligibleSwapTarget} from '@/lib/supabase/swaps';
-import {TeamList} from '@/components/rota/team-list';
-import {AvailabilityEditor} from '@/components/rota/availability-editor';
-import type {TeamWorkspace} from '@/hooks/use-team-workspace';
-import {todayIsrael,fromSnapshot} from '@/lib/supabase/snapshot';
-import {useHoldDrag} from '@/hooks/use-hold-drag';
-import {Checkbox} from '@/components/ui/checkbox';
-import {Toaster,toast} from 'sonner';
-import {addDays,dayOf,monthNext,dates,blocks,unavailable,overlap,totals,allKnownBlocks,generate,swapDraft,normalizeWeekends,ownerMonth,ink,type State,type Duty} from '@/lib/rota/engine';
-function Picker({value,onChange,options,label}:{value:string;onChange:(v:string)=>void;options:{value:string;label:string}[];label:string}){return <Select value={value} onValueChange={onChange}><SelectTrigger aria-label={label} className="picker"><SelectValue/></SelectTrigger><SelectContent>{options.map(o=><SelectItem value={o.value} key={o.value}>{o.label}</SelectItem>)}</SelectContent></Select>}
-export function RotaWorkspace({remote}:{remote:TeamWorkspace}){
- const isManager=remote.isAdmin,meId=remote.user!.id,ready=true;
- const [month,setMonth]=useState(monthNext(todayIsrael().slice(0,7))),[lang,setLang]=useState<'en'|'he'>('en'),[tab,setTab]=useState('schedule');
- const state=remote.state!;
- const [profileOpen,setProfileOpen]=useState(false),[historyOpen,setHistoryOpen]=useState(false);
- const [requestSelection,setRequestSelection]=useState<{from:string;to:string}|null>(null),[keyboardSource,setKeyboardSource]=useState<string|null>(null);
- const publishedDuties=publishedSwapDuties(remote.snapshot!,month,todayIsrael());
- const ownPublishedDays=new Set(publishedDuties.filter(d=>d.primary_id===meId).map(d=>d.day));
- const [selected,setSelected]=useState<Duty|null>(null),[specialOpen,setSpecialOpen]=useState(false),[help,setHelp]=useState(false),[settings,setSettings]=useState(false),[publishOpen,setPublishOpen]=useState(false);
- const [person,setPerson]=useState(meId),[view,setView]=useState('team');
- const [specialTitle,setSpecialTitle]=useState(''),[specialStart,setSpecialStart]=useState(month+'-01'),[specialEnd,setSpecialEnd]=useState(month+'-02'),[extra,setExtra]=useState('1'),[busy,setBusy]=useState(false);
- const [swap,setSwap]=useState<{from:string;to:string}|null>(null),[swapOverride,setSwapOverride]=useState(false),[dragFrom,setDragFrom]=useState<string|null>(null),[dragOver,setDragOver]=useState<string|null>(null);
- const dragSource=useRef<string|null>(null);
-const t=(en:string,he:string)=>lang==='en'?en:he;
- useEffect(()=>{document.documentElement.lang=lang;document.documentElement.dir=lang==='he'?'rtl':'ltr'},[lang]);
- const bs=useMemo(()=>blocks(month,state.specials,state.splitWeekends),[month,state.specials,state.splitWeekends]);
- const md=state.months[month]??{deadline:addDays(month+'-01',-7),status:'draft' as const};
- const publication=remote.snapshot!.months.find(m=>m.month===month)?.current_publication_id;
- const requesting=!isManager||view==='published';
- const calendarState=isManager&&view==='published'&&publication?fromSnapshot(remote.snapshot!,meId,publication):state;
- const calendarBlocks=calendarState===state?bs:blocks(month,calendarState.specials,calendarState.splitWeekends);
- const publishedDuty=(day:string)=>publishedDuties.find(d=>d.day===day);
- const requestTarget=(from:string,to:string)=>ownPublishedDays.has(from)&&eligibleSwapTarget(publishedDuty(from),publishedDuty(to));
- const constraintsClosed=isManager?md.status==='published':!!remote&&(remote.snapshot?.months.find(m=>m.month===month)?.status==='published'||md.deadline<todayIsrael());
- const owned=bs.filter(b=>ownerMonth(b)===month),active=state.team.filter(p=>p.active),monthTotals=totals(state,owned),historyTotals=totals(state,allKnownBlocks(state));
- const assigned=bs.filter(b=>state.assignments[b.id]?.primary).length;
- const conflicts=bs.filter(b=>{const a=state.assignments[b.id];return a&&[a.primary,a.secondary].some(id=>id&&unavailable(b,id,state.constraints).length)&&!a.override});
- const gaps=active.flatMap(p=>{const mine=owned.filter(b=>state.assignments[b.id]?.primary===p.id||state.assignments[b.id]?.secondary===p.id);return mine.filter((b,i)=>i>0&&b.start===mine[i-1].end&&(!b.weekendId||b.weekendId!==mine[i-1].weekendId)&&(b.start.slice(0,7)===month||mine[i-1].start.slice(0,7)===month)).map(b=>({p,b}));});
- const locale=lang==='en'?'en-GB':'he-IL';
- const fmt=(d:string,opts:Intl.DateTimeFormatOptions={day:'numeric',month:'short'})=>new Date(d+'T12:00:00Z').toLocaleDateString(locale,{...opts,timeZone:'Asia/Jerusalem'});
- const monthLabel=fmt(month+'-15',{month:'long',year:'numeric'});
- const personName=(id?:string)=>state.team.find(p=>p.id===id)?.name??t('Unassigned','ללא שיבוץ');
- const nickname=(id?:string)=>personName(id).split(' ')[0];
- const dateCells=dates(addDays(month+'-01',-dayOf(month+'-01')),addDays(monthNext(month)+'-01',(7-dayOf(monthNext(month)+'-01'))%7));
- async function update(fn:(s:State)=>State,draft=true){
-  if(!isManager)return false;
-  const s=state,n=normalizeWeekends(fn(s));
-  if(draft){const months={...n.months,[month]:{...(n.months[month]??md),status:'draft' as const}};for(const b of [...allKnownBlocks(s),...allKnownBlocks(n)]){const changed=JSON.stringify(s.assignments[b.id])!==JSON.stringify(n.assignments[b.id])||JSON.stringify(s.specials)!==JSON.stringify(n.specials);if(changed)for(const m of Object.keys(months))if(overlap(b,{start:m+'-01',end:monthNext(m)+'-01'}))months[m]={...months[m],status:'draft'};}n.months=months}
-  try{const published=Object.keys(n.months).find(m=>n.months[m].status==='published'&&s.months[m]?.status!=='published');await remote.save(n,published);return true}catch(e){toast.error((e as Error).message);return false}
- }
- function changeMonth(n:number){const m=monthNext(month,n);setMonth(m);setSpecialStart(m+'-01');setSpecialEnd(m+'-02');setKeyboardSource(null);setRequestSelection(null);}
- function runGenerate(){if(!isManager)return;setBusy(true);setTimeout(async()=>{try{const r=generate(state,month,crypto.getRandomValues(new Uint32Array(1))[0]);const saved=await update(s=>({...s,assignments:r.assignments,months:{...s.months,[month]:{...md,generated:true,status:'draft'}}}));if(saved)toast.success(r.warnings.length?t(`${r.warnings.length} duties need your decision.`,'יש תורנויות שממתינות להחלטה שלך.'):t('Draft ready. Review, adjust, then publish.','הטיוטה מוכנה לבדיקה, עריכה ופרסום.'))}finally{setBusy(false)}},40)}
- function openDuty(b:Duty){if(isManager)setSelected(b)}
- async function addSpecial(){if(!/^\d{4}-\d{2}-\d{2}$/.test(specialStart)||!/^\d{4}-\d{2}-\d{2}$/.test(specialEnd)||specialEnd<specialStart||(Date.parse(specialEnd)-Date.parse(specialStart))/86400000>=14){toast.error(t('Choose a valid block of 1–14 days.','יש לבחור מקטע תקין של 1–14 ימים.'));return}const end=addDays(specialEnd,1),x={id:crypto.randomUUID(),title:specialTitle.trim()||t('Special duty','תורנות מיוחדת'),start:specialStart,end,extra:Number(extra)};
- if(!/^\d{4}-\d{2}-\d{2}$/.test(x.start)||specialEnd<x.start||x.start.slice(0,7)!==month||dates(x.start,end).length>14||!Number.isFinite(x.extra)||x.extra<0||x.extra>20){toast.error(t('Choose up to 14 days starting this month, and 0–20 extra points.','יש לבחור עד 14 ימים שמתחילים בחודש זה ו־0–20 נקודות נוספות.'));return}
- if(state.specials.some(s=>overlap(s,x))){toast.error(t('This overlaps another special block. Remove it first.','קיימת חפיפה עם מקטע מיוחד אחר.'));return}
- const touched=allKnownBlocks(state).filter(b=>overlap(b,x));if(touched.some(b=>b.start.slice(0,7)!==month&&state.assignments[b.id]?.primary)){toast.error(t('This overlaps an assigned duty from another month. Edit that month first.','יש חפיפה לשיבוץ מחודש אחר. יש לערוך אותו קודם.'));return}
- const saved=await update(s=>{const assignments={...s.assignments};touched.forEach(b=>delete assignments[b.id]);const months={...s.months};for(const m of Object.keys(months))if(m+'-01'<end&&monthNext(m)+'-01'>x.start)months[m]={...months[m],status:'draft'};return {...s,assignments,months,specials:[...s.specials,x]}});if(!saved)return;setSpecialOpen(false);toast.success(t('Special block added. Generate to fill its assignment.','המקטע נוסף. ניתן ליצור שיבוץ חדש.'))}
- async function saveConstraints(days:string[],kind:'no'|'prefer'|'clear',note:string){try{await remote.constraints(isManager?person:meId,days,kind,note);toast.success(t('Constraints saved.','האילוצים נשמרו.'));return true}catch(e){toast.error((e as Error).message);return false}}
- function startSwap(from:string,to:string){if(from===to)return;setSwapOverride(false);setSwap({from,to});}
- function finishCalendarSwap(from:string,to:string){if(requesting){if(requestTarget(from,to)){setRequestSelection({from,to});setKeyboardSource(null)}}else startSwap(from,to)}
- function selectCalendarDuty(b:Duty){
-  if(!requesting){openDuty(b);return}
-  if(keyboardSource&&requestTarget(keyboardSource,b.id)){finishCalendarSwap(keyboardSource,b.id);return}
-  if(ownPublishedDays.has(b.id))setKeyboardSource(keyboardSource===b.id?null:b.id);
- }
- const {bindContainer:dragContainer,ignoreClick:ignoreDragClick}=useHoldDrag({enabled:!remote.saving&&tab==='schedule'&&(requesting?!!publication:md.status==='draft'),onStart:key=>{const b=bs.find(b=>b.id===key);if(requesting?!ownPublishedDays.has(key):!b||ownerMonth(b)!==month||!state.assignments[key]?.primary){dragSource.current=null;return}setKeyboardSource(null);dragSource.current=key;setDragFrom(key);},onMove:key=>{if(dragSource.current)setDragOver(!requesting||requestTarget(dragSource.current,key)?key:null)},onEnd:key=>{const source=dragSource.current;dragSource.current=null;setDragFrom(null);setDragOver(null);if(source&&key)finishCalendarSwap(source,key)},onCancel:()=>{dragSource.current=null;setDragFrom(null);setDragOver(null)}});
- const swapPreview=swap?swapDraft(state,month,swap.from,swap.to,swapOverride):null;
- const swapReason=(reason:string)=>({published:t('Reopen the draft first.','יש לפתוח טיוטה תחילה.'),'same-duty':t('Choose another duty.','יש לבחור תורנות אחרת.'),'other-month':t('Swap within the starting month.','ניתן להחליף בתוך חודש ההתחלה.'),unassigned:t('Both duties need an engineer.','יש לשבץ מהנדס בשתי התורנויות.'),locked:t('Unlock these duties before swapping.','יש לבטל נעילה לפני החלפה.'),'same-person':t('These duties already have the same engineer.','שתי התורנויות משובצות לאותו מהנדס.'),duplicate:t('A primary engineer cannot also be the emergency cover.','אותו מהנדס לא יכול למלא את שני התפקידים.'),inactive:t('Choose active engineers.','יש לבחור מהנדסים פעילים.'),'weekend-limit':t('This would give an engineer a second weekend. Edit an assignment manually if an exception is needed.','ההחלפה תיצור סוף שבוע שני למהנדס. במקרה חריג יש לערוך שיבוץ ידנית.'),availability:t('This swap conflicts with availability.','ההחלפה מתנגשת עם אילוצים.')}[reason]??reason);
- async function confirmSwap(){if(!swap)return;const result=swapDraft(state,month,swap.from,swap.to,swapOverride);if(!result.ok){toast.error(swapReason(result.reason));return}if(!await update(s=>({...s,assignments:result.assignments})))return;setSwap(null);toast.success(t('Duties swapped.','התורנויות הוחלפו.'))}
- function exportBackup(){const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.href=url;a.download='duty-team-backup.json';a.click();URL.revokeObjectURL(url)}
- useEffect(()=>{const context=(document as unknown as {modelContext?:{registerTool:(tool:unknown,options:unknown)=>void}}).modelContext;if(!context?.registerTool)return;const lifecycle=new AbortController();
- try{context.registerTool({name:'read_duty_month',description:'Read the selected month and assignments visible to the signed-in user without changing them.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:(input:unknown)=>{if(!input||typeof input!=='object'||Object.keys(input).length)throw Error('Expected empty object');return{month,status:md.status,duties:bs.map(b=>({...b,assignment:state.assignments[b.id]??null}))}}},{signal:lifecycle.signal})}catch{}return()=>lifecycle.abort()},[state,month,bs,md.status]);
- return <div className="app-shell" dir={lang==='he'?'rtl':'ltr'}><Toaster position="bottom-center" richColors/>
-  <header className="topbar"><Link className="brand" href="/" aria-label="Duty home"><span className="brand-symbol">d<span>·</span></span> duty<span className="brand-divider"/><span className="brand-context">{t('Engineering','הנדסה')}</span></Link><div className="top-actions"><span className="demo-badge">{t('TEAM WORKSPACE','סביבת הצוות')}</span><Button variant="ghost" size="icon" onClick={()=>setLang(lang==='en'?'he':'en')} aria-label={t('Switch to Hebrew','Switch to English')}><Globe/></Button><button className="avatar admin-avatar" onClick={()=>setProfileOpen(true)} aria-label={t('My profile','הפרופיל שלי')}>{remote?.me?.name.split(' ').map(n=>n[0]).join('').slice(0,2)||'AM'}</button>{remote&&<Button variant="ghost" size="sm" onClick={()=>remote.signOut()}>{t('Sign out','יציאה')}</Button>}</div></header>
-  <main className="main-wrap"><div className="workspace-status"><span>{remote.saving?t('Saving…','שומר…'):t('Shared team schedule','לוח תורנויות משותף')}</span><Button variant="ghost" size="sm" onClick={()=>setHelp(true)}><Info/>{t('Help','עזרה')}</Button></div>
-  {remote?.error&&<div className="warning-note" role="alert">{remote.error}<Button variant="ghost" onClick={()=>remote.refresh().then(()=>remote.clearError()).catch(e=>toast.error(e.message))}>{t('Refresh','רענון')}</Button></div>}
-  <fieldset disabled={!!remote?.saving} className="workspace-controls"><Tabs value={tab} onValueChange={setTab} className="main-tabs"><div className="nav-row"><TabsList variant="line"><TabsTrigger value="schedule"><CalendarDays/>{t('Schedule','לוח תורנויות')}</TabsTrigger><TabsTrigger value="availability"><SlidersHorizontal/>{t('Availability','אילוצים')}</TabsTrigger><TabsTrigger value="team"><Users/>{t('Team & fairness','צוות והוגנות')}</TabsTrigger></TabsList><span className="time-zone">09:00 → 09:00 · {t('Israel time','שעון ישראל')}</span></div>
-  <div className="month-toolbar"><div className="month-title"><Button variant="outline" size="icon" onClick={()=>changeMonth(-1)} aria-label={t('Previous month','חודש קודם')}><ChevronLeft/></Button><h2>{monthLabel}</h2><Button variant="outline" size="icon" onClick={()=>changeMonth(1)} aria-label={t('Next month','חודש הבא')}><ChevronRight/></Button><span className={'status-badge '+md.status}>{md.status==='published'?t('Published','פורסם'):t('Draft','טיוטה')}</span></div><div className="toolbar-actions">{isManager&&<><Button variant="outline" onClick={()=>setHistoryOpen(true)}>{t('Versions','גרסאות')}</Button><Button variant="outline" aria-label={t('Change month deadline','שינוי מועד אחרון לחודש')} onClick={()=>setSettings(true)}><SlidersHorizontal/>{t('Change month deadline','שינוי מועד אחרון לחודש')}</Button>{md.status==='published'?<Button onClick={()=>update(s=>s)}>{t('Reopen draft','פתיחת טיוטה')}</Button>:<><Button variant="outline" disabled={busy||!ready||!active.length} onClick={runGenerate}><Sparkles className={busy?'spin':''}/>{busy?t('Generating…','משבץ…'):md.generated?t('Regenerate','שיבוץ מחדש'):t('Generate month','יצירת שיבוץ')}</Button><Button disabled={assigned!==bs.length||!!conflicts.length||!bs.length} onClick={()=>setPublishOpen(true)}><Check/>{t('Publish','פרסום')}</Button></>}</>}</div></div>
-  <TabsContent value="schedule" forceMount style={{display:tab==='schedule'?undefined:'none'}}><div className="workspace-grid"><section className="calendar-panel"><div className="calendar-top"><div className="segmented"><button className={view==='team'?'selected':''} onClick={()=>{setView('team');setKeyboardSource(null)}}>{t('Whole team','כל הצוות')}</button><button className={view==='me'?'selected':''} onClick={()=>{setView('me');setKeyboardSource(null)}}>{t('My duties','התורנויות שלי')}</button>{isManager&&publication&&<button className={view==='published'?'selected':''} onClick={()=>{setView('published');setKeyboardSource(null)}}>{t('Published','\u05e4\u05d5\u05e8\u05e1\u05dd')}</button>}</div><Button style={{display:isManager&&!requesting?undefined:'none'}} variant="ghost" onClick={()=>{setSpecialOpen(true);setSpecialTitle('')}}><Plus/>{t('Special block','מקטע מיוחד')}</Button></div>
-   {!isManager&&md.status!=='published'&&<div className="inline-note">{t('The manager has not published this month yet.','המנהל עדיין לא פרסם את החודש הזה.')}</div>}
-   <div className="calendar-weekdays">{(lang==='en'?['Sun','Mon','Tue','Wed','Thu','Fri','Sat']:['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳']).map((d,i)=><span className={i>4?'weekend-label':''} key={d}>{d}</span>)}</div>
-   <div ref={dragContainer} className="calendar-grid gesture-grid">{dateCells.map(d=>{const b=calendarBlocks.find(b=>b.start<=d&&d<b.end),a=b?calendarState.assignments[b.id]:undefined,p=state.team.find(p=>p.id===a?.primary),inside=d.startsWith(month),mine=a?.primary===meId||a?.secondary===meId,combined=b?.kind==='weekend'&&b.end===addDays(b.start,2);if(combined&&d!==b.start)return null;return <button disabled={!b||(requesting&&!publishedDuty(b.id))} key={d} data-gesture-key={b?.id} onClick={()=>{if(!ignoreDragClick()&&b)selectCalendarDuty(b)}} onKeyDown={e=>{if(e.key==='Escape'){setKeyboardSource(null);setDragFrom(null);setDragOver(null)}}} aria-pressed={requesting&&keyboardSource===b?.id} aria-describedby={requesting?'published-swap-help':undefined} style={combined?{gridColumn:'span 2'}:undefined} className={['day-cell',!inside?'outside':'',b?.weekendId?'weekend':'',combined?'combined-weekend':'',b?.kind==='special'?'special':'',view==='me'&&!mine?'faded':'',dragFrom===b?.id||keyboardSource===b?.id?'drag-source':'',(dragOver===b?.id&&dragFrom!==b?.id)||(keyboardSource&&b&&requestTarget(keyboardSource,b.id))?'drag-target':'',(requesting?b&&ownPublishedDays.has(b.id):md.status==='draft'&&a?.primary)?'can-swap':''].join(' ')} aria-label={`${b&&ownPublishedDays.has(b.id)&&requesting?t('Request swap: ','בקשת החלפה: '):''}${fmt(d)}${combined?' – '+fmt(b!.end):''} ${p?.name??t('Unassigned','ללא שיבוץ')}`}><div className="date-line"><span className="day-number">{Number(d.slice(-2))}</span>{b?.weekendId&&<span className="weekend-word">{t('WEEKEND','סופ״ש')}</span>}{b?.kind==='special'&&<span className="tiny-badge">+{b.points-(b.weekendId?0.5:1)}</span>}</div>{b&&<><div className={'assignment-chip '+(!p?'empty-assignment':'')} style={p?{borderInlineStartColor:p.color,background:p.color,color:ink(p.color)}:undefined}>{p?<span>{nickname(p.id)}{p.id===meId&&<small> {t('(you)','(אני)')}</small>}</span>:<span>{t('Unassigned','ללא שיבוץ')}</span>}</div>{b.title&&<div className="special-title">{b.title}</div>}{a?.secondary&&<div className="secondary-name">+ {nickname(a.secondary)}</div>}{ownPublishedDays.has(b.id)&&requesting&&<small className="request-swap-hint">{t('Request swap','בקשת החלפה')}</small>}</>}</button>})}</div>
-   <div className="calendar-footer"><span><span className="legend-box"/>{t('Weekend = 1 point · Split = ½ each','סופ״ש = נקודה · חצי לכל יום בפיצול')}</span><span><span className="legend-box special-legend"/>{t('Special block','מקטע מיוחד')}</span><span id="published-swap-help" aria-live="polite">{requesting?(keyboardSource?t('Choose another engineer’s duty · Escape cancels','בחרו תורנות של מהנדס אחר · Escape לביטול'):t('Drag your duty · On mobile, hold first · Or select two dates','גררו תורנות שלכם · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים')):t('Tap to edit · Hold & drag to swap','לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}</span></div>
-   {isManager&&assigned<bs.length&&<div className="inline-note"><Info size={17}/>{md.generated?t('Uncovered dates need a decision. Open a date to see candidates and override a constraint if necessary.','תאריכים ללא כיסוי דורשים החלטה. פתחו יום לצפייה במועמדים וחריגה מאילוץ במידת הצורך.'):t('Ready when you are. Generate a draft using the team’s availability.','כשתהיו מוכנים, צרו טיוטה לפי אילוצי הצוות.')}</div>}
-   {!!conflicts.length&&<div className="warning-note">{t(`${conflicts.length} assignments conflict with availability. Review them before publishing.`,'קיימות התנגשויות עם אילוצים. יש לבדוק אותן לפני פרסום.')}</div>}
-   {!!gaps.length&&<div className="inline-note">{t('Spacing to review:','מרווחים לבדיקה:')} {gaps.slice(0,3).map(({p,b})=>`${p.name} · ${fmt(b.start)}`).join(' / ')} — {t('consecutive duties are allowed when needed.','תורנויות רצופות מותרות בעת הצורך.')}</div>}
-  </section><aside className="side-panel"><div className="coverage-card"><div className="eyebrow">{t('THIS MONTH','החודש')}</div><div className="coverage-number">{assigned}<span>/ {bs.length}</span></div><div>{t('duties covered','תורנויות משובצות')}</div><div className="coverage-track"><span style={{width:`${assigned/bs.length*100}%`}}/></div><div className="coverage-bottom"><span>{active.length} {t('engineers','מהנדסים')}</span><span>{owned.reduce((v,b)=>v+b.points,0)} {t('base + special pts','נקודות בסיס ומיוחדות')}</span></div></div>
-  <div className="fairness-card"><div className="panel-title"><h3>{t('The balance','האיזון')}</h3><span>{t('POINTS','נקודות')}</span></div><div className="balance-list">{active.map(p=><div className="balance-row" key={p.id}><span className="avatar small" style={{background:p.color,color:ink(p.color)}}>{p.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</span><div className="balance-person"><span>{p.name}{p.id===meId&&<small> · {t('you','אני')}</small>}</span><div className="balance-track"><span style={{background:p.color,width:`${Math.max(0,monthTotals[p.id])/Math.max(4,...Object.values(monthTotals))*100}%`}}/></div></div><strong>{monthTotals[p.id]||0}</strong></div>)}</div><Button variant="ghost" className="full-width" onClick={()=>setTab('team')}>{t('Manage team & order','ניהול הצוות והסדר')}<ArrowRight/></Button></div>
-  <div className="deadline-card"><CalendarDays size={18}/><div><strong>{t('Constraints due','מועד אחרון לאילוצים')}</strong><p>{fmt(md.deadline)} · {isManager?t('chosen by you','לבחירתך'):t('set by your manager','נקבע על ידי המנהל')}</p></div><button style={{display:isManager?undefined:'none'}} onClick={()=>setSettings(true)}>{t('Edit','עריכה')}</button></div></aside></div></TabsContent>
-  <TabsContent value="availability"><section className="availability-panel"><div className="section-heading"><h3>{t('Constraints','אילוצים')}</h3><Picker value={person} onChange={v=>{if(isManager)setPerson(v)}} label={t('Engineer','מהנדס')} options={(isManager?active:active.filter(p=>p.id===meId)).map(p=>({value:p.id,label:p.name+(p.id===meId?t(' (you)',' (אני)'):'' )}))}/></div><AvailabilityEditor state={state} month={month} person={person} cells={dateCells} lang={lang} disabled={constraintsClosed} onSave={saveConstraints}/>{constraintsClosed&&<div className="inline-note">{isManager?t('Reopen the draft to edit constraints.','יש לפתוח טיוטה לעריכת אילוצים.'):t('Constraints are closed for this month.','הזנת האילוצים לחודש זה נסגרה.')}</div>}</section></TabsContent>
-  <TabsContent value="team"><section className="team-panel"><div className="section-heading"><div><h3>{t('Team order','סדר הצוות')}</h3><p>{t('Most senior → newest','הוותיק ביותר ← החדש ביותר')}</p></div><span className="pill">{active.length} {t('active engineers','מהנדסים פעילים')}</span></div><TeamList roles={remote.snapshot?.roles??[]} onRole={(id,role)=>remote.setRole(id,role).catch(e=>toast.error(e.message))} selfId={meId} readOnly={!isManager} team={state.team} monthTotals={monthTotals} historyTotals={historyTotals} lang={lang} onReorder={team=>update(s=>({...s,team}),false)} onActive={(id,active)=>{update(s=>({...s,team:s.team.map(p=>p.id===id?{...p,active}:p)}),false);toast(t('Existing assignments are retained for review.','שיבוצים קיימים נשמרים לבדיקה.'))}}/>{remote&&isManager&&<div className="membership-requests"><h3>{t('Join requests','בקשות הצטרפות')}</h3>{remote.snapshot?.members.filter(m=>m.status==='pending').length?remote.snapshot.members.filter(m=>m.status==='pending').map(m=><div className="membership-request" key={m.id}><div><strong>{m.name}</strong><small>{m.email}</small></div><Button onClick={()=>remote.review(m.id,'approved').then(()=>toast.success(t('Member approved','החבר אושר'))).catch(e=>toast.error(e.message))}>{t('Approve','אישור')}</Button><Button variant="outline" onClick={()=>remote.review(m.id,'rejected').catch(e=>toast.error(e.message))}>{t('Decline','דחייה')}</Button></div>):<p className="muted-copy">{t('No pending requests. Teammates appear here after signing in.','אין בקשות ממתינות. חברי צוות יופיעו כאן לאחר התחברות.')}</p>}</div>}</section></TabsContent>
-  </Tabs><SwapRequests key={month} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/></fieldset><footer className="app-footer"><span>Duty</span><button onClick={exportBackup}><Download size={14}/>{t('Export backup','ייצוא גיבוי')}</button></footer></main>
- <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang}/>
- {isManager&&<PublicationHistory key={month} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
- {selected&&<DutyEditor key={selected.id} state={state} duty={selected} month={month} lang={lang} onClose={()=>setSelected(null)} onMonth={m=>{setMonth(m);setSelected(null)}} onSave={async fn=>{if(!await update(fn))return;setSelected(null);toast.success(t('Assignment saved to draft.','השיבוץ נשמר בטיוטה.'))}} onRemoveSpecial={async()=>{const b=selected;if(!await update(s=>{const specials=s.specials.flatMap(x=>x.id!==b.specialId?[x]:[{...x,end:b.start},{...x,id:crypto.randomUUID(),start:addDays(b.start,1)}].filter(x=>x.start<x.end));const splitWeekends=b.weekendId?[...new Set([...(s.splitWeekends??[]),b.weekendId])]:s.splitWeekends;return{...s,specials,splitWeekends}}))return;setSelected(null)}}/>}
- <Dialog open={!!swap} onOpenChange={v=>!v&&setSwap(null)}><DialogContent dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Swap duties','החלפת תורנויות')}</DialogTitle><DialogDescription>{t('Primary engineers swap. Emergency cover stays on its dates.','המהנדסים הראשיים מתחלפים. כיסוי החירום נשאר בתאריכים שלו.')}</DialogDescription></DialogHeader>{swap&&<><div className="swap-review">{[swap.from,swap.to].map((id,i)=>{const b=bs.find(b=>b.id===id),other=i===0?swap.to:swap.from;return <div key={id}><strong>{fmt(id)}{b&&b.end!==addDays(id,1)?` – ${fmt(addDays(b.end,-1))}`:''}</strong><span>{nickname(state.assignments[id]?.primary)} → <b>{nickname(state.assignments[other]?.primary)}</b></span><small>{b?.points} {t('points','נקודות')}</small></div>})}</div>{swapPreview&&!swapPreview.ok&&<div className="warning-note">{swapReason(swapPreview.reason)}</div>}{!!swapPreview?.conflicts?.length&&<div className="warning-note"><p>{swapPreview.conflicts.map(c=>`${personName(c.person)} · ${fmt(c.date)}${state.constraintNotes?.[c.person]?.[c.date]?' · '+state.constraintNotes[c.person][c.date]:''}`).join(' / ')}</p><label className="check-label"><Checkbox checked={swapOverride} onCheckedChange={v=>setSwapOverride(!!v)}/>{t('Override these constraints as manager','חריגה מאילוצים בהחלטת מנהל')}</label></div>}<Button disabled={!swapPreview?.ok} onClick={confirmSwap}>{t('Confirm swap','אישור החלפה')}</Button></>}</DialogContent></Dialog>
- <Dialog open={specialOpen} onOpenChange={setSpecialOpen}><DialogContent dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('A special duty block','מקטע תורנות מיוחד')}</DialogTitle><DialogDescription>{t('Each date is a separate duty. Choose the extra points per date.','כל יום הוא תורנות נפרדת. בחרו נקודות נוספות לכל יום.')}</DialogDescription></DialogHeader><label className="field-label">{t('Name','שם')}<input maxLength={60} value={specialTitle} onChange={e=>setSpecialTitle(e.target.value)} placeholder={t('e.g. Holiday coverage','למשל: כיסוי חג')}/></label><div className="form-pair"><label className="field-label">{t('First duty date','יום תורנות ראשון')}<input type="date" value={specialStart} min={month+'-01'} max={addDays(monthNext(month)+'-01',-1)} onChange={e=>{setSpecialStart(e.target.value);if(specialEnd<e.target.value)setSpecialEnd(e.target.value)}}/></label><label className="field-label">{t('Last duty date','יום תורנות אחרון')}<input type="date" min={specialStart} value={specialEnd} onChange={e=>setSpecialEnd(e.target.value)}/></label></div><label className="field-label">{t('Extra points per day','נקודות נוספות לכל יום')}<input type="number" min="0" max="20" step="0.5" value={extra} onChange={e=>setExtra(e.target.value)}/></label><div className="special-summary"><strong>{1+Number(extra)||1} {t('points per weekday','נקודות לכל יום חול')}</strong><span>{t('Weekday: 1 + extra. Friday / Saturday: ½ + extra each.','יום חול: 1 + תוספת. שישי / שבת: ½ + תוספת לכל יום.')}</span><span>{specialStart&&specialEnd&&`${fmt(specialStart)} 09:00 → ${fmt(addDays(specialEnd,1))} 09:00`}</span></div><p className="muted-copy">{t('Replaces duties in these dates, including weekends. Affected assignments are cleared for review.','מחליף את התורנויות בתאריכים אלה, כולל סופי שבוע. השיבוצים המושפעים ינוקו לבדיקה מחדש.')}</p><Button onClick={addSpecial}>{t('Add special block','הוספת מקטע מיוחד')}</Button></DialogContent></Dialog>
- <Dialog open={settings} onOpenChange={setSettings}><DialogContent dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Change month deadline','שינוי מועד אחרון לחודש')} · {monthLabel}</DialogTitle><DialogDescription>{t('Choose when the team should finish entering next month’s constraints.','בחרו עד מתי הצוות יזין את האילוצים לחודש הבא.')}</DialogDescription></DialogHeader><label className="field-label">{t('Constraints deadline','מועד אחרון לאילוצים')}<input type="date" value={md.deadline} onChange={e=>{if(e.target.value)update(s=>({...s,months:{...s.months,[month]:{...md,deadline:e.target.value}}}),false)}}/></label><p className="muted-copy">{t('Engineers can enter constraints until this date, in Israel time.','מהנדסים יוכלו להזין אילוצים עד לתאריך זה, לפי שעון ישראל.')}</p><Button onClick={()=>setSettings(false)}>{t('Done','סיום')}</Button></DialogContent></Dialog>
- <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Ready to publish?','מוכנים לפרסום?')}</DialogTitle><DialogDescription>{monthLabel} · {assigned} {t('duties covered','תורנויות משובצות')}</DialogDescription></DialogHeader><div className="publish-summary"><CheckCircle2 size={30}/><p>{t('The schedule will be visible to approved team members.','הלוח יהיה זמין לחברי צוות שאושרו.')}</p></div><p className="muted-copy">{t('No notifications are sent yet. You can reopen and adjust this schedule any time.','עדיין לא נשלחות התראות. ניתן לפתוח ולערוך מחדש בכל עת.')}</p><Button disabled={!!remote?.saving} onClick={async()=>{if(!await update(s=>({...s,months:{...s.months,[month]:{...md,status:'published',generated:true}}}),false))return;setPublishOpen(false);toast.success(t('Schedule published.','הלוח פורסם.'))}}>{t('Publish schedule','פרסום הלוח')}</Button></DialogContent></Dialog>
- <Dialog open={help} onOpenChange={setHelp}><DialogContent dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Your first working rota','לוח התורנויות הראשון שלך')}</DialogTitle><DialogDescription>{t('Shared scheduling for your team','ניהול תורנויות משותף לצוות')}</DialogDescription></DialogHeader><ol className="guide-list"><li>{t('Set availability and reorder the team from most senior to newest.','הזינו אילוצים וסדרו את הצוות מהוותיק ביותר לחדש ביותר.')}</li><li>{t('Add special blocks with dates and extra points, then generate the month.','הוסיפו מקטעים מיוחדים עם תאריכים ונקודות, ואז צרו שיבוץ לחודש.')}</li><li>{t('Tap to edit a duty or one weekend day. Hold and drag between duties to swap.','לחצו לעריכת תורנות או יום אחד בסוף השבוע. לחיצה ארוכה וגרירה מחליפה תורנויות.')}</li><li>{t('Each month starts fresh. Newer engineers are preferred for extra duties; all-month totals remain visible.','כל חודש מתחיל מחדש. מהנדסים חדשים יקבלו עדיפות לתורנויות נוספות; סיכומי כל החודשים מוצגים בצוות.')}</li></ol><div className="inline-note">{t('Your constraints are visible to you and the manager. Only approved members can see published schedules. Push notifications and calendar subscriptions are not connected yet. Swap requests require admin approval.','האילוצים גלויים רק לך ולמנהל. רק חברים שאושרו יכולים לראות לוחות שפורסמו. התראות ומנויי יומן עדיין לא מחוברים. בקשות החלפה דורשות אישור מנהל.')}</div><Button onClick={()=>setHelp(false)}>{t('Let’s plan','מתחילים לתכנן')}</Button></DialogContent></Dialog>
- </div>
+import { CalendarDays, Users, SlidersHorizontal, Info, Download, Globe } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { DutyEditor } from '@/components/rota/duty-editor';
+import { ProfileDialog } from '@/components/rota/profile-dialog';
+import { PublicationHistory } from '@/components/rota/publication-history';
+import { SwapRequests } from '@/components/rota/swap-requests';
+import { WorkspaceAvailability } from './workspace-availability';
+import { WorkspaceToolbar } from './workspace-toolbar';
+import { WorkspaceCalendar } from './workspace-calendar';
+import { WorkspaceSummary } from './workspace-summary';
+import { WorkspaceTeam } from './workspace-team';
+import {
+  DraftSwapDialog,
+  SpecialDutyDialog,
+  MonthSettingsDialog,
+  PublishDialog,
+  WorkspaceHelpDialog,
+} from './workspace-dialogs';
+import type { TeamWorkspace } from '@/hooks/use-team-workspace';
+import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
+import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
+import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
+import { Toaster, toast } from 'sonner';
+import { addDays, monthNext, blocks } from '@/lib/rota/engine';
+import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
+export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
+  const isManager = remote.isAdmin,
+    meId = remote.user!.id;
+  const [month, setMonth] = useState(monthNext(todayIsrael().slice(0, 7))),
+    [lang, setLang] = useState<'en' | 'he'>('en'),
+    [tab, setTab] = useState('schedule');
+  const state = remote.state!;
+  const [profileOpen, setProfileOpen] = useState(false),
+    [historyOpen, setHistoryOpen] = useState(false);
+  const [help, setHelp] = useState(false),
+    [settings, setSettings] = useState(false),
+    [publishOpen, setPublishOpen] = useState(false);
+  const [person, setPerson] = useState(meId),
+    [view, setView] = useState('team');
+  const t = (en: string, he: string) => (lang === 'en' ? en : he);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+  }, [lang]);
+  const duties = useMemo(
+    () => blocks(month, state.specials, state.splitWeekends),
+    [month, state.specials, state.splitWeekends],
+  );
+  const monthDetails = state.months[month] ?? {
+    deadline: addDays(month + '-01', -7),
+    status: 'draft' as const,
+  };
+  const publication = remote.snapshot!.months.find(
+    (m) => m.month === month,
+  )?.current_publication_id;
+  const requesting = !isManager || view === 'published';
+  const calendarState =
+    isManager && view === 'published' && publication
+      ? fromSnapshot(remote.snapshot!, meId, publication)
+      : state;
+  const calendarBlocks =
+    calendarState === state
+      ? duties
+      : blocks(month, calendarState.specials, calendarState.splitWeekends);
+  const constraintsClosed = isManager
+    ? monthDetails.status === 'published'
+    : !!remote &&
+      (remote.snapshot?.months.find((m) => m.month === month)?.status === 'published' ||
+        monthDetails.deadline < todayIsrael());
+  const metrics = workspaceMetrics(state, month, duties);
+  const locale = lang === 'en' ? 'en-GB' : 'he-IL';
+  const fmt = (d: string, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }) =>
+    new Date(d + 'T12:00:00Z').toLocaleDateString(locale, { ...opts, timeZone: 'Asia/Jerusalem' });
+  const monthLabel = fmt(month + '-15', { month: 'long', year: 'numeric' });
+  const personName = (id?: string) =>
+    state.team.find((p) => p.id === id)?.name ?? t('Unassigned', 'ללא שיבוץ');
+  const nickname = (id?: string) => personName(id).split(' ')[0];
+  const dateCells = calendarDates(month);
+  const draft = useWorkspaceDraft({ remote, state, month, monthDetails, t });
+  const { update, runGenerate, busy } = draft;
+  const { selected, setSelected } = draft.editor;
+  const interactions = useCalendarInteractions({
+    remote,
+    state,
+    month,
+    tab,
+    requesting,
+    publication,
+    duties,
+    monthDetails,
+    openDuty: draft.editor.openDuty,
+    startSwap: draft.swap.start,
+  });
+  const { requestSelection, setRequestSelection } = interactions;
+  function changeMonth(n: number) {
+    const m = monthNext(month, n);
+    setMonth(m);
+    draft.resetSpecialDates(m);
+    interactions.resetSelection();
+  }
+  async function saveConstraints(days: string[], kind: 'no' | 'prefer' | 'clear', note: string) {
+    try {
+      await remote.constraints(isManager ? person : meId, days, kind, note);
+      toast.success(t('Constraints saved.', 'האילוצים נשמרו.'));
+      return true;
+    } catch (e) {
+      toast.error((e as Error).message);
+      return false;
+    }
+  }
+  async function publish() {
+    if (
+      !(await update(
+        (s) => ({
+          ...s,
+          months: {
+            ...s.months,
+            [month]: { ...monthDetails, status: 'published', generated: true },
+          },
+        }),
+        false,
+      ))
+    )
+      return;
+    setPublishOpen(false);
+    toast.success(t('Schedule published.', 'הלוח פורסם.'));
+  }
+  function exportBackup() {
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }),
+    );
+    a.href = url;
+    a.download = 'duty-team-backup.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  useEffect(() => {
+    const context = (
+      document as unknown as {
+        modelContext?: { registerTool: (tool: unknown, options: unknown) => void };
+      }
+    ).modelContext;
+    if (!context?.registerTool) return;
+    const lifecycle = new AbortController();
+    try {
+      context.registerTool(
+        {
+          name: 'read_duty_month',
+          description:
+            'Read the selected month and assignments visible to the signed-in user without changing them.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          annotations: { readOnlyHint: true },
+          execute: (input: unknown) => {
+            if (!input || typeof input !== 'object' || Object.keys(input).length)
+              throw Error('Expected empty object');
+            return {
+              month,
+              status: monthDetails.status,
+              duties: duties.map((b) => ({ ...b, assignment: state.assignments[b.id] ?? null })),
+            };
+          },
+        },
+        { signal: lifecycle.signal },
+      );
+    } catch {}
+    return () => lifecycle.abort();
+  }, [state, month, duties, monthDetails.status]);
+  return (
+    <div className="app-shell" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <Toaster position="bottom-center" richColors />
+      <header className="topbar">
+        <Link className="brand" href="/" aria-label="Duty home">
+          <span className="brand-symbol">
+            d<span>·</span>
+          </span>{' '}
+          duty
+          <span className="brand-divider" />
+          <span className="brand-context">{t('Engineering', 'הנדסה')}</span>
+        </Link>
+        <div className="top-actions">
+          <span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLang(lang === 'en' ? 'he' : 'en')}
+            aria-label={t('Switch to Hebrew', 'Switch to English')}
+          >
+            <Globe />
+          </Button>
+          <button
+            className="avatar admin-avatar"
+            onClick={() => setProfileOpen(true)}
+            aria-label={t('My profile', 'הפרופיל שלי')}
+          >
+            {remote?.me?.name
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2) || 'AM'}
+          </button>
+          {remote && (
+            <Button variant="ghost" size="sm" onClick={() => remote.signOut()}>
+              {t('Sign out', 'יציאה')}
+            </Button>
+          )}
+        </div>
+      </header>
+      <main className="main-wrap">
+        <div className="workspace-status">
+          <span>
+            {remote.saving
+              ? t('Saving…', 'שומר…')
+              : t('Shared team schedule', 'לוח תורנויות משותף')}
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setHelp(true)}>
+            <Info />
+            {t('Help', 'עזרה')}
+          </Button>
+        </div>
+        {remote?.error && (
+          <div className="warning-note" role="alert">
+            {remote.error}
+            <Button
+              variant="ghost"
+              onClick={() =>
+                remote
+                  .refresh()
+                  .then(() => remote.clearError())
+                  .catch((e) => toast.error(e.message))
+              }
+            >
+              {t('Refresh', 'רענון')}
+            </Button>
+          </div>
+        )}
+        <fieldset disabled={!!remote?.saving} className="workspace-controls">
+          <Tabs value={tab} onValueChange={setTab} className="main-tabs">
+            <div className="nav-row">
+              <TabsList variant="line">
+                <TabsTrigger value="schedule">
+                  <CalendarDays />
+                  {t('Schedule', 'לוח תורנויות')}
+                </TabsTrigger>
+                <TabsTrigger value="availability">
+                  <SlidersHorizontal />
+                  {t('Availability', 'אילוצים')}
+                </TabsTrigger>
+                <TabsTrigger value="team">
+                  <Users />
+                  {t('Team & fairness', 'צוות והוגנות')}
+                </TabsTrigger>
+              </TabsList>
+              <span className="time-zone">09:00 → 09:00 · {t('Israel time', 'שעון ישראל')}</span>
+            </div>
+            <WorkspaceToolbar
+              monthLabel={monthLabel}
+              monthDetails={monthDetails}
+              isManager={isManager}
+              busy={busy}
+              metrics={metrics}
+              blockCount={duties.length}
+              t={t}
+              changeMonth={changeMonth}
+              runGenerate={runGenerate}
+              onHistory={() => setHistoryOpen(true)}
+              onSettings={() => setSettings(true)}
+              onReopen={() => update((s) => s)}
+              onPublish={() => setPublishOpen(true)}
+            />
+            <TabsContent
+              value="schedule"
+              forceMount
+              style={{ display: tab === 'schedule' ? undefined : 'none' }}
+            >
+              <div className="workspace-grid">
+                <WorkspaceCalendar
+                  state={state}
+                  calendarState={calendarState}
+                  calendarBlocks={calendarBlocks}
+                  dateCells={dateCells}
+                  month={month}
+                  monthDetails={monthDetails}
+                  lang={lang}
+                  t={t}
+                  fmt={fmt}
+                  nickname={nickname}
+                  meId={meId}
+                  isManager={isManager}
+                  requesting={requesting}
+                  publication={publication}
+                  view={view}
+                  setView={setView}
+                  onSpecial={() => {
+                    draft.special.setOpen(true);
+                    draft.special.setTitle('');
+                  }}
+                  metrics={metrics}
+                  interactions={interactions}
+                  blockCount={duties.length}
+                />
+                <WorkspaceSummary
+                  metrics={metrics}
+                  blockCount={duties.length}
+                  monthDetails={monthDetails}
+                  meId={meId}
+                  isManager={isManager}
+                  t={t}
+                  fmt={fmt}
+                  onTeam={() => setTab('team')}
+                  onSettings={() => setSettings(true)}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="availability">
+              <WorkspaceAvailability
+                state={state}
+                month={month}
+                person={person}
+                setPerson={setPerson}
+                dateCells={dateCells}
+                lang={lang}
+                isManager={isManager}
+                meId={meId}
+                constraintsClosed={constraintsClosed}
+                t={t}
+                saveConstraints={saveConstraints}
+              />
+            </TabsContent>
+            <TabsContent value="team">
+              <WorkspaceTeam
+                remote={remote}
+                state={state}
+                metrics={metrics}
+                meId={meId}
+                isManager={isManager}
+                lang={lang}
+                t={t}
+                update={update}
+              />
+            </TabsContent>
+          </Tabs>
+          <SwapRequests
+            key={month}
+            remote={remote}
+            month={month}
+            lang={lang}
+            selection={requestSelection}
+            onSelection={setRequestSelection}
+          />
+        </fieldset>
+        <footer className="app-footer">
+          <span>Duty</span>
+          <button onClick={exportBackup}>
+            <Download size={14} />
+            {t('Export backup', 'ייצוא גיבוי')}
+          </button>
+        </footer>
+      </main>
+      <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} />
+      {isManager && (
+        <PublicationHistory
+          key={month}
+          remote={remote}
+          month={month}
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          lang={lang}
+        />
+      )}
+      {selected && (
+        <DutyEditor
+          key={selected.id}
+          state={state}
+          duty={selected}
+          month={month}
+          lang={lang}
+          onClose={() => setSelected(null)}
+          onMonth={(m) => {
+            setMonth(m);
+            setSelected(null);
+          }}
+          onSave={draft.editor.save}
+          onRemoveSpecial={draft.editor.removeSpecial}
+        />
+      )}
+      <DraftSwapDialog
+        controller={draft.swap}
+        state={state}
+        duties={duties}
+        lang={lang}
+        t={t}
+        fmt={fmt}
+        nickname={nickname}
+        personName={personName}
+      />
+      <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
+      <MonthSettingsDialog
+        settings={settings}
+        setSettings={setSettings}
+        monthLabel={monthLabel}
+        monthDetails={monthDetails}
+        lang={lang}
+        t={t}
+        onDeadline={(deadline) => {
+          update(
+            (s) => ({ ...s, months: { ...s.months, [month]: { ...monthDetails, deadline } } }),
+            false,
+          );
+        }}
+      />
+      <PublishDialog
+        publishOpen={publishOpen}
+        setPublishOpen={setPublishOpen}
+        monthLabel={monthLabel}
+        assigned={metrics.assigned}
+        saving={!!remote?.saving}
+        lang={lang}
+        t={t}
+        onPublish={publish}
+      />
+      <WorkspaceHelpDialog help={help} setHelp={setHelp} lang={lang} t={t} />
+    </div>
+  );
 }
