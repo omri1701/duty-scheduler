@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fromSnapshot,schedulePayload,canManage} from '../lib/supabase/snapshot.ts';
+import {fromSnapshot,schedulePayload,canManage,readSnapshot} from '../lib/supabase/snapshot.ts';
 import {addDays,blocks,totals} from '../lib/rota/engine.ts';
 const member=(id,role='engineer',status='approved')=>({id,email:id+'@example.invalid',name:id,role,status,active:true,seniority:1,color:'#adc9ee'});
 const row=(day,primary='admin',publication=null,options={})=>({id:(publication??'draft')+'-'+day,publication_id:publication,day,end_day:addDays(day,1),primary_id:primary,secondary_id:null,manager_override:false,title:'',extra_points:0,points:1,...options});
@@ -15,3 +15,20 @@ test('combined weekend is a single stored duty row',()=>{const raw=fixture();raw
 test('holiday points survive reassignment and split-weekend round trip',()=>{const raw=fixture();raw.assignments=[row('2026-10-02','admin',null,{title:'Holiday',extra_points:2,points:2.5}),row('2026-10-03','engineer',null,{points:0.5})];const state=fromSnapshot(raw,'admin');state.assignments['2026-10-02'].primary='engineer';const payload=schedulePayload(state);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').extra_points,2);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').primary_id,'engineer');assert.equal(payload.duties.find(r=>r.day==='2026-10-03').extra_points,0);assert.equal(totals(state,blocks('2026-10',state.specials,state.splitWeekends)).engineer,3)});
 test('new workspace stays empty until generation is requested',()=>{const raw=fixture();raw.assignments=[];raw.publications=[];raw.months=[];const state=fromSnapshot(raw,'admin');assert.deepEqual(state.assignments,{});assert.deepEqual(schedulePayload(state).duties,[])});
 test('Friday owner publication wins across a month boundary',()=>{const raw=fixture();raw.months=[{month:'2026-07',deadline:'2026-06-24',status:'published',current_publication_id:'july'},{month:'2026-08',deadline:'2026-07-24',status:'published',current_publication_id:'august'}];raw.publications=[{id:'july',month:'2026-07'},{id:'august',month:'2026-08'}];raw.assignments=[row('2026-07-31','admin','august',{end_day:'2026-08-02'}),row('2026-07-31','engineer','july'),row('2026-08-01','admin','july')];const state=fromSnapshot(raw,'engineer');assert.equal(state.assignments['2026-07-31'].primary,'engineer');assert.equal(state.assignments['2026-08-01'].primary,'admin');assert.deepEqual(state.splitWeekends,['2026-07-31'])});
+
+test('snapshot validation accepts nullable revisions, optional swaps and extra database columns',()=>{
+ const raw=fixture();raw.revision=null;raw.members[0].joined_at='2026-10-01';
+ assert.equal(readSnapshot(raw),raw);
+ raw.swapRequests=[];assert.equal(readSnapshot(raw),raw);
+});
+test('snapshot validation rejects malformed nested data and unsafe revisions',()=>{
+ for(const value of [null,[],{...fixture(),members:null},{...fixture(),roles:[{code:'admin',label:'Admin',can_manage:'true'}]},{...fixture(),constraints:[{member_id:'engineer',day:'2026-10-01',kind:'no',note:42}]},{...fixture(),revision:NaN},{...fixture(),revision:Number.MAX_SAFE_INTEGER+1},{...fixture(),swapRequests:[{status:'unexpected'}]}])assert.throws(()=>readSnapshot(value),/Invalid team data/);
+});
+test('snapshot conversion and payload generation preserve frozen inputs and isolate returned state',()=>{
+ function freeze(value){if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value)}return value}
+ const raw=freeze(fixture()),before=structuredClone(raw);
+ const state=fromSnapshot(readSnapshot(raw),'admin');
+ state.team[0].name='Local draft';state.constraintNotes.engineer['2026-10-01']='Local note';
+ freeze(state);schedulePayload(state);
+ assert.deepEqual(raw,before);
+});

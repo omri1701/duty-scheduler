@@ -72,6 +72,8 @@ export class Backend {
       const days = p.p_days as string[];
       this.raw.constraints = this.raw.constraints.filter(c => c.member_id !== p.p_member || !days.includes(c.day));
       if (p.p_kind !== 'clear') this.raw.constraints.push(...days.map(day => ({member_id: p.p_member as string, day, kind: p.p_kind as 'no' | 'prefer', note: p.p_note as string})));
+    } else if (name === 'duty_rename_self') {
+      this.raw.members.find(m => m.id === user)!.name = p.p_name as string;
     } else if (name === 'duty_review_member') {
       expect(admin).toBe(true);
       this.raw.members.find(m => m.id === p.p_member)!.status = p.p_status as string;
