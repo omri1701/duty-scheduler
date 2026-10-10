@@ -1,6 +1,6 @@
 ---
 name: code-change-validation
-description: "Select and run focused validation for a Duty code or configuration change, or review its diff; skip prose-only edits."
+description: "Select focused validation for Duty code/config changes, diff reviews or authorized PR delivery; skip prose-only edits without delivery."
 ---
 
 # Code-change validation
@@ -15,8 +15,12 @@ description: "Select and run focused validation for a Duty code or configuration
    - TypeScript: `pnpm exec tsc --noEmit`; lint changed code with the existing ESLint.
    - Runtime, dependency or build configuration: `pnpm build`.
    - AI configuration: `python3 scripts/validate-ai-config.py` (Python 3.11+).
-   - Before a requested PR: run the checks in `.github/workflows/quality.yml` once
-     on the final diff. CI has no database credentials and makes no AI calls.
+   - Documentation/AI infrastructure alone: validate affected instructions/metadata;
+     test changed validator logic or executable CI configuration as relevant. Skip
+     local application tests/builds when application code/config is unchanged.
+   - Before an application PR: run `.github/workflows/quality.yml` checks once on
+     the final diff, reusing completed checks. For every PR verify Quality CI on the
+     final head; CI has no database credentials and makes no AI calls.
 3. For security-sensitive changes, use security-review. The root routing policy
    decides delegation; this skill never spawns an agent itself.
 4. Run independent checks together when they cannot interfere. Keep full logs
