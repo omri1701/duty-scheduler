@@ -49,8 +49,9 @@ preset, Node 24, `pnpm build` and the default install/output settings. Set
 `ENABLE_EXPERIMENTAL_COREPACK=1` so Vercel uses the exact pnpm version in
 `package.json`; see [Vercel build configuration](https://vercel.com/docs/builds/configure-a-build#corepack).
 Configure the two application server variables separately: Production uses the
-existing production Supabase project; Preview and Development use an independent
-development project. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
+Frankfurt Production Supabase project; Preview and Development use an independent
+Frankfurt Development project. Keep `.env.local` on Development and never pull
+Vercel Production variables into it. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
 approval-gated `develop` to `master` transition, environment scopes and rollback.
 It needs no Workers adapter. Preserve production OAuth settings; configure the
 development origin and exact trailing-slash redirect independently using
