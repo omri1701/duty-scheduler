@@ -1,6 +1,13 @@
 # Supabase setup
 
-Production project: **Duty Scheduler** (`ukxxpbivgxyxharhxgqf`). Native Next.js reads its public project URL and publishable key from server environment variables. No service-role key is used by the app. Preserve this project's database and existing authentication. Use [the deployment runbook](DEPLOYMENT.md) to initialize a separate development project from migrations without copying users/data. The Google setup below describes production; development uses its own client and project callback.
+New Production target: **Duty Scheduler Europe** (`hpszwgnwxtxyxpcaivgj`), Frankfurt.
+It is clean and schema-validated; Google configuration and actual hosting cutover
+remain pending. Original Tokyo `ukxxpbivgxyxharhxgqf` is preserved unchanged.
+European Development requires a separate Frankfurt project; the Free quota currently
+blocks creation while Tokyo remains active. See [deployment status](DEPLOYMENT.md).
+Native Next.js needs only a project URL and publishable key; no service-role key.
+The [canonical database architecture](../supabase/README.md) installs the two clean
+baseline migrations plus required reference rows, without operational data.
 
 ## 1. Create the Google OAuth client
 
@@ -14,7 +21,7 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 | Setting | Value |
 |---|---|
 | Authorized JavaScript origin | `https://<approved-app-host>` |
-| Authorized redirect URI | `https://ukxxpbivgxyxharhxgqf.supabase.co/auth/v1/callback` |
+| Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
 
@@ -31,7 +38,7 @@ In **Authentication → URL Configuration** set:
 
 After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
-The first account is **not** automatically made admin. Identify and confirm its actual account ID/email, then use a trusted SQL connection to promote that exact row in `duty_members` and increment `duty_workspace.revision` in one transaction. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
+The first account is **not** automatically made admin. Confirm the environment/project and the owner's actual `auth.users.id`, then execute [the operator-only first-admin script](../supabase/admin/promote-first-admin.sql). It verifies the exact confirmed Google identity and pending profile, refuses an existing admin, and atomically promotes the row and increments `duty_workspace.revision` under its lock. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
 Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.
 
@@ -75,11 +82,17 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-On 2026-10-10, authenticated migration-history metadata confirmed all eight committed versions, through `20261009161959`, recorded in production. This supersedes the earlier missing-swap diagnosis; history alone does not prove schema equality. Apply the full sequence only to a separate empty development project. Never replay production migrations. The consolidation migration deliberately refuses pre-existing schedule data.
+Fresh projects use only the two generated baseline migrations documented in
+[database architecture](../supabase/README.md). Historical migrations are archived
+outside active CLI discovery. Tokyo's already-applied history remains unchanged;
+never push the replacement history or run a reset there.
 
 `supabase/tests/access.sql` creates synthetic auth/member records inside one transaction and rolls everything back; it sends no email and refuses to run on a project with real members. Use an empty development project after real onboarding begins. Checks cover explicit first-admin promotion, multiple admins, last-admin protection, FK values, own-name edits, private notes, stale revisions, publication versions, stable points, boundary-weekend restores, deletion and deactivation.
 
-An earlier empty-database audit reported no security-advisor findings and informational [unused-index notices](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index). That historical result is not a current production audit; foreign-key indexes are retained for real usage.
+The clean Frankfurt target matches local application catalog fingerprints and
+reports no security-advisor findings. Informational unused-index notices are normal
+before real users join. Synthetic tests must run on empty disposable local/Development
+databases; Production validation uses schema/catalog/permission checks only.
 
 ```sh
 node --test tests/*.test.mjs
@@ -134,18 +147,12 @@ Push notifications, calendar subscriptions and full action audit logs remain fut
 
 ## Published duty swaps: migration and verification
 
-The feature requires both new migrations, in this order:
-
-1. `supabase/migrations/20261009145431_published_duty_swaps.sql`
-2. `supabase/migrations/20261009161959_swap_consent_and_reassignment.sql`
-
-Both versions are now recorded in production history (2026-10-10 metadata audit).
-The older 2026-10-09 missing-function diagnosis is historical. On a new development
-project apply the full ordered sequence, not only these two files. The client parameter names match
-`duty_request_swap(p_from uuid,p_to uuid,p_explanation text,p_revision bigint)`;
-parameter order in the error is immaterial. Reloading the cache cannot create a
-missing function. The migration explicitly grants execution to `authenticated`,
-and its checked operations still require approved active membership.
+The canonical baseline already contains the final consent/reassignment model and
+all RPC signatures, including
+`duty_request_swap(p_from uuid,p_to uuid,p_explanation text,p_revision bigint)`.
+The archived v1/v2 files remain solely for historical upgrade verification. Do not
+apply them to a new installation in addition to the baseline. Checked operations
+require approved active membership and the last accepted revision.
 
 Swap requests are independent of drafts. Both duties must start after today in
 Asia/Jerusalem and belong to the same owning month (Saturday belongs to Friday).
@@ -194,29 +201,36 @@ the existing 30-second mechanism; no push/email notifications are sent.
 
 ### Empty local Supabase database (PowerShell)
 
-Requires Docker Desktop, pnpm and a PostgreSQL `psql` client. Use a disposable
-directory so this does not pick up the repository's hosted project link or env file:
+Requires Docker Desktop and pnpm. The CLI database-only mode includes real
+Supabase-managed schemas/roles and applies application migrations without starting
+Studio/Auth/API services. No hosted credentials or external `psql` client are needed:
 
 ```powershell
-$repo = (Get-Location).Path
-$swapTestRoot = Join-Path $env:TEMP ('duty-swaps-' + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $swapTestRoot | Out-Null
-pnpm dlx supabase --workdir $swapTestRoot init
-Copy-Item -LiteralPath (Join-Path $repo 'supabase/migrations') -Destination (Join-Path $swapTestRoot 'supabase') -Recurse
-pnpm dlx supabase --workdir $swapTestRoot start
-# Use the local DB URL printed by start (normally port 54322).
-psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/access.sql
-psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/swaps.sql
-psql 'postgresql://postgres:postgres@127.0.0.1:54322/postgres' -v ON_ERROR_STOP=1 -f supabase/tests/swap-upgrade.sql
-# Run only after both rollback fixtures finish. Use the actual local DB container name.
-node supabase/tests/swap-races.mjs supabase_db_<disposable-project>
-pnpm dlx supabase --workdir $swapTestRoot stop
+pnpm dlx supabase@2.119.0 db start
+node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker cp supabase/archive supabase_db_duty-scheduler:/tmp/archive
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/access.sql
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swaps.sql
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
+node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
+node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler --no-backup
 ```
 
-If port 54322 is reserved, change `[db].port` in the disposable config and use
-that port in both `psql` commands. `start` applies migrations only in this local
-instance. Both SQL tests refuse real members and roll their fixtures back. Never
-point these fixtures at your existing hosted project or run `db reset --linked`.
+These are LOCAL commands. Never pass `--linked`, a hosted URL or hosted credentials.
+For full local services use `supabase start`; Next.js still runs on port 5173.
+On Windows, if Docker cannot bind the default ports, copy config/migrations to a
+disposable work directory, assign available API/DB/shadow/Studio/mail ports there
+(e.g. 58321/58322/58320/58323/58324), change the local project ID and use its actual
+`supabase_db_<id>` container. Keep hosted project links out of that directory.
+`tests/schema.sql` must pass before onboarding/fixtures. The canonical verification
+builds application objects in temporary LOCAL schemas, compares catalog/permission
+fingerprints and required rows with migration replay, then drops those test schemas.
+The first-admin test executes the actual operator script with invented Google identities,
+checks caller/identity/refusal gates, and removes fixtures. Swap race tests create
+synthetic fixtures and clean up; reset the local database before reusing clean-install
+checks because race tests intentionally increment the workspace revision.
 
 `swap-upgrade.sql` rebuilds the swap feature inside a rollback transaction, then
 applies the actual v1/v2 migrations with synthetic historical resolutions and
@@ -225,19 +239,14 @@ duplicate pending rows. It verifies unchanged audit/history data and fresh conse
 approve/cancel and consent/reassignment races, creates only synthetic fixtures in
 an empty disposable local container, and cleans them up after each case.
 
-The optional browser regression is `tests/browser/swaps.mjs`. With Playwright
-available externally (do not add it to application dependencies), run `pnpm build`,
-then `pnpm start` in a separate terminal and `node tests/browser/swaps.mjs`.
-Use `DUTY_PREVIEW_URL` if the preview is not at `http://127.0.0.1:8787`, and
-`DUTY_CHROME_PATH` for another installed Chrome path. Its four browser contexts
-mock every Supabase endpoint with synthetic data; it tests UI/gesture wiring,
-not database permissions or real-device touch behavior. `NODE_PATH` can point to
-an existing external Playwright installation.
+The supported browser regressions are in `tests/browser`; run `pnpm build` and
+`pnpm test:e2e:ci` as documented in README. They mock external requests and verify
+UI/RPC contracts, not database permissions, Google sign-in or real-device gestures.
 
 ### Read-only hosted migration diagnostics
 
-All eight versions are already recorded in production. Do not apply or repair them
-again. If a schema-cache or RPC error occurs, inspect history and function metadata
+Tokyo retains eight historical versions; new Frankfurt has the two canonical baseline
+versions. Do not replay or repair either history blindly. If a schema-cache or RPC error occurs, inspect history and function metadata
 in the explicitly identified project before proposing a separately approved fix:
 
 ```sql
@@ -249,9 +258,8 @@ where n.nspname='public' and p.proname in ('duty_request_swap','duty_resolve_swa
 ```
 
 History/schema disagreement requires investigation, not blind replay or history
-repair. Cache reload cannot create missing functions. No remote SQL, history repair
-or cache reload is part of this preparation. Use the development runbook for fresh
-initialization and a separate approved migration plan for future production changes.
+repair. Cache reload cannot create missing functions. Use the clean initialization runbook for new
+projects and separately approved incremental migrations for existing environments.
 Run the acceptance checks below only in an isolated development project.
 
 ### Four-browser acceptance check

@@ -46,6 +46,19 @@ jobs:
         run: python3 scripts/validate-ai-config.py
       - name: Regression tests
         run: node --test tests/*.test.mjs
+      - name: Verify generated database baseline
+        run: node scripts/database-baseline.mjs --check
+      - name: Fresh local database and permission regressions
+        run: |
+          pnpm dlx supabase@2.119.0 db start
+          node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+          docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+          docker cp supabase/archive supabase_db_duty-scheduler:/tmp/archive
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/access.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swaps.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
+          node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
+          node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
       - name: Type check
         run: pnpm exec tsc --noEmit
       - name: Reject lint regressions

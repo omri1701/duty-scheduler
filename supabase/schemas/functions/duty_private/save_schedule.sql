@@ -1,0 +1,49 @@
+CREATE FUNCTION duty_private.save_schedule(p_state jsonb, p_revision bigint, p_publish text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare x record; item jsonb; d date; a public.duty_assignments; first_day date; last_day date; publication uuid; next_version integer;
+begin
+ if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
+ perform duty_private.check_revision(p_revision);
+ if jsonb_typeof(p_state->'duties') is distinct from 'array' or jsonb_typeof(p_state->'months') is distinct from 'object' or jsonb_typeof(p_state->'team') is distinct from 'array' or length(p_state::text)>2000000 then raise exception 'Invalid schedule'; end if;
+ for x in select value,ordinality from jsonb_array_elements(p_state->'team') with ordinality loop
+  -- Profile names and roles have separate checked operations.
+  update public.duty_members set color=x.value->>'color',active=(x.value->>'active')::boolean,seniority=x.ordinality where id=(x.value->>'id')::uuid and status='approved';
+  if not found then raise exception 'Unknown approved team member'; end if;
+ end loop;
+ perform duty_private.assert_admin_remains();
+ for x in select * from jsonb_each(p_state->'months') loop
+  insert into public.duty_months(month,deadline,status,generated) values(x.key,(x.value->>'deadline')::date,case when x.value->>'status'='published' and exists(select 1 from public.duty_months where month=x.key and current_publication_id is not null) then 'published' else 'draft' end,coalesce((x.value->>'generated')::boolean,false))
+  on conflict(month) do update set deadline=excluded.deadline,status=excluded.status,generated=excluded.generated;
+ end loop;
+ delete from public.duty_assignments where publication_id is null and day not in (select (value->>'day')::date from jsonb_array_elements(p_state->'duties'));
+ for item in select value from jsonb_array_elements(p_state->'duties') loop
+  if not exists(select 1 from public.duty_months where month=to_char((item->>'day')::date,'YYYY-MM')) then
+   insert into public.duty_months(month,deadline) values(to_char((item->>'day')::date,'YYYY-MM'),date_trunc('month',(item->>'day')::date)::date-7);
+  end if;
+  insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
+  values((item->>'day')::date,(item->>'end_day')::date,nullif(item->>'primary_id','')::uuid,nullif(item->>'secondary_id','')::uuid,coalesce((item->>'manager_override')::boolean,false),coalesce(item->>'title',''),coalesce((item->>'extra_points')::numeric,0))
+  on conflict(publication_id,day) do update set end_day=excluded.end_day,primary_id=excluded.primary_id,secondary_id=excluded.secondary_id,manager_override=excluded.manager_override,title=excluded.title,extra_points=excluded.extra_points;
+ end loop;
+ if exists(select 1 from public.duty_assignments first_duty join public.duty_assignments other_duty on first_duty.day<other_duty.day and first_duty.end_day>other_duty.day where first_duty.publication_id is null and other_duty.publication_id is null) then raise exception 'Duty dates overlap'; end if;
+ if p_publish is not null then
+  if not exists(select 1 from public.duty_months where month=p_publish) then raise exception 'Unknown month'; end if;
+  first_day:=(p_publish||'-01')::date; last_day:=(first_day+interval '1 month'-interval '1 day')::date;
+  -- Validate an entire carried combined weekend; a split prior Friday is separate.
+  if exists(select 1 from public.duty_assignments where publication_id is null and day=first_day-1 and end_day=first_day+1) then first_day:=first_day-1; end if;
+  if extract(dow from last_day)=5 then last_day:=last_day+1; end if;
+  for d in select generate_series(first_day,last_day,interval '1 day')::date loop
+   select * into a from public.duty_assignments where publication_id is null and day<=d and end_day>d;
+   if a.primary_id is null or not exists(select 1 from public.duty_members where id=a.primary_id and status='approved' and active) then raise exception 'An active engineer is required on %',d; end if;
+   if a.secondary_id is not null and not exists(select 1 from public.duty_members where id=a.secondary_id and status='approved' and active) then raise exception 'Emergency engineer is inactive on %',d; end if;
+   if not a.manager_override and exists(select 1 from public.duty_constraints where member_id in (a.primary_id,a.secondary_id) and day=d and kind='no') then raise exception 'Availability conflict on %',d; end if;
+  end loop;
+  update public.duty_months set publication_sequence=publication_sequence+1 where month=p_publish returning publication_sequence into next_version;
+  insert into public.duty_publications(month,version,published_by) values(p_publish,next_version,auth.uid()) returning id into publication;
+  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
+  select publication,day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments where publication_id is null and day<=last_day and end_day>first_day;
+  update public.duty_months set current_publication_id=publication,status='published',generated=true where month=p_publish;
+ end if;
+ update public.duty_workspace set revision=revision+1 where id;
+end $$;

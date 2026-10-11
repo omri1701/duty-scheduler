@@ -21,7 +21,7 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
-The application uses native Next.js 16 App Router, React 19, TypeScript and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. See [Supabase setup](docs/SUPABASE_SETUP.md) for the live workspace, Google provider configuration and the first admin promotion.
+The application uses native Next.js 16 App Router, React 19, TypeScript and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. See [Supabase setup](docs/SUPABASE_SETUP.md) for Google configuration and first-admin onboarding, and [database architecture](supabase/README.md) for canonical schema files, clean migrations and real database validation.
 
 ## Native Next.js runtime and Vercel deployment
 

@@ -1,0 +1,25 @@
+# Upload application source only; local tools, diagnostics and credentials stay local.
+.git/
+.idea/
+.agents/
+.codex/
+.aws/
+.vercel/
+.env*
+.dev.vars*
+*.pem
+node_modules/
+.next/
+.vinext/
+dist/
+out/
+.wrangler/
+.sites-runtime/
+work/
+outputs/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+supabase/.temp/
+supabase/.branches/
