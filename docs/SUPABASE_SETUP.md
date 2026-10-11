@@ -1,10 +1,11 @@
 # Supabase setup
 
-New Production target: **Duty Scheduler Europe** (`hpszwgnwxtxyxpcaivgj`), Frankfurt.
-It is clean and schema-validated; Google configuration and actual hosting cutover
-remain pending. Original Tokyo `ukxxpbivgxyxharhxgqf` is preserved unchanged.
-European Development requires a separate Frankfurt project; the Free quota currently
-blocks creation while Tokyo remains active. See [deployment status](DEPLOYMENT.md).
+Frankfurt Production target: `hpszwgnwxtxyxpcaivgj`, `eu-central-1`; final display
+name **Duty Scheduler** (rename pending). It is clean and schema-validated; Google
+configuration gates the authorized cutover at `https://duty-scheduler-two.vercel.app`.
+Tokyo `ukxxpbivgxyxharhxgqf` stays active until cutover succeeds, then its authorized
+reversible pause frees capacity for **Duty Scheduler Dev** in Frankfurt.
+See [deployment checkpoint](DEPLOYMENT.md) for exact status and Google origins.
 Native Next.js needs only a project URL and publishable key; no service-role key.
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
@@ -16,11 +17,13 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 1. Open [Google Cloud Console](https://console.cloud.google.com/) and create or select a project, such as **Duty Scheduler**.
 2. Open **Google Auth Platform** and configure the app branding/contact details. Choose an audience that allows the team's Google accounts. For a testing app, add your Google email under **Audience → Test users**; add teammates when ready.
 3. Under **Data Access**, use only `openid`, `userinfo.email` and `userinfo.profile`.
-4. Under **Clients**, create an OAuth client of type **Web application** with these exact values:
+4. Under **Clients**, create the **Production** OAuth client of type **Web application**
+   with these values. Development needs a separate client and its own Frankfurt
+   callback; use the deployment checkpoint once its project is created.
 
 | Setting | Value |
 |---|---|
-| Authorized JavaScript origin | `https://<approved-app-host>` |
+| Authorized JavaScript origin | `https://duty-scheduler-two.vercel.app` |
 | Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
@@ -31,8 +34,12 @@ In **Authentication → URL Configuration** set:
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://<approved-app-host>` |
-| Allowed redirect URL | `https://<approved-app-host>/` |
+| Production Site URL | `https://duty-scheduler-two.vercel.app` |
+| Production allowed redirect URL | `https://duty-scheduler-two.vercel.app/` |
+
+Temporarily add the protected Production verification origin and return documented
+in the deployment checkpoint. Development uses its own URLs and includes localhost;
+these are never added to Production.
 
 ## 3. First login and explicit admin promotion
 
@@ -42,7 +49,10 @@ The first account is **not** automatically made admin. Confirm the environment/p
 
 Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.
 
-Use the separately approved application origin for the values above. Preserve existing authorized origins and redirect entries until a hosting change is approved. Changing hosting requires updating the Google origin and Supabase redirect URLs; this migration does not change those live settings.
+Use the exact environment origins in the deployment checkpoint. Production and
+Development require distinct callbacks and separate clients. Retire the temporary
+Production verification origin after successful cutover; keep localhost confined
+to Development.
 
 ## Current database
 
@@ -120,8 +130,9 @@ pnpm build
    Google is enabled in Supabase and your account is an allowed test user if
    the Google app is in testing. See [Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
 4. Restart `pnpm dev` and open `http://localhost:5173`. In browser DevTools,
-   confirm `/api/config` returns **200** (do not copy its response into logs or
-   chat), then choose **Continue with Google** using a dedicated test account.
+   confirm `/api/config` returns **200** and the new Frankfurt Development ref
+   (do not copy its response into logs or chat), then choose **Continue with Google**
+   using your real Development account; do not create hosted bootstrap test accounts.
    Confirm the redirect returns to localhost and your development workspace opens;
    pending accounts still require manager approval. Reload to verify the session
    persists. Use the same hostname throughout the login flow.
@@ -135,11 +146,10 @@ changing local configuration. See [Next.js environment variables](https://nextjs
 For eventual Vercel hosting, select the standard Next.js preset and configure
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
 Use Node 24 and set `ENABLE_EXPERIMENTAL_COREPACK=1` to select the pinned pnpm version.
-Google secrets stay in Supabase. Approve the hosting change separately before
-adding the new Google origin and Supabase redirect; do not remove existing
-entries during this framework migration. No database migration is required.
+Google secrets stay in Supabase. Follow the authorized readiness gates in the
+deployment checkpoint before cutover. Keep legitimate Preview access protection.
 
-Local login uses independent development identities and synthetic schedules.
+Local login uses the independent Frankfurt Development identity.
 Do not configure localhost against production or add local redirects to its client.
 The app has no demo login or local-data fallback.
 
