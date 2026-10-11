@@ -11,7 +11,7 @@ drop function public.duty_load(),public.duty_request_swap(uuid,uuid,text,bigint)
 drop function duty_private.request_swap(uuid,uuid,text,bigint),duty_private.resolve_swap(uuid,text,bigint,text),
  duty_private.validate_swap(uuid,uuid,uuid,boolean),duty_private.current_duties(),duty_private.duty_owner(date);
 drop table public.duty_swap_requests;
-\ir ../migrations/20261009145431_published_duty_swaps.sql
+\ir ../archive/migrations/20261009145431_published_duty_swaps.sql
 
 insert into auth.users(id,email,email_confirmed_at,is_anonymous,aud,role)
 select id, id||'@example.invalid',now(),false,'authenticated','authenticated'
@@ -44,7 +44,7 @@ from public.duty_publications p join public.duty_assignments a on a.publication_
  cross join (values ('approved'),('rejected'),('cancelled')) v(status) where p.version=1;
 create temp table expected_legacy_history as select to_jsonb(r) as row from public.duty_swap_requests r where status<>'pending';
 create temp table expected_legacy_duties as select to_jsonb(a) as row from public.duty_assignments a;
-\ir ../migrations/20261009161959_swap_consent_and_reassignment.sql
+\ir ../archive/migrations/20261009161959_swap_consent_and_reassignment.sql
 do $$ begin
  if not exists(select 1 from public.duty_swap_requests where explanation='pending version 1' and status='invalidated') then raise exception 'Old duplicate not invalidated'; end if;
  if not exists(select 1 from public.duty_swap_requests where explanation='pending version 2' and status='awaiting_engineer'
