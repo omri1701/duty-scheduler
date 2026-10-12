@@ -29,7 +29,7 @@ Verified:
   `vaplnkaubzopjbixlxng`. Only the two canonical migrations were pushed from an
   isolated CLI directory after a dry run. All seven schema/permission fingerprints
   match Production's pre-onboarding baseline below; security advisor has no findings.
-  Auth identities, users and operational tables are zero; required rows are 2 roles,
+  At installation, Auth identities, users and operational tables were zero; required rows are 2 roles,
   3 member statuses, 2 month statuses, 2 constraint types and revision zero.
 - Vercel Production's two application credentials point only to Production.
   Preview and Vercel Development variables point only to Frankfurt Development;
