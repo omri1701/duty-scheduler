@@ -1,13 +1,92 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {validateDatabaseChange} from '../scripts/database-policy.mjs';
 import {verifyHistory, historyQuery, referenceQuery} from '../scripts/database-contract.mjs';
-import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, releaseApplicationDomain, verifyReleaseApproval} from '../scripts/release.mjs';
+import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, releaseApplicationDomain, verifyReleaseApproval, validateReleaseCredentials} from '../scripts/release.mjs';
 
 const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'required_reference_data']];
 const history = rows => rows.map(row => row.join('|')).join('\n');
 const contract = {migrations: versions, fingerprint: 'expected schema', referenceData: {roles: []}};
+
+function credentialFixture(branch) {
+  return {
+    SUPABASE_DB_URL: `postgresql://postgres.${environments[branch].ref}:synthetic-password@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`,
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_synthetic-key', VERCEL_TOKEN: 'synthetic-token',
+    VERCEL_ORG_ID: 'team_pbvqzViC50aeT2kaRNnTYkPt', VERCEL_PROJECT_ID: 'prj_Jl2PBhK8DsvK183rKKWesr0821OY',
+  };
+}
+
+test('missing Environment secrets fail by name before URL parsing or service calls, without disclosing values', () => {
+  for (const branch of Object.keys(environments)) {
+    const fixture = credentialFixture(branch);
+    for (const name of Object.keys(fixture)) {
+      for (const value of [undefined, '', '   ']) {
+        assert.throws(() => validateReleaseCredentials({...fixture, [name]: value}, branch), error => {
+          assert.equal(error.message, `Missing ${environments[branch].name} Environment secrets: ${name}. Configure them in the selected GitHub Environment and forward secrets from the calling workflow.`);
+          for (const secret of Object.values(fixture)) assert(!error.message.includes(secret));
+          return true;
+        });
+      }
+    }
+    assert.throws(() => validateReleaseCredentials({}, branch), /Missing .* Environment secrets: SUPABASE_DB_URL, SUPABASE_PUBLISHABLE_KEY, VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID/);
+    const result = spawnSync(process.execPath, ['scripts/release.mjs'], {encoding: 'utf8', env: {
+      ...process.env, ...fixture, SUPABASE_DB_URL: '', RELEASE_BRANCH: branch,
+      GITHUB_REF: `refs/heads/${branch}`, GITHUB_EVENT_NAME: 'push', GH_TOKEN: '',
+    }});
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Missing .* Environment secrets: SUPABASE_DB_URL/);
+    assert(!result.stderr.includes('Invalid SUPABASE_DB_URL'));
+    assert.equal(result.stdout, '');
+  }
+});
+
+test('credential-only preflight accepts each selected environment without network calls or credential output', () => {
+  for (const branch of Object.keys(environments)) {
+    const fixture = credentialFixture(branch);
+    const result = spawnSync(process.execPath, ['scripts/release.mjs', '--credentials-only'], {encoding: 'utf8', env: {
+      ...process.env, ...fixture, RELEASE_BRANCH: branch,
+      GITHUB_REF: `refs/heads/${branch}`, GITHUB_EVENT_NAME: 'push', GH_TOKEN: '',
+    }});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), `PASS: ${environments[branch].name} required secrets are present; database and Vercel project bindings match`);
+    assert.equal(result.stderr, '');
+    for (const query of ['sslmode=synthetic-private-value', 'sslmode=require&synthetic-private-value=1']) {
+      const invalid = {...fixture, SUPABASE_DB_URL: fixture.SUPABASE_DB_URL.replace('sslmode=require', query)};
+      const failure = spawnSync(process.execPath, ['scripts/release.mjs', '--credentials-only'], {encoding: 'utf8', env: {
+        ...process.env, ...invalid, RELEASE_BRANCH: branch,
+        GITHUB_REF: `refs/heads/${branch}`, GITHUB_EVENT_NAME: 'push',
+      }});
+      assert.equal(failure.status, 1);
+      assert.match(failure.stderr, /SUPABASE_DB_URL must include sslmode=require|Unsupported database URL options/);
+      assert(!failure.stderr.includes('synthetic-private-value'));
+      assert(!failure.stderr.includes('synthetic-password'));
+      assert(!failure.stderr.includes(invalid.SUPABASE_DB_URL));
+      assert.equal(failure.stdout, '');
+    }
+    const other = branch === 'develop' ? 'master' : 'develop';
+    assert.throws(() => validateReleaseCredentials(fixture, other), /outside the selected Frankfurt environment/);
+    for (const name of ['VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'SUPABASE_PUBLISHABLE_KEY']) {
+      assert.throws(() => validateReleaseCredentials({...fixture, [name]: 'synthetic-private-value'}, branch), error => !error.message.includes('synthetic-private-value'));
+    }
+  }
+});
+
+test('both reusable callers forward secrets while release jobs retain branch, PR and Production gates', () => {
+  const workflow = readFileSync('.github/workflows/quality.yml', 'utf8');
+  for (const [job, branch] of [['deploy-development', 'develop'], ['deploy-production', 'master']]) {
+    const caller = workflow.split(`\n  ${job}:`)[1].split(/\n  [\w-]+:/)[0];
+    assert.match(caller, /uses: \.\/\.github\/workflows\/deploy\.yml/);
+    assert.match(caller, /\n    secrets: inherit/);
+    assert(caller.includes("github.event_name == 'push' || github.event_name == 'workflow_dispatch'"));
+    assert(caller.includes(`github.ref == 'refs/heads/${branch}'`));
+    if (branch === 'master') assert(caller.includes("vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'"));
+  }
+  const deployment = readFileSync('.github/workflows/deploy.yml', 'utf8').split('\n  deploy:')[1];
+  assert(deployment.includes("name: ${{ inputs.branch == 'master' && 'Production' || 'Development' }}"));
+  assert(deployment.indexOf('--credentials-only') < deployment.indexOf('uses: pnpm/action-setup'));
+});
 
 function domainFixture(branch = 'develop') {
   const selected = environments[branch];

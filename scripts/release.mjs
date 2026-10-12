@@ -13,6 +13,19 @@ export const environments = Object.freeze({
 const project = 'prj_Jl2PBhK8DsvK183rKKWesr0821OY';
 const team = 'team_pbvqzViC50aeT2kaRNnTYkPt';
 
+export function validateReleaseCredentials(env, branch) {
+  const selected = environments[branch];
+  assert(selected, 'Only develop and master can validate deployment credentials');
+  const required = ['SUPABASE_DB_URL', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID'];
+  const missing = required.filter(name => !env[name]?.trim());
+  if (missing.length) throw new Error(`Missing ${selected.name} Environment secrets: ${missing.join(', ')}. Configure them in the selected GitHub Environment and forward secrets from the calling workflow.`);
+  const pg = connectionEnvironment(env.SUPABASE_DB_URL, selected.ref);
+  assert(env.VERCEL_PROJECT_ID === project, 'Unexpected Vercel project');
+  assert(env.VERCEL_ORG_ID === team, 'Unexpected Vercel team');
+  assert(env.SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_'), 'Invalid SUPABASE_PUBLISHABLE_KEY format');
+  return pg;
+}
+
 export function connectionEnvironment(value, ref) {
   // Never print URL parsing errors, which can include passwords.
   let url;
@@ -24,8 +37,9 @@ export function connectionEnvironment(value, ref) {
   assert(direct || pooler, 'Database credential points outside the selected Frankfurt environment');
   assert((url.port || '5432') === '5432', 'Use direct or session-mode pooling, never transaction pooling');
   assert(url.pathname === '/postgres' && url.password, 'Database and password are required');
-  assert.equal(url.searchParams.get('sslmode'), 'require', 'SUPABASE_DB_URL must include sslmode=require');
-  assert.deepEqual([...url.searchParams.keys()], ['sslmode'], 'Unsupported database URL options');
+  assert(url.searchParams.get('sslmode') === 'require', 'SUPABASE_DB_URL must include sslmode=require');
+  const options = [...url.searchParams.keys()];
+  assert(options.length === 1 && options[0] === 'sslmode', 'Unsupported database URL options');
   return {PGHOST: url.hostname, PGPORT: '5432', PGUSER: user, PGPASSWORD: decodeURIComponent(url.password),
     PGDATABASE: 'postgres', PGSSLMODE: 'require', PGCONNECT_TIMEOUT: '15',
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=60000'};
@@ -116,6 +130,12 @@ async function main() {
   const selected = environments[branch];
   assert(selected && process.env.GITHUB_REF === `refs/heads/${branch}`, 'Wrong release branch context');
   assert(['push', 'workflow_dispatch'].includes(process.env.GITHUB_EVENT_NAME), 'PRs cannot deploy');
+  const approvalOnly = process.argv[2] === '--approval-only';
+  const pg = approvalOnly ? null : validateReleaseCredentials(process.env, branch);
+  if (process.argv[2] === '--credentials-only') {
+    console.log(`PASS: ${selected.name} required secrets are present; database and Vercel project bindings match`);
+    return;
+  }
   const api = async suffix => {
     const response = await fetch(`https://api.github.com/repos/${repository}${suffix}`, {
       headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'},
@@ -125,13 +145,9 @@ async function main() {
     return response.json();
   };
   await verifyReleaseApproval(api, branch, sha);
-  if (process.argv[2] === '--approval-only') return;
+  if (approvalOnly) return;
   const contract = JSON.parse(await readFile('work/database-contract.json', 'utf8'));
   assert.equal(contract.sha, sha, 'Quality contract must belong to this exact commit');
-  const pg = connectionEnvironment(process.env.SUPABASE_DB_URL, selected.ref);
-  assert.equal(process.env.VERCEL_PROJECT_ID, project, 'Unexpected Vercel project');
-  assert.equal(process.env.VERCEL_ORG_ID, team, 'Unexpected Vercel team');
-  assert(process.env.VERCEL_TOKEN && process.env.SUPABASE_PUBLISHABLE_KEY?.startsWith('sb_publishable_'), 'Missing environment secrets');
   const authSettings = await fetch(`https://${selected.ref}.supabase.co/auth/v1/settings`, {
     headers: {apikey: process.env.SUPABASE_PUBLISHABLE_KEY}, signal: AbortSignal.timeout(15000),
   });

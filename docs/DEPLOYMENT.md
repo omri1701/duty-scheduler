@@ -101,6 +101,15 @@ secret is needed. The database credential is privileged DDL access to **one proj
 not a runtime identity: the postgres-owned baseline needs owner-level DDL. Restrict
 it to protected release jobs, rotate it and audit access.
 
+Both Quality release callers use `secrets: inherit`, as required by
+[GitHub's reusable-workflow secret forwarding](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
+The called deployment job selects Development or Production; that Environment's
+secrets take precedence. Its early credential check reports missing secret names
+and checks database/Vercel project bindings without displaying values or making
+service calls. The release still authenticates the publishable key against the
+selected Supabase project before any database write. PR/feature jobs cannot run
+this check with hosted credentials; Production still requires activation and approval.
+
 Production has **required reviewer `omri1701`** for explicit deployment approval,
 with **Prevent self-review off** so the solo maintainer can approve a run they
 initiated. **Admin bypass is disabled**; self-approval remains a deliberate manual

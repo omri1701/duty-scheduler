@@ -114,6 +114,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/develop'
     uses: ./.github/workflows/deploy.yml
+    secrets: inherit # The called deployment job selects its Environment secrets.
     permissions:
       contents: read
       actions: read
@@ -129,6 +130,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/master' && vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'
     uses: ./.github/workflows/deploy.yml
+    secrets: inherit # Production secrets remain behind its Environment approval.
     permissions:
       contents: read
       actions: read
