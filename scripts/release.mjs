@@ -103,6 +103,10 @@ async function main() {
   assert.equal(process.env.VERCEL_PROJECT_ID, project, 'Unexpected Vercel project');
   assert.equal(process.env.VERCEL_ORG_ID, team, 'Unexpected Vercel team');
   assert(process.env.VERCEL_TOKEN && process.env.SUPABASE_PUBLISHABLE_KEY?.startsWith('sb_publishable_'), 'Missing environment secrets');
+  const authSettings = await fetch(`https://${selected.ref}.supabase.co/auth/v1/settings`, {
+    headers: {apikey: process.env.SUPABASE_PUBLISHABLE_KEY}, signal: AbortSignal.timeout(15000),
+  });
+  assert(authSettings.ok, 'Publishable key does not authenticate against the selected Supabase project');
   const childEnvironment = {...process.env};
   for (const name of ['GH_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_TOKEN']) delete childEnvironment[name];
   const run = (command, args, options = {}) => {
