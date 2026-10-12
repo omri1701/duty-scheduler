@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
+import {referenceQuery} from './database-contract.mjs';
 
 const [base, container] = process.argv.slice(2);
 assert.match(base ?? '', /^[a-f0-9]{40}$/);
@@ -14,8 +15,11 @@ const latest = run('git', ['ls-tree', '--name-only', base, 'supabase/migrations/
 assert.match(latest, /^\d{14}$/);
 const cli = process.env.SUPABASE_CLI || 'supabase';
 const localArgs = process.env.SUPABASE_WORKDIR ? ['--workdir', process.env.SUPABASE_WORKDIR] : [];
-run(cli, ['db', 'reset', '--local', '--no-seed', '--version', latest, '--yes', ...localArgs]);
 const query = sql => run('docker', ['exec', '-i', container, 'psql', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql);
+const fingerprintSQL = await readFile('supabase/tests/fingerprint.sql', 'utf8');
+const freshFingerprint = query(fingerprintSQL);
+const freshReferenceData = JSON.parse(query(referenceQuery));
+run(cli, ['db', 'reset', '--local', '--no-seed', '--version', latest, '--yes', ...localArgs]);
 query(await readFile('supabase/tests/upgrade-preservation.sql', 'utf8'));
 const snapshotSQL = `select jsonb_build_object(
   'users',(select jsonb_agg(to_jsonb(t) order by id) from auth.users t),
@@ -34,6 +38,8 @@ const previousRPCs = query(rpcSQL);
 run(cli, ['db', 'push', '--local', '--skip-vault', '--yes', ...localArgs]);
 assert.equal(query(`select (${rpcSQL}) @> '${previousRPCs.replaceAll("'", "''")}'::jsonb;`),
   't', 'Upgrade removed or changed an existing public RPC signature, named argument or result type');
+assert.equal(query(fingerprintSQL), freshFingerprint, 'Populated upgrade schema/RLS/RPC differs from fresh replay');
+assert.deepEqual(JSON.parse(query(referenceQuery)), freshReferenceData, 'Upgraded static reference data differs from fresh replay');
 // Extra nullable/defaulted columns and new rows are valid expansions. All previous
 // fixture values must remain present, including private notes and history.
 assert.equal(query(`select (${snapshotSQL.trim().replace(/;$/, '')})::jsonb @> '${before.replaceAll("'", "''")}'::jsonb;`),
