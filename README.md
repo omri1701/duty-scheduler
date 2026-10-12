@@ -3,6 +3,8 @@
 A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. The app starts empty and uses real, approved accounts only. No assignments are generated until the manager clicks Generate.
 
 For Codex setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
+For database-first deployments, approved Production releases, environment secrets
+and recovery, see [CI/CD release workflow](docs/DEPLOYMENT.md).
 
 ## Run locally
 

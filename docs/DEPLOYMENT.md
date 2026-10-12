@@ -1,203 +1,179 @@
-# Clean European environments
+# Database and application releases
 
-## Release checkpoint — 12 October 2026
+GitHub Actions is the single release orchestrator. Quality uses disposable LOCAL
+Supabase only. After it passes, reusable `deploy.yml` applies pending SQL, verifies
+the database contract, then deploys the exact application SHA. Normal releases
+need no SQL Editor execution. Application behavior and visual snapshots are unchanged.
 
-The current task authorizes the European cutover, merge commit for PR #1, later
-reversible Tokyo pause, $0 Frankfurt Development creation and deployments once
-readiness passes. Never permanently delete Tokyo or touch CPR.
-
-Verified this session:
-- Frankfurt `hpszwgnwxtxyxpcaivgj` is healthy in `eu-central-1`. Clean-install SQL
-  passes; all Auth and operational counts are zero; both canonical migrations and
-  frozen hashes are correct; security advisor has no findings. No reset was needed.
-- Catalog/permission fingerprints: tables `9a5f3a8157bd67b1d10aaca4b6e0d8b9`,
-  functions `c6b9e02563b497c1d2e3178682a3c74d`, constraints
-  `4f41119bbceb6b79d086ac6ba0746827`, indexes `ddedc3b94040e1aab5353d5c83fca3ca`,
-  policies `6ddfd6214c8daa60b407013d215a0038`, private schema
-  `e92c95c156c76736c4f622c5dc2bf257`, trigger `c759a41c3984688b290753e15b008849`.
-- PR #11 merged at `dea7681bddb46ab15ae4e4bfffb134e452b76c37`; PR #1 includes it,
-  is mergeable and both current-head Quality checks passed (SQL/build/browser).
-- Public Production is `https://duty-scheduler-two.vercel.app`; `/api/config`
-  confirms Tokyo. Served deployment: `dpl_9XesSiM6cnD3odbQ7E3pWtyfEDRu`.
-- Protected Frankfurt verification Preview below returns HTTP 200 and Frankfurt
-  configuration. Its application code matches `develop`; Google is enabled.
-  Auth Site URL is `https://duty-scheduler-two.vercel.app`; the allowlist contains
-  only its exact trailing-slash return and the verification Preview return below.
-  Management API readback confirms Google credentials/settings were preserved.
-  Preview OAuth initiation returns HTTP 302 to Google with Frankfurt's callback;
-  the temporary five-minute verification share link was revoked immediately.
-  Real owner Google sign-in and pending membership verification remain the gate.
-- Future Vercel function deployments now use `fra1`; Next.js, Node 24 and `master`
-  Production branch retained. Temporary automation bypass revoked: zero remain;
-  normal `all_except_custom_domains` Vercel Authentication remains enabled.
-- Organization `vaplnkaubzopjbixlxng` is Free; project creation quote is $0/month.
-
-Supabase CLI management authentication is complete. Auth URLs were configured via
-the official Management API using the CLI's stored credential without exposing it.
-The owner added Frankfurt's callback to the existing Google client and saved its
-credentials in Frankfurt Supabase. No authenticated Google Cloud tool is available;
-the separate Development client is still pending. Rename Frankfurt to exactly
-**Duty Scheduler** after successful cutover, using authenticated management access.
-Vercel MCP returns scope 403; authenticated CLI/API works with team
-`team_pbvqzViC50aeT2kaRNnTYkPt`, scope `omri1701s-projects`.
-
-Resume: verify Production Google and owner sign-in at the protected verification
-Preview; verify the actual Google UUID and pending member, then explicitly promote.
-Recheck final PR #1 Quality; configure Frankfurt Production variables and remove
-obsolete project-specific integration extras; merge #1 with a merge commit, deploy
-its actual `master` SHA and verify the public domain. Only then pause Tokyo
-Production and create **Duty Scheduler Dev** in Frankfurt. Install the two canonical
-migrations through an isolated CLI directory with explicit ref/dry run/push; compare
-all fingerprints above and reference rows with the Production pre-onboarding gate.
-Configure separate Development Google, Preview and Vercel Development variables.
-Stable branch URL: `https://duty-scheduler-git-develop-omri1701s-projects.vercel.app`.
-Verify its exact Development ref; write Git-ignored `.env.local` with Development
-only, verify port 5173/sign-in/reload/refresh and update user-local `supabase_dev` MCP
-to the new ref. Promote only the owner's separately confirmed Development account.
-After successful master deployment, make GitHub default `master`, retain feature
-PRs to `develop`, and require Actions `quality` on both branches, prohibiting force
-push/deletion without mandatory second-person review for the solo maintainer.
-
-Development is not created; `.env.local` is absent. Never pull Vercel Production
-variables into it. Tokyo Production remains active; Tokyo Development is paused.
-No Tokyo data was imported. Retire temporary Production verification origin and
-deployment after cutover; keep shared Development Previews isolated and protected.
-
-The strategy is fresh initialization, not regional data transfer. Never export,
-copy or restore Tokyo accounts, credentials, private notes or operational records.
-
-## Current verified state
-
-| Environment | Branch / hosting | Supabase | Status |
+| Branch | GitHub Environment | Vercel target / domain | Supabase (Frankfurt) |
 |---|---|---|---|
-| Original / rollback | Current served Vercel Production | Tokyo `ukxxpbivgxyxharhxgqf` | Active, original data and eight migration records preserved; no writes by this task |
-| New Production target | `master` / Vercel Production after readiness | Frankfurt `hpszwgnwxtxyxpcaivgj` | Clean, canonical baseline initialized and verified; Google and Auth URLs configured; owner sign-in pending; not cut over |
-| New Development target | `develop` / Vercel Preview | Separate Frankfurt ref, not created | Blocked by two-active-project Free quota |
-| Old Development | None | Tokyo `civayswojfpujiszlbnu` | Paused, unchanged |
+| `develop` | Development | Preview / `duty-scheduler-dev.vercel.app` | `qhndiuahuxczujxxitsm` |
+| `master` | Production | Production / `duty-scheduler-prod.vercel.app` | `hpszwgnwxtxyxpcaivgj` |
 
-The existing Free organization is `vaplnkaubzopjbixlxng` (`omri1701`). Tokyo
-Production and Frankfurt already occupy its two active slots. Paused projects do
-not occupy a slot. Two working European projects cannot coexist with active Tokyo
-on this Free quota. No paid branching, additional billable resources or unrelated
-project changes are authorized. The current task authorizes pausing Tokyo Production
-after successful European cutover. Never pause it before Vercel stops using it;
-never delete either original without separate final confirmation.
+Read-only inspection on 12 October 2026 confirmed both projects are healthy in
+`eu-central-1`, PostgreSQL 17, with exactly `20261011212413_clean_baseline` and
+`20261011212421_required_reference_data` applied. This CI/CD PR has no real
+migration and writes to neither hosted database. Never replay Frankfurt baselines
+into Tokyo's archived history or repair history to resemble another environment.
 
-## Canonical installation
+One Vercel project: `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, team
+`team_pbvqzViC50aeT2kaRNnTYkPt`. On the free plan a hosted Development app uses
+**Preview**; Vercel's **Development** variables are for local `vercel dev`/`env pull`.
+Preview and Development variables must both point to Frankfurt Development.
+No paid custom environment or additional service is needed.
 
-See [database architecture](../supabase/README.md). Fresh projects install only:
+## Setup before activation
 
-1. `20261011212413_clean_baseline.sql`
-2. `20261011212421_required_reference_data.sql`
+Create GitHub Environments **Development** and **Production**, with selected
+deployment branches `develop` and `master` respectively. Configure these secrets
+**separately in each Environment**, never repository-wide or in PR jobs:
 
-Required rows: two roles, three membership statuses, two month statuses, two
-constraint types, and the revision singleton at zero. No users, identities,
-members, assignments, availability/constraints, months, publications or swaps.
-Optional synthetic data is confined to tests, never remote installation seeds.
-Eight historical migrations remain outside active migration discovery for Tokyo
-traceability and upgrade tests. Do not replay, reset, repair or alter Tokyo history.
+| Secret | Value / scope |
+|---|---|
+| `SUPABASE_DB_URL` | That project's percent-encoded PostgreSQL password URL; direct or Frankfurt session pooler, port 5432, database `postgres`, `?sslmode=require` |
+| `SUPABASE_PUBLISHABLE_KEY` | That project's `sb_publishable_...` key |
+| `VERCEL_TOKEN` | Deployment token limited to the existing Duty team/project as supported by the account; separate environment tokens |
+| `VERCEL_ORG_ID` | `team_pbvqzViC50aeT2kaRNnTYkPt` |
+| `VERCEL_PROJECT_ID` | `prj_Jl2PBhK8DsvK183rKKWesr0821OY` |
 
-Frankfurt was explicitly verified as the disposable `eu-central-1` project.
-Preflight found three copied users/identities, five sessions, no Storage objects
-or buckets, no custom Auth triggers, no private tables and no external application
-FK dependencies. Only the known Duty tables/functions/private schema and its
-obsolete copied migration records were cleared. Users were deleted using the
-[documented direct Auth user deletion](https://supabase.com/docs/guides/auth/managing-user-data#deleting-users),
-with managed cascades removing identities and sessions; no Supabase-managed schema
-or Auth infrastructure was reset, truncated, recreated or modified. Temporary
-cleanup history was removed from this disposable target before installing the two
-canonical migrations. This is a completed, target-specific operation, not a
-reusable reset procedure for existing environments.
+Copy the actual **session pooler** host from Supabase Connect, e.g.
+`postgresql://postgres.<REF>:<ENCODED_PASSWORD>@aws-<N>-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`.
+Do not guess `<N>`. The project-qualified username/host are checked before writes.
+Direct IPv6 connections are supported; session pooling avoids IPv6 limitations on
+GitHub-hosted runners. Transaction pooling (6543), wrong regions/projects and
+plaintext connections fail. No Management API token, service-role key or Google
+secret is needed. The database credential is privileged DDL access to **one project**,
+not a runtime identity: the postgres-owned baseline needs owner-level DDL. Restrict
+it to protected release jobs, rotate it and audit access.
 
-Hosted clean-install checks passed. All application schema and effective client
-permission fingerprints match the disposable local installation: 11 tables,
-52 constraints (21 FKs), 35 indexes, 30 functions, 11 policies and one trigger.
-Auth/application counts are zero except required rows. Anonymous RPC access is
-rejected; the security advisor has no findings. Informational unused-index notices
-are expected on an empty database; retain FK/lookup indexes for real usage.
-Local historical replay matched all 169 dumped schema objects and ACLs. Fresh reset
-was repeated, and access, publication/availability, swap consent, upgrade,
-concurrency and actual operator-bootstrap tests passed. These checks do not prove
-real Google OAuth; no hosted synthetic fixtures were run on the Production target.
+Production must have **required reviewers** for explicit deployment approval;
+disable admin bypass and prevent self-review when a second operator is available.
+The release gate checks reviewers are configured before requesting approval.
+Protect both branches with `quality`, prohibit force pushes/deletion, and require
+reviewed PRs/no direct pushes to `master`. Production verifies final-head PR approval
+and a successful Development deployment of that head. Prefer merge commits for
+`develop` -> `master`. The workflow token has only read permissions.
 
-## Google sign-in and first admin
+**Production starts disabled:** leave repository variable
+`PRODUCTION_DEPLOYMENT_ENABLED` unset. Only after owner approval, configure the
+protections/secrets and set it to `true`. This PR does not activate it, change live
+settings, merge a release or apply hosted SQL.
 
-The existing Google web client now includes the Frankfurt callback
-`https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback`.
-Enable Google in Frankfurt Authentication providers; enter its client ID and secret
-there only. The isolated verification Preview is
-`https://duty-scheduler-rmqhsz2gy-omri1701s-projects.vercel.app` (deployment
-`dpl_Yjz6wQ7YKsJNrvf1Jp6NcTfqmZBy`, Ready). Production Site URL is
-`https://duty-scheduler-two.vercel.app`. Supabase allows both exact trailing-slash
-returns. Google authorization initiation and Frankfurt's callback are verified;
-the owner's interactive Google sign-in remains unverified. Retire the verification
-return after cutover. Keep Tokyo OAuth unchanged.
-The app uses existing PKCE and `window.location.origin + '/'`; no UI/auth code changed.
+`vercel.json` disables all automatic Git deployments, including feature branches.
+Retain the linked Git repository, existing ignored-build filter (`master|develop`
+only), Next.js preset, Node 24, pinned pnpm/Corepack, Frankfurt region, automatic
+custom-domain assignment and `all_except_custom_domains` Authentication. CLI GitHub
+branch/SHA metadata updates the existing domain; Development is bound to `develop`,
+Production has no branch binding. Do not create protection bypasses.
+Set Preview and Vercel Development app variables to Development, Production app
+variables to Production. Actions explicitly supplies the matching runtime URL/key;
+no database password is sent to Vercel.
 
-After the owner signs in successfully, normal `duty_join` creates a pending,
-inactive engineer profile. Confirm the target project and actual `auth.users.id`
-with the owner, then execute [the operator-only bootstrap](../supabase/admin/promote-first-admin.sql)
-through authenticated database administration. With MCP, replace only the UUID
-parameter with the confirmed value and retain the transaction and all checks.
-The script requires a trusted operator role, a verified Google identity and matching
-pending profile; it refuses any existing admin and updates revision under the
-workspace lock. It is never deployed as an RPC, email allowlist or first-user rule.
-Existing checked approval/role RPCs support multiple admins and protect the last admin.
+Before activation, verify there are no competing Vercel deployment hooks/workflows
+or Supabase GitHub integration migration deployments. Disable automatic Supabase
+branching/migration sync if configured: Actions must be the sole migration writer.
+Configure Development secrets before merging this PR so its first merge deployment
+can succeed. Promoting this configuration to `master` deliberately disables Git
+auto-deployment while Production activation remains gated.
 
-Development needs its own Google web client, audience/test accounts and callback
-for its eventual distinct ref. Use only `openid`, `userinfo.email`, `userinfo.profile`.
-Configure its exact develop Preview origin and `http://localhost:5173/` independently.
-Store Google secrets only in the appropriate Supabase project. Verify real PKCE,
-return origin, reload, refresh, sign-out and pending approval separately in each
-environment. Keep application users/data separate.
+## Database feature workflow
 
-## Hosting and approval gate
+1. Branch from `develop`; change canonical SQL/reference definitions. Update
+   `baseline.json`/`config.toml` when adding sources.
+2. Use pinned CLI `supabase migration new <name>` or the documented declarative
+   diff workflow. Review new incremental SQL, ordered after existing versions.
+   Never change applied files/frozen hashes or include operational test fixtures.
+3. Include relevant `supabase/tests` regressions for grants/RLS, checked RPC
+   compatibility, changed behavior and preservation. Update clean-install/catalog
+   assertions deliberately when introducing objects/reference rows.
+4. Open a PR to `develop`. Quality enforces immutable history against its exact
+   base and canonical SQL + new migration + SQL regressions together. It validates
+   fresh canonical replay, existing security/RPC/race tests, upgrades with synthetic
+   identities/private notes/publications/duties, and unchanged build/browser/visual
+   checks. All SQL testing stays local.
 
-Vercel project `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, scope `omri1701s-projects`,
-uses Next.js, Node 24 and Production branch `master`. Production is still the
-original served deployment using Tokyo. Preview has no application database
-variables and fails closed until independent Development exists.
+Use **expand/migrate/contract**: add nullable columns/tables/functions while retaining
+old RPC signatures; backfill in bounded, reviewed migrations; switch callers in a
+later release. Contract obsolete objects only after old app/browser callers retire.
+Review compatibility and add old-caller regressions: CI cannot prove every semantic
+property. Required static rows belong in migrations, not local seeds.
 
-Preserve the native runtime, `pnpm build`, default output and Corepack setting.
-The only database variables the app needs are `SUPABASE_URL` and
-`SUPABASE_PUBLISHABLE_KEY`. Production must use Frankfurt Production; Preview
-and Vercel Development must use the independent Frankfurt Development project.
-No `NEXT_PUBLIC_`, service-role, database password or Google secret is used by the
-application. Audit existing integration-managed extras without changing Production
-before readiness. Keep Preview sync/branching off and prevent branch overrides from
-pointing ordinary development builds at Production.
+## Development and Production
 
-A temporary isolated verification Preview may use explicit Frankfurt overrides
-without changing project-wide Production or Preview variables. It is for owner
-onboarding/auth readiness only, not the eventual shared Development environment.
-The explicit `.vercelignore` keeps local credentials, transfer work, AI settings
-and generated diagnostics out of CLI deployment uploads.
+A merge/push to `develop` first runs Quality. Its database contract artifact is
+bound to the same Actions run and exact SHA; privileged jobs never consume PR
+artifacts. Development credentials are released only to its deployment job. It
+checks the latest branch SHA, project-qualified database URL, Vercel protection/
+domain bindings and existing history, then:
 
-Before actual cutover: verify the final schema/permissions/API contracts, real
-Google login at the exact verification origin, clean onboarding, correct project
-URLs/keys. Development creation follows cutover and the authorized Tokyo pause;
-it cannot be a pre-cutover gate on the two-project Free quota. Record the currently served
-deployment and domains. Request explicit approval for Production variables,
-domain/deployment changes and the release merge only if not already authorized by
-the current task. Do not promote a Development
-Preview artifact into Production. Build Production from the approved `master` SHA
-with Frankfurt variables. PR #11 is merged; PR #1 remains open pending readiness.
+1. Dry-run and push only pending migrations; skip both when none exist. Never
+   include seeds, roles, resets, history repair or `--include-all`.
+2. Require complete matching history. Compare read-only application catalog
+   fingerprints (schema, effective grants/RLS and RPC definitions) and static
+   lookup rows with Quality's verified local DB. No private operational rows or
+   live revision are read/compared. Any mismatch blocks the app.
+3. Deploy the same checkout via pinned Vercel CLI, with matching target, branch/SHA
+   metadata and runtime URL/key. Wait for READY and verify project/SHA/target/domain.
 
-Do not claim two environments are working until Development is created, initialized,
-validated, independently configured and auth-tested. An approved Tokyo pause, if
-performed after the authorized cutover, preserves its data but changes availability.
-Never delete Tokyo. Rollback hosting does not
-roll back new European data; preserve any new records before a rollback decision.
+A non-cancelling lock covers both migration and deployment per environment.
+New pushes cancel obsolete tests, never an active migration. Queued stale SHAs
+fail before writes; the branch is checked again immediately before app deployment.
+No hosted identities/notes/schedules are reset or used as test fixtures.
 
-## Repository and release checks
+For Production, open a **reviewed `develop` -> `master` release PR** after verifying
+Development. Merge only with owner authorization. `master` Quality must pass;
+with activation enabled, Actions checks the merged PR, final-head review and
+Development deployment, then waits for **Production Environment approval**.
+Only after approval can it use Production credentials, migrate/verify Production
+and deploy the corresponding `master` app. Its custom domain updates automatically.
+Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 
-The temporary transfer runners, connection/password diagnostics, backup experiments,
-credential file and generated migration artifacts are retired. `.env*`, `work/`,
-`outputs/` and CLI caches stay Git-ignored; deployment uploads also exclude them.
-No transfer tool or operational database export belongs in the final architecture.
+To retry, run **Quality** with **Run workflow** on the current `develop`/`master`
+branch, or rerun its failed deploy job. All gates apply again; Quality recreates the
+SHA contract. Stale releases/expired artifacts need a current Quality run.
 
-Run the generated-baseline check and the documented SQL/bootstrap/concurrency tests
-on empty disposable local Supabase. Run unit tests, TypeScript, lint, AI configuration,
-production build and browser/visual comparison; retain existing snapshots. Quality CI
-checks the final feature PR to `develop`. This task authorizes repository delivery;
-the Production release still requires all readiness gates to pass.
+## Failure and recovery
+
+- Quality/approval/credential failure: no migration/app deployment starts.
+- Migration/contract failure: app deployment is blocked; the old app keeps serving.
+  Earlier successful migration files may remain applied. CLI runs each normal file
+  transactionally; isolated probes verify partial DDL and failed history roll back.
+- Vercel build failure: old deployment keeps serving; applied SQL remains. Fix
+  forward or retry the current SHA after correcting configuration. A domain check
+  failure after READY may mean the new app is already assigned; inspect Vercel.
+- Actions identifies the failed stage/status and job summary. Detailed SQL/CLI
+  errors are suppressed because they can contain private rows/credentials; inspect
+  service diagnostics privately, never paste credentials into CI logs.
+
+Restrict releases during investigation. Read history/catalogs in the explicitly
+selected environment and identify committed files. Create a **new reviewed forward
+fix** with matching canonical SQL/regressions, verify locally and on Development,
+then approve Production. Never edit applied SQL, blindly replay/repair history or
+stamp failed SQL as applied. Correcting an **unapplied** failed file requires an
+operator-reviewed exception to the default immutable-history check. Reconcile any
+nontransactional effects under a separately approved recovery plan.
+
+Vercel rollback chooses an older **same-environment** app compatible with the current
+expanded schema; it does **not** reverse SQL. Never promote a Development artifact
+to Production. For data loss, preserve evidence/data, stop writes and obtain owner
+approval before restoration. Free projects need a separately secured off-site
+operator-managed backup before destructive changes; do not assume paid PITR exists
+or put private backups in GitHub artifacts. Restore into an isolated project first,
+validate identities/permissions/history and reconcile later writes before cutover.
+
+## Supplied verification
+
+`tests/release.test.mjs` covers credential isolation, migration policy/history,
+contract failures, approval gates and ordering. `scripts/release-local-test.mjs`
+uses the **actual CLI** in a temporary local work directory: no-op release, safe
+additive private test table, then an intentionally failing migration. A synthetic
+application hook runs only after DB verification; failure must block it and roll
+back the failing file. Probes never enter committed history; the disposable DB is
+reset afterward. This is isolated end-to-end verification, not a claimed live
+Vercel rollout. Live domain/OAuth acceptance needs an authorized post-merge
+Development release with configured Environment secrets.
+
+References: [Supabase CI/CD](https://supabase.com/docs/guides/deployment/managing-environments),
+[Vercel Git deployment controls](https://vercel.com/docs/project-configuration/git-configuration),
+[CLI branch metadata](https://vercel.com/docs/cli/deploy#associate-a-cli-deployment-with-a-git-branch),
+[database architecture](../supabase/README.md), [auth/onboarding](SUPABASE_SETUP.md).

@@ -1,0 +1,82 @@
+name: Database then application
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+  pull-requests: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Verify branch and reviewed Production release before requesting approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ inputs.branch }}
+          RELEASE_SHA: ${{ inputs.sha }}
+        run: node scripts/release.mjs --approval-only
+
+  deploy:
+    needs: authorize
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.branch == 'master' && 'Production' || 'Development' }}
+      url: ${{ inputs.branch == 'master' && 'https://duty-scheduler-prod.vercel.app' || 'https://duty-scheduler-dev.vercel.app' }}
+    # Hold one lock across both database and app. New pushes cannot cancel a
+    # migration. A queued older SHA fails the branch-head gate before any write.
+    concurrency:
+      group: release-${{ inputs.branch }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
+        with:
+          version: 2.119.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: database-contract-${{ inputs.sha }}
+          path: work
+      - name: Install pinned Vercel CLI before exposing deployment secrets
+        run: pnpm dlx vercel@62.0.0 --version
+      - name: Apply pending migrations, verify contracts, deploy and verify domains
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ inputs.branch }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: node scripts/release.mjs
+      - name: Report failed release
+        if: failure()
+        run: |
+          echo '::error::Release failed. Check the failed stage. Migration/contract failures block the application. Applied SQL is never automatically reversed.'
+          echo 'Release failed. Inspect the failed stage and follow docs/DEPLOYMENT.md recovery. Do not reset or blindly repair hosted migration history.' >> "$GITHUB_STEP_SUMMARY"
