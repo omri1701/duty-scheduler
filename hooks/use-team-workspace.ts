@@ -1,14 +1,17 @@
 'use client';
 import {useEffect,useState} from 'react';
 import type {User} from '@supabase/supabase-js';
-import {getSupabase,signInWithGoogle} from '@/lib/supabase/client';
+import {getSupabase,getEnvironment,signInWithGoogle,signInLocally,completeInspectionLogin} from '@/lib/supabase/client';
+import type {Environment} from '@/lib/supabase/environment';
 import {fromSnapshot,schedulePayload,canManage,type Snapshot} from '@/lib/supabase/snapshot';
 import {observeSession} from '@/lib/supabase/session';
 import {createWorkspace} from '@/lib/supabase/workspace';
 import {errorMessage,type DutyClient} from '@/lib/supabase/rpc';
+import {signOutSafely} from '@/lib/supabase/write-policy';
 import type {State} from '@/lib/rota/engine';
 
 export function useTeamWorkspace(){
+ const [environment,setEnvironment]=useState<Environment|null>(null);
  const [client,setClient]=useState<DutyClient|null>(null),[user,setUser]=useState<User|null>(null),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
  const [workspace]=useState(()=>createWorkspace({snapshot:setSnapshot,saving:setSaving,error:setError}));
  useEffect(()=>{
@@ -21,6 +24,7 @@ export function useTeamWorkspace(){
     const c=await getSupabase();
     if(!alive)return;
     setClient(c);
+    setEnvironment(await getEnvironment());
     unsubscribe=observeSession(c,{
      clear:()=>{workspace.clear();setUser(null)},
      user:async u=>{setUser(u);await workspace.connect(c,u)},
@@ -40,10 +44,12 @@ export function useTeamWorkspace(){
   return()=>{alive=false;clearInterval(timer);window.removeEventListener('focus',poll)};
  },[client,user,workspace]);
  const me=snapshot?.members.find(m=>m.id===user?.id);
- return {user,me,snapshot,loading,saving,error,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
+ return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   refresh:()=>workspace.refresh(),
   async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
-  async signOut(){if(client){try{const {error}=await client.auth.signOut();if(error)setError(error.message)}catch(e){setError(errorMessage(e,'Could not sign out. Please try again.'))}}},
+  async signInLocal(email:string,password:string){try{setError('');await signInLocally(email,password)}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
+  async completeInspection(returnUrl:string){try{setError('');await completeInspectionLogin(returnUrl)}catch{setError('Could not complete inspection login. Start Google sign-in again.')}},
+  async signOut(){if(client){try{const {error}=await signOutSafely(client);if(error)setError(error.message)}catch(e){setError(errorMessage(e,'Could not sign out. Please try again.'))}}},
   save:(s:State,publish?:string)=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s),p_publish:publish??null}).then(()=>{}),
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),

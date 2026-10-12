@@ -10,6 +10,7 @@ export function WorkspaceSummary({
   monthDetails,
   meId,
   isManager,
+  readOnly,
   t,
   fmt,
   onTeam,
@@ -20,6 +21,7 @@ export function WorkspaceSummary({
   monthDetails: State['months'][string];
   meId: string;
   isManager: boolean;
+  readOnly: boolean;
   t: Translate;
   fmt: FormatDate;
   onTeam: () => void;
@@ -97,7 +99,7 @@ export function WorkspaceSummary({
               : t('set by your manager', 'נקבע על ידי המנהל')}
           </p>
         </div>
-        <button style={{ display: isManager ? undefined : 'none' }} onClick={onSettings}>
+        <button disabled={readOnly} style={{ display: isManager ? undefined : 'none' }} onClick={onSettings}>
           {t('Edit', 'עריכה')}
         </button>
       </div>

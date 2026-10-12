@@ -1,6 +1,7 @@
 import {test as base, expect, type Page} from '@playwright/test';
 import {addDays, blocks} from '../../lib/rota/engine';
 import {canManage, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -29,6 +30,8 @@ export function seed(): Snapshot {
 // A deliberately small transport fake, not a substitute for PostgreSQL/RLS tests.
 // Unexpected endpoints and stale client revisions fail closed; no network fallback.
 export class Backend {
+  url: string = PROJECTS.dev;
+  runtimeOrigin?: string;
   raw = seed();
   calls: Call[] = [];
   invalidated = false;
@@ -146,22 +149,28 @@ export const test = base.extend<Fixtures>({
       const key = ['rejected', 'inactive'].includes(identity) ? 'a' : identity;
       if (identity === 'rejected') backend.raw.members.find(m => m.id === ids.a)!.status = 'rejected';
       if (identity === 'inactive') backend.raw.members.find(m => m.id === ids.a)!.active = false;
-      const user = {id: ids[key], email: `${key}@example.invalid`, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
+      let user = {id: ids[key], email: `${key}@example.invalid`, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
       const token = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: user.id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
-      await target.addInitScript(({user, token, signedOut}) => {
+      const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
+      const storageKey=resolveEnvironment(backend.url,origin).storageKey;
+      await target.addInitScript(({user, token, signedOut, storageKey}) => {
         localStorage.clear();
-        if (!signedOut) localStorage.setItem('sb-baseline-auth-token', JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out'});
+        if (!signedOut) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
+      }, {user, token, signedOut: identity === 'signed-out',storageKey});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
-        if (url.pathname === '/api/config') return route.fulfill({json: {url: 'https://baseline.supabase.co', key: 'sb_publishable_synthetic_only'}});
-        if (url.origin === 'https://baseline.supabase.co') {
+        if (url.pathname === '/api/config') return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only'}});
+        if (url.origin === backend.url) {
           if (url.pathname === '/auth/v1/settings') return route.fulfill({json: {external: {google: backend.googleEnabled}}});
           if (url.pathname === '/auth/v1/authorize') {
             backend.oauthRequests.push(url);
             return route.fulfill({contentType: 'text/html', body: '<h1>Synthetic OAuth handoff</h1>'});
           }
           if (url.pathname === '/auth/v1/user') return route.fulfill({json: user});
+          if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) {
+            user={...user,id:ids.admin,email:'admin@duty.local'};
+            return route.fulfill({json:{access_token:token,refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
+          }
           if (url.pathname === '/auth/v1/logout') return route.fulfill({status: 204});
           if (url.pathname.startsWith('/rest/v1/rpc/')) {
             try {return await route.fulfill({json: backend.rpc(url.pathname.split('/').at(-1)!, route.request().postDataJSON() ?? {}, user.id)});}
@@ -172,12 +181,13 @@ export const test = base.extend<Fixtures>({
             }
           }
         }
+        if (backend.runtimeOrigin && url.origin===backend.runtimeOrigin) return route.fulfill({response:await route.fetch({url:baseURL+url.pathname+url.search})});
         if (url.origin === new URL(baseURL!).origin) return route.continue();
         unexpected.push(url.origin + url.pathname);
         return route.abort('blockedbyclient');
       });
-      await target.goto('/');
-      await expect(target.getByRole('button', {name: identity === 'signed-out' ? 'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
+      await target.goto(backend.runtimeOrigin??'/');
+      await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
       return target;
     });
     expect(errors, 'browser errors / unexpected RPC contract').toEqual([]);

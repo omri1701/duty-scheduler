@@ -1,5 +1,10 @@
 import {test, expect, duty, keyboardRequest, confirmRequest} from './fixtures';
 import type {Page} from '@playwright/test';
+import {PROJECTS} from '../../lib/supabase/environment';
+
+// Retain the deployed Production baseline (no badge). Environment-specific
+// headers/access states have their own new snapshots in environment.spec.ts.
+test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='https://duty-scheduler-prod.vercel.app';});
 
 async function snapshot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);

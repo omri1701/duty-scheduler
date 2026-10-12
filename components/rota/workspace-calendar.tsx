@@ -18,6 +18,7 @@ export function WorkspaceCalendar({
   nickname,
   meId,
   isManager,
+  readOnly,
   requesting,
   publication,
   view,
@@ -39,6 +40,7 @@ export function WorkspaceCalendar({
   nickname: (id?: string) => string;
   meId: string;
   isManager: boolean;
+  readOnly: boolean;
   requesting: boolean;
   publication: string | null | undefined;
   view: string;
@@ -101,6 +103,7 @@ export function WorkspaceCalendar({
           onClick={() => {
             onSpecial();
           }}
+          disabled={readOnly}
         >
           <Plus />
           {t('Special block', 'מקטע מיוחד')}
@@ -132,7 +135,7 @@ export function WorkspaceCalendar({
           if (combined && d !== b.start) return null;
           return (
             <button
-              disabled={!b || (requesting && !publishedDuty(b.id))}
+              disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
               key={d}
               data-gesture-key={b?.id}
               onClick={() => {
