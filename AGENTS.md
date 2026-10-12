@@ -45,6 +45,8 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 - Use a short plan for multi-step/high-risk work. Continue authorized local edits
   and checks without repeated approval. Ask only for material ambiguity or actions
   outside authorization. Do not claim instructions can switch the primary model.
+- Execute available login commands yourself; show authorization URLs/verification codes,
+  wait for authentication, then resume automatically. Never expose or commit tokens.
 
 ## Engineering and security
 
