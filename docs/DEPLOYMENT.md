@@ -89,7 +89,8 @@ auto-deployment while Production activation remains gated.
 4. Open a PR to `develop`. Quality enforces immutable history against its exact
    base and canonical SQL + new migration + SQL regressions together. It validates
    fresh canonical replay, existing security/RPC/race tests, upgrades with synthetic
-   identities/private notes/publications/duties, and unchanged build/browser/visual
+   identities/private notes/publications/duties, retained RPC signatures/named
+   arguments/result types, and unchanged build/browser/visual
    checks. All SQL testing stays local.
 
 Use **expand/migrate/contract**: add nullable columns/tables/functions while retaining

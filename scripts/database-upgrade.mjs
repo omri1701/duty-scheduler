@@ -26,7 +26,14 @@ const snapshotSQL = `select jsonb_build_object(
   'duties',(select jsonb_agg(to_jsonb(t) order by id) from public.duty_assignments t),
   'revision',(select revision from public.duty_workspace where id));`;
 const before = query(snapshotSQL);
+const rpcSQL = `select jsonb_object_agg(p.oid::regprocedure::text, jsonb_build_object(
+  'arguments',p.proargnames,'result',pg_get_function_result(p.oid)))
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname like 'duty_%'`;
+const previousRPCs = query(rpcSQL);
 run(cli, ['db', 'push', '--local', '--skip-vault', '--yes', ...localArgs]);
+assert.equal(query(`select (${rpcSQL}) @> '${previousRPCs.replaceAll("'", "''")}'::jsonb;`),
+  't', 'Upgrade removed or changed an existing public RPC signature, named argument or result type');
 // Extra nullable/defaulted columns and new rows are valid expansions. All previous
 // fixture values must remain present, including private notes and history.
 assert.equal(query(`select (${snapshotSQL.trim().replace(/;$/, '')})::jsonb @> '${before.replaceAll("'", "''")}'::jsonb;`),
