@@ -123,8 +123,13 @@ only), Next.js preset, Node 24, pinned pnpm/Corepack, Frankfurt region, automati
 custom-domain assignment and `all_except_custom_domains` Authentication. Releases
 explicitly set the non-secret build flag `ENABLE_EXPERIMENTAL_COREPACK=1`
 so Vercel installs the exact `packageManager` version, including pnpm 12's lockfile.
-CLI GitHub branch/SHA metadata updates the existing domain; Development is bound to `develop`,
-Production has no branch binding. Do not create protection bypasses.
+Development is bound to `develop`. After a verified READY Preview and another
+branch-head check, Actions explicitly runs `vercel alias set` for
+`duty-scheduler-dev.vercel.app` in the existing team. Metadata alone is not the
+promotion mechanism. Production retains automatic assignment through the
+Production deployment; its domain has no branch binding. Both releases require
+the domain's Alias API record to match the verified deployment ID and project,
+without a redirect, before reporting success. Do not create protection bypasses.
 Set Preview and Vercel Development app variables to Development, Production app
 variables to Production. Actions explicitly supplies the matching runtime URL/key;
 no database password is sent to Vercel.
@@ -179,11 +184,16 @@ domain bindings and existing history, then:
    lookup rows with Quality's verified local DB. No private operational rows or
    live revision are read/compared. Any mismatch blocks the app.
 3. Deploy the same checkout via pinned Vercel CLI, with matching target, branch/SHA
-   metadata and runtime URL/key. Wait for READY and verify project/SHA/target/domain.
+   metadata and runtime URL/key. Wait for READY and verify project/SHA/branch/target.
+4. Recheck the Development branch head, explicitly assign its stable domain with
+   `vercel alias set`, then read back the Alias API record. Its deployment ID must
+   equal that verified READY deployment; an old binding fails even if the build's
+   alias list contains the domain. Keep Vercel Authentication and branch binding.
 
 A non-cancelling lock covers both migration and deployment per environment.
 New pushes cancel obsolete tests, never an active migration. Queued stale SHAs
-fail before writes; the branch is checked again immediately before app deployment.
+fail before writes; the branch is checked again immediately before app deployment
+and before Development alias assignment after the build.
 No hosted identities/notes/schedules are reset or used as test fixtures.
 
 For Production, open a **maintainer-reviewed `develop` -> `master` release PR** after verifying
@@ -191,7 +201,9 @@ Development. Merge only with owner authorization. `master` Quality must pass;
 with activation enabled, Actions checks the merged PR, protected branch and
 Development deployment, then waits for **explicit Production Environment approval**.
 Only after approval can it use Production credentials, migrate/verify Production
-and deploy the corresponding `master` app. Its custom domain updates automatically.
+and deploy the corresponding `master` app. Its custom domain updates automatically;
+Actions verifies that its Alias API record points to that exact deployment. It
+never manually aliases a Preview or Development artifact onto Production.
 Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 
 To retry, run **Quality** with **Run workflow** on the current `develop`/`master`
@@ -207,6 +219,9 @@ SHA contract. Stale releases/expired artifacts need a current Quality run.
 - Vercel build failure: old deployment keeps serving; applied SQL remains. Fix
   forward or retry the current SHA after correcting configuration. A domain check
   failure after READY may mean the new app is already assigned; inspect Vercel.
+- Development alias assignment/read-back failure: the job fails without reporting
+  release success. Inspect the domain's actual deployment ID before retrying; do
+  not remove aliases or reset SQL automatically. Applied migrations remain applied.
 - Actions identifies the failed stage/status and job summary. Detailed SQL/CLI
   errors are suppressed because they can contain private rows/credentials; inspect
   service diagnostics privately, never paste credentials into CI logs.
@@ -230,7 +245,9 @@ validate identities/permissions/history and reconcile later writes before cutove
 ## Supplied verification
 
 `tests/release.test.mjs` covers credential isolation, migration policy/history,
-contract failures, approval gates and ordering. `scripts/release-local-test.mjs`
+contract failures, approval gates, ordering, explicit Development alias assignment
+and rejection of stale/cross-project/redirected domain bindings. Production tests
+require automatic assignment without a manual alias command. `scripts/release-local-test.mjs`
 uses the **actual CLI** in a temporary local work directory: no-op release, safe
 additive private test table, then an intentionally failing migration. A synthetic
 application hook runs only after DB verification; failure must block it and roll
@@ -242,4 +259,6 @@ Development release with configured Environment secrets.
 References: [Supabase CI/CD](https://supabase.com/docs/guides/deployment/managing-environments),
 [Vercel Git deployment controls](https://vercel.com/docs/project-configuration/git-configuration),
 [CLI branch metadata](https://vercel.com/docs/cli/deploy#associate-a-cli-deployment-with-a-git-branch),
+[explicit CLI alias assignment](https://vercel.com/docs/cli/alias),
+[Alias API read-back](https://vercel.com/docs/rest-api/aliases/get-an-alias),
 [database architecture](../supabase/README.md), [auth/onboarding](SUPABASE_SETUP.md).

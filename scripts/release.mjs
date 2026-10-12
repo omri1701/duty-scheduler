@@ -58,6 +58,33 @@ export async function releaseDatabaseFirst({query, push, deployApplication, cont
   return deployApplication();
 }
 
+export async function releaseApplicationDomain({branch, sha, url, vercel, vercelAPI, verifyApproval}) {
+  const selected = environments[branch];
+  assert(selected, 'Only develop and master can release a stable domain');
+  assert.match(url, /^https:\/\/[\w.-]+\.vercel\.app$/);
+  const deployment = await vercelAPI(`/v13/deployments/${new URL(url).hostname}`);
+  assert.equal(deployment.readyState, 'READY', 'Vercel build did not become ready');
+  assert.equal(deployment.projectId, project, 'Deployment belongs to another Vercel project');
+  assert.equal(deployment.meta?.githubCommitSha, sha, 'Deployment does not match the release SHA');
+  assert.equal(deployment.meta?.githubCommitRef, branch, 'Deployment does not match the release branch');
+  assert.equal(deployment.target, selected.target === 'preview' ? null : 'production', 'Wrong deployment target');
+  assert(typeof deployment.id === 'string' && deployment.id, 'Missing deployment identity');
+  if (branch === 'develop') {
+    // A CLI Preview must not depend on implicit Git branch alias assignment.
+    // Recheck the branch after the build before changing its stable domain.
+    await verifyApproval();
+    console.log(`Assigning verified Development deployment to ${selected.domain}`);
+    await vercel(['alias', 'set', url, selected.domain, '--scope', 'omri1701s-projects']);
+  }
+  // The alias record is the actual domain binding; READY or deployment.alias
+  // alone cannot establish that the hostname serves this release.
+  const alias = await vercelAPI(`/v4/aliases/${selected.domain}`);
+  assert.equal(alias.alias, selected.domain, 'Unexpected Vercel domain');
+  assert.equal(alias.projectId, project, 'Domain belongs to another Vercel project');
+  assert.equal(alias.deploymentId, deployment.id, 'Domain does not point to the intended deployment');
+  assert(!alias.redirect, 'Release domain must serve the deployment directly');
+}
+
 export async function verifyReleaseApproval(api, branch, sha) {
   assert(environments[branch], 'Only develop and master can deploy');
   assert.match(sha, /^[a-f0-9]{40}$/);
@@ -155,13 +182,8 @@ async function main() {
       } finally {
         await rm(directory, {recursive: true, force: true});
       }
-      assert.match(url, /^https:\/\/[\w.-]+\.vercel\.app$/);
-      const deployment = vercelAPI(`/v13/deployments/${new URL(url).hostname}`);
-      assert.equal(deployment.readyState, 'READY', 'Vercel build did not become ready');
-      assert.equal(deployment.projectId, project);
-      assert.equal(deployment.meta.githubCommitSha, sha);
-      assert.equal(deployment.target, selected.target === 'preview' ? null : 'production');
-      assert(deployment.alias.includes(selected.domain), 'Expected branch domain was not updated');
+      await releaseApplicationDomain({branch, sha, url, vercel, vercelAPI,
+        verifyApproval: () => verifyReleaseApproval(api, branch, sha)});
       console.log(`PASS: https://${selected.domain} updated to ${sha}`);
       if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
         `Database migrations and contracts passed. Application: https://${selected.domain} (${sha}).\n`);

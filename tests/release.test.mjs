@@ -3,11 +3,89 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {validateDatabaseChange} from '../scripts/database-policy.mjs';
 import {verifyHistory, historyQuery, referenceQuery} from '../scripts/database-contract.mjs';
-import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, verifyReleaseApproval} from '../scripts/release.mjs';
+import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, releaseApplicationDomain, verifyReleaseApproval} from '../scripts/release.mjs';
 
 const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'required_reference_data']];
 const history = rows => rows.map(row => row.join('|')).join('\n');
 const contract = {migrations: versions, fingerprint: 'expected schema', referenceData: {roles: []}};
+
+function domainFixture(branch = 'develop') {
+  const selected = environments[branch];
+  const events = [];
+  const sha = 'a'.repeat(40);
+  const url = 'https://duty-intended.vercel.app';
+  const projectId = 'prj_Jl2PBhK8DsvK183rKKWesr0821OY';
+  const deployment = {id: 'dpl_intended', readyState: 'READY', projectId,
+    meta: {githubCommitSha: sha, githubCommitRef: branch}, target: branch === 'develop' ? null : 'production', alias: []};
+  const alias = {alias: selected.domain, projectId, deploymentId: deployment.id, redirect: null};
+  const args = {branch, sha, url,
+    vercelAPI: route => {
+      if (route === '/v13/deployments/duty-intended.vercel.app') { events.push('deployment'); return deployment; }
+      assert.equal(route, `/v4/aliases/${selected.domain}`);
+      events.push('domain');
+      return alias;
+    },
+    verifyApproval: () => events.push('approval'),
+    vercel: command => events.push(command),
+  };
+  return {args, events, deployment, alias};
+}
+
+test('Development explicitly aliases a verified Preview after the final branch gate and reads back its deployment binding', async () => {
+  const fixture = domainFixture();
+  await releaseApplicationDomain(fixture.args);
+  assert.deepEqual(fixture.events, ['deployment', 'approval',
+    ['alias', 'set', fixture.args.url, environments.develop.domain, '--scope', 'omri1701s-projects'], 'domain']);
+  assert.deepEqual(fixture.deployment.alias, [], 'No automatic Git alias assignment is needed');
+});
+
+test('unready, unrelated or malformed deployments cannot promote Development', async () => {
+  for (const patch of [{readyState: 'BUILDING'}, {readyState: 'ERROR'}, {projectId: 'prj_other'},
+    {meta: {githubCommitSha: 'b'.repeat(40), githubCommitRef: 'develop'}},
+    {meta: {githubCommitSha: 'a'.repeat(40), githubCommitRef: 'feature/test'}},
+    {target: 'production'}, {id: undefined}]) {
+    const fixture = domainFixture();
+    Object.assign(fixture.deployment, patch);
+    await assert.rejects(releaseApplicationDomain(fixture.args));
+    assert.deepEqual(fixture.events, ['deployment']);
+  }
+  for (const patch of [{branch: 'feature/test'}, {url: 'http://duty-intended.vercel.app'}]) {
+    const fixture = domainFixture();
+    await assert.rejects(releaseApplicationDomain({...fixture.args, ...patch}));
+    assert.deepEqual(fixture.events, []);
+  }
+});
+
+test('a superseded branch or failed alias command cannot complete domain promotion', async () => {
+  for (const stage of ['approval', 'alias']) {
+    const fixture = domainFixture();
+    fixture.args[stage === 'approval' ? 'verifyApproval' : 'vercel'] = () => { throw new Error(`Synthetic ${stage} failure`); };
+    await assert.rejects(releaseApplicationDomain(fixture.args), new RegExp(`Synthetic ${stage} failure`));
+    assert.deepEqual(fixture.events, stage === 'approval' ? ['deployment'] : ['deployment', 'approval']);
+  }
+});
+
+test('READY and deployment alias membership cannot hide a stale, redirected or cross-project domain binding', async () => {
+  for (const branch of ['develop', 'master']) {
+    for (const patch of [{deploymentId: 'dpl_previous'}, {deploymentId: undefined},
+      {projectId: 'prj_other'}, {alias: environments[branch === 'develop' ? 'master' : 'develop'].domain},
+      {redirect: 'elsewhere.example'}]) {
+      const fixture = domainFixture(branch);
+      fixture.deployment.alias = [environments[branch].domain];
+      Object.assign(fixture.alias, patch);
+      await assert.rejects(releaseApplicationDomain(fixture.args));
+      assert.equal(fixture.events.at(-1), 'domain');
+    }
+  }
+});
+
+test('Production verifies its automatic domain binding without executing a manual alias command', async () => {
+  const fixture = domainFixture('master');
+  fixture.args.vercel = () => assert.fail('Production must retain automatic domain assignment');
+  fixture.args.verifyApproval = () => assert.fail('Production approval stays in the existing release gates');
+  await releaseApplicationDomain(fixture.args);
+  assert.deepEqual(fixture.events, ['deployment', 'domain']);
+});
 
 test('feature pushes and manual dispatches cannot enter hosted release steps, even with deployment credentials', () => {
   for (const [branch, ref, event, error] of [
@@ -78,6 +156,7 @@ test('no-op verifies contracts without executing SQL migrations; failures block 
 test('migration failure and missing history block deployment; success strictly orders dry-run, migration, verification and app', async () => {
   for (const failure of [null, 'dry-run', 'migration', 'history']) {
     const events = [];
+    const domain = domainFixture();
     let applied = false;
     let deployments = 0;
     const future = {...contract, migrations: [...versions, ['20261012150000', 'additive']]};
@@ -91,10 +170,11 @@ test('migration failure and missing history block deployment; success strictly o
         if (failure === (dryRun ? 'dry-run' : 'migration')) throw new Error('Synthetic failure');
         if (!dryRun) applied = true;
       },
-      deployApplication: () => { events.push('application'); deployments++; },
+      deployApplication: async () => { events.push('application'); deployments++; await releaseApplicationDomain(domain.args); },
     });
     if (failure) await assert.rejects(promise); else await promise;
     assert.equal(deployments, failure ? 0 : 1);
+    if (failure) assert.deepEqual(domain.events, [], 'Migration failures must block deployment inspection and alias promotion');
     if (!failure) assert.deepEqual(events, ['history', 'dry-run', 'migration', 'history', 'contract', 'contract', 'application']);
   }
 });
