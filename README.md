@@ -44,14 +44,25 @@ synthetic Node regressions cover session, refresh/save and failed-recovery races
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 For a different production port, use `pnpm exec next start --port 3000`.
 
-The repository is ready to import into Vercel using its **Next.js** framework
+Vercel uses the **Next.js** framework
 preset, Node 24, `pnpm build` and the default install/output settings. Set
 `ENABLE_EXPERIMENTAL_COREPACK=1` so Vercel uses the exact pnpm version in
 `package.json`; see [Vercel build configuration](https://vercel.com/docs/builds/configure-a-build#corepack).
 Configure the two application server variables separately: Production uses the
 Frankfurt Production Supabase project; Preview and Development use an independent
 Frankfurt Development project. Keep `.env.local` on Development and never pull
-Vercel Production variables into it. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
+Vercel Production variables into it. The deployed environments are:
+
+| Environment | URL | Branch | Supabase |
+|---|---|---|---|
+| Production | https://duty-scheduler-prod.vercel.app | `master` | Frankfurt Production |
+| Development | https://duty-scheduler-dev.vercel.app | `develop` | Frankfurt Development |
+
+Google sign-in and administrator accounts work in both environments. Localhost uses
+Frankfurt Development. Both Tokyo projects are paused, with their data retained.
+Vercel cleanup removed 18 obsolete Previews and retained 5 deployments. Only `master`
+and `develop` build automatically; the Ignored Build Step skips other branches.
+GitHub Quality still runs on feature PRs. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
 approval-gated `develop` to `master` transition, environment scopes and rollback.
 It needs no Workers adapter. Preserve production OAuth settings; configure the
 development origin and exact trailing-slash redirect independently using

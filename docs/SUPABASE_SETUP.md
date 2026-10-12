@@ -1,13 +1,14 @@
 # Supabase setup
 
 Frankfurt Production: `hpszwgnwxtxyxpcaivgj`, `eu-central-1`, **Duty Scheduler**,
-live at `https://duty-scheduler-two.vercel.app` with the owner's Google admin account.
+live at `https://duty-scheduler-prod.vercel.app` from `master`.
 Independent Frankfurt Development: `qhndiuahuxczujxxitsm`, **Duty Scheduler Dev**,
 uses a separate Google client and has one owner-confirmed, approved active admin.
-Both Tokyo projects are paused and retained. Localhost and Vercel Development/Preview
-use only Frankfurt Development; the stable develop alias is accessible with normal
-Vercel Authentication. Historical Tokyo-connected Preview firewall blocks remain.
-See [deployment checkpoint](DEPLOYMENT.md) for exact status and Google origins.
+Development is live at `https://duty-scheduler-dev.vercel.app` from `develop`.
+Google sign-in and administrator accounts work in both environments. Both Tokyo
+projects are paused and retained. Localhost and Vercel Development/Preview use only
+Frankfurt Development. See [the deployment runbook](DEPLOYMENT.md) for hosting,
+release and rollback instructions.
 Native Next.js needs only a project URL and publishable key; no service-role key.
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
@@ -21,12 +22,12 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 3. Under **Data Access**, use only `openid`, `userinfo.email` and `userinfo.profile`.
 4. Under **Clients**, create the **Production** OAuth client of type **Web application**
    with these values. Development needs a separate client and its own Frankfurt
-   callback; use the deployment checkpoint once its project is created.
+   callback. Keep the clients configured independently:
 
-| Setting | Value |
-|---|---|
-| Authorized JavaScript origin | `https://duty-scheduler-two.vercel.app` |
-| Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` |
+| Setting | Production | Development |
+|---|---|---|
+| Authorized JavaScript origins | `https://duty-scheduler-prod.vercel.app` | `https://duty-scheduler-dev.vercel.app`, `http://localhost:5173` |
+| Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` | `https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
 
@@ -34,14 +35,13 @@ In **Authentication → Sign In / Providers → Google**, enable Google and ente
 
 In **Authentication → URL Configuration** set:
 
-| Setting | Value |
-|---|---|
-| Production Site URL | `https://duty-scheduler-two.vercel.app` |
-| Production allowed redirect URL | `https://duty-scheduler-two.vercel.app/` |
+| Setting | Production | Development |
+|---|---|---|
+| Site URL | `https://duty-scheduler-prod.vercel.app` | `https://duty-scheduler-dev.vercel.app` |
+| Allowed redirect URLs | `https://duty-scheduler-prod.vercel.app/` | `https://duty-scheduler-dev.vercel.app/`, `http://localhost:5173/` |
 
-Production's temporary verification return has been retired. Development uses the
-stable develop alias and localhost:5173 with exact trailing-slash returns; these are
-never added to Production. See the deployment checkpoint for current verification.
+Use exact trailing-slash returns. Keep Development and localhost redirects confined
+to Development; do not add wildcard or temporary verification returns to Production.
 
 ## 3. First login and explicit admin promotion
 
@@ -51,10 +51,8 @@ The first account is **not** automatically made admin. Confirm the environment/p
 
 Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.
 
-Use the exact environment origins in the deployment checkpoint. Production and
-Development require distinct callbacks and separate clients. Retire the temporary
-Production verification origin after successful cutover; keep localhost confined
-to Development.
+Use the exact environment origins above. Production and Development require
+distinct callbacks and separate clients; keep localhost confined to Development.
 
 ## Current database
 
@@ -145,11 +143,11 @@ does not begin with `sb_publishable_`. Native Next.js loads `.env.local`; no
 and returns `Cache-Control: no-store` for both success and errors. Restart after
 changing local configuration. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables).
 
-For eventual Vercel hosting, select the standard Next.js preset and configure
+Vercel uses the standard Next.js preset with
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
 Use Node 24 and set `ENABLE_EXPERIMENTAL_COREPACK=1` to select the pinned pnpm version.
-Google secrets stay in Supabase. Follow the authorized readiness gates in the
-deployment checkpoint before cutover. Keep legitimate Preview access protection.
+Google secrets stay in Supabase. Follow [the deployment runbook](DEPLOYMENT.md)
+for environment scopes, release checks and rollback. Keep Preview access protection.
 
 Local login uses the independent Frankfurt Development identity.
 Do not configure localhost against production or add local redirects to its client.
