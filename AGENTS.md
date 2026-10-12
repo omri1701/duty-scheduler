@@ -62,6 +62,8 @@ and Supabase. Prefer correctness and security with minimal context and agents.
   require explicit approval. App rollback never reverses SQL.
 - supabase/tests/access.sql requires an empty development project. Never run it
   against real members; simulated snapshot tests do not verify database RLS.
+- Feature branches use Development `.env.local`; unmerged migrations stay local.
+  Only release branches migrate hosted databases; compatible feature previews are manual.
 
 ## Verification and delivery
 

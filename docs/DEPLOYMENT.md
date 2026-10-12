@@ -22,6 +22,61 @@ One Vercel project: `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, team
 Preview and Development variables must both point to Frankfurt Development.
 No paid custom environment or additional service is needed.
 
+## Feature branches: localhost and intentional previews
+
+Feature branches may run `pnpm dev` at `http://localhost:5173` using the existing
+Git-ignored `.env.local`: `SUPABASE_URL=https://qhndiuahuxczujxxitsm.supabase.co`
+and its publishable key. Branch selection never switches this configuration to
+Production. Keep Development's localhost OAuth origin/redirect as documented in
+[Supabase setup](SUPABASE_SETUP.md#local-development-with-the-separate-development-project).
+Normal application/RPC access to shared Development remains subject to existing
+approval, RLS and revision checks; it grants no migration permission.
+
+Test new canonical SQL and incremental migrations on disposable LOCAL Supabase,
+using the existing `schemas/`, `reference-data/`, `migrations/` and SQL tests.
+When the feature requires unapplied database changes, test that path locally with
+local URL/key configuration (a separate ignored env file or shell overrides), then
+restore the existing Development `.env.local`. Do not copy canonical schemas into
+another maintained tree or push unmerged migrations to shared Development.
+Only `develop` releases migrate hosted Development; only approved `master` releases
+migrate hosted Production. Feature-branch Quality dispatches also remain local-only.
+
+Automatic feature Git deployments stay disabled. For an **intentionally authorized**
+manual Preview, first require successful feature Quality checks and compatibility
+with the already verified hosted Development schema. An authorized operator can
+inspect history read-only with
+`pnpm dlx supabase@2.119.0 migration list --project-ref qhndiuahuxczujxxitsm`.
+All branch-required migrations must already be applied, with matching history;
+otherwise wait for the database-first `develop` release and use a local app meanwhile.
+Never run hosted `db push`, reset, seeds or history repair from a feature checkout.
+
+Verify the Vercel **Preview** variables and any feature-branch overrides contain
+only the Development URL/publishable key. `.env.local` is excluded from uploads;
+manual Preview uses Vercel's Preview configuration, not the local file. From a
+clean feature checkout, use the standard CLI (PowerShell):
+
+```powershell
+$featureBranch = git branch --show-current
+if (-not $featureBranch -or $featureBranch -in @('develop','master')) { throw 'Select the feature branch' }
+$featureSha = git rev-parse HEAD
+pnpm dlx vercel@62.0.0 link --yes --project duty-scheduler --scope omri1701s-projects
+pnpm dlx vercel@62.0.0 pull --yes --environment preview --git-branch "$featureBranch" --scope omri1701s-projects
+pnpm dlx vercel@62.0.0 build --scope omri1701s-projects
+pnpm dlx vercel@62.0.0 deploy --yes --prebuilt --target preview --scope omri1701s-projects --meta githubDeployment=1 --meta "githubCommitRef=$featureBranch" --meta "githubCommitSha=$featureSha"
+```
+
+`pull` writes ignored `.vercel` Preview settings, preserving `.env.local`; the
+prebuilt upload uses the standard local Vercel/Next.js build instead of asking the
+remote feature-branch build filter to build. Keep the project-wide filter and
+automatic Git deployment disablement unchanged.
+Keep Vercel Authentication enabled and use the generated feature Preview URL.
+Verify `/api/config` points to Development and check sign-in; its exact OAuth return
+must be authorized in Development only. Never relabel a feature as `develop`, alias
+it onto either stable environment domain, deploy with `--prod`, or enable a Git
+deployment hook. CLI previews deploy application code only and do not migrate SQL.
+Required database changes therefore complete through the existing release pipeline
+before a compatible feature Preview can be released.
+
 ## Setup before activation
 
 Create GitHub Environments **Development** and **Production**, with selected

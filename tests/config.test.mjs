@@ -31,3 +31,31 @@ test('public configuration reads runtime environment and never caches responses'
   else process.env.SUPABASE_PUBLISHABLE_KEY = original.key;
  }
 });
+
+test('feature and localhost configuration use the supplied Development environment independently of Git metadata', async () => {
+ const names = ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_GIT_COMMIT_REF', 'GITHUB_REF'];
+ const original = Object.fromEntries(names.map(name => [name, process.env[name]]));
+ try {
+  process.env.SUPABASE_URL = 'https://qhndiuahuxczujxxitsm.supabase.co';
+  process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_synthetic_development';
+  for (const branch of [undefined, 'feature/new-application', 'develop', 'master']) {
+   if (branch === undefined) {
+    delete process.env.VERCEL_GIT_COMMIT_REF;
+    delete process.env.GITHUB_REF;
+   } else {
+    process.env.VERCEL_GIT_COMMIT_REF = branch;
+    process.env.GITHUB_REF = `refs/heads/${branch}`;
+   }
+   const response = await GET();
+   assert.equal(response.status, 200);
+   assert.deepEqual(await response.json(), {
+    url: process.env.SUPABASE_URL, key: process.env.SUPABASE_PUBLISHABLE_KEY,
+   });
+  }
+ } finally {
+  for (const name of names) {
+   if (original[name] === undefined) delete process.env[name];
+   else process.env[name] = original[name];
+  }
+ }
+});

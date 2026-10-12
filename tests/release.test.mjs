@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {validateDatabaseChange} from '../scripts/database-policy.mjs';
 import {verifyHistory, historyQuery, referenceQuery} from '../scripts/database-contract.mjs';
 import {connectionEnvironment, environments, releaseDatabaseFirst, verifyReleaseApproval} from '../scripts/release.mjs';
@@ -7,6 +8,24 @@ import {connectionEnvironment, environments, releaseDatabaseFirst, verifyRelease
 const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'required_reference_data']];
 const history = rows => rows.map(row => row.join('|')).join('\n');
 const contract = {migrations: versions, fingerprint: 'expected schema', referenceData: {roles: []}};
+
+test('feature pushes and manual dispatches cannot enter hosted release steps, even with deployment credentials', () => {
+  for (const [branch, ref, event, error] of [
+    ['feature/new-schema', 'refs/heads/feature/new-schema', 'push', 'Wrong release branch context'],
+    ['feature/new-schema', 'refs/heads/feature/new-schema', 'workflow_dispatch', 'Wrong release branch context'],
+    ['develop', 'refs/heads/feature/new-schema', 'workflow_dispatch', 'Wrong release branch context'],
+    ['develop', 'refs/heads/develop', 'pull_request', 'PRs cannot deploy'],
+  ]) {
+    const result = spawnSync(process.execPath, ['scripts/release.mjs'], {encoding: 'utf8', env: {
+      ...process.env, RELEASE_BRANCH: branch, RELEASE_SHA: 'a'.repeat(40), GITHUB_REF: ref, GITHUB_EVENT_NAME: event,
+      GH_TOKEN: 'synthetic', SUPABASE_DB_URL: 'synthetic', VERCEL_TOKEN: 'synthetic',
+      SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_synthetic',
+    }});
+    assert.equal(result.status, 1);
+    assert(result.stderr.includes(error));
+    assert.equal(result.stdout, '', 'No migration or application deployment step may start');
+  }
+});
 
 test('history rejects gaps, unknown versions and incomplete application contracts', () => {
   assert.deepEqual(verifyHistory(history(versions), versions), []);

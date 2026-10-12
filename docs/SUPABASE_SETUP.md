@@ -109,6 +109,13 @@ pnpm build
 
 ## Local development with the separate development project
 
+These steps apply to feature branches too. Keep the existing `.env.local` on
+Frankfurt Development (`qhndiuahuxczujxxitsm`); switching Git branches does not
+select a different database. Unmerged migrations and their tests run only against
+disposable local Supabase. If a feature needs a schema not yet deployed to shared
+Development, use local app configuration for that test; never push its SQL to the
+hosted project. See [intentional manual previews](DEPLOYMENT.md#feature-branches-localhost-and-intentional-previews).
+
 1. Copy `.env.example` to `.env.local` at the repository root. Set
    `SUPABASE_URL` to the approved development project's URL and `SUPABASE_PUBLISHABLE_KEY`
    to its publishable key (`sb_publishable_...`), available in the Supabase

@@ -53,7 +53,10 @@ preset, Node 24, `pnpm build` and the default install/output settings. Set
 Configure the two application server variables separately: Production uses the
 Frankfurt Production Supabase project; Preview and Development use an independent
 Frankfurt Development project. Keep `.env.local` on Development and never pull
-Vercel Production variables into it. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
+Vercel Production variables into it. Feature branches can use this same localhost
+configuration; unmerged schema changes are tested on disposable local Supabase.
+[Intentional manual previews](docs/DEPLOYMENT.md#feature-branches-localhost-and-intentional-previews)
+use Development only after their required schema is deployed. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
 approval-gated `develop` to `master` transition, environment scopes and rollback.
 It needs no Workers adapter. Preserve production OAuth settings; configure the
 development origin and exact trailing-slash redirect independently using
