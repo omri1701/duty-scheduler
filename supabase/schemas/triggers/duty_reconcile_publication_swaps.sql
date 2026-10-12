@@ -1,0 +1,1 @@
+CREATE TRIGGER duty_reconcile_publication_swaps AFTER UPDATE OF current_publication_id ON public.duty_months FOR EACH ROW WHEN ((old.current_publication_id IS DISTINCT FROM new.current_publication_id)) EXECUTE FUNCTION duty_private.reconcile_publication_swaps();
