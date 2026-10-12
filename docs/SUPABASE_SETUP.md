@@ -3,9 +3,10 @@
 Frankfurt Production: `hpszwgnwxtxyxpcaivgj`, `eu-central-1`, **Duty Scheduler**,
 live at `https://duty-scheduler-two.vercel.app` with the owner's Google admin account.
 Independent Frankfurt Development: `qhndiuahuxczujxxitsm`, **Duty Scheduler Dev**,
-initialized with no users or operational data; its separate Google client is pending.
+uses a separate Google client and has one owner-confirmed, approved active admin.
 Both Tokyo projects are paused and retained. Localhost and Vercel Development/Preview
-use only Frankfurt Development; the stable develop alias awaits firewall approval.
+use only Frankfurt Development; the stable develop alias is accessible with normal
+Vercel Authentication. Historical Tokyo-connected Preview firewall blocks remain.
 See [deployment checkpoint](DEPLOYMENT.md) for exact status and Google origins.
 Native Next.js needs only a project URL and publishable key; no service-role key.
 The [canonical database architecture](../supabase/README.md) installs the two clean
@@ -38,9 +39,9 @@ In **Authentication → URL Configuration** set:
 | Production Site URL | `https://duty-scheduler-two.vercel.app` |
 | Production allowed redirect URL | `https://duty-scheduler-two.vercel.app/` |
 
-Temporarily add the protected Production verification origin and return documented
-in the deployment checkpoint. Development uses its own URLs and includes localhost;
-these are never added to Production.
+Production's temporary verification return has been retired. Development uses the
+stable develop alias and localhost:5173 with exact trailing-slash returns; these are
+never added to Production. See the deployment checkpoint for current verification.
 
 ## 3. First login and explicit admin promotion
 

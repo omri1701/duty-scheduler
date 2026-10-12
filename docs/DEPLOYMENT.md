@@ -39,38 +39,43 @@ Verified:
   https://duty-scheduler-f2mkgme44-omri1701s-projects.vercel.app. Its Chrome
   page/config checks pass against Development. Stable branch alias:
   https://duty-scheduler-git-develop-omri1701s-projects.vercel.app.
-  The alias still returns 403 because a historical Tokyo-isolation firewall rule
-  includes it. Removing only that hostname requires pending explicit approval;
-  retain the other 14 historical blocks and normal Vercel Authentication.
+  The verified obsolete develop-host condition was removed from the historical
+  Tokyo-isolation firewall rule. Chrome page/config checks now return 200 at the
+  stable alias. All other 14 historical blocks and Vercel Authentication remain.
 - Git-ignored `.env.local` points only to Development; localhost:5173 page/config
   checks return 200. The user-local `supabase_dev` MCP URL now uses the new ref.
   Restart the MCP client/session when needed to load that connection change.
 - Production Auth allows only https://duty-scheduler-two.vercel.app/.
   Development Site URL is the stable develop alias; its exact return and
-  http://localhost:5173/ are allowed. Development Google is still disabled pending
-  a separate Google client. Production Google credentials/settings were preserved.
+  http://localhost:5173/ are allowed. Development Google uses a separate Web client
+  with exactly these origins and its Frankfurt Development callback. Real Preview
+  Google login created the sole verified identity and pending member. After direct
+  owner confirmation, the unchanged operator-only script promoted that exact account
+  to the sole approved active admin. A read-only `duty_load` check under that account's
+  authenticated database role verifies admin workspace visibility; it does not prove
+  browser session persistence. Production Auth settings were not modified.
 - The temporary Production verification Preview `dpl_Yjz6wQ7YKsJNrvf1Jp6NcTfqmZBy`
   and redirect were retired. Every short-lived verification share link was revoked.
 - GitHub default branch is `master`. Feature PRs continue to target `develop`;
-  release PRs are `develop` → `master`. Both branches are currently unprotected;
-  the proposed Quality/PR/admin/no-force-push/no-delete policy awaits approval.
-  Fourteen unused Production integration variables also await removal approval.
-  Automatic approval review blocked these two policy changes and the single-host
-  firewall cleanup; they have not been applied.
+  release PRs are `develop` → `master`.
+  Both branches now require a PR and the GitHub Actions `quality` check on an
+  up-to-date branch, enforce these requirements for admins, and block force pushes
+  and deletion. Reviewer count is zero so the sole owner can merge a passing PR;
+  agent merges still require explicit owner approval. Fourteen unused integration
+  variables remain confined to Production and were retained under the instruction
+  to leave Production untouched. Application variables and Corepack are unchanged.
 
-Resume: obtain the separate Development Google web-client JSON in ignored
-`work/dev-google-client.json`, configure its provider through authenticated
-management access, verify OAuth, then ask the owner to sign in and directly confirm
-their Development identity before independent operator-only promotion. Complete
-the specifically approved cleanup/protection changes and publish the final checkpoint.
-Never treat a Google-disabled or firewall-blocked Preview as a working environment.
+Remaining gate: owner verification of the localhost Google login, persisted sessions
+and admin workspace on both origins, then final checkpoint PR Quality CI. The Google
+JSON remains in ignored `work/dev-google-client.json`, excluded from deployment
+uploads. No users or operational records were copied between environments.
 
 ## Current verified state
 
 | Environment | Branch / hosting | Supabase | Status |
 |---|---|---|---|
 | Production | `master` / public Vercel | Frankfurt `hpszwgnwxtxyxpcaivgj` | Live, one owner admin, Google enabled |
-| Development | `develop` / Preview and localhost | Frankfurt `qhndiuahuxczujxxitsm` | Clean and deployed; Google/client and stable-alias access pending |
+| Development | `develop` / Preview and localhost | Frankfurt `qhndiuahuxczujxxitsm` | Separate Google client; sole approved owner admin; browser session checks pending |
 | Original Production / rollback | Retained old Vercel deployment | Tokyo `ukxxpbivgxyxharhxgqf` | Paused; original data/history retained |
 | Old Development | None | Tokyo `civayswojfpujiszlbnu` | Paused, unchanged |
 
@@ -148,7 +153,7 @@ pending profile; it refuses any existing admin and updates revision under the
 workspace lock. It is never deployed as an RPC, email allowlist or first-user rule.
 Existing checked approval/role RPCs support multiple admins and protect the last admin.
 
-Development needs its own Google web client, audience/test accounts and callback
+Development has its own Google web client, audience/test accounts and callback
 at https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback. Use only `openid`, `userinfo.email`, `userinfo.profile`.
 Configure its exact develop Preview origin and `http://localhost:5173/` independently.
 Store Google secrets only in the appropriate Supabase project. Verify real PKCE,
@@ -160,7 +165,8 @@ environment. Keep application users/data separate.
 Vercel project `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, scope `omri1701s-projects`,
 uses Next.js, Node 24 and Production branch `master`. Production serves Frankfurt.
 Preview and Vercel Development use the separate Frankfurt Development database.
-The stable develop alias still requires the one-hostname firewall cleanup above.
+The stable develop alias has passed Chrome page/config checks after the one-hostname
+firewall cleanup; all historical Tokyo-connected Preview protections remain.
 
 Preserve the native runtime, `pnpm build`, default output and Corepack setting.
 The only database variables the app needs are `SUPABASE_URL` and
