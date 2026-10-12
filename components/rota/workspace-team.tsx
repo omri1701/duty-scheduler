@@ -40,7 +40,7 @@ export function WorkspaceTeam({
         roles={remote.snapshot?.roles ?? []}
         onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
         selfId={meId}
-        readOnly={!isManager}
+        readOnly={remote.readOnly||!isManager}
         team={state.team}
         monthTotals={monthTotals}
         historyTotals={historyTotals}
@@ -69,6 +69,7 @@ export function WorkspaceTeam({
                     <small>{m.email}</small>
                   </div>
                   <Button
+                    disabled={remote.readOnly}
                     onClick={() =>
                       remote
                         .review(m.id, 'approved')
@@ -80,6 +81,7 @@ export function WorkspaceTeam({
                   </Button>
                   <Button
                     variant="outline"
+                    disabled={remote.readOnly}
                     onClick={() =>
                       remote.review(m.id, 'rejected').catch((e) => toast.error(e.message))
                     }

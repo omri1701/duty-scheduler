@@ -1,8 +1,10 @@
 # Duty — team rota
 
-A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. The app starts empty and uses real, approved accounts only. No assignments are generated until the manager clicks Generate.
+A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty and use real, approved accounts only. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager clicks Generate.
 
 For Codex setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
+For database-first deployments, approved Production releases, environment secrets
+and recovery, see [CI/CD release workflow](docs/DEPLOYMENT.md).
 
 ## Run locally
 
@@ -10,8 +12,16 @@ Requires Node 22.13+ (Node 24 recommended) and the pnpm version declared in pack
 
 ```sh
 pnpm install
-pnpm dev # http://localhost:5173
+pnpm dev:dev   # default: Frankfurt Development, http://localhost:5173
+pnpm dev:local # Docker / Supabase CLI, current branch migrations + local test accounts
+pnpm dev:prod  # explicit confirmation each run; application read-only inspection
+pnpm dev:select # optional interactive selector
 ```
+
+`pnpm dev` is the Development default. Stop the server before switching targets;
+no command rewrites `.env.local`. See [local targets and setup](docs/SUPABASE_SETUP.md#localhost-environment-selector)
+for one-time keys, Docker setup, test accounts and Production login. Sessions are
+isolated by actual project URL and local port.
 
 Scheduling tests use Node 24's built-in TypeScript stripping:
 
@@ -51,7 +61,10 @@ preset, Node 24, `pnpm build` and the default install/output settings. Set
 Configure the two application server variables separately: Production uses the
 Frankfurt Production Supabase project; Preview and Development use an independent
 Frankfurt Development project. Keep `.env.local` on Development and never pull
-Vercel Production variables into it. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
+Vercel Production variables into it. Feature branches can use this same localhost
+configuration; unmerged schema changes are tested on disposable local Supabase.
+[Intentional manual previews](docs/DEPLOYMENT.md#feature-branches-localhost-and-intentional-previews)
+use Development only after their required schema is deployed. Follow [the deployment runbook](docs/DEPLOYMENT.md) for the
 approval-gated `develop` to `master` transition, environment scopes and rollback.
 It needs no Workers adapter. Preserve production OAuth settings; configure the
 development origin and exact trailing-slash redirect independently using
@@ -106,7 +119,7 @@ Hebrew and RTL, profile reopening, availability reset when editing closes, and
 team pointer/touch reorder announcements. Visuals
 cover access, pending approval, admin draft, duty editor, history, engineer
 publication, availability and swap confirmation/requests, including desktop/mobile
-English and Hebrew calendars. There are 54 browser cases (one intentionally skipped
+English and Hebrew calendars. There are 72 browser cases (one intentionally skipped
 desktop case for mobile-only touch) and 24 snapshots per operating system.
 Behavior assertions use roles/labels; date keys identify gesture targets because
 their accessible names change with assignment and language.

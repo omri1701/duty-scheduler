@@ -10,15 +10,15 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: quality-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   quality:
     name: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # Cancel obsolete tests, never an in-flight database/application deployment.
+    concurrency:
+      group: quality-${{ github.ref }}
+      cancel-in-progress: true
     env:
       CI: "true"
       TZ: UTC
@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0 # Compare immutable migrations with the exact PR/push base.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24.19.0"
@@ -48,10 +49,24 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Verify generated database baseline
         run: node scripts/database-baseline.mjs --check
+      - name: Select database upgrade base
+        id: database-base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-${PUSH_BASE:-$(git rev-parse HEAD^)}}"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          node scripts/database-policy.mjs "$base"
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
+        with:
+          version: 2.119.0
       - name: Fresh local database and permission regressions
         run: |
-          pnpm dlx supabase@2.119.0 db start
+          supabase db start
           node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+          mkdir -p work
+          node scripts/database-contract.mjs supabase_db_duty-scheduler "$GITHUB_SHA" work/database-contract.json
           docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
           docker cp supabase/archive supabase_db_duty-scheduler:/tmp/archive
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/access.sql
@@ -59,6 +74,19 @@ jobs:
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
           node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
           node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+      - name: Incremental upgrade preserves existing data
+        env:
+          DATABASE_BASE: ${{ steps.database-base.outputs.sha }}
+        run: node scripts/database-upgrade.mjs "$DATABASE_BASE" supabase_db_duty-scheduler
+      - name: Isolated deployment ordering and failure verification
+        run: node scripts/release-local-test.mjs supabase_db_duty-scheduler
+      - name: Retain database contract for this exact commit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: database-contract-${{ github.sha }}
+          path: work/database-contract.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Type check
         run: pnpm exec tsc --noEmit
       - name: Reject lint regressions
@@ -79,3 +107,35 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  deploy-development:
+    needs: quality
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit # The called deployment job selects its Environment secrets.
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      pull-requests: read
+    with:
+      branch: develop
+      sha: ${{ github.sha }}
+
+  deploy-production:
+    needs: quality
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/master' && vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit # Production secrets remain behind its Environment approval.
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      pull-requests: read
+    with:
+      branch: master
+      sha: ${{ github.sha }}

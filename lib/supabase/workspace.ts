@@ -1,6 +1,7 @@
 import type {User} from '@supabase/supabase-js';
 import {readSnapshot, type Snapshot} from './snapshot.ts';
 import {errorMessage, type DutyClient, type Functions, type MutationArgs, type MutationName} from './rpc.ts';
+import {assertWritable, isReadOnly} from './write-policy.ts';
 
 type Scope = {client: DutyClient; id: string; snapshot: Snapshot | null; request: number; joining: Promise<void>; save: Promise<unknown> | null};
 
@@ -48,6 +49,8 @@ export function createWorkspace(callbacks: {
       scope = current;
       const name = String(user.user_metadata?.full_name ?? user.email?.split('@')[0] ?? 'Engineer');
       current.joining = (async () => {
+        if (isReadOnly(client)) return;
+        assertWritable(client);
         const {error} = await client.rpc('duty_join', {p_name: name});
         if (scope === current && error) throw error;
       })();
@@ -57,6 +60,7 @@ export function createWorkspace(callbacks: {
   }
   function mutate<N extends MutationName>(name: N, args: MutationArgs<N>): Promise<Functions[N]['Returns']> {
     const current = scope;
+    if (current) {try {assertWritable(current.client);} catch (error) {return Promise.reject(error);}}
     if (!current || current.snapshot?.revision == null) return Promise.reject(Error('Sign in with an approved account first.'));
     if (current.save) return Promise.reject(Error('Please wait for the current save.'));
     const revision = current.snapshot.revision;
