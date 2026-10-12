@@ -13,6 +13,48 @@ export const environments = Object.freeze({
 const project = 'prj_Jl2PBhK8DsvK183rKKWesr0821OY';
 const team = 'team_pbvqzViC50aeT2kaRNnTYkPt';
 
+export function sanitizeReleaseError(value, env = process.env) {
+  let text = String(value ?? '').replace(/\u001b\[[0-9;]*m/g, '');
+  const secrets = Object.entries(env).filter(([name, value]) => value && /TOKEN|PASSWORD|SECRET|KEY|SUPABASE_DB_URL|VERCEL_.*_ID/.test(name)).map(([, value]) => value);
+  try {
+    const password = new URL(env.SUPABASE_DB_URL).password;
+    secrets.push(password, decodeURIComponent(password));
+  } catch { /* Missing or malformed credentials must not affect redaction. */ }
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
+    for (const variant of new Set([secret, encodeURIComponent(secret)])) text = text.split(variant).join('[REDACTED]');
+  }
+  return text.replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, '[REDACTED DATABASE URL]')
+    .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
+    .replace(/[\r\n\t\x00-\x1f]+/g, ' ').slice(0, 1500);
+}
+
+export function vercelFailure(result, env = process.env) {
+  // Classify high-level CLI errors; never forward build/application diagnostics.
+  const errors = sanitizeReleaseError(String(result.stderr ?? '').replace(/\u001b\[[0-9;]*m/g, '').split(/\r?\n/).filter(line => /^\s*Error:/i.test(line)).join(' '), env);
+  const diagnoses = [
+    [/alias.*(?:in use|already assigned)|domain.*different team/i, 'Alias conflict: inspect its owning project/team and deployment ID; preserve domain bindings.'],
+    [/forbidden|permission|not authorized|token|credentials|authenticat/i, 'Authentication/permission failure: verify the deployment token can access the Duty team/project and assign aliases.'],
+    [/not ready|not found|failed to find/i, 'Deployment unavailable: verify its READY state, ID and team/project scope.'],
+    [/build|exited with|deployment failed/i, 'Deployment/build failed: inspect Vercel build events privately before retrying.'],
+    [/timeout|timed out|network|fetch|ENOTFOUND|ECONN/i, 'Network failure: inspect Vercel status and retry only after checking deployment/domain state.'],
+  ];
+  const detail = diagnoses.find(([pattern]) => pattern.test(errors))?.[1] || 'Unclassified CLI error; inspect Vercel deployment events privately (raw output suppressed).';
+  return `Vercel CLI failed (${result.status ?? 'could not start'}): ${detail}`;
+}
+
+export function createVercelAPI(env = process.env, fetchAPI = fetch) {
+  return async (endpoint, {method = 'GET', body} = {}) => {
+    const response = await fetchAPI(`https://api.vercel.com${endpoint}?teamId=${team}`, {
+      method, headers: {Authorization: `Bearer ${env.VERCEL_TOKEN}`, 'Content-Type': 'application/json'},
+      ...(body && {body: JSON.stringify(body)}), signal: AbortSignal.timeout(30000),
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error(`Vercel API ${method} ${endpoint} returned invalid JSON (${response.status}); inspect Vercel status/events.`); }
+    if (!response.ok) throw Object.assign(new Error(`Vercel API ${method} ${endpoint} failed (${response.status}): ${sanitizeReleaseError(data.error?.message || 'Check deployment events and token permissions.', env)}`), {status: response.status});
+    return data;
+  };
+}
+
 export function validateReleaseCredentials(env, branch) {
   const selected = environments[branch];
   assert(selected, 'Only develop and master can validate deployment credentials');
@@ -72,7 +114,7 @@ export async function releaseDatabaseFirst({query, push, deployApplication, cont
   return deployApplication();
 }
 
-export async function releaseApplicationDomain({branch, sha, url, vercel, vercelAPI, verifyApproval}) {
+export async function releaseApplicationDomain({branch, sha, url, vercelAPI, verifyApproval}) {
   const selected = environments[branch];
   assert(selected, 'Only develop and master can release a stable domain');
   assert.match(url, /^https:\/\/[\w.-]+\.vercel\.app$/);
@@ -88,7 +130,17 @@ export async function releaseApplicationDomain({branch, sha, url, vercel, vercel
     // Recheck the branch after the build before changing its stable domain.
     await verifyApproval();
     console.log(`Assigning verified Development deployment to ${selected.domain}`);
-    await vercel(['alias', 'set', url, selected.domain, '--scope', 'omri1701s-projects']);
+    // Explicit team-scoped REST assignment avoids CLI user/scope discovery.
+    // This moves the alias atomically and preserves its project/branch settings.
+    try {
+      await vercelAPI(`/v2/deployments/${deployment.id}/aliases`, {
+        method: 'POST', body: {alias: selected.domain, redirect: null},
+      });
+    } catch (error) {
+      // An already-assigned alias can return 409. Only the strict read-back
+      // below can establish success; any conflicting deployment still fails.
+      if (error.status !== 409) throw error;
+    }
   }
   // The alias record is the actual domain binding; READY or deployment.alias
   // alone cannot establish that the hostname serves this release.
@@ -155,20 +207,21 @@ async function main() {
   const childEnvironment = {...process.env};
   for (const name of ['GH_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_DB_PASSWORD', 'PGPASSWORD', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_TOKEN']) delete childEnvironment[name];
   const run = (command, args, options = {}) => {
-    const result = spawnSync(command, args, {encoding: 'utf8', env: childEnvironment, ...options});
+    const {vercelDiagnostics, ...spawnOptions} = options;
+    const result = spawnSync(command, args, {encoding: 'utf8', env: childEnvironment, ...spawnOptions});
     // SQL errors may contain private rows and CLI errors may echo credentials.
     // Stage names/exit status are safe; detailed diagnostics belong to the operator.
-    assert.equal(result.status, 0, `${command} failed (${result.status}); inspect the service dashboard privately`);
+    if (result.status !== 0) throw new Error(vercelDiagnostics ? vercelFailure(result) : `${command} failed (${result.status}); inspect the service dashboard privately`);
     return result.stdout.trim();
   };
-  const vercel = args => run('pnpm', ['dlx', 'vercel@62.0.0', ...args], {env: {...childEnvironment, VERCEL_TOKEN: process.env.VERCEL_TOKEN}});
+  const vercel = args => run('pnpm', ['dlx', 'vercel@62.0.0', ...args], {vercelDiagnostics: true, env: {...childEnvironment, VERCEL_TOKEN: process.env.VERCEL_TOKEN}});
   assert.equal(run('git', ['rev-parse', 'HEAD']), sha, 'Release checkout must match the verified branch SHA');
   run('git', ['diff', '--quiet', 'HEAD']);
-  const vercelAPI = endpoint => JSON.parse(vercel(['api', `${endpoint}?teamId=${team}`, '--method', 'GET']));
-  const settings = vercelAPI(`/v9/projects/${project}`);
+  const vercelAPI = createVercelAPI();
+  const settings = await vercelAPI(`/v9/projects/${project}`);
   assert.equal(settings.ssoProtection?.deploymentType, 'all_except_custom_domains', 'Preserve Vercel Authentication');
   assert.equal(settings.autoAssignCustomDomains, true, 'Automatic domain assignment must stay enabled');
-  const domains = vercelAPI(`/v9/projects/${project}/domains`).domains;
+  const domains = (await vercelAPI(`/v9/projects/${project}/domains`)).domains;
   assert(domains.some(domain => domain.name === selected.domain && domain.gitBranch === (branch === 'develop' ? branch : null)),
     'Existing domain is not bound to the selected environment');
   await releaseDatabaseFirst({contract, fingerprintSQL: await readFile('supabase/tests/fingerprint.sql', 'utf8'),
@@ -198,7 +251,7 @@ async function main() {
       } finally {
         await rm(directory, {recursive: true, force: true});
       }
-      await releaseApplicationDomain({branch, sha, url, vercel, vercelAPI,
+      await releaseApplicationDomain({branch, sha, url, vercelAPI,
         verifyApproval: () => verifyReleaseApproval(api, branch, sha)});
       console.log(`PASS: https://${selected.domain} updated to ${sha}`);
       if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
@@ -209,7 +262,7 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try { await main(); } catch (error) {
-    console.error(`::error::Release blocked: ${error.message}`);
+    console.error(`::error::Release blocked: ${sanitizeReleaseError(error.message).replace(/%/g, '%25')}`);
     process.exitCode = 1;
   }
 }

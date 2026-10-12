@@ -133,7 +133,7 @@ custom-domain assignment and `all_except_custom_domains` Authentication. Release
 explicitly set the non-secret build flag `ENABLE_EXPERIMENTAL_COREPACK=1`
 so Vercel installs the exact `packageManager` version, including pnpm 12's lockfile.
 Development is bound to `develop`. After a verified READY Preview and another
-branch-head check, Actions explicitly runs `vercel alias set` for
+branch-head check, Actions explicitly calls the team-scoped Vercel Alias API for
 `duty-scheduler-dev.vercel.app` in the existing team. Metadata alone is not the
 promotion mechanism. Production retains automatic assignment through the
 Production deployment; its domain has no branch binding. Both releases require
@@ -195,7 +195,7 @@ domain bindings and existing history, then:
 3. Deploy the same checkout via pinned Vercel CLI, with matching target, branch/SHA
    metadata and runtime URL/key. Wait for READY and verify project/SHA/branch/target.
 4. Recheck the Development branch head, explicitly assign its stable domain with
-   `vercel alias set`, then read back the Alias API record. Its deployment ID must
+   `POST /v2/deployments/{id}/aliases?teamId=...`, then read back the Alias API record. Its deployment ID must
    equal that verified READY deployment; an old binding fails even if the build's
    alias list contains the domain. Keep Vercel Authentication and branch binding.
 
@@ -218,6 +218,21 @@ Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 To retry, run **Quality** with **Run workflow** on the current `develop`/`master`
 branch, or rerun its failed deploy job. All gates apply again; Quality recreates the
 SHA contract. Stale releases/expired artifacts need a current Quality run.
+
+If only Development alias assignment failed after a READY Preview, an authorized
+operator can reuse that deployment without rebuilding. Confirm the release SHA is
+still the current `develop` head and its Quality/database-contract stages passed;
+verify READY, project, SHA, branch and Preview target before assignment. Use the
+[scoped Alias API](https://vercel.com/docs/rest-api/aliases/assign-an-alias) with only
+the Development hostname and `redirect: null`, then require the alias record's
+deployment ID and project to match. Keep the domain's `develop` binding and Vercel
+Authentication. A 409 response is acceptable only if read-back proves that exact
+binding. Never mark a failed Actions run successful merely because recovery worked.
+
+Release errors include classified Vercel CLI failures or sanitized API errors with HTTP
+status and endpoint. Credentials and database URL/password variants are redacted;
+SQL diagnostics and unrelated build output remain suppressed. The original release
+error may be unrecoverable if an older runner discarded its subprocess stderr.
 
 ## Failure and recovery
 
