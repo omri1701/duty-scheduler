@@ -120,8 +120,10 @@ settings, merge a release or apply hosted SQL.
 `vercel.json` disables all automatic Git deployments, including feature branches.
 Retain the linked Git repository, existing ignored-build filter (`master|develop`
 only), Next.js preset, Node 24, pinned pnpm/Corepack, Frankfurt region, automatic
-custom-domain assignment and `all_except_custom_domains` Authentication. CLI GitHub
-branch/SHA metadata updates the existing domain; Development is bound to `develop`,
+custom-domain assignment and `all_except_custom_domains` Authentication. Releases
+explicitly set the non-secret build flag `ENABLE_EXPERIMENTAL_COREPACK=1`
+so Vercel installs the exact `packageManager` version, including pnpm 12's lockfile.
+CLI GitHub branch/SHA metadata updates the existing domain; Development is bound to `develop`,
 Production has no branch binding. Do not create protection bypasses.
 Set Preview and Vercel Development app variables to Development, Production app
 variables to Production. Actions explicitly supplies the matching runtime URL/key;

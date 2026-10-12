@@ -150,6 +150,7 @@ async function main() {
         const filename = path.join(directory, 'vercel.json');
         await writeFile(filename, JSON.stringify(config), {mode: 0o600});
         url = vercel(['deploy', '--yes', '--target', selected.target, '--regions', 'fra1', '--local-config', filename,
+          '--build-env', 'ENABLE_EXPERIMENTAL_COREPACK=1',
           '--meta', 'githubDeployment=1', '--meta', `githubCommitRef=${branch}`, '--meta', `githubCommitSha=${sha}`]);
       } finally {
         await rm(directory, {recursive: true, force: true});
