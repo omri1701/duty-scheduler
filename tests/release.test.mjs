@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {validateDatabaseChange} from '../scripts/database-policy.mjs';
 import {verifyHistory, historyQuery, referenceQuery} from '../scripts/database-contract.mjs';
-import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, releaseApplicationDomain, verifyReleaseApproval, validateReleaseCredentials} from '../scripts/release.mjs';
+import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, releaseApplicationDomain, verifyReleaseApproval, validateReleaseCredentials, sanitizeReleaseError, vercelFailure, createVercelAPI} from '../scripts/release.mjs';
 
 const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'required_reference_data']];
 const history = rows => rows.map(row => row.join('|')).join('\n');
@@ -98,14 +98,20 @@ function domainFixture(branch = 'develop') {
     meta: {githubCommitSha: sha, githubCommitRef: branch}, target: branch === 'develop' ? null : 'production', alias: []};
   const alias = {alias: selected.domain, projectId, deploymentId: deployment.id, redirect: null};
   const args = {branch, sha, url,
-    vercelAPI: route => {
+    vercelAPI: (route, options) => {
       if (route === '/v13/deployments/duty-intended.vercel.app') { events.push('deployment'); return deployment; }
+      if (options?.method === 'POST') {
+        assert.equal(branch, 'develop', 'Production must retain automatic domain assignment');
+        assert.equal(route, '/v2/deployments/dpl_intended/aliases');
+        assert.deepEqual(options.body, {alias: selected.domain, redirect: null});
+        events.push('assign');
+        return {alias: selected.domain};
+      }
       assert.equal(route, `/v4/aliases/${selected.domain}`);
       events.push('domain');
       return alias;
     },
     verifyApproval: () => events.push('approval'),
-    vercel: command => events.push(command),
   };
   return {args, events, deployment, alias};
 }
@@ -114,7 +120,7 @@ test('Development explicitly aliases a verified Preview after the final branch g
   const fixture = domainFixture();
   await releaseApplicationDomain(fixture.args);
   assert.deepEqual(fixture.events, ['deployment', 'approval',
-    ['alias', 'set', fixture.args.url, environments.develop.domain, '--scope', 'omri1701s-projects'], 'domain']);
+    'assign', 'domain']);
   assert.deepEqual(fixture.deployment.alias, [], 'No automatic Git alias assignment is needed');
 });
 
@@ -138,7 +144,14 @@ test('unready, unrelated or malformed deployments cannot promote Development', a
 test('a superseded branch or failed alias command cannot complete domain promotion', async () => {
   for (const stage of ['approval', 'alias']) {
     const fixture = domainFixture();
-    fixture.args[stage === 'approval' ? 'verifyApproval' : 'vercel'] = () => { throw new Error(`Synthetic ${stage} failure`); };
+    if (stage === 'approval') fixture.args.verifyApproval = () => { throw new Error('Synthetic approval failure'); };
+    else {
+      const api = fixture.args.vercelAPI;
+      fixture.args.vercelAPI = (route, options) => {
+        if (options?.method === 'POST') throw new Error('Synthetic alias failure');
+        return api(route, options);
+      };
+    }
     await assert.rejects(releaseApplicationDomain(fixture.args), new RegExp(`Synthetic ${stage} failure`));
     assert.deepEqual(fixture.events, stage === 'approval' ? ['deployment'] : ['deployment', 'approval']);
   }
@@ -160,10 +173,58 @@ test('READY and deployment alias membership cannot hide a stale, redirected or c
 
 test('Production verifies its automatic domain binding without executing a manual alias command', async () => {
   const fixture = domainFixture('master');
-  fixture.args.vercel = () => assert.fail('Production must retain automatic domain assignment');
   fixture.args.verifyApproval = () => assert.fail('Production approval stays in the existing release gates');
   await releaseApplicationDomain(fixture.args);
   assert.deepEqual(fixture.events, ['deployment', 'domain']);
+});
+
+test('an alias conflict succeeds only when read-back proves the intended deployment and project', async () => {
+  for (const conflict of [false, true]) {
+    const fixture = domainFixture();
+    if (conflict) fixture.alias.deploymentId = 'dpl_other';
+    const api = fixture.args.vercelAPI;
+    fixture.args.vercelAPI = (route, options) => {
+      if (options?.method === 'POST') throw Object.assign(new Error('Alias already assigned'), {status: 409});
+      return api(route, options);
+    };
+    if (conflict) await assert.rejects(releaseApplicationDomain(fixture.args), /Domain does not point to the intended deployment/);
+    else await releaseApplicationDomain(fixture.args);
+  }
+});
+
+test('Vercel failures retain actionable errors while redacting credentials and discarding unrelated output', () => {
+  const env = credentialFixture('develop');
+  env.GH_TOKEN = 'synthetic-github-token';
+  env.PGPASSWORD = 'synthetic:@/password';
+  const input = `\u001b[31mError: alias forbidden; check token scope. ${Object.values(env).join(' ')} ${encodeURIComponent(env.PGPASSWORD)} Bearer unknown-token\u001b[0m\n`;
+  const message = vercelFailure({status: 1, stderr: input, stdout: 'private build data'}, env);
+  assert.match(message, /Vercel CLI failed \(1\): Authentication\/permission failure/);
+  for (const secret of Object.values(env)) assert(!message.includes(secret));
+  assert(!message.includes(encodeURIComponent(env.PGPASSWORD)));
+  assert(!message.includes('unknown-token'));
+  assert(!message.includes('private build data'));
+  assert(!message.includes('\n'));
+  assert(sanitizeReleaseError('postgresql://user:unknown@host/db', {}).includes('[REDACTED DATABASE URL]'));
+  assert.match(vercelFailure({status: null}, {}), /could not start.*inspect Vercel deployment events/);
+  const privateBuild = vercelFailure({status: 1, stderr: 'Error: alias forbidden\nBuild Error: private-row-sentinel'}, {});
+  assert.match(privateBuild, /Authentication\/permission failure/);
+  assert(!privateBuild.includes('private-row-sentinel'));
+});
+
+test('Vercel API scopes requests, keeps tokens in headers, and safely reports API/JSON failures', async () => {
+  const env = credentialFixture('develop');
+  const api = createVercelAPI(env, async (url, options) => {
+    assert.equal(url, 'https://api.vercel.com/v2/deployments/dpl_intended/aliases?teamId=team_pbvqzViC50aeT2kaRNnTYkPt');
+    assert.equal(options.headers.Authorization, `Bearer ${env.VERCEL_TOKEN}`);
+    assert.equal(options.method, 'POST');
+    assert.deepEqual(JSON.parse(options.body), {alias: environments.develop.domain, redirect: null});
+    return {ok: true, json: async () => ({alias: environments.develop.domain})};
+  });
+  await api('/v2/deployments/dpl_intended/aliases', {method: 'POST', body: {alias: environments.develop.domain, redirect: null}});
+  const forbidden = createVercelAPI(env, async () => ({ok: false, status: 403, json: async () => ({error: {message: `Forbidden token ${env.VERCEL_TOKEN}`}})}));
+  await assert.rejects(forbidden('/v4/aliases/domain'), error => error.status === 403 && error.message.includes('Forbidden token [REDACTED]') && !error.message.includes(env.VERCEL_TOKEN));
+  const malformed = createVercelAPI(env, async () => ({status: 502, json: async () => { throw new Error('private-response-sentinel'); }}));
+  await assert.rejects(malformed('/v4/aliases/domain'), error => error.message.includes('invalid JSON (502)') && !error.message.includes('private-response-sentinel'));
 });
 
 test('feature pushes and manual dispatches cannot enter hosted release steps, even with deployment credentials', () => {
