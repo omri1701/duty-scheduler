@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
 import { CalendarDays, Users, SlidersHorizontal, Info, Download, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -183,7 +184,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
           <span className="brand-context">{t('Engineering', 'הנדסה')}</span>
         </Link>
         <div className="top-actions">
-          <span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>
+          {remote.environment?.badge?<EnvironmentBadge environment={remote.environment}/>:<span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>}
           <Button
             variant="ghost"
             size="icon"
@@ -222,6 +223,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
             {t('Help', 'עזרה')}
           </Button>
         </div>
+        <InspectionWarning environment={remote.environment} lang={lang}/>
         {remote?.error && (
           <div className="warning-note" role="alert">
             {remote.error}
@@ -261,6 +263,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
               monthLabel={monthLabel}
               monthDetails={monthDetails}
               isManager={isManager}
+              readOnly={remote.readOnly}
               busy={busy}
               metrics={metrics}
               blockCount={duties.length}
@@ -291,6 +294,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
                   nickname={nickname}
                   meId={meId}
                   isManager={isManager}
+                  readOnly={remote.readOnly}
                   requesting={requesting}
                   publication={publication}
                   view={view}
@@ -304,6 +308,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
                   blockCount={duties.length}
                 />
                 <WorkspaceSummary
+                  readOnly={remote.readOnly}
                   metrics={metrics}
                   blockCount={duties.length}
                   monthDetails={monthDetails}
@@ -312,7 +317,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
                   t={t}
                   fmt={fmt}
                   onTeam={() => setTab('team')}
-                  onSettings={() => setSettings(true)}
+                  onSettings={() => {if(!remote.readOnly)setSettings(true)}}
                 />
               </div>
             </TabsContent>
@@ -326,7 +331,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
                 lang={lang}
                 isManager={isManager}
                 meId={meId}
-                constraintsClosed={constraintsClosed}
+                constraintsClosed={constraintsClosed||remote.readOnly}
                 t={t}
                 saveConstraints={saveConstraints}
               />

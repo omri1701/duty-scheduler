@@ -7,6 +7,7 @@ export function WorkspaceToolbar({
   monthLabel,
   monthDetails,
   isManager,
+  readOnly,
   busy,
   metrics,
   blockCount,
@@ -21,6 +22,7 @@ export function WorkspaceToolbar({
   monthLabel: string;
   monthDetails: State['months'][string];
   isManager: boolean;
+  readOnly: boolean;
   busy: boolean;
   metrics: WorkspaceMetrics;
   blockCount: number;
@@ -66,17 +68,18 @@ export function WorkspaceToolbar({
               variant="outline"
               aria-label={t('Change month deadline', 'שינוי מועד אחרון לחודש')}
               onClick={onSettings}
+              disabled={readOnly}
             >
               <SlidersHorizontal />
               {t('Change month deadline', 'שינוי מועד אחרון לחודש')}
             </Button>
             {monthDetails.status === 'published' ? (
-              <Button onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
+              <Button disabled={readOnly} onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
             ) : (
               <>
                 <Button
                   variant="outline"
-                  disabled={busy || !metrics.active.length}
+                  disabled={readOnly || busy || !metrics.active.length}
                   onClick={runGenerate}
                 >
                   <Sparkles className={busy ? 'spin' : ''} />
@@ -88,7 +91,7 @@ export function WorkspaceToolbar({
                 </Button>
                 <Button
                   disabled={
-                    metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
+                    readOnly || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
                   }
                   onClick={onPublish}
                 >

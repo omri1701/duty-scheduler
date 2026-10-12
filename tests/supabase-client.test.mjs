@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+globalThis.window={location:{origin:'http://localhost:5173'}};
 
 test('concurrent client initialization shares configuration and client; failed initialization can retry', async t => {
   const {getSupabase} = await import('../lib/supabase/client.ts?concurrent');
@@ -7,7 +8,7 @@ test('concurrent client initialization shares configuration and client; failed i
   t.mock.method(globalThis, 'fetch', async url => {
     assert.equal(url, '/api/config');
     if (++attempts === 1) return new Response('', {status: 503});
-    return Response.json({url: 'https://phase4c.supabase.invalid', key: 'sb_publishable_synthetic_only'});
+    return Response.json({url: 'https://qhndiuahuxczujxxitsm.supabase.co', key: 'sb_publishable_synthetic_only'});
   });
   await assert.rejects(getSupabase(), /not configured/);
   const [first, second] = await Promise.all([getSupabase(), getSupabase()]);
@@ -17,7 +18,7 @@ test('concurrent client initialization shares configuration and client; failed i
 
 test('malformed configuration fails with a safe message before constructing a client', async t => {
   const {getSupabase} = await import('../lib/supabase/client.ts?malformed');
-  for (const config of [null, [], {}, {url: 42, key: 'sb_publishable_synthetic_only'}, {url: 'https://phase4c.supabase.invalid', key: 'invalid'}]) {
+  for (const config of [null, [], {}, {url: 42, key: 'sb_publishable_synthetic_only'}, {url: 'https://qhndiuahuxczujxxitsm.supabase.co', key: 'invalid'}]) {
     const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json(config));
     await assert.rejects(getSupabase(), /Invalid connection configuration\./);
     fetch.mock.restore();

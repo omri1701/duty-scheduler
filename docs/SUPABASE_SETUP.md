@@ -107,6 +107,90 @@ pnpm exec tsc --noEmit
 pnpm build
 ```
 
+## Localhost environment selector
+
+Stop the running Next server before switching. All commands use native Next.js on
+`http://localhost:5173`, bind to loopback, and never rewrite `.env.local` or run
+hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
+`pnpm dev:select` optionally prompts for a target.
+
+| Command | Target / behavior |
+|---|---|
+| `pnpm dev:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next. |
+| `pnpm dev:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
+| `pnpm dev:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
+| `pnpm local:setup` | Starts/prepares and verifies local Auth, onboarding, workspace reads and denied direct table writes without starting Next. |
+| `pnpm local:reset` | **Discards only the isolated local app database**, replays the current branch and recreates synthetic accounts. Use after incompatible branch migration changes or to restore pending fixtures. |
+
+LOCAL requires Docker Desktop and the pinned CLI (`pnpm dlx supabase@2.119.0`).
+It uses ignored `work/local-supabase`, project `duty-scheduler-app`, ports
+58320?58324, and container `supabase_db_duty-scheduler-app`. This stack is separate
+from Quality's empty `duty-scheduler` SQL-test database. Auth/API/Studio/mail run;
+unneeded analytics, pooling, Realtime, Storage and Edge services are excluded.
+No hosted links, service-role keys, Google secrets or live data are copied.
+The disposable migration copy is refreshed from the current branch; migration
+hashes reject removed/edited previously applied files until an explicit local
+reset. Pending incremental migrations are applied with `migration up --local`.
+
+Local sign-in uses the real Supabase password Auth service, checked `duty_join`
+and unchanged RLS. Local email confirmation is disabled only in CLI config;
+hosted Google authentication and identity checks stay unchanged. Accounts:
+`admin@duty.local` (approved admin), `engineer@duty.local` (approved engineer),
+`pending@duty.local` (pending on fresh setup/reset). Their **local-only** password
+is `Duty-local-only-1701!`. Operator approval of the two fixtures runs only inside
+the exact local Docker container. No browser bypass or hosted bootstrap exists.
+You can approve the pending account normally; setup preserves that later approval.
+The fixtures do not create schedules. Sessions and PKCE verifiers use separate
+storage keys per actual Supabase URL/port; switching targets cannot reuse another
+project's session. Existing pre-selector sessions require a new login once.
+
+Badges appear on login and workspace: LOCAL blue, DEV green on localhost and
+`duty-scheduler-dev.vercel.app`, and PROD red only for localhost Production.
+Deployed Production has no badge. Text contrasts against pastel backgrounds and
+both EN/HE layouts work on mobile. The URL/project and runtime origin determine
+the badge and policy. Unknown projects, URL paths/credentials, mode mismatches,
+wrong hosted origins and unconfirmed localhost Production return a no-store 503.
+Authorized Vercel deployment URLs use the server-supplied Vercel URL and
+validated hosting scope: previews remain DEV; immutable Production URLs have no
+badge. The known Development/Production aliases cannot swap projects.
+The browser-container QA origin `host.docker.internal` accepts DEV only.
+Local CLI anon JWTs are accepted only for loopback targets when their decoded
+role is `anon` and issuer is `supabase-demo`; secret/service-role keys are rejected.
+Supabase still verifies keys/tokens and enforces RLS.
+
+Production inspection blocks automatic `duty_join`, all mutating RPCs (including
+future/unknown RPC names), direct table writes and Auth signup/profile writes in
+the central application transport. Editing, approvals, swaps and profile saves
+are disabled; reading, navigation, history previews and sign-out remain available.
+**This is application-level protection, not database-enforced read-only access.**
+An approved member's Supabase token retains its existing database privileges;
+a separate client can still write under the hosted permissions. Never use this
+mode to test writes or unmerged schemas. There is no write-enable switch.
+Use an **existing Production Google identity only**: OAuth authentication may
+create/update an Auth identity when hosted provider signups are enabled, and
+login/token refresh necessarily writes Auth session state. The app cannot prevent
+provider-side signup without changing hosted Auth settings. Inspection sign-out
+revokes only its own session, preserving other deployed/mobile sessions.
+
+Production keeps its existing Google redirects; no localhost redirect is added.
+For localhost inspection, Continue with Google opens a new tab and returns to
+`https://duty-scheduler-prod.vercel.app/?code=...`. Copy that return URL into the
+localhost login form promptly and submit. The one-time code is exchanged only
+with the originating localhost PKCE verifier, without copying access/refresh
+tokens. The deployed page may show a missing-verifier login error: the verifier
+belongs to localhost. Close that tab after completing login. Only existing
+approved members can enter; unapproved/non-member accounts do not create join
+requests. Do not share/log callback URLs. This handoff has synthetic regression
+coverage; live Google/provider behavior still needs an operator check.
+
+If startup fails, inspect Docker Desktop and port availability. CLI diagnostics
+must stay local (CLI output can contain keys):
+
+```sh
+pnpm dlx supabase@2.119.0 start --exclude logflare,vector,supavisor,edge-runtime,imgproxy,storage-api,realtime --workdir work/local-supabase
+pnpm dlx supabase@2.119.0 stop --workdir work/local-supabase
+```
+
 ## Local development with the separate development project
 
 These steps apply to feature branches too. Keep the existing `.env.local` on
@@ -142,7 +226,7 @@ hosted project. See [intentional manual previews](DEPLOYMENT.md#feature-branches
    persists. Use the same hostname throughout the login flow.
 
 `/api/config` returns **503** when its URL is missing or its key is missing or
-does not begin with `sb_publishable_`. Native Next.js loads `.env.local`; no
+is invalid for the validated project/origin (hosted keys must be `sb_publishable_...`). Native Next.js loads `.env.local`; no
 `NEXT_PUBLIC_` prefix is needed. The route reads the server environment per request
 and returns `Cache-Control: no-store` for both success and errors. Restart after
 changing local configuration. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables).
@@ -154,8 +238,9 @@ Google secrets stay in Supabase. Follow the Environment/approval gates in the
 [release workflow](DEPLOYMENT.md). Keep legitimate Preview access protection.
 
 Local login uses the independent Frankfurt Development identity.
-Do not configure localhost against production or add local redirects to its client.
-The app has no demo login or local-data fallback.
+Use Production on localhost only through the confirmed inspection selector above;
+never add local redirects to its client. LOCAL uses isolated Supabase Auth/data,
+with no demo bypass or browser-local fallback.
 
 Push notifications, calendar subscriptions and full action audit logs remain future work. Real Google OAuth must be checked after provider setup; database role tests do not replace that check.
 

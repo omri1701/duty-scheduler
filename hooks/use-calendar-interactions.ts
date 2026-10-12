@@ -53,6 +53,7 @@ export function useCalendarInteractions({
     } else startSwap(from, to);
   }
   function selectCalendarDuty(b: Duty) {
+    if(remote.readOnly)return;
     if (!requesting) {
       openDuty(b);
       return;
@@ -65,7 +66,7 @@ export function useCalendarInteractions({
   }
   const { bindContainer: dragContainer, ignoreClick: ignoreDragClick } = useHoldDrag({
     enabled:
-      !remote.saving &&
+      !remote.saving && !remote.readOnly &&
       tab === 'schedule' &&
       (requesting ? !!publication : monthDetails.status === 'draft'),
     onStart: (key) => {

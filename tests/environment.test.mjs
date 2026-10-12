@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {PROJECTS,resolveEnvironment,validatePublicKey} from '../lib/supabase/environment.ts';
+import {selectConfiguration} from '../scripts/dev-environment.mjs';
+
+test('all five display cases derive from the project URL and runtime origin',()=>{
+ for(const [url,origin,badge,readOnly] of [
+  ['http://127.0.0.1:58321','http://localhost:5173','LOCAL',false],
+  [PROJECTS.dev,'http://localhost:5173','DEV',false],
+  [PROJECTS.dev,'https://duty-scheduler-dev.vercel.app','DEV',false],
+  [PROJECTS.prod,'http://localhost:5173','PROD',true],
+  [PROJECTS.prod,'https://duty-scheduler-prod.vercel.app',null,false],
+ ]){const result=resolveEnvironment(url,origin);assert.equal(result.badge,badge);assert.equal(result.readOnly,readOnly);}
+});
+
+test('unknown projects, unsafe URLs and mismatched hosting fail closed',()=>{
+ for(const [url,origin] of [
+  ['https://unknown.supabase.co','http://localhost:5173'],
+  [PROJECTS.prod,'https://duty-scheduler-dev.vercel.app'],
+  [PROJECTS.dev,'https://duty-scheduler-prod.vercel.app'],
+  ['http://127.0.0.1:58321','https://duty-scheduler-dev.vercel.app'],
+  [PROJECTS.dev,'https://unknown.example'],
+  [PROJECTS.prod,'http://host.docker.internal:8787'],
+  [PROJECTS.dev+'/bad','http://localhost:5173'],
+  [PROJECTS.dev.replace('https://','https://user:password@'),'http://localhost:5173'],
+ ])assert.throws(()=>resolveEnvironment(url,origin));
+ assert.equal(resolveEnvironment(PROJECTS.dev,'https://duty-preview.vercel.app','https://duty-preview.vercel.app').badge,'DEV');
+ assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://unknown.vercel.app'));
+ assert.equal(resolveEnvironment(PROJECTS.prod,'https://duty-production-immutable.vercel.app','https://duty-production-immutable.vercel.app').badge,null);
+ assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://duty-scheduler-dev.vercel.app','https://duty-scheduler-dev.vercel.app'));
+});
+
+test('mode selection rejects mismatches and requires fresh Production confirmation',()=>{
+ const env={SUPABASE_URL:PROJECTS.dev,SUPABASE_PUBLISHABLE_KEY:'sb_publishable_synthetic',SUPABASE_PROD_PUBLISHABLE_KEY:'sb_publishable_synthetic_prod'};
+ assert.equal(selectConfiguration('dev',env).SUPABASE_URL,PROJECTS.dev);
+ assert.throws(()=>selectConfiguration('local',env),/mismatched/);
+ assert.throws(()=>selectConfiguration('unknown',env),/Select/);
+ assert.throws(()=>selectConfiguration('prod',env),/confirmation/);
+ assert.equal(selectConfiguration('prod',env,true).DUTY_PRODUCTION_INSPECTION,'confirmed');
+ assert.throws(()=>selectConfiguration('prod',env),/confirmation/);
+ assert.throws(()=>selectConfiguration('prod',{...env,SUPABASE_PROD_PUBLISHABLE_KEY:undefined},true),/Missing/);
+ assert.equal(selectConfiguration('local',{SUPABASE_URL:'http://127.0.0.1:58321',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_local'}).DUTY_SUPABASE_TARGET,'local');
+});
+
+test('Production launcher refuses unattended selection even with a supplied key or old confirmation',()=>{
+ const child=spawnSync(process.execPath,['scripts/dev-environment.mjs','prod'],{encoding:'utf8',env:{...process.env,SUPABASE_PROD_PUBLISHABLE_KEY:'sb_publishable_synthetic',DUTY_PRODUCTION_INSPECTION:'confirmed'}});
+ assert.equal(child.status,1);
+ assert.match(child.stderr,/requires an interactive terminal/);
+ assert.doesNotMatch(child.stdout,/http:\/\/localhost/);
+});
+
+test('only local CLI anon JWTs and publishable keys are public configuration',()=>{
+ const jwt=role=>['eyJhbGciOiJIUzI1NiJ9',Buffer.from(JSON.stringify({role,iss:'supabase-demo'})).toString('base64url'),'synthetic'].join('.');
+ validatePublicKey('http://127.0.0.1:58321',jwt('anon'));
+ validatePublicKey(PROJECTS.dev,'sb_publishable_synthetic');
+ for(const key of [jwt('service_role'),'sb_secret_synthetic','legacy-anon-jwt','sb_publishable_'])assert.throws(()=>validatePublicKey('http://127.0.0.1:58321',key));
+ assert.throws(()=>validatePublicKey(PROJECTS.dev,jwt('anon')));
+});
+
+test('switching projects and local ports isolates sessions and PKCE storage',()=>{
+ const urls=[PROJECTS.dev,PROJECTS.prod,'http://127.0.0.1:58321','http://127.0.0.1:58331'];
+ assert.equal(new Set(urls.map(url=>resolveEnvironment(url,'http://localhost:5173').storageKey)).size,urls.length);
+});
