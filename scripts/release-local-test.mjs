@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {exportContract} from './database-contract.mjs';
-import {releaseDatabaseFirst} from './release.mjs';
+import {releaseDatabaseFirst, databasePushInvocation} from './release.mjs';
 
 const container = process.argv[2];
 assert.match(container ?? '', /^supabase_db_[\w-]+$/);
@@ -26,6 +26,34 @@ let pushes = 0;
 try {
   await cp(path.join(process.env.SUPABASE_WORKDIR || '.', 'supabase/config.toml'), path.join(directory, 'supabase/config.toml'), {recursive: true});
   await cp('supabase/migrations', path.join(directory, 'supabase/migrations'), {recursive: true});
+  // Prove the pinned CLI accepts env-only passwords over an authenticated TCP
+  // connection, with a throwaway LOCAL role and a failing wrong-password control.
+  const localConfig = await readFile(path.join(directory, 'supabase/config.toml'), 'utf8');
+  const port = /\[db\][\s\S]*?\nport\s*=\s*(\d+)/.exec(localConfig)?.[1];
+  assert(port);
+  query(`CREATE ROLE duty_ci_password_probe LOGIN PASSWORD 'synthetic_ci_only';
+    GRANT USAGE, CREATE ON SCHEMA supabase_migrations TO duty_ci_password_probe;
+    GRANT SELECT ON ALL TABLES IN SCHEMA supabase_migrations TO duty_ci_password_probe;`);
+  try {
+    const invocation = databasePushInvocation({PGHOST: '127.0.0.1', PGPORT: port,
+      PGUSER: 'duty_ci_password_probe', PGPASSWORD: 'synthetic_ci_only'}, true);
+    const urlIndex = invocation.args.indexOf('--db-url') + 1;
+    const url = new URL(invocation.args[urlIndex]);
+    // The disposable container has no TLS; hosted releases always require TLS.
+    url.searchParams.set('sslmode', 'disable');
+    invocation.args[urlIndex] = url.href;
+    const args = [...invocation.args, '--workdir', directory];
+    const check = password => spawnSync(cli, args, {encoding: 'utf8', env: {...process.env,
+      PGPASSWORD: password, SUPABASE_DB_PASSWORD: password}});
+    assert.notEqual(check('synthetic_wrong').status, 0, 'Wrong-password control must fail');
+    const correct = check('synthetic_ci_only');
+    assert.equal(correct.status, 0, correct.stderr);
+    console.log('PASS: pinned Supabase CLI authenticates using password environment, never password argv');
+  } finally {
+    query(`REVOKE SELECT ON ALL TABLES IN SCHEMA supabase_migrations FROM duty_ci_password_probe;
+      REVOKE USAGE, CREATE ON SCHEMA supabase_migrations FROM duty_ci_password_probe;
+      DROP ROLE duty_ci_password_probe;`);
+  }
   const contract = await exportContract(query, 'a'.repeat(40), path.join(directory, 'contract.json'));
   const fingerprintSQL = await readFile('supabase/tests/fingerprint.sql', 'utf8');
   const push = dryRun => {

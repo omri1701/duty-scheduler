@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {validateDatabaseChange} from '../scripts/database-policy.mjs';
 import {verifyHistory, historyQuery, referenceQuery} from '../scripts/database-contract.mjs';
-import {connectionEnvironment, environments, releaseDatabaseFirst, verifyReleaseApproval} from '../scripts/release.mjs';
+import {connectionEnvironment, databasePushInvocation, environments, releaseDatabaseFirst, verifyReleaseApproval} from '../scripts/release.mjs';
 
 const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'required_reference_data']];
 const history = rows => rows.map(row => row.join('|')).join('\n');
@@ -99,36 +99,42 @@ test('migration failure and missing history block deployment; success strictly o
   }
 });
 
-test('Production rejects direct pushes, missing approval gates, stale releases and unreviewed release heads', async () => {
+test('database migration credentials travel only through the subprocess environment', () => {
+  const secret = 'synthetic:@/encoded password';
+  const pg = connectionEnvironment(`postgresql://postgres.qhndiuahuxczujxxitsm:${encodeURIComponent(secret)}@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`, environments.develop.ref);
+  for (const dryRun of [true, false]) {
+    const invocation = databasePushInvocation(pg, dryRun);
+    assert(!invocation.args.join(' ').includes(secret));
+    assert(!invocation.args.join(' ').includes(encodeURIComponent(secret)));
+    const url = new URL(invocation.args[invocation.args.indexOf('--db-url') + 1]);
+    assert.equal(url.password, '');
+    assert.equal(url.username, 'postgres.qhndiuahuxczujxxitsm');
+    assert.equal(invocation.env.PGPASSWORD, secret);
+    assert.equal(invocation.env.SUPABASE_DB_PASSWORD, secret);
+    assert.equal(invocation.args.includes('--dry-run'), dryRun);
+  }
+});
+
+test('solo Production requires the release PR, protected branch, Environment approval and successful Development', async () => {
   const sha = 'a'.repeat(40);
   const repo = process.env.GITHUB_REPOSITORY;
   const responses = {
     '/git/ref/heads/master': {object: {sha}},
-    '/environments/Production': {protection_rules: [{type: 'required_reviewers', reviewers: [{}]}]},
+    '/environments/Production': {can_admins_bypass: false, protection_rules: [{type: 'required_reviewers', prevent_self_review: false, reviewers: [{}]}]},
+    '/branches/master': {protected: true},
     [`/commits/${sha}/pulls?per_page=100`]: [{number: 1, merged_at: 'date', merge_commit_sha: sha,
       base: {ref: 'master'}, head: {ref: 'develop', sha, repo: {full_name: repo}}}],
-    '/pulls/1/reviews?per_page=100': [{state: 'APPROVED', commit_id: sha, user: {id: 1, login: 'trusted'}}],
-    '/collaborators/trusted/permission': {permission: 'write'},
-    '/collaborators/outsider/permission': {permission: 'read'},
     [`/deployments?sha=${sha}&environment=Development&per_page=100`]: [{id: 1}],
     '/deployments/1/statuses?per_page=1': [{state: 'success'}],
   };
   await verifyReleaseApproval(route => responses[route], 'master', sha);
   for (const [route, replacement] of [
     ['/git/ref/heads/master', {object: {sha: 'b'.repeat(40)}}],
-    ['/environments/Production', {protection_rules: []}],
+    ['/environments/Production', {can_admins_bypass: false, protection_rules: []}],
+    ['/environments/Production', {...responses['/environments/Production'], can_admins_bypass: true}],
+    ['/branches/master', {protected: false}],
     [`/commits/${sha}/pulls?per_page=100`, []],
-    ['/pulls/1/reviews?per_page=100', []],
-    ['/pulls/1/reviews?per_page=100', [{state: 'APPROVED', commit_id: 'old', user: {id: 1, login: 'trusted'}}]],
-    ['/pulls/1/reviews?per_page=100', [{state: 'APPROVED', commit_id: sha, user: {id: 2, login: 'outsider'}}]],
     [`/deployments?sha=${sha}&environment=Development&per_page=100`, []],
   ]) await assert.rejects(verifyReleaseApproval(key => key === route ? replacement : responses[key], 'master', sha));
-  const outsiderVeto = {state: 'CHANGES_REQUESTED', commit_id: sha, user: {id: 2, login: 'outsider'}};
-  await verifyReleaseApproval(key => key === '/pulls/1/reviews?per_page=100'
-    ? [...responses[key], outsiderVeto] : responses[key], 'master', sha);
-  // A trusted approval on page 2 must supersede the earlier trusted veto.
-  await verifyReleaseApproval(key => key === '/pulls/1/reviews?per_page=100'
-    ? Array.from({length: 100}, () => ({...outsiderVeto, user: {id: 1, login: 'trusted'}}))
-    : key === '/pulls/1/reviews?per_page=100&page=2' ? responses['/pulls/1/reviews?per_page=100'] : responses[key], 'master', sha);
   await assert.rejects(verifyReleaseApproval(() => null, 'feature/test', sha));
 });

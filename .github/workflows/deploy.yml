@@ -25,7 +25,7 @@ jobs:
         with:
           ref: ${{ inputs.sha }}
           persist-credentials: false
-      - name: Verify branch and reviewed Production release before requesting approval
+      - name: Verify branch and Production release PR before requesting manual approval
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_BRANCH: ${{ inputs.branch }}

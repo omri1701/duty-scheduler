@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {readFile, appendFile} from 'node:fs/promises';
+import {readFile, appendFile, mkdtemp, writeFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {historyQuery, referenceQuery, verifyHistory} from './database-contract.mjs';
@@ -29,6 +31,17 @@ export function connectionEnvironment(value, ref) {
     PGOPTIONS: '-c default_transaction_read_only=on -c statement_timeout=60000'};
 }
 
+export function databasePushInvocation(pg, dryRun) {
+  const url = new URL('postgresql://localhost/postgres?sslmode=require');
+  url.hostname = pg.PGHOST;
+  url.port = pg.PGPORT;
+  url.username = pg.PGUSER;
+  return {
+    args: ['db', 'push', '--db-url', url.href, '--skip-vault', '--yes', ...(dryRun ? ['--dry-run'] : [])],
+    env: {PGPASSWORD: pg.PGPASSWORD, SUPABASE_DB_PASSWORD: pg.PGPASSWORD},
+  };
+}
+
 // Shared by real releases and the isolated integration test: a failed migration,
 // incomplete history or contract mismatch can never reach deployApplication.
 export async function releaseDatabaseFirst({query, push, deployApplication, contract, fingerprintSQL}) {
@@ -54,25 +67,14 @@ export async function verifyReleaseApproval(api, branch, sha) {
   const environment = await api('/environments/Production');
   assert(environment.protection_rules.some(rule => rule.type === 'required_reviewers' && rule.reviewers.length),
     'Production requires GitHub Environment deployment approval before activation');
+  assert.equal(environment.can_admins_bypass, false, 'Production approval must not allow admin bypass');
+  assert((await api('/branches/master')).protected, 'Production branch must remain protected');
   const prs = await api(`/commits/${sha}/pulls?per_page=100`);
   const release = prs.find(pr => pr.merged_at && pr.merge_commit_sha === sha && pr.base.ref === 'master'
     && pr.head.ref === 'develop' && pr.head.repo?.full_name === process.env.GITHUB_REPOSITORY);
   assert(release, 'Production requires a merged develop -> master release PR');
-  const reviews = [];
-  for (let page = 1; ; page++) {
-    const batch = await api(`/pulls/${release.number}/reviews?per_page=100${page === 1 ? '' : `&page=${page}`}`);
-    reviews.push(...batch);
-    if (batch.length < 100) break;
-  }
-  const latest = new Map();
-  for (const review of reviews) if (['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) latest.set(review.user.id, review);
-  const authoritative = [];
-  for (const review of latest.values()) {
-    const collaborator = await api(`/collaborators/${encodeURIComponent(review.user.login)}/permission`);
-    if (['write', 'admin', 'maintain'].includes(collaborator.permission)) authoritative.push(review);
-  }
-  assert(authoritative.some(review => review.state === 'APPROVED' && review.commit_id === release.head.sha)
-    && !authoritative.some(review => review.state === 'CHANGES_REQUESTED'), 'Release PR needs authorized approval of its final head');
+  // A solo owner cannot approve their own PR. Branch protection requires the PR
+  // and Quality; the Environment provides the separate, auditable release approval.
   const deployments = await api(`/deployments?sha=${release.head.sha}&environment=Development&per_page=100`);
   let developmentPassed = false;
   for (const deployment of deployments) {
@@ -108,7 +110,7 @@ async function main() {
   });
   assert(authSettings.ok, 'Publishable key does not authenticate against the selected Supabase project');
   const childEnvironment = {...process.env};
-  for (const name of ['GH_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_TOKEN']) delete childEnvironment[name];
+  for (const name of ['GH_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_DB_PASSWORD', 'PGPASSWORD', 'SUPABASE_PUBLISHABLE_KEY', 'VERCEL_TOKEN']) delete childEnvironment[name];
   const run = (command, args, options = {}) => {
     const result = spawnSync(command, args, {encoding: 'utf8', env: childEnvironment, ...options});
     // SQL errors may contain private rows and CLI errors may echo credentials.
@@ -116,7 +118,9 @@ async function main() {
     assert.equal(result.status, 0, `${command} failed (${result.status}); inspect the service dashboard privately`);
     return result.stdout.trim();
   };
-  const vercel = args => run('pnpm', ['dlx', 'vercel@62.0.0', ...args, '--token', process.env.VERCEL_TOKEN]);
+  const vercel = args => run('pnpm', ['dlx', 'vercel@62.0.0', ...args], {env: {...childEnvironment, VERCEL_TOKEN: process.env.VERCEL_TOKEN}});
+  assert.equal(run('git', ['rev-parse', 'HEAD']), sha, 'Release checkout must match the verified branch SHA');
+  run('git', ['diff', '--quiet', 'HEAD']);
   const vercelAPI = endpoint => JSON.parse(vercel(['api', `${endpoint}?teamId=${team}`, '--method', 'GET']));
   const settings = vercelAPI(`/v9/projects/${project}`);
   assert.equal(settings.ssoProtection?.deploymentType, 'all_except_custom_domains', 'Preserve Vercel Authentication');
@@ -128,14 +132,28 @@ async function main() {
     query: sql => run('psql', ['-XqAt', '-v', 'ON_ERROR_STOP=1'], {input: sql, env: {...childEnvironment, ...pg}}),
     push: dryRun => {
       console.log(dryRun ? 'Database migration dry run' : 'Applying pending database migrations');
-      run('supabase', ['db', 'push', '--db-url', process.env.SUPABASE_DB_URL, '--skip-vault', '--yes', ...(dryRun ? ['--dry-run'] : [])]);
+      const migration = databasePushInvocation(pg, dryRun);
+      run('supabase', migration.args, {env: {...childEnvironment, ...migration.env}});
     },
     deployApplication: async () => {
       await verifyReleaseApproval(api, branch, sha);
       console.log(`Deploying verified ${branch} application to Vercel ${selected.target}`);
-      const url = vercel(['deploy', '--yes', '--target', selected.target, '--regions', 'fra1',
-        '--meta', 'githubDeployment=1', '--meta', `githubCommitRef=${branch}`, '--meta', `githubCommitSha=${sha}`,
-        '--env', `SUPABASE_URL=https://${selected.ref}.supabase.co`, '--env', `SUPABASE_PUBLISHABLE_KEY=${process.env.SUPABASE_PUBLISHABLE_KEY}`]);
+      // The publishable key is intentionally public at runtime, but it need not
+      // appear in process listings. Keep deployment overrides outside the upload
+      // tree in a temporary owner-readable CLI config, removed even on failure.
+      const directory = await mkdtemp(path.join(tmpdir(), 'duty-vercel-'));
+      let url;
+      try {
+        const config = JSON.parse(await readFile('vercel.json', 'utf8'));
+        config.env = {...config.env, SUPABASE_URL: `https://${selected.ref}.supabase.co`,
+          SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY};
+        const filename = path.join(directory, 'vercel.json');
+        await writeFile(filename, JSON.stringify(config), {mode: 0o600});
+        url = vercel(['deploy', '--yes', '--target', selected.target, '--regions', 'fra1', '--local-config', filename,
+          '--meta', 'githubDeployment=1', '--meta', `githubCommitRef=${branch}`, '--meta', `githubCommitSha=${sha}`]);
+      } finally {
+        await rm(directory, {recursive: true, force: true});
+      }
       assert.match(url, /^https:\/\/[\w.-]+\.vercel\.app$/);
       const deployment = vercelAPI(`/v13/deployments/${new URL(url).hostname}`);
       assert.equal(deployment.readyState, 'READY', 'Vercel build did not become ready');

@@ -101,13 +101,16 @@ secret is needed. The database credential is privileged DDL access to **one proj
 not a runtime identity: the postgres-owned baseline needs owner-level DDL. Restrict
 it to protected release jobs, rotate it and audit access.
 
-Production must have **required reviewers** for explicit deployment approval;
-disable admin bypass and prevent self-review when a second operator is available.
-The release gate checks reviewers are configured before requesting approval.
-Protect both branches with `quality`, prohibit force pushes/deletion, and require
-reviewed PRs/no direct pushes to `master`. Production verifies final-head PR approval
-and a successful Development deployment of that head. Prefer merge commits for
-`develop` -> `master`. The workflow token has only read permissions.
+Production has **required reviewer `omri1701`** for explicit deployment approval,
+with **Prevent self-review off** so the solo maintainer can approve a run they
+initiated. **Admin bypass is disabled**; self-approval remains a deliberate manual
+action recorded by GitHub. The gate checks this protection before requesting approval.
+Protect both branches with required `quality`, up-to-date checks, enforced admin
+protection and no force pushes/deletion. Require PRs with **zero mandatory
+third-party approvals**, since GitHub cannot approve the author's own PR. Review
+the diff before merging; deployment approval is a separate gate. Production requires
+a merged `develop` -> `master` PR, a protected `master`, and successful Development
+deployment of that head. Prefer merge commits. The workflow token stays read-only.
 
 **Production starts disabled:** leave repository variable
 `PRODUCTION_DEPLOYMENT_ENABLED` unset. Only after owner approval, configure the
@@ -164,6 +167,11 @@ domain bindings and existing history, then:
 
 1. Dry-run and push only pending migrations; skip both when none exist. Never
    include seeds, roles, resets, history repair or `--include-all`.
+   The CLI receives a password-free connection URL; `PGPASSWORD`/
+   `SUPABASE_DB_PASSWORD` are scoped to its process environment. Passwords and
+   tokens never appear in process arguments. The publishable runtime key travels
+   through a temporary owner-readable Vercel config outside source uploads and is
+   removed on success/failure; Vercel authentication uses `VERCEL_TOKEN` in its env.
 2. Require complete matching history. Compare read-only application catalog
    fingerprints (schema, effective grants/RLS and RPC definitions) and static
    lookup rows with Quality's verified local DB. No private operational rows or
@@ -176,10 +184,10 @@ New pushes cancel obsolete tests, never an active migration. Queued stale SHAs
 fail before writes; the branch is checked again immediately before app deployment.
 No hosted identities/notes/schedules are reset or used as test fixtures.
 
-For Production, open a **reviewed `develop` -> `master` release PR** after verifying
+For Production, open a **maintainer-reviewed `develop` -> `master` release PR** after verifying
 Development. Merge only with owner authorization. `master` Quality must pass;
-with activation enabled, Actions checks the merged PR, final-head review and
-Development deployment, then waits for **Production Environment approval**.
+with activation enabled, Actions checks the merged PR, protected branch and
+Development deployment, then waits for **explicit Production Environment approval**.
 Only after approval can it use Production credentials, migrate/verify Production
 and deploy the corresponding `master` app. Its custom domain updates automatically.
 Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
