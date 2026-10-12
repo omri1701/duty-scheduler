@@ -1,10 +1,11 @@
 # Supabase setup
 
-Frankfurt Production target: `hpszwgnwxtxyxpcaivgj`, `eu-central-1`; final display
-name **Duty Scheduler** (rename pending). It is clean and schema-validated; Google
-configuration gates the authorized cutover at `https://duty-scheduler-two.vercel.app`.
-Tokyo `ukxxpbivgxyxharhxgqf` stays active until cutover succeeds, then its authorized
-reversible pause frees capacity for **Duty Scheduler Dev** in Frankfurt.
+Frankfurt Production: `hpszwgnwxtxyxpcaivgj`, `eu-central-1`, **Duty Scheduler**,
+live at `https://duty-scheduler-two.vercel.app` with the owner's Google admin account.
+Independent Frankfurt Development: `qhndiuahuxczujxxitsm`, **Duty Scheduler Dev**,
+initialized with no users or operational data; its separate Google client is pending.
+Both Tokyo projects are paused and retained. Localhost and Vercel Development/Preview
+use only Frankfurt Development; the stable develop alias awaits firewall approval.
 See [deployment checkpoint](DEPLOYMENT.md) for exact status and Google origins.
 Native Next.js needs only a project URL and publishable key; no service-role key.
 The [canonical database architecture](../supabase/README.md) installs the two clean

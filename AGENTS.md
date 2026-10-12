@@ -47,6 +47,7 @@ and Supabase. Prefer correctness and security with minimal context and agents.
   outside authorization. Do not claim instructions can switch the primary model.
 - Execute available login commands yourself; show authorization URLs/verification codes,
   wait for authentication, then resume automatically. Never expose or commit tokens.
+  Confirm identities directly with owner.
 
 ## Engineering and security
 

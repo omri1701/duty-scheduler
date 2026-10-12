@@ -2,86 +2,83 @@
 
 ## Release checkpoint — 12 October 2026
 
-The current task authorizes the European cutover, merge commit for PR #1, later
-reversible Tokyo pause, $0 Frankfurt Development creation and deployments once
-readiness passes. Never permanently delete Tokyo or touch CPR.
+The authorized Production cutover is complete. Never permanently delete Tokyo or
+touch CPR. No Tokyo users, credentials or operational data were copied.
 
-Verified this session:
-- Frankfurt `hpszwgnwxtxyxpcaivgj` is healthy in `eu-central-1`. Clean-install SQL
-  passes; all Auth and operational counts are zero; both canonical migrations and
-  frozen hashes are correct; security advisor has no findings. No reset was needed.
-- Catalog/permission fingerprints: tables `9a5f3a8157bd67b1d10aaca4b6e0d8b9`,
-  functions `c6b9e02563b497c1d2e3178682a3c74d`, constraints
-  `4f41119bbceb6b79d086ac6ba0746827`, indexes `ddedc3b94040e1aab5353d5c83fca3ca`,
-  policies `6ddfd6214c8daa60b407013d215a0038`, private schema
-  `e92c95c156c76736c4f622c5dc2bf257`, trigger `c759a41c3984688b290753e15b008849`.
-- PR #11 merged at `dea7681bddb46ab15ae4e4bfffb134e452b76c37`; PR #1 includes it,
-  is mergeable and both current-head Quality checks passed (SQL/build/browser).
-- Public Production is `https://duty-scheduler-two.vercel.app`; `/api/config`
-  confirms Tokyo. Served deployment: `dpl_9XesSiM6cnD3odbQ7E3pWtyfEDRu`.
-- Protected Frankfurt verification Preview below returns HTTP 200 and Frankfurt
-  configuration. Its application code matches `develop`; Google is enabled.
-  Auth Site URL is `https://duty-scheduler-two.vercel.app`; the allowlist contains
-  only its exact trailing-slash return and the verification Preview return below.
-  Management API readback confirms Google credentials/settings were preserved.
-  Preview OAuth initiation returns HTTP 302 to Google with Frankfurt's callback;
-  the temporary five-minute verification share link was revoked immediately.
-  Real owner Google sign-in and pending membership verification remain the gate.
-- Future Vercel function deployments now use `fra1`; Next.js, Node 24 and `master`
-  Production branch retained. Temporary automation bypass revoked: zero remain;
-  normal `all_except_custom_domains` Vercel Authentication remains enabled.
-- Organization `vaplnkaubzopjbixlxng` is Free; project creation quote is $0/month.
+Verified:
+- Frankfurt Production `hpszwgnwxtxyxpcaivgj` is healthy in `eu-central-1` and named
+  **Duty Scheduler**. The owner's real Google login created its sole identity and
+  pending profile; owner confirmation preceded the unchanged operator-only bootstrap.
+  It now has one approved active admin. Authenticated `duty_load` verifies admin
+  visibility; operational tables remain empty. Public-origin interactive admin UI
+  verification remains a user check; the pre-cutover Google login was on the Preview.
+- PR #13 passed Quality and merged into `develop` at
+  `faace06548e91b3bb35fb2ba9c8a2d5a7d8b9013`. PR #1 passed both final-head Quality
+  checks and merged with a merge commit: `1aca4146eb9d268c2dbb75dd8b8cca23e951d0d3`.
+  Master Quality also passed; existing SQL/build/browser checks were reused.
+- Public Production: https://duty-scheduler-two.vercel.app, deployment
+  `dpl_ER4wN86yiAkxB6mQHMFDZZehfiRr`, built from that master SHA. Page and
+  `/api/config` return 200; configuration matches Frankfurt Production's
+  publishable key and uses `no-store`. Google initiation returns 302 with its
+  Frankfurt callback. The application no longer connects to Tokyo.
+- Tokyo Production `ukxxpbivgxyxharhxgqf` was paused only after these gates passed.
+  Tokyo Development `civayswojfpujiszlbnu` remains paused and unchanged. Both
+  projects and their data are retained; nothing was permanently deleted.
+- Separate Frankfurt Development `qhndiuahuxczujxxitsm` is healthy and named
+  **Duty Scheduler Dev**, created at $0/month in Free organization
+  `vaplnkaubzopjbixlxng`. Only the two canonical migrations were pushed from an
+  isolated CLI directory after a dry run. All seven schema/permission fingerprints
+  match Production's pre-onboarding baseline below; security advisor has no findings.
+  Auth identities, users and operational tables are zero; required rows are 2 roles,
+  3 member statuses, 2 month statuses, 2 constraint types and revision zero.
+- Vercel Production's two application credentials point only to Production.
+  Preview and Vercel Development variables point only to Frankfurt Development;
+  no branch-specific database overrides exist. Native Next.js, Node 24, Corepack,
+  `master` Production branch and `fra1` functions are preserved.
+- Development deployment `dpl_Ho7cwySgjNjYyVzuFeHzktVSz1h1` is Ready at
+  https://duty-scheduler-f2mkgme44-omri1701s-projects.vercel.app. Its Chrome
+  page/config checks pass against Development. Stable branch alias:
+  https://duty-scheduler-git-develop-omri1701s-projects.vercel.app.
+  The alias still returns 403 because a historical Tokyo-isolation firewall rule
+  includes it. Removing only that hostname requires pending explicit approval;
+  retain the other 14 historical blocks and normal Vercel Authentication.
+- Git-ignored `.env.local` points only to Development; localhost:5173 page/config
+  checks return 200. The user-local `supabase_dev` MCP URL now uses the new ref.
+  Restart the MCP client/session when needed to load that connection change.
+- Production Auth allows only https://duty-scheduler-two.vercel.app/.
+  Development Site URL is the stable develop alias; its exact return and
+  http://localhost:5173/ are allowed. Development Google is still disabled pending
+  a separate Google client. Production Google credentials/settings were preserved.
+- The temporary Production verification Preview `dpl_Yjz6wQ7YKsJNrvf1Jp6NcTfqmZBy`
+  and redirect were retired. Every short-lived verification share link was revoked.
+- GitHub default branch is `master`. Feature PRs continue to target `develop`;
+  release PRs are `develop` → `master`. Both branches are currently unprotected;
+  the proposed Quality/PR/admin/no-force-push/no-delete policy awaits approval.
+  Fourteen unused Production integration variables also await removal approval.
+  Automatic approval review blocked these two policy changes and the single-host
+  firewall cleanup; they have not been applied.
 
-Supabase CLI management authentication is complete. Auth URLs were configured via
-the official Management API using the CLI's stored credential without exposing it.
-The owner added Frankfurt's callback to the existing Google client and saved its
-credentials in Frankfurt Supabase. No authenticated Google Cloud tool is available;
-the separate Development client is still pending. Rename Frankfurt to exactly
-**Duty Scheduler** after successful cutover, using authenticated management access.
-Vercel MCP returns scope 403; authenticated CLI/API works with team
-`team_pbvqzViC50aeT2kaRNnTYkPt`, scope `omri1701s-projects`.
-
-Resume: verify Production Google and owner sign-in at the protected verification
-Preview; verify the actual Google UUID and pending member, then explicitly promote.
-Recheck final PR #1 Quality; configure Frankfurt Production variables and remove
-obsolete project-specific integration extras; merge #1 with a merge commit, deploy
-its actual `master` SHA and verify the public domain. Only then pause Tokyo
-Production and create **Duty Scheduler Dev** in Frankfurt. Install the two canonical
-migrations through an isolated CLI directory with explicit ref/dry run/push; compare
-all fingerprints above and reference rows with the Production pre-onboarding gate.
-Configure separate Development Google, Preview and Vercel Development variables.
-Stable branch URL: `https://duty-scheduler-git-develop-omri1701s-projects.vercel.app`.
-Verify its exact Development ref; write Git-ignored `.env.local` with Development
-only, verify port 5173/sign-in/reload/refresh and update user-local `supabase_dev` MCP
-to the new ref. Promote only the owner's separately confirmed Development account.
-After successful master deployment, make GitHub default `master`, retain feature
-PRs to `develop`, and require Actions `quality` on both branches, prohibiting force
-push/deletion without mandatory second-person review for the solo maintainer.
-
-Development is not created; `.env.local` is absent. Never pull Vercel Production
-variables into it. Tokyo Production remains active; Tokyo Development is paused.
-No Tokyo data was imported. Retire temporary Production verification origin and
-deployment after cutover; keep shared Development Previews isolated and protected.
-
-The strategy is fresh initialization, not regional data transfer. Never export,
-copy or restore Tokyo accounts, credentials, private notes or operational records.
+Resume: obtain the separate Development Google web-client JSON in ignored
+`work/dev-google-client.json`, configure its provider through authenticated
+management access, verify OAuth, then ask the owner to sign in and directly confirm
+their Development identity before independent operator-only promotion. Complete
+the specifically approved cleanup/protection changes and publish the final checkpoint.
+Never treat a Google-disabled or firewall-blocked Preview as a working environment.
 
 ## Current verified state
 
 | Environment | Branch / hosting | Supabase | Status |
 |---|---|---|---|
-| Original / rollback | Current served Vercel Production | Tokyo `ukxxpbivgxyxharhxgqf` | Active, original data and eight migration records preserved; no writes by this task |
-| New Production target | `master` / Vercel Production after readiness | Frankfurt `hpszwgnwxtxyxpcaivgj` | Clean, canonical baseline initialized and verified; Google and Auth URLs configured; owner sign-in pending; not cut over |
-| New Development target | `develop` / Vercel Preview | Separate Frankfurt ref, not created | Blocked by two-active-project Free quota |
+| Production | `master` / public Vercel | Frankfurt `hpszwgnwxtxyxpcaivgj` | Live, one owner admin, Google enabled |
+| Development | `develop` / Preview and localhost | Frankfurt `qhndiuahuxczujxxitsm` | Clean and deployed; Google/client and stable-alias access pending |
+| Original Production / rollback | Retained old Vercel deployment | Tokyo `ukxxpbivgxyxharhxgqf` | Paused; original data/history retained |
 | Old Development | None | Tokyo `civayswojfpujiszlbnu` | Paused, unchanged |
 
-The existing Free organization is `vaplnkaubzopjbixlxng` (`omri1701`). Tokyo
-Production and Frankfurt already occupy its two active slots. Paused projects do
-not occupy a slot. Two working European projects cannot coexist with active Tokyo
-on this Free quota. No paid branching, additional billable resources or unrelated
-project changes are authorized. The current task authorizes pausing Tokyo Production
-after successful European cutover. Never pause it before Vercel stops using it;
-never delete either original without separate final confirmation.
+The Free organization now has two active Frankfurt projects. No paid branching,
+billable add-ons or unrelated project changes are authorized. Never delete either
+Tokyo original without separate final confirmation. The old Production deployment
+`dpl_9XesSiM6cnD3odbQ7E3pWtyfEDRu` is retained; Tokyo must be restored before using
+it for rollback, and new European records must be preserved.
 
 ## Canonical installation
 
@@ -93,6 +90,18 @@ See [database architecture](../supabase/README.md). Fresh projects install only:
 Required rows: two roles, three membership statuses, two month statuses, two
 constraint types, and the revision singleton at zero. No users, identities,
 members, assignments, availability/constraints, months, publications or swaps.
+Both Frankfurt installations match these frozen catalog fingerprints:
+
+| Category | Objects | Fingerprint |
+|---|---|---|
+| Tables | 11 | `9a5f3a8157bd67b1d10aaca4b6e0d8b9` |
+| Functions | 30 | `c6b9e02563b497c1d2e3178682a3c74d` |
+| Constraints | 52 | `4f41119bbceb6b79d086ac6ba0746827` |
+| Indexes | 35 | `ddedc3b94040e1aab5353d5c83fca3ca` |
+| Policies | 11 | `6ddfd6214c8daa60b407013d215a0038` |
+| Private schema | 1 | `e92c95c156c76736c4f622c5dc2bf257` |
+| Trigger | 1 | `c759a41c3984688b290753e15b008849` |
+
 Optional synthetic data is confined to tests, never remote installation seeds.
 Eight historical migrations remain outside active migration discovery for Tokyo
 traceability and upgrade tests. Do not replay, reset, repair or alter Tokyo history.
@@ -122,17 +131,12 @@ real Google OAuth; no hosted synthetic fixtures were run on the Production targe
 
 ## Google sign-in and first admin
 
-The existing Google web client now includes the Frankfurt callback
-`https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback`.
-Enable Google in Frankfurt Authentication providers; enter its client ID and secret
-there only. The isolated verification Preview is
-`https://duty-scheduler-rmqhsz2gy-omri1701s-projects.vercel.app` (deployment
-`dpl_Yjz6wQ7YKsJNrvf1Jp6NcTfqmZBy`, Ready). Production Site URL is
-`https://duty-scheduler-two.vercel.app`. Supabase allows both exact trailing-slash
-returns. Google authorization initiation and Frankfurt's callback are verified;
-the owner's interactive Google sign-in remains unverified. Retire the verification
-return after cutover. Keep Tokyo OAuth unchanged.
-The app uses existing PKCE and `window.location.origin + '/'`; no UI/auth code changed.
+Production Google is enabled with callback
+https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback. Its Site URL is
+https://duty-scheduler-two.vercel.app and its only allowed return is that origin
+with a trailing slash. Owner sign-in, identity confirmation and explicit promotion
+are complete. The old verification Preview and return are retired.
+The app preserves PKCE and the origin plus trailing-slash return; no auth UI changed.
 
 After the owner signs in successfully, normal `duty_join` creates a pending,
 inactive engineer profile. Confirm the target project and actual `auth.users.id`
@@ -145,7 +149,7 @@ workspace lock. It is never deployed as an RPC, email allowlist or first-user ru
 Existing checked approval/role RPCs support multiple admins and protect the last admin.
 
 Development needs its own Google web client, audience/test accounts and callback
-for its eventual distinct ref. Use only `openid`, `userinfo.email`, `userinfo.profile`.
+at https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback. Use only `openid`, `userinfo.email`, `userinfo.profile`.
 Configure its exact develop Preview origin and `http://localhost:5173/` independently.
 Store Google secrets only in the appropriate Supabase project. Verify real PKCE,
 return origin, reload, refresh, sign-out and pending approval separately in each
@@ -154,17 +158,17 @@ environment. Keep application users/data separate.
 ## Hosting and approval gate
 
 Vercel project `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, scope `omri1701s-projects`,
-uses Next.js, Node 24 and Production branch `master`. Production is still the
-original served deployment using Tokyo. Preview has no application database
-variables and fails closed until independent Development exists.
+uses Next.js, Node 24 and Production branch `master`. Production serves Frankfurt.
+Preview and Vercel Development use the separate Frankfurt Development database.
+The stable develop alias still requires the one-hostname firewall cleanup above.
 
 Preserve the native runtime, `pnpm build`, default output and Corepack setting.
 The only database variables the app needs are `SUPABASE_URL` and
 `SUPABASE_PUBLISHABLE_KEY`. Production must use Frankfurt Production; Preview
 and Vercel Development must use the independent Frankfurt Development project.
 No `NEXT_PUBLIC_`, service-role, database password or Google secret is used by the
-application. Audit existing integration-managed extras without changing Production
-before readiness. Keep Preview sync/branching off and prevent branch overrides from
+application. Remove the 14 unused integration variables only with the specifically
+requested approval. Keep Preview sync/branching off and prevent branch overrides from
 pointing ordinary development builds at Production.
 
 A temporary isolated verification Preview may use explicit Frankfurt overrides
@@ -181,7 +185,7 @@ deployment and domains. Request explicit approval for Production variables,
 domain/deployment changes and the release merge only if not already authorized by
 the current task. Do not promote a Development
 Preview artifact into Production. Build Production from the approved `master` SHA
-with Frankfurt variables. PR #11 is merged; PR #1 remains open pending readiness.
+with Frankfurt variables. PRs #11, #12, #13 and release #1 are merged.
 
 Do not claim two environments are working until Development is created, initialized,
 validated, independently configured and auth-tested. An approved Tokyo pause, if
