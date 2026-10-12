@@ -96,3 +96,10 @@ checks the final state. Reference changes need separate explicit migrations and
 comparison with canonical required rows; local seeds do not deploy required DML.
 Test both a fresh reset and the upgrade from the prior version, then validate
 Development before separately approving Production application.
+
+Quality now enforces paired canonical definitions, new incremental migrations and
+SQL regressions against the exact PR base. It tests real local upgrades with existing
+synthetic identities/private notes/publications and a safe isolated deployment probe.
+After merge, GitHub Actions is the sole hosted migration writer and verifies database
+contracts before Vercel. See [release workflow](../docs/DEPLOYMENT.md) for Environment
+secrets, reviewed Production releases, approval and forward-fix recovery.
