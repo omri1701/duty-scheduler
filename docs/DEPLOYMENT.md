@@ -20,17 +20,24 @@ Verified this session:
 - Public Production is `https://duty-scheduler-two.vercel.app`; `/api/config`
   confirms Tokyo. Served deployment: `dpl_9XesSiM6cnD3odbQ7E3pWtyfEDRu`.
 - Protected Frankfurt verification Preview below returns HTTP 200 and Frankfurt
-  configuration. Its application code matches `develop`; Google is disabled.
+  configuration. Its application code matches `develop`; Google is enabled.
+  Auth Site URL is `https://duty-scheduler-two.vercel.app`; the allowlist contains
+  only its exact trailing-slash return and the verification Preview return below.
+  Management API readback confirms Google credentials/settings were preserved.
+  Preview OAuth initiation returns HTTP 302 to Google with Frankfurt's callback;
+  the temporary five-minute verification share link was revoked immediately.
+  Real owner Google sign-in and pending membership verification remain the gate.
 - Future Vercel function deployments now use `fra1`; Next.js, Node 24 and `master`
   Production branch retained. Temporary automation bypass revoked: zero remain;
   normal `all_except_custom_domains` Vercel Authentication remains enabled.
 - Organization `vaplnkaubzopjbixlxng` is Free; project creation quote is $0/month.
 
-Human blocker: no authenticated Google Cloud tool; Supabase MCP lacks Auth-provider
-and rename operations, and Supabase CLI has no management login. Configure Google
-in the dashboards; secrets belong only in Supabase. Rename Frankfurt to exactly
-**Duty Scheduler** without changing its ref. If CLI management login is needed,
-run `pnpm dlx supabase@2.119.0 login` locally; never send tokens in chat.
+Supabase CLI management authentication is complete. Auth URLs were configured via
+the official Management API using the CLI's stored credential without exposing it.
+The owner added Frankfurt's callback to the existing Google client and saved its
+credentials in Frankfurt Supabase. No authenticated Google Cloud tool is available;
+the separate Development client is still pending. Rename Frankfurt to exactly
+**Duty Scheduler** after successful cutover, using authenticated management access.
 Vercel MCP returns scope 403; authenticated CLI/API works with team
 `team_pbvqzViC50aeT2kaRNnTYkPt`, scope `omri1701s-projects`.
 
@@ -64,7 +71,7 @@ copy or restore Tokyo accounts, credentials, private notes or operational record
 | Environment | Branch / hosting | Supabase | Status |
 |---|---|---|---|
 | Original / rollback | Current served Vercel Production | Tokyo `ukxxpbivgxyxharhxgqf` | Active, original data and eight migration records preserved; no writes by this task |
-| New Production target | `master` / Vercel Production after readiness | Frankfurt `hpszwgnwxtxyxpcaivgj` | Clean, canonical baseline initialized and verified; Google disabled; not cut over |
+| New Production target | `master` / Vercel Production after readiness | Frankfurt `hpszwgnwxtxyxpcaivgj` | Clean, canonical baseline initialized and verified; Google and Auth URLs configured; owner sign-in pending; not cut over |
 | New Development target | `develop` / Vercel Preview | Separate Frankfurt ref, not created | Blocked by two-active-project Free quota |
 | Old Development | None | Tokyo `civayswojfpujiszlbnu` | Paused, unchanged |
 
@@ -115,15 +122,16 @@ real Google OAuth; no hosted synthetic fixtures were run on the Production targe
 
 ## Google sign-in and first admin
 
-Configure an independent Production Google web client with the Frankfurt callback
+The existing Google web client now includes the Frankfurt callback
 `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback`.
 Enable Google in Frankfurt Authentication providers; enter its client ID and secret
 there only. The isolated verification Preview is
 `https://duty-scheduler-rmqhsz2gy-omri1701s-projects.vercel.app` (deployment
 `dpl_Yjz6wQ7YKsJNrvf1Jp6NcTfqmZBy`, Ready). Production Site URL is
-`https://duty-scheduler-two.vercel.app`. Add that origin and the temporary verification
-origin to the Production Google client; allow both exact trailing-slash returns in
-Supabase. Retire the verification origin after cutover. Keep Tokyo OAuth unchanged.
+`https://duty-scheduler-two.vercel.app`. Supabase allows both exact trailing-slash
+returns. Google authorization initiation and Frankfurt's callback are verified;
+the owner's interactive Google sign-in remains unverified. Retire the verification
+return after cutover. Keep Tokyo OAuth unchanged.
 The app uses existing PKCE and `window.location.origin + '/'`; no UI/auth code changed.
 
 After the owner signs in successfully, normal `duty_join` creates a pending,
