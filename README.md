@@ -13,6 +13,7 @@ Requires Node 22.13+ (Node 24 recommended) and the pnpm version declared in pack
 ```sh
 pnpm install
 pnpm dev:dev   # default: Frankfurt Development, http://localhost:5173
+pnpm dev:mobile # same DEV app through your configured static HTTPS ngrok origin
 pnpm dev:local # Docker / Supabase CLI, current branch migrations + local test accounts
 pnpm dev:prod  # explicit confirmation each run; application read-only inspection
 pnpm dev:select # optional interactive selector

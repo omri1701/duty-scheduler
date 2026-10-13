@@ -231,6 +231,47 @@ is invalid for the validated project/origin (hosted keys must be `sb_publishable
 and returns `Cache-Control: no-store` for both success and errors. Restart after
 changing local configuration. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables).
 
+### iPhone Safari through a static ngrok development domain
+
+Install the Windows agent from [ngrok](https://ngrok.com/download/windows), or put
+the standalone executable in ignored `work/ngrok/ngrok.exe`. Authenticate only in
+your local PowerShell terminal: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts/ngrok-auth.ps1`. It prompts for the token without echoing it or putting it
+in shell history, and stores it in ignored `work/ngrok/ngrok.yml`. A new config
+uses `version: 3` and `agent.web_addr: false`; request inspection stays disabled.
+Never paste the token into chat or commit the config.
+
+Set `DUTY_DEV_ORIGIN=https://<your-assigned-static-domain>` in ignored
+`.env.dev.local`. Use the free assigned domain from the ngrok dashboard, with no
+path, query, wildcard or nonstandard port. Run `pnpm dev:mobile`; it uses the
+existing `dev:dev` launcher, waits for DEV `/api/config`, then tunnels only
+`http://localhost:5173`. Next.js remains bound to `127.0.0.1`. Ctrl+C stops both
+process trees. Keep Windows awake and the command running for IntelliJ hot reload.
+
+Manually add the exact `https://<your-assigned-static-domain>/` (trailing slash)
+to **Redirect URLs** in Frankfurt DEV (`qhndiuahuxczujxxitsm`). Keep its Site URL
+and existing entries. The current redirect flow does not require Google's browser
+SDK or a new JavaScript origin. If following Supabase's recommended Google client
+setup, add `https://<your-assigned-static-domain>` (no slash) to the separate DEV
+client's **Authorized JavaScript origins**. The Google authorized redirect URI
+stays `https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback`.
+The app uses the Supabase OAuth redirect flow, rather than Google's browser SDK;
+the Supabase redirect allowlist is what controls the return to this app.
+Do not add the tunnel as a Google redirect URI or change Production settings.
+
+Open the exact HTTPS URL in ordinary iPhone Safari, pass ngrok's free browser
+interstitial if shown, and confirm the DEV badge. Choose **Continue with Google**
+and return to that same origin. Reload, then close/reopen the tab to verify session
+persistence. PKCE verifiers and sessions stay in Safari storage for that origin;
+starting on localhost or changing browsers cannot complete the same PKCE flow.
+This requires a real iPhone check; automated configuration checks do not prove OAuth.
+
+The tunnel exception requires `next dev`, the explicit DEV launcher target and
+Frankfurt DEV URL, and is disabled on Vercel and production builds. Only the
+configured ngrok hostname is added to Next.js `allowedDevOrigins`; application
+environment resolution still checks the exact HTTPS origin and DEV project.
+No database permissions or session verification rules change.
+
 For Vercel hosting, retain the standard Next.js preset and configure
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
 Use Node 24 and set `ENABLE_EXPERIMENTAL_COREPACK=1` to select the pinned pnpm version.

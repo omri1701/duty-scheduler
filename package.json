@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "dev:local": "node scripts/dev-environment.mjs local",
     "dev:dev": "node scripts/dev-environment.mjs dev",
+    "dev:mobile": "node scripts/dev-mobile.mjs",
     "dev:prod": "node scripts/dev-environment.mjs prod",
     "dev:select": "node scripts/dev-environment.mjs select",
     "local:setup": "node scripts/local-supabase.mjs",
