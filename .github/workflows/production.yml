@@ -1,0 +1,25 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      quality-run-id:
+        description: Successful full master Quality run ID for the exact current commit (within 7 days)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+  pull-requests: read
+
+jobs:
+  deploy-production:
+    if: github.ref == 'refs/heads/master' && vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      branch: master
+      sha: ${{ github.sha }}
+      quality-run-id: ${{ inputs.quality-run-id }}

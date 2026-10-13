@@ -2,6 +2,36 @@ import assert from 'node:assert/strict';
 import {readFile, readdir, writeFile} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';
+
+export async function databaseSourceHash(root = 'supabase') {
+  const paths = ['baseline.json', 'config.toml', 'tests/fingerprint.sql'];
+  async function collect(directory) {
+    for (const entry of await readdir(`${root}/${directory}`, {withFileTypes: true})) {
+      const filename = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) await collect(filename);
+      else if (entry.name.endsWith('.sql')) paths.push(filename);
+    }
+  }
+  for (const directory of ['schemas', 'reference-data', 'migrations']) await collect(directory);
+  const hash = createHash('sha256');
+  for (const filename of paths.sort()) {
+    hash.update(filename + '\0');
+    hash.update(await readFile(`${root}/${filename}`));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export async function verifyContractIdentity(contract, sha, root = 'supabase') {
+  assert.equal(contract.sha, sha, 'Quality contract must belong to this exact commit');
+  assert.equal(contract.sourceHash, await databaseSourceHash(root), 'Quality database source identity mismatch');
+  const migrations = (await readdir(`${root}/migrations`)).filter(name => name.endsWith('.sql')).sort()
+    .map(name => {const match = /^(\d{14})_(.+)\.sql$/.exec(name); assert(match); return [match[1], match[2]];});
+  assert.deepEqual(contract.migrations, migrations, 'Quality migration identity mismatch');
+  assert(typeof contract.fingerprint === 'string' && contract.fingerprint.split('\n').length >= 7, 'Missing database fingerprint');
+  assert(contract.referenceData && typeof contract.referenceData === 'object', 'Missing reference data');
+}
 
 export const historyQuery = 'select version,name from supabase_migrations.schema_migrations order by version;';
 // Only static lookup rows; never compare the live workspace revision or operational data.
@@ -25,7 +55,7 @@ export async function exportContract(query, sha, output, root = 'supabase') {
   const migrations = (await readdir(`${root}/migrations`)).filter(name => name.endsWith('.sql')).sort()
     .map(name => { const match = /^(\d{14})_(.+)\.sql$/.exec(name); assert(match); return [match[1], match[2]]; });
   verifyHistory(query(historyQuery), migrations, true);
-  const contract = {sha, migrations, fingerprint: query(await readFile(`${root}/tests/fingerprint.sql`, 'utf8')),
+  const contract = {sha, sourceHash: await databaseSourceHash(root), migrations, fingerprint: query(await readFile(`${root}/tests/fingerprint.sql`, 'utf8')),
     referenceData: JSON.parse(query(referenceQuery))};
   assert(contract.fingerprint.split('\n').length >= 7, 'Missing database contract');
   await writeFile(output, JSON.stringify(contract, null, 2) + '\n');

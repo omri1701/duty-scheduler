@@ -17,7 +17,10 @@ description: "Review Duty auth, RLS, RPC, permissions, private-data handling, mi
    secret/service-role keys or loosen policies to resolve an error.
 4. For CI changes check token permissions, untrusted PR execution, action pinning,
    secret exposure and any deploy/write steps. Never run untrusted PR code with
-   elevated credentials through pull_request_target.
+   elevated credentials through pull_request_target. For release evidence check
+   exact current branch SHA, trusted full successful workflow/attempt, artifact
+   provenance/expiry and database source identity; recheck after approval/locks.
+   Production requires manual dispatch, activation and Environment approval.
 5. Use synthetic fixtures and an explicitly identified empty development database
    for `supabase/tests/access.sql`; never connect to live data to validate a review.
    If unavailable, report database authorization as untested. Do not replay applied

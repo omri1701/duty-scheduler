@@ -15,7 +15,7 @@ const latest = run('git', ['ls-tree', '--name-only', base, 'supabase/migrations/
 assert.match(latest, /^\d{14}$/);
 const cli = process.env.SUPABASE_CLI || 'supabase';
 const localArgs = process.env.SUPABASE_WORKDIR ? ['--workdir', process.env.SUPABASE_WORKDIR] : [];
-const query = sql => run('docker', ['exec', '-i', container, 'psql', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], sql);
+const query = (sql, database = 'postgres') => run('docker', ['exec', '-i', container, 'psql', '-XqAt', '-U', 'postgres', '-d', database, '-v', 'ON_ERROR_STOP=1'], sql);
 const fingerprintSQL = await readFile('supabase/tests/fingerprint.sql', 'utf8');
 const freshFingerprint = query(fingerprintSQL);
 const freshReferenceData = JSON.parse(query(referenceQuery));
@@ -35,6 +35,26 @@ const rpcSQL = `select jsonb_object_agg(p.oid::regprocedure::text, jsonb_build_o
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and p.proname like 'duty_%'`;
 const previousRPCs = query(rpcSQL);
+// Synthetic LOCAL recovery rehearsal. Preserve identities, private notes, history,
+// catalog permissions and migration history; never connect to a hosted target.
+const restoreDatabase = 'duty_ci_restore';
+const backupFile = '/tmp/duty-ci-backup.dump';
+try {
+  run('docker', ['exec', container, 'pg_dump', '-U', 'postgres', '-d', 'postgres', '--format=custom', '--file', backupFile]);
+  run('docker', ['exec', container, 'createdb', '-U', 'postgres', '--template=template0', restoreDatabase]);
+  // LOCAL postgres cannot SET ROLE to Supabase-managed owners. Restore as the
+  // existing container-only superuser, preserving ownership and grants.
+  run('docker', ['exec', container, 'pg_restore', '-U', 'supabase_admin', '-d', restoreDatabase, '--exit-on-error', backupFile]);
+  assert.equal(query(snapshotSQL, restoreDatabase), before, 'Restored synthetic data differs');
+  assert.equal(query(fingerprintSQL, restoreDatabase), query(fingerprintSQL), 'Restored catalog/RLS/RPC differs');
+  const history = 'select version,name from supabase_migrations.schema_migrations order by version';
+  assert.equal(query(history, restoreDatabase), query(history), 'Restored migration history differs');
+  assert.deepEqual(JSON.parse(query(referenceQuery, restoreDatabase)), JSON.parse(query(referenceQuery)), 'Restored reference data differs');
+  console.log('PASS: disposable LOCAL logical backup/restore preserves data, history and database contracts');
+} finally {
+  run('docker', ['exec', container, 'dropdb', '-U', 'postgres', '--if-exists', restoreDatabase]);
+  run('docker', ['exec', container, 'rm', '-f', backupFile]);
+}
 run(cli, ['db', 'push', '--local', '--skip-vault', '--yes', ...localArgs]);
 assert.equal(query(`select (${rpcSQL}) @> '${previousRPCs.replaceAll("'", "''")}'::jsonb;`),
   't', 'Upgrade removed or changed an existing public RPC signature, named argument or result type');
@@ -47,4 +67,5 @@ assert.equal(query(`select (${snapshotSQL.trim().replace(/;$/, '')})::jsonb @> '
 console.log('PASS: incremental upgrade from base preserves synthetic existing data');
 // Fresh gates explicitly require empty operational data. Reset ONLY this local DB.
 run(cli, ['db', 'reset', '--local', '--no-seed', '--yes', ...localArgs]);
-run(process.execPath, ['scripts/database-baseline.mjs', '--verify-local', container]);
+// The initial fresh gate verified canonical SQL; upgraded catalog/reference equality
+// above proves the same contract. Do not instantiate canonical schemas a second time.

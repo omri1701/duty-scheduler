@@ -1,5 +1,5 @@
 name = "security"
-description = "Review material auth, RPC, permissions, private-data or migration changes for security regressions."
+description = "Review material auth, RPC, permissions, private-data, migration or CI trust-boundary changes for security regressions."
 model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

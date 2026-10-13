@@ -10,23 +10,59 @@ on:
 permissions:
   contents: read
 
+env:
+  CI: "true"
+  TZ: UTC
+
 jobs:
-  quality:
-    name: quality
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    # Cancel obsolete tests, never an in-flight database/application deployment.
+  scope:
     concurrency:
-      group: quality-${{ github.ref }}
+      group: quality-scope-${{ github.ref }}
       cancel-in-progress: true
-    env:
-      CI: "true"
-      TZ: UTC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      base: ${{ steps.database-base.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0 # Compare immutable migrations with the exact PR/push base.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - name: Select checks
+        id: scope
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/quality-scope.mjs
+      - name: Validate AI configuration
+        run: python3 scripts/validate-ai-config.py
+      - name: Verify generated database baseline
+        run: node scripts/database-baseline.mjs --check
+      - name: Select database upgrade base
+        id: database-base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-${PUSH_BASE:-$(git rev-parse HEAD^)}}"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          node scripts/database-policy.mjs "$base"
+
+  application:
+    concurrency:
+      group: quality-application-${{ github.ref }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24.19.0"
@@ -43,21 +79,46 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
-      - name: Validate AI configuration
-        run: python3 scripts/validate-ai-config.py
       - name: Regression tests
         run: node --test tests/*.test.mjs
-      - name: Verify generated database baseline
-        run: node scripts/database-baseline.mjs --check
-      - name: Select database upgrade base
-        id: database-base
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BASE: ${{ github.event.before }}
-        run: |
-          base="${PR_BASE:-${PUSH_BASE:-$(git rev-parse HEAD^)}}"
-          echo "sha=$base" >> "$GITHUB_OUTPUT"
-          node scripts/database-policy.mjs "$base"
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+      - name: Reject lint regressions
+        run: node scripts/lint-regressions.mjs
+      - name: Production build
+        run: pnpm build
+      - name: Browser and visual regression baseline
+        # One browser invocation owns this runner's report directories.
+        # Reuses build and JS dependencies. The pinned image supplies Chromium
+        # and fonts once; do not also run playwright install.
+        run: pnpm test:e2e:ci
+      - name: Retain browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-baseline
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  database:
+    concurrency:
+      group: quality-database-${{ github.ref }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # Compare immutable migrations with the exact PR/push base.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
       - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: 2.119.0
@@ -76,37 +137,45 @@ jobs:
           node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
       - name: Incremental upgrade preserves existing data
         env:
-          DATABASE_BASE: ${{ steps.database-base.outputs.sha }}
+          DATABASE_BASE: ${{ needs.scope.outputs.base }}
         run: node scripts/database-upgrade.mjs "$DATABASE_BASE" supabase_db_duty-scheduler
       - name: Isolated deployment ordering and failure verification
-        run: node scripts/release-local-test.mjs supabase_db_duty-scheduler
+        run: node scripts/release-local-test.mjs supabase_db_duty-scheduler --discard-container
       - name: Retain database contract for this exact commit
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: database-contract-${{ github.sha }}
+          name: database-contract-${{ github.sha }}-${{ github.run_attempt }}
           path: work/database-contract.json
           retention-days: 7
           if-no-files-found: error
-      - name: Type check
-        run: pnpm exec tsc --noEmit
-      - name: Reject lint regressions
-        run: node scripts/lint-regressions.mjs
-      - name: Production build
-        run: pnpm build
-      - name: Browser and visual regression baseline
-        # Reuses build and JS dependencies. The pinned image supplies Chromium
-        # and fonts once; do not also run playwright install.
-        run: pnpm test:e2e:ci
-      - name: Retain browser report and failure traces
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: browser-baseline
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
+      - name: Discard disposable database without replay or backup
+        if: always()
+        run: supabase stop --project-id duty-scheduler --no-backup
+
+  # Preserve the existing branch-protection check. Fail closed on missing checks.
+  quality:
+    name: quality
+    needs: [scope, application, database]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require selected checks
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          FULL: ${{ needs.scope.outputs.full }}
+          APPLICATION: ${{ needs.application.result }}
+          DATABASE: ${{ needs.database.result }}
+        run: |
+          test "$SCOPE" = success
+          if [ "$FULL" = true ]; then
+            test "$APPLICATION" = success
+            test "$DATABASE" = success
+          else
+            test "$FULL" = false
+            test "$APPLICATION" = skipped
+            test "$DATABASE" = skipped
+          fi
 
   deploy-development:
     needs: quality
@@ -123,19 +192,4 @@ jobs:
     with:
       branch: develop
       sha: ${{ github.sha }}
-
-  deploy-production:
-    needs: quality
-    if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      github.ref == 'refs/heads/master' && vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'
-    uses: ./.github/workflows/deploy.yml
-    secrets: inherit # Production secrets remain behind its Environment approval.
-    permissions:
-      contents: read
-      actions: read
-      deployments: read
-      pull-requests: read
-    with:
-      branch: master
-      sha: ${{ github.sha }}
+      quality-run-id: ${{ github.run_id }}
