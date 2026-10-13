@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {PROJECTS,resolveEnvironment,validatePublicKey} from '../lib/supabase/environment.ts';
+import {PROJECTS,resolveEnvironment,validatePublicKey,validateDevOrigin,configuredDevOrigin} from '../lib/supabase/environment.ts';
 import {selectConfiguration} from '../scripts/dev-environment.mjs';
 
 test('all five display cases derive from the project URL and runtime origin',()=>{
@@ -61,4 +61,27 @@ test('only local CLI anon JWTs and publishable keys are public configuration',()
 test('switching projects and local ports isolates sessions and PKCE storage',()=>{
  const urls=[PROJECTS.dev,PROJECTS.prod,'http://127.0.0.1:58321','http://127.0.0.1:58331'];
  assert.equal(new Set(urls.map(url=>resolveEnvironment(url,'http://localhost:5173').storageKey)).size,urls.length);
+});
+
+test('only the exact configured HTTPS ngrok origin can select DEV',()=>{
+ const origin='https://synthetic-device.ngrok-free.app';
+ assert.equal(validateDevOrigin(origin+'/'),origin);
+ assert.equal(resolveEnvironment(PROJECTS.dev,origin,undefined,origin).badge,'DEV');
+ assert.equal(resolveEnvironment(PROJECTS.dev,origin,undefined,origin).storageKey,resolveEnvironment(PROJECTS.dev,'http://localhost:5173').storageKey);
+ for(const [url,runtime,configured] of [
+  [PROJECTS.dev,origin,undefined],
+  [PROJECTS.dev,'https://other-device.ngrok-free.app',origin],
+  [PROJECTS.dev,origin.replace('https:','http:'),origin],
+  [PROJECTS.dev,origin+':444',origin],
+  [PROJECTS.prod,origin,origin],
+  ['http://127.0.0.1:58321',origin,origin],
+ ]) assert.throws(()=>resolveEnvironment(url,runtime,undefined,configured));
+ for(const invalid of ['http://synthetic-device.ngrok-free.app',origin+':444',origin+'/path',origin+'?query=1',origin+'#fragment',origin.replace('https://','https://user@'),'https://*.ngrok-free.app','https://ngrok-free.app','https://synthetic-device.ngrok-free.app.evil.example','https://unknown.example']) assert.throws(()=>validateDevOrigin(invalid));
+ const env={NODE_ENV:'development',SUPABASE_URL:PROJECTS.dev,DUTY_SUPABASE_TARGET:'dev',DUTY_DEV_ORIGIN:origin};
+ assert.equal(configuredDevOrigin(env),origin);
+ for(const extra of [{NODE_ENV:'production'},{DUTY_SUPABASE_TARGET:'prod'},{DUTY_SUPABASE_TARGET:'local'},{DUTY_SUPABASE_TARGET:undefined},{SUPABASE_URL:PROJECTS.prod},{VERCEL_ENV:'development'},{VERCEL_URL:'preview.vercel.app'}]) assert.equal(configuredDevOrigin({...env,...extra}),undefined);
+ const keys={SUPABASE_URL:PROJECTS.dev,SUPABASE_PUBLISHABLE_KEY:'sb_publishable_synthetic',SUPABASE_PROD_PUBLISHABLE_KEY:'sb_publishable_prod',DUTY_DEV_ORIGIN:origin};
+ assert.equal(selectConfiguration('dev',keys).DUTY_DEV_ORIGIN,origin);
+ assert.equal(selectConfiguration('prod',keys,true).DUTY_DEV_ORIGIN,'');
+ assert.equal(selectConfiguration('local',{...keys,SUPABASE_URL:'http://127.0.0.1:58321'}).DUTY_DEV_ORIGIN,'');
 });

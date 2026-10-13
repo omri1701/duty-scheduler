@@ -14,6 +14,16 @@ function parse(value: string) {
   return url;
 }
 export function isLoopback(host: string) {return ['localhost', '127.0.0.1', '[::1]'].includes(host);}
+export function validateDevOrigin(value: string) {
+  const url = parse(value);
+  if (url.protocol !== 'https:' || url.port || !/^[a-z0-9-]+\.(ngrok-free\.app|ngrok-free\.dev|ngrok\.app|ngrok\.dev)$/.test(url.hostname)) throw Error('Use your exact HTTPS ngrok development origin.');
+  return url.origin;
+}
+// Never enable the tunnel exception on a hosted deployment or production build.
+export function configuredDevOrigin(env: Record<string, string | undefined>) {
+  return env.NODE_ENV === 'development' && !env.VERCEL_ENV && !env.VERCEL_URL && env.DUTY_SUPABASE_TARGET === 'dev' && env.SUPABASE_URL === PROJECTS.dev && env.DUTY_DEV_ORIGIN
+    ? validateDevOrigin(env.DUTY_DEV_ORIGIN) : undefined;
+}
 export function connectionTarget(value: string): Target {
   const url = parse(value);
   if (url.origin === PROJECTS.dev) return 'dev';
@@ -34,16 +44,17 @@ export function validatePublicKey(url: string, key: string) {
   }
   throw Error('Only a public Supabase key is supported.');
 }
-export function resolveEnvironment(value: string, origin: string, deploymentOrigin?: string): Environment {
+export function resolveEnvironment(value: string, origin: string, deploymentOrigin?: string, devOrigin?: string): Environment {
   const url = parse(value), runtime = parse(origin), target = connectionTarget(value);
   const local = isLoopback(runtime.hostname) && ['http:', 'https:'].includes(runtime.protocol);
   const devHost = runtime.origin === 'https://duty-scheduler-dev.vercel.app';
   const prodHost = runtime.origin === 'https://duty-scheduler-prod.vercel.app';
   const deployment = deploymentOrigin === runtime.origin && runtime.protocol === 'https:' && runtime.hostname.endsWith('.vercel.app');
+  const tunnel = target === 'dev' && devOrigin !== undefined && runtime.origin === validateDevOrigin(devOrigin);
   // The documented browser container reaches the local Next server here.
   if ((devHost && target !== 'dev') || (prodHost && target !== 'prod')) throw Error('Runtime origin and Supabase project do not match.');
   const browserContainer = runtime.hostname === 'host.docker.internal' && runtime.protocol === 'http:' && target === 'dev';
-  if (!local && !browserContainer && !(target === 'dev' && (devHost || deployment)) && !(target === 'prod' && (prodHost || deployment))) throw Error('Runtime origin and Supabase project do not match.');
+  if (!local && !browserContainer && !tunnel && !(target === 'dev' && (devHost || deployment)) && !(target === 'prod' && (prodHost || deployment))) throw Error('Runtime origin and Supabase project do not match.');
   const readOnly = local && target === 'prod';
   return {target, badge: target === 'local' ? 'LOCAL' : target === 'dev' ? 'DEV' : readOnly ? 'PROD' : null,
     readOnly, storageKey: `duty-${url.host.replace(/[^\w-]/g, '-')}-auth`};

@@ -3,7 +3,7 @@ import {parseEnv} from 'node:util';
 import {createInterface} from 'node:readline/promises';
 import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {PROJECTS,connectionTarget,validatePublicKey} from '../lib/supabase/environment.ts';
+import {PROJECTS,connectionTarget,validatePublicKey,validateDevOrigin} from '../lib/supabase/environment.ts';
 
 export function selectConfiguration(mode, env, productionConfirmed = false) {
   if (!['local','dev','prod'].includes(mode)) throw Error('Select local, dev or prod.');
@@ -12,12 +12,13 @@ export function selectConfiguration(mode, env, productionConfirmed = false) {
   const key = mode === 'prod' ? env.SUPABASE_PROD_PUBLISHABLE_KEY : env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || connectionTarget(url) !== mode) throw Error(`Missing or mismatched ${mode.toUpperCase()} configuration.`);
   validatePublicKey(url,key);
-  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':''};
+  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':'',DUTY_DEV_ORIGIN:mode==='dev'&&env.DUTY_DEV_ORIGIN?validateDevOrigin(env.DUTY_DEV_ORIGIN):''};
 }
 function readEnv(file) {
   try {return parseEnv(readFileSync(file,'utf8'));}
   catch (error) {if (error.code === 'ENOENT') return {}; throw error;}
 }
+export function readDevelopmentEnv() {return {...readEnv('.env.local'),...readEnv('.env.dev.local'),...process.env};}
 async function main() {
   let mode = process.argv[2] ?? 'dev';
   if (mode === 'select') {
@@ -37,7 +38,7 @@ async function main() {
   if (mode === 'local') {
     const {prepareLocal} = await import('./local-supabase.mjs');
     env = await prepareLocal();
-  } else if (mode === 'dev') env = {...readEnv('.env.local'),...readEnv('.env.dev.local'),...process.env};
+  } else if (mode === 'dev') env = readDevelopmentEnv();
   else env = {...readEnv('.env.prod.local'),...process.env};
   const selected = selectConfiguration(mode,env,confirmed);
   console.log(`Duty: ${mode.toUpperCase()}${mode==='prod'?' · application read-only inspection':''} at http://localhost:5173`);

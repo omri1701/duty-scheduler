@@ -1,4 +1,4 @@
-import {resolveEnvironment, validatePublicKey} from '../../../lib/supabase/environment.ts';
+import {configuredDevOrigin,isLoopback,resolveEnvironment, validatePublicKey} from '../../../lib/supabase/environment.ts';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request){
@@ -6,14 +6,29 @@ export async function GET(request: Request){
  const key=process.env.SUPABASE_PUBLISHABLE_KEY;
  const headers={'Cache-Control':'no-store'};
  const deploymentOrigin = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined;
+ let devOrigin: string | undefined;
  try {
   if (!url || !key) throw Error('Not configured');
   validatePublicKey(url, key);
-  const environment = resolveEnvironment(url, new URL(request.url).origin, deploymentOrigin);
+  devOrigin = configuredDevOrigin(process.env);
+  const runtime = new URL(request.url);
+  let origin = runtime.origin;
+  // Next builds request.url from its loopback bind address. Trust only the
+  // explicitly configured tunnel host/protocol, never arbitrary proxy headers.
+  if (devOrigin) {
+   const host = request.headers.get('host');
+   const forwardedHost = request.headers.get('x-forwarded-host');
+   const protocol = request.headers.get('x-forwarded-proto');
+   if (host === new URL(devOrigin).host) {
+    if ((forwardedHost && forwardedHost !== host) || protocol !== 'https') throw Error('Origin mismatch');
+    origin = devOrigin;
+   } else if (host && host !== runtime.host && !(isLoopback(runtime.hostname) && ['localhost','127.0.0.1','[::1]'].some(name=>host===`${name}:${runtime.port}`))) throw Error('Origin mismatch');
+  }
+  const environment = resolveEnvironment(url, origin, deploymentOrigin, devOrigin);
   if (process.env.DUTY_SUPABASE_TARGET && process.env.DUTY_SUPABASE_TARGET !== environment.target) throw Error('Target mismatch');
   if (process.env.VERCEL_ENV && (environment.target === 'local' || environment.target !== (process.env.VERCEL_ENV === 'production' ? 'prod' : 'dev'))) throw Error('Hosting mismatch');
   if (environment.readOnly && process.env.DUTY_PRODUCTION_INSPECTION !== 'confirmed') throw Error('Confirmation required');
  } catch {return Response.json({error:'Not configured'},{status:503,headers});}
  // Only the public, RLS-protected client configuration crosses into the browser.
- return Response.json({url,key,...(deploymentOrigin ? {deploymentOrigin} : {})},{headers});
+ return Response.json({url,key,...(deploymentOrigin ? {deploymentOrigin} : {}),...(devOrigin ? {devOrigin} : {})},{headers});
 }

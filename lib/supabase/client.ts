@@ -16,7 +16,8 @@ function getConnection(){
   try {
    validatePublicKey(url,key);
    const deploymentOrigin = 'deploymentOrigin' in config && typeof config.deploymentOrigin === 'string' ? config.deploymentOrigin : undefined;
-   environment=resolveEnvironment(url,window.location.origin,deploymentOrigin);
+   const devOrigin = 'devOrigin' in config && typeof config.devOrigin === 'string' ? config.devOrigin : undefined;
+   environment=resolveEnvironment(url,window.location.origin,deploymentOrigin,devOrigin);
   } catch {throw Error('Invalid connection configuration.');}
   const client=createClient<Database>(url,key,{global:{fetch:guardedFetch(url,environment)},auth:{storageKey:environment.storageKey,flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
   registerEnvironment(client,environment);
