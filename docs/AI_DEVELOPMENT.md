@@ -21,7 +21,7 @@ Git credentials or connectors.
 | --- | --- | --- |
 | Primary Codex session | Scope, implementation, checks and final decision | `gpt-6.1-sol` / `low` |
 | `qa` | Focused review of complex scheduling or cross-layer behavior | `gpt-6-luna` / `high` |
-| `security` | Review material auth, RPC, permissions, private-data or migration changes | `gpt-6.1-sol` / `high` |
+| `security` | Review material auth, RPC, permissions, private-data, migration or CI trust boundaries | `gpt-6.1-sol` / `high` |
 
 Root `AGENTS.md` supplies the routing policy; `.codex/config.toml` sets defaults
 and caps active child agents at one. `.codex/agents/*.toml` defines the two
@@ -64,94 +64,75 @@ does not choose a skill automatically.
   human-controlled. Commits/pushes/PR creation require task authorization; PR
   authorization never includes merging or live database changes.
 
-## Quality gates
+## Quality gates and efficient execution
 
-`.github/workflows/quality.yml` runs on PRs to `develop`, pushes to `develop` and
-manual dispatch. It pins action commits, Node and the package-manager version,
-installs the frozen lockfile, validates AI metadata, runs the regression tests,
-type checking, a lint regression gate and the production build. It uses a read-only GitHub token,
-no application secrets, no AI and no deployment. GitHub Actions usage is subject
-to your GitHub plan; no paid service was added.
+Quality runs for PRs to `develop`/`master`, pushes to both branches and manual
+requests. The required `quality` check aggregates scope, application and database
+results. Application/unit/scheduling/type/lint/build/browser checks and disposable
+SQL/security/upgrade/release-order checks run in parallel on separate runners.
+Test jobs use read-only tokens, no hosted credentials and no AI calls. Successful
+Development branch Quality may then call the Environment-scoped release workflow;
+Production has a separate manual workflow with trusted exact-SHA Quality evidence.
+See [deployment gates and recovery](DEPLOYMENT.md).
 
-`pnpm lint` and `node scripts/lint-regressions.mjs` pass without error allowances.
-`scripts/lint-baseline.json` is empty after resolving the React Hooks debt; never
-regenerate or add allowances to pass CI. Hook rules also apply to the retained UI
-components.
+The existing lockfile-keyed pnpm store cache remains. Database jobs install no JS
+dependencies; browser tests reuse one build/install and the pinned browser image.
+Large Docker image archives are not added to the cache: restore/save overhead and
+storage compete with cold pulls. Revisit only with comparable measured evidence.
 
-Existing deterministic multi-seed tests cover scheduling variation; production
-generation uses fresh cryptographic seeds. Database RLS/OAuth and
-real-device gestures are not covered by this CI. Follow the existing Supabase
-setup document for isolated database checks; never use the live project.
+Only PRs whose entire diff is known documentation or validated AI instructions
+skip application/database jobs. AI metadata, canonical SQL packaging and immutable
+migration policy still run. Executable scripts, workflows, dependencies, SQL,
+tests and unknown paths require full checks. Branch pushes and manual Quality
+always run everything. The `quality` branch-protection name stays unchanged.
 
-Run `python3 scripts/validate-ai-config.py` (Python 3.11+) for offline TOML,
-skill metadata and project contract checks. It is not the Codex runtime parser
-and does not prove account access or successful delegation. Application commands
-remain in README.md/package.json. After the first successful workflow run, an
-owner should require its `quality` check and PR review in branch protection;
-adding a workflow alone does not prevent merging failures.
+Use code-change-validation to choose focused local checks while developing.
+Reuse successful results for unchanged inputs; run relevant comprehensive checks
+once before delivery. Diagnose a failed command before retrying. Expensive local
+Docker/build/browser checks are needed when affected behavior or CI harness changes
+justify them; docs/AI-only edits need metadata validation, not an app build.
+Never regenerate lint allowances or visual snapshots merely to pass a regression.
+CI verifies real disposable database RLS; Google OAuth and real-device gestures
+still require authorized manual acceptance.
 
-Select local checks with code-change-validation; it distinguishes application PRs
-from documentation/AI infrastructure. Every PR requires successful Quality CI on
-its final head. CI triggers and application coverage are unchanged.
+`python3 scripts/validate-ai-config.py` (Python 3.11+) validates the two reviewers,
+four skills and instruction budgets offline. It does not prove live agent/model
+availability, effective settings or account entitlement. Keep the existing primary,
+QA and Security choices; no additional provider, agent or paid API is required.
 
-## Verified evidence and runtime limits
+## Runtime troubleshooting
 
-Audit date: 2026-10-10, base `develop` at `6aab26b`.
+When project defaults appear ignored, check the client's version, project trust,
+effective configuration and any IDE/managed overrides. Use `codex --version` and
+`codex --help` before choosing diagnostic commands; app-server schemas vary by
+installed runtime. A previous standalone CLI probe found the project layer disabled
+because it was untrusted. That does not establish IntelliJ's current session state.
+Skill discovery proves availability, not invocation or effectiveness. Reviewer
+read-only configuration and routing remain subject to the active runtime.
 
-The audit aligned `.gitignore` with the four existing skills: `feature-delivery`
-was tracked but its directory remained ignored, causing ordinary staging to fail.
+If configured agents/models are unavailable, disclose the limitation and perform
+the focused review locally; never silently change providers or request API billing.
+Project instructions cannot switch the primary model mid-task. GitHub connector
+access does not establish shell Git authentication. Run available login commands
+when necessary without exposing credentials; resume after authentication.
 
-- [#2](https://github.com/omri1701/duty-scheduler/pull/2) established the setup but
-  explicitly lacked runtime, skill-selection, delegation and token evidence.
-- [#4](https://github.com/omri1701/duty-scheduler/pull/4),
-  [#5](https://github.com/omri1701/duty-scheduler/pull/5),
-  [#6](https://github.com/omri1701/duty-scheduler/pull/6) and
-  [#7](https://github.com/omri1701/duty-scheduler/pull/7) report focused reviews and
-  preserved browser baselines; [#8](https://github.com/omri1701/duty-scheduler/pull/8)
-  reports a Security-found stale join-error race reproduced, fixed and re-reviewed.
-  GitHub Actions confirms successful Quality runs on all six final PR heads.
-  Fetched discussions contain no reviewer transcripts or skill execution traces.
-  PR descriptions support reported outcomes, not verified agent/model execution.
-- Installed JetBrains-bundled Codex CLI `0.160.1`: its bundled catalog advertises
-  both configured models and efforts. No inference or account-entitlement test ran.
-  App-server `skills/list` discovered all four project skills enabled without errors;
-  discovery does not establish invocation or effectiveness.
-- App-server `config/read` with repository `cwd` and `includeLayers: true` showed
-  the standalone CLI project layer disabled for missing project trust. Consequently
-  its repository model/login/concurrency defaults were not effective in that probe.
-  This does not establish IntelliJ's active session settings. Persistent trust and
-  authentication were left unchanged; the CLI diagnostic reported ChatGPT auth.
+## Lightweight efficiency sampling
 
-When defaults appear ignored, check `codex --version`, then inspect the effective
-config and each layer's `disabledReason` through
-[app-server configuration inspection](https://learn.chatgpt.com/docs/app-server).
-Trust the reviewed project in the client used for work and start a fresh session;
-verify effective settings there. Schema/metadata validation alone cannot do this.
-Historical session logs and token measurements were not available for this audit;
-shorter instructions must not be reported as measured token savings. Keep the
-single-primary workflow and current reviewers until measured task outcomes justify
-more orchestration; use the small comparison below before changing model defaults.
+Sample a meaningful task occasionally, especially after routing changes or a costly
+failure. Use the existing transcript/check output and one short PR or local note;
+no service, database, CI AI calls or per-task instrumentation is needed:
 
-## Small routing and usage check
+- Task/base and client/effective model; start/end time and elapsed duration.
+- Distinct files examined, tool calls/repeated attempts **only when observable**.
+- Selected skills and agents, with each review's reason.
+- Checks executed/reused, success, regressions and remaining limitations.
+- Client-reported token usage, including child usage, **only if exposed**; otherwise
+  write `unavailable`. Never estimate tokens from text length or call count.
 
-In a fresh chat on a disposable local branch, ask:
-
-> Add one deterministic regression in tests/engine.test.mjs showing that February
-> 29, 2028 is covered exactly once with the regular weekday points. Reuse existing
-> helpers, leave application code unchanged, and run the affected test file.
-> Do not commit or push. Report selected skills, agents and checks.
-
-Expected: scheduling-regression plus code-change-validation, one primary agent,
-no reviewer for this small test-only change. To separately exercise delegation,
-follow up: "Use qa to review this test-only diff; do not modify files."
-This should create one QA reviewer, not Security or a chain of agents.
-
-Record client/runtime version, actual model/effort, files read, tool calls,
-elapsed time and client-reported input/cached/output/reasoning tokens when
-available, including child usage. If IntelliJ lacks counters, record that gap;
-do not infer token totals from message length. Compare the same task on the same
-base with identical settings. Fewer retries and completed-task usage matter more
-than a smaller parent transcript.
+Compare similar tasks on the same base/settings. Look for repeated reads, full-suite
+reruns on unchanged inputs, undiagnosed retries and unnecessary reviewers. Improve
+those first; a shorter report alone does not prove lower token consumption. Routine
+tasks need only the concise delivery report, not a separate measurement exercise.
 
 ## Official references
 

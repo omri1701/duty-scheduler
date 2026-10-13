@@ -4,7 +4,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {historyQuery, referenceQuery, verifyHistory} from './database-contract.mjs';
+import {historyQuery, referenceQuery, verifyHistory, verifyContractIdentity} from './database-contract.mjs';
+import {verifyQualityEvidence} from './quality-evidence.mjs';
 
 export const environments = Object.freeze({
   develop: {name: 'Development', ref: 'qhndiuahuxczujxxitsm', target: 'preview', domain: 'duty-scheduler-dev.vercel.app'},
@@ -177,6 +178,12 @@ export async function verifyReleaseApproval(api, branch, sha) {
   assert(developmentPassed, 'Release head must have a successful Development deployment');
 }
 
+export function verifyProductionActivation(env) {
+  if (env.RELEASE_BRANCH !== 'master') return;
+  assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch', 'Production requires manual dispatch');
+  assert.equal(env.PRODUCTION_DEPLOYMENT_ENABLED, 'true', 'Production deployment is disabled');
+}
+
 async function main() {
   const {RELEASE_BRANCH: branch, RELEASE_SHA: sha, GITHUB_REPOSITORY: repository} = process.env;
   const selected = environments[branch];
@@ -188,6 +195,7 @@ async function main() {
     console.log(`PASS: ${selected.name} required secrets are present; database and Vercel project bindings match`);
     return;
   }
+  verifyProductionActivation(process.env);
   const api = async suffix => {
     const response = await fetch(`https://api.github.com/repos/${repository}${suffix}`, {
       headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'},
@@ -198,8 +206,11 @@ async function main() {
   };
   await verifyReleaseApproval(api, branch, sha);
   if (approvalOnly) return;
+  const evidence = await verifyQualityEvidence(api, {repository, branch, sha,
+    runId: process.env.QUALITY_RUN_ID, currentRunId: process.env.GITHUB_RUN_ID});
+  assert.equal(evidence.artifactId, process.env.QUALITY_ARTIFACT_ID, 'Downloaded artifact must match current Quality evidence');
   const contract = JSON.parse(await readFile('work/database-contract.json', 'utf8'));
-  assert.equal(contract.sha, sha, 'Quality contract must belong to this exact commit');
+  await verifyContractIdentity(contract, sha);
   const authSettings = await fetch(`https://${selected.ref}.supabase.co/auth/v1/settings`, {
     headers: {apikey: process.env.SUPABASE_PUBLISHABLE_KEY}, signal: AbortSignal.timeout(15000),
   });

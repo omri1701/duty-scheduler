@@ -75,11 +75,14 @@ test('credential-only preflight accepts each selected environment without networ
 
 test('both reusable callers forward secrets while release jobs retain branch, PR and Production gates', () => {
   const workflow = readFileSync('.github/workflows/quality.yml', 'utf8');
+  assert(!workflow.includes('deploy-production:'), 'Quality alone must never deploy Production');
   for (const [job, branch] of [['deploy-development', 'develop'], ['deploy-production', 'master']]) {
-    const caller = workflow.split(`\n  ${job}:`)[1].split(/\n  [\w-]+:/)[0];
+    const source = branch === 'master' ? readFileSync('.github/workflows/production.yml', 'utf8') : workflow;
+    const caller = source.split(`\n  ${job}:`)[1].split(/\n  [\w-]+:/)[0];
     assert.match(caller, /uses: \.\/\.github\/workflows\/deploy\.yml/);
     assert.match(caller, /\n    secrets: inherit/);
-    assert(caller.includes("github.event_name == 'push' || github.event_name == 'workflow_dispatch'"));
+    if (branch === 'develop') assert(caller.includes("github.event_name == 'push' || github.event_name == 'workflow_dispatch'"));
+    else assert(!source.includes('  push:') && !source.includes('  pull_request:'));
     assert(caller.includes(`github.ref == 'refs/heads/${branch}'`));
     if (branch === 'master') assert(caller.includes("vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'"));
   }

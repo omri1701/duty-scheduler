@@ -1,7 +1,7 @@
 # Duty Scheduler
 
 Mobile-first English/Hebrew team rota using React, TypeScript, Next.js App Router
-and Supabase. Prefer correctness and security with minimal context and agents.
+and Supabase. Prioritize token efficiency while preserving correctness, security and reliability.
 
 ## Scope and context
 
@@ -24,22 +24,22 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 - For explicitly authorized end-to-end Git delivery, use
   [feature-delivery](.agents/skills/feature-delivery/SKILL.md).
-- The primary agent implements and validates; keep small changes in one agent.
+- One primary agent implements and validates by default; reviewers add only meaningful risk review.
 - Use the code-change-validation skill for code/config changes, scheduling-regression
   for scheduling behavior, and security-review for access/security changes.
   Load only relevant skills; reuse results rather than repeat their checks.
 - For complex scheduling or cross-layer behavior changes, delegate one bounded
   review to qa after a reviewable diff exists. For material auth, permissions,
-  RPC, private-data or migration changes, delegate one review to security.
+  RPC, private-data, migration or CI trust-boundary changes, delegate one review to security.
   Use both sequentially only when distinct risks justify both.
 - Explain delegation's benefit; provide goal, acceptance criteria, files/diff and
   completed checks. Reviewers never edit, repeat exploration or spawn children.
   At most one child is active.
-- Do not delegate simply to run a command. If delegation or the configured model
+- Never delegate merely to read files or run commands. If delegation or the configured model
   is unavailable, perform the focused review locally and disclose the limitation;
   never silently switch providers or require API billing.
-- Plan multi-step/high-risk work; continue authorized edits/checks. Ask only for
-  material ambiguity or unauthorized actions. Instructions cannot switch primary models.
+- Plan high-risk work; continue authorized checks. Ask only for material ambiguity
+  or unauthorized actions. Instructions cannot switch primary models.
 - Execute available login commands yourself; show authorization URLs/verification codes,
   wait for authentication, then resume automatically. Never expose or commit tokens.
 
@@ -57,7 +57,7 @@ and Supabase. Prefer correctness and security with minimal context and agents.
   incremental migration and SQL/security/upgrade regressions. Update source manifests;
   never rewrite applied migrations/hashes. Test fresh replay and existing-data upgrades.
 - Use compatible expand/migrate/contract changes and Quality's database-first releases
-  (`docs/DEPLOYMENT.md`); never add competing deployers or reset live data. Production
+  (`docs/DEPLOYMENT.md`); no competing deployers or live resets. Production
   requires reviewed releases and Environment approval. External database/hosting changes
   require explicit approval. App rollback never reverses SQL.
 - supabase/tests/access.sql requires an empty development project. Never run it
@@ -67,17 +67,16 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 
 ## Verification and delivery
 
-- Behavior-preserving application migrations and refactors must retain the browser/visual
-  baseline in `tests/browser` alongside existing unit regressions. Run
-  `pnpm test:e2e:ci` after the production build; see README for deterministic
-  fixtures, snapshot review/update commands and the manual checklist. Never
-  regenerate snapshots simply to pass a framework migration or hide a regression.
+- Application migrations/refactors must preserve `tests/browser` visual baselines
+  and unit regressions. Run `pnpm test:e2e:ci` after the build; see README for fixtures
+  and manual checks. Never regenerate snapshots to hide regressions.
 
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
-  Use deterministic seeds and relevant documented invariants for scheduling tests.
-- Start with affected checks selected by code-change-validation; use README/package
-  commands. Documentation and AI infrastructure alone need no local application
-  tests/build; PR Quality CI still applies.
+  Use deterministic scheduling seeds and documented invariants.
+- Use code-change-validation for focused development checks. Run comprehensive
+  validation once on the final diff, reuse successes and rerun only affected checks
+  after fixes. Diagnose failures before retrying. Docs/AI-only work needs no local
+  app build; required Quality CI still applies. CI changes need executable regressions.
 - UI changes need relevant browser/manual checks where available; gesture
   simulations do not prove real-device correctness. Docs-only edits need no build.
 - Review the final diff for correctness, permissions, data loss, missing tests
@@ -85,5 +84,5 @@ and Supabase. Prefer correctness and security with minimal context and agents.
 - Confirm the intended base before branch comparisons/PRs. Never commit, push,
   merge, deploy or rewrite history without explicit authorization for that action.
   Authorization to open a PR is not authorization to merge it.
-- Finish concisely: changes and rationale, validation, remaining risks and next
-  step. Reviews lead with actionable findings and file/line references.
+- Finish concisely: changes, tests, real issues, risks and PR. Reviews lead with
+  actionable file/line findings. Never invent token measurements or unverified outcomes.

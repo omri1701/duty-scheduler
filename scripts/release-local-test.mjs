@@ -10,6 +10,7 @@ import {releaseDatabaseFirst, databasePushInvocation} from './release.mjs';
 
 const container = process.argv[2];
 assert.match(container ?? '', /^supabase_db_[\w-]+$/);
+const discardContainer = process.argv[3] === '--discard-container';
 const cli = process.env.SUPABASE_CLI || 'supabase';
 const localArgs = process.env.SUPABASE_WORKDIR ? ['--workdir', process.env.SUPABASE_WORKDIR] : [];
 const run = (command, args, input) => {
@@ -89,6 +90,7 @@ try {
   console.log('PASS: actual additive CLI migration, no-op release, transactional failure and blocked application deployment');
 } finally {
   // Reset only the disposable LOCAL database to repository migrations.
-  run(cli, ['db', 'reset', '--local', '--no-seed', '--yes', ...localArgs]);
+  // CI discards the container next; local standalone runs retain a clean database.
+  if (!discardContainer) run(cli, ['db', 'reset', '--local', '--no-seed', '--yes', ...localArgs]);
   await rm(directory, {recursive: true, force: true});
 }

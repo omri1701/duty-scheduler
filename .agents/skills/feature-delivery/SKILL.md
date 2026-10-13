@@ -10,10 +10,12 @@ description: "Deliver a Duty feature through a PR when the user explicitly autho
    Use code-change-validation and relevant specialized skills; reuse their results.
    Follow root routing for bounded reviewers when distinct scheduling/security risks justify them.
 3. Review the final diff and pass local checks selected by code-change-validation.
+   Keep a compact list of completed checks and affected inputs; reuse successes.
    Stage only intended files, excluding local settings, credentials and unrelated changes.
 4. When authorized, make meaningful commits, push the feature branch and open a PR
-   against the requested base. Verify required CI on the final head and correct
+   against the requested base. Wait for required `quality` on the final head and correct
    introduced failures; do not report success while checks are pending/unavailable.
+   Diagnose failures before retrying; rerun only affected checks after fixes.
    If an external operation is blocked, report it and retain completed local work.
 5. Report PR URL, commit, validation, review results and concrete manual follow-up.
    Never merge, deploy, change production settings or apply remote migrations without

@@ -17,6 +17,8 @@ description: "Verify Duty scheduling changes to generation, points, weekends, co
    production randomness or relax an assertion merely to make a test pass.
 4. Run `node --test tests/engine.test.mjs`; include snapshot tests when assignments
    or serialization change. Reuse already-completed checks for this diff.
+   During development run the affected test/name first; broaden once for delivery.
+   Do not invoke this skill merely because CI retains scheduling regressions.
    A reviewer reports missing coverage to the primary agent instead of editing.
 5. Return checked invariants, commands/results and uncovered edge cases. Database
    access and real browser behavior require separate checks; do not imply coverage.

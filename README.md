@@ -89,8 +89,14 @@ pnpm test:e2e:ci
 `test:e2e:ci` requires Docker and uses the pinned Playwright 1.63.0 Ubuntu Noble
 image (including Chromium and fonts). It starts a native Next.js production server on port 8787,
 reuses the build and installed dependencies, and stops the preview afterwards.
-Quality CI runs this same command with two workers, a single retry, pnpm caching
-and failure traces/reports. There is no second browser installation or build.
+Quality CI runs this same command once with two workers, a single retry, pnpm
+caching and failure traces/reports. Application/browser and database suites run on
+separate runners; browser report directories never have concurrent writers.
+The required `quality` check aggregates both. Strict documentation/AI-only PRs
+validate instructions and SQL policy without an app/DB suite; branch pushes and
+manual Quality always run everything. There is no second browser install/build.
+Production releases are manual and reuse trusted exact-SHA Quality evidence;
+see [deployment approval and recovery](docs/DEPLOYMENT.md).
 For native local debugging, run `pnpm exec playwright install chromium` once,
 then `pnpm test:e2e` or `pnpm test:e2e --headed --project=desktop` after building.
 Windows has separate reference images; Linux CI images are canonical. Other host
@@ -106,7 +112,7 @@ generation uses seed 1701. Locale, Israel time zone, light theme, reduced motion
 device scale and viewport (1440×1000 / 390×844) are fixed; screenshots wait for
 fonts and disable animations/carets. The pinned container fixes font rendering.
 
-Coverage reuses the 53 original Node tests for engine rules, snapshot conversion,
+Coverage includes Node regressions for engine rules, snapshot conversion,
 gesture state transitions and published swap eligibility, plus the runtime
 configuration regression. Playwright promotes the
 former optional swap browser script into supported tests and adds access/approval
