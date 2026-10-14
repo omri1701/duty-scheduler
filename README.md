@@ -77,6 +77,10 @@ Phones up to 600px use bottom tabs, compact monthly calendars and a modal
 availability and duty sheets. The month actions menu contains Versions and the deadline
 setting; Generate and Publish stay visible. Availability notes appear in the
 editor and accessible date labels; only dates with notes have a tiny corner dot.
+Availability keeps one fixed instruction line, showing chronological date ranges
+during selection. Range edits apply to every selected date. If a range contains
+notes, edit those dates individually; bulk Save is disabled to avoid overwriting
+notes with the shared description. Explicit Remove still removes the whole range.
 The floating glass navigation supports tapping and horizontal finger sliding.
 Combined weekends show both dates in their daily columns, with one assignment.
 Hold-drag interactions share the existing rules; mobile Team uses drag handles

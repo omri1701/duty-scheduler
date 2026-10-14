@@ -131,7 +131,7 @@ test('phone availability hold and drag saves and clears a date range', async ({p
     await page.waitForTimeout(350);
     await touchEvent(page, 'touchmove', b.x + b.width / 2, b.y + b.height / 2);
     await touchEvent(page, 'touchend', b.x + b.width / 2, b.y + b.height / 2);
-    await expect(page.getByRole('dialog', {name: '5 days', exact: true})).toBeVisible();
+    await expect(page.getByRole('dialog', {name: '5–9 November', exact: true})).toBeVisible();
   }
   await selectRange();
   await page.getByRole('button', {name: 'Prefer duty', exact: true}).click();
