@@ -48,6 +48,8 @@ test('duty preview follows touch and cancellation never writes; team body scroll
   test.skip(info.project.name !== 'mobile', 'Touch presentation.');
   await page.emulateMedia({reducedMotion: 'no-preference'});
   await openApp();
+  await page.getByRole('tab').nth(1).click();
+  await page.getByRole('tab').nth(0).click();
   const from = duty(page, '2026-11-02'), to = duty(page, '2026-11-03');
   const a = (await from.boundingBox())!, b = (await to.boundingBox())!;
   const x = a.x + a.width / 2, y = a.y + a.height / 2;

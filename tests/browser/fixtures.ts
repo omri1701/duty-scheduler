@@ -190,6 +190,8 @@ export const test = base.extend<Fixtures>({
       await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
       return target;
     });
+    // Finish intercepted responses before Playwright disposes the page/request context.
+    await Promise.all([...attached].filter(target => !target.isClosed()).map(target => target.unrouteAll({behavior: 'wait'})));
     expect(errors, 'browser errors / unexpected RPC contract').toEqual([]);
     expect(unexpected, 'no external network access').toEqual([]);
   },
