@@ -73,6 +73,22 @@ development origin and exact trailing-slash redirect independently using
 
 ## Browser and visual regression baseline
 
+Phones up to 600px use bottom tabs, compact monthly calendars and a modal
+availability and duty sheets. The month actions menu contains Versions and the deadline
+setting; Generate and Publish stay visible. Availability notes appear in the
+editor and accessible date labels; only dates with notes have a tiny corner dot.
+The floating glass navigation supports tapping and horizontal finger sliding.
+Combined weekends show both dates in their daily columns, with one assignment.
+Hold-drag interactions share the existing rules; mobile Team uses drag handles
+and supports arrow-key reordering. Outside taps do not dismiss editing sheets.
+Feedback uses a feature-detected 8ms vibration, throttled to one per 80ms with
+no queue, on supporting browsers. iPhone Safari gets visual selection/lift/drop
+feedback only. Reduce Motion disables motion and vibration. No hardware
+vibration or real iPhone keyboard/touch behavior has been verified by automation.
+Tablet and desktop keep their existing navigation and dialogs. Phone layout
+regressions cover 320, 375, 390 and 430px, plus unchanged 768 and 1440px layouts;
+actual Safari keyboard, safe areas and touch behavior still need device review.
+
 Behavior-preserving migrations and refactors must pass this baseline against the
 production build without changing the reference screenshots to conceal differences.
 The Phase 1 reference screenshots from PR #4 remain unchanged through the native
@@ -126,8 +142,9 @@ Hebrew and RTL, profile reopening, availability reset when editing closes, and
 team pointer/touch reorder announcements. Visuals
 cover access, pending approval, admin draft, duty editor, history, engineer
 publication, availability and swap confirmation/requests, including desktop/mobile
-English and Hebrew calendars. There are 72 browser cases (one intentionally skipped
-desktop case for mobile-only touch) and 24 snapshots per operating system.
+English and Hebrew calendars, phone availability sheets and Team. Responsive
+cases check both roles and languages across six widths; touch-only cases skip
+desktop. Linux and Windows keep separate visual references.
 Behavior assertions use roles/labels; date keys identify gesture targets because
 their accessible names change with assignment and language.
 

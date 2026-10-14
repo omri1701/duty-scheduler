@@ -1,4 +1,4 @@
-import {test, expect, ids, MONTH, duty, drag} from './fixtures';
+import {test, expect, monthAction, ids, MONTH, duty, drag} from './fixtures';
 
 test('signed out, OAuth denial, provider configuration and PKCE handoff', async ({page, openApp, backend, baseURL}) => {
   await openApp('signed-out');
@@ -53,7 +53,8 @@ test('calendar navigation, published visibility, weekends, special and emergency
   await expect(page.getByRole('heading', {name: 'November 2026'})).toBeVisible();
   await expect(duty(page, '2026-11-02')).toHaveAccessibleName(/Alex Atlas/);
   await expect(duty(page, '2026-11-02')).toContainText('+ Casey');
-  await expect(duty(page, '2026-11-06')).toContainText('WEEKEND');
+  await expect(duty(page, '2026-11-06').locator('.day-number')).toHaveText(['6', '7']);
+  await expect(page.locator('.weekend-word')).toHaveCount(0);
   await expect(duty(page, '2026-11-07')).toHaveCount(0); // combined Friday–Sunday
   await expect(duty(page, '2026-11-12')).toContainText('Holiday coverage');
   await expect(duty(page, '2026-11-12')).toContainText('+2');
@@ -161,7 +162,7 @@ test('publication and elapsed deadline close engineer availability', async ({pag
 test('version preview, cancelled restore and confirmed restore preserve live publication', async ({page, openApp, backend}) => {
   await openApp();
   const live = backend.raw.months[0].current_publication_id;
-  await page.getByRole('button', {name: 'Versions', exact: true}).click();
+  await monthAction(page, 'Versions');
   await expect(page.getByRole('dialog')).toContainText('v1 · Live');
   await expect(page.getByRole('dialog')).toContainText('Holiday coverage');
   await page.getByRole('button', {name: 'Restore as draft'}).click();
@@ -210,7 +211,7 @@ test('weekend editor saves split owners atomically', async ({page, openApp, back
 
 test('history deletion requires confirmation and closes the last live version', async ({page, openApp, backend}) => {
   await openApp();
-  await page.getByRole('button', {name: 'Versions', exact: true}).click();
+  await monthAction(page, 'Versions');
   await page.getByRole('button', {name: 'Delete version', exact: true}).click();
   await expect(page.getByRole('dialog')).toContainText('Delete live v1?');
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();

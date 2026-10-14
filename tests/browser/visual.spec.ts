@@ -1,4 +1,4 @@
-import {test, expect, duty, keyboardRequest, confirmRequest} from './fixtures';
+import {test, expect, monthAction, duty, keyboardRequest, confirmRequest} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 
@@ -9,7 +9,8 @@ test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='h
 async function snapshot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
-  await expect(page).toHaveScreenshot(name + '.png', {fullPage: true});
+  // Collect every visual difference while retaining a failing test result.
+  await expect.soft(page).toHaveScreenshot(name + '.png', {fullPage: true});
 }
 
 test('access states', async ({page, openApp}) => {
@@ -32,7 +33,7 @@ test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) =
   await openApp(); await snapshot(page, 'admin-draft-en');
   await duty(page, '2026-11-02').click(); await snapshot(page, 'duty-editor-en');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', {name: 'Versions', exact: true}).click(); await snapshot(page, 'version-history-en');
+  await monthAction(page, 'Versions'); await snapshot(page, 'version-history-en');
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl'); await snapshot(page, 'admin-draft-he');
@@ -44,4 +45,18 @@ test('engineer publication and availability', async ({page, openApp, backend}) =
   backend.raw.months[0].current_publication_id = null;
   await page.reload(); await page.getByRole('tab', {name: 'Availability', exact: true}).click();
   await snapshot(page, 'engineer-availability-en');
+});
+
+test('phone availability sheet and team in English and Hebrew', async ({page, openApp}, info) => {
+  test.skip(info.project.name !== 'mobile', 'Phone-only design.');
+  await openApp();
+  for (const lang of ['en', 'he']) {
+    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    await page.getByRole('tab').nth(1).click();
+    await page.locator('.availability-day[data-gesture-key="2026-11-05"]').click();
+    await snapshot(page, `availability-sheet-${lang}`);
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab').nth(2).click();
+    await snapshot(page, `team-${lang}`);
+  }
 });

@@ -1,4 +1,6 @@
-import { ChevronLeft, ChevronRight, SlidersHorizontal, Sparkles, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, SlidersHorizontal, Sparkles, Check, Ellipsis, History } from 'lucide-react';
+import {DropdownMenu} from 'radix-ui';
+import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { Button } from '@/components/ui/button';
 import type { State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
@@ -34,6 +36,7 @@ export function WorkspaceToolbar({
   onReopen: () => void;
   onPublish: () => void;
 }) {
+  const mobile = useMobileLayout();
   return (
     <div className="month-toolbar">
       <div className="month-title">
@@ -61,7 +64,25 @@ export function WorkspaceToolbar({
       <div className="toolbar-actions">
         {isManager && (
           <>
-            <Button variant="outline" onClick={onHistory}>
+            {mobile ? (
+              <DropdownMenu.Root dir={t('ltr', 'rtl') as 'ltr' | 'rtl'}>
+                <DropdownMenu.Trigger asChild>
+                  <Button variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
+                    <Ellipsis />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content className="mobile-action-menu" align="end" sideOffset={8} collisionPadding={16}>
+                    <DropdownMenu.Item onSelect={onHistory}>
+                      <History />{t('Versions', 'גרסאות')}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item disabled={readOnly} onSelect={onSettings}>
+                      <SlidersHorizontal />{t('Change month deadline', 'שינוי מועד אחרון לחודש')}
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            ) : <><Button variant="outline" onClick={onHistory}>
               {t('Versions', 'גרסאות')}
             </Button>
             <Button
@@ -73,6 +94,7 @@ export function WorkspaceToolbar({
               <SlidersHorizontal />
               {t('Change month deadline', 'שינוי מועד אחרון לחודש')}
             </Button>
+            </>}
             {monthDetails.status === 'published' ? (
               <Button disabled={readOnly} onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
             ) : (

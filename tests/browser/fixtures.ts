@@ -225,3 +225,13 @@ export async function touchEvent(page: Page, type: string, x: number, y: number)
     target.dispatchEvent(new TouchEvent(type, {bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [touch], changedTouches: [touch]}));
   }, {type, x, y});
 }
+
+export async function monthAction(page: Page, name: string) {
+  const menu = page.getByRole('button', {name: 'Month actions', exact: true});
+  if (await menu.isVisible()) {
+    await menu.click();
+    await page.getByRole('menuitem', {name, exact: true}).click();
+  } else {
+    await page.getByRole('button', {name, exact: true}).click();
+  }
+}
