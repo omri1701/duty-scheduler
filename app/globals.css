@@ -352,5 +352,15 @@
 .editor-actions{display:flex;gap:12px}
 .editor-actions>button{flex:1;min-height:44px;white-space:normal;height:auto}
 .editor-dialog .remove-constraint{color:#8d382b;border-color:#e2b7ad;min-height:44px}
-@media(max-width:600px){.editor-dialog textarea{font-size:16px}}
+/* Keep editable text legible through inherited font shorthands, portals and
+   phone landscape. rem preserves larger user text settings; pinch zoom stays native. */
+@media(max-width:600px),(pointer:coarse){
+ input,textarea,select,[contenteditable]:not([contenteditable=false]),.field-label :is(input,textarea,select),.form-pair input,.team-role select,[data-slot=select-trigger]{font-size:max(16px,1rem)!important}
+}
+/* A checkbox is a square inside a comfortably clickable label, not a 44px button. */
+.duty-override{align-items:flex-start;min-height:44px;padding-block:10px;cursor:pointer;line-height:24px}
+.duty-override [data-slot=checkbox]{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;min-width:24px;min-height:24px;max-width:24px;max-height:24px;padding:0;border-radius:6px}
+.duty-override [data-slot=checkbox-indicator]{display:grid;place-items:center}
+.duty-override [data-slot=checkbox]:disabled{cursor:default;opacity:.5}
+.duty-override [data-slot=checkbox]:focus-visible{outline:3px solid #78995c;outline-offset:3px}
 @media(prefers-reduced-motion:reduce){.team-list .team-row{transition:none}}

@@ -77,7 +77,7 @@ Phones up to 600px use floating bottom tabs and compact monthly calendars.
 The month actions menu contains Versions and the deadline setting; Generate
 and Publish stay visible.
 Availability and duty editors use the same centered, scrollable Radix modal shell
-as Special Duty on phones and desktop. Outside clicks, Escape, Close and Cancel
+as Special Duty on phones and desktop. Outside clicks, Escape and Close
 discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.
 Availability notes appear in the editor and accessible date labels; only dates
 with notes have a tiny corner dot. One fixed instruction line shows the unique
@@ -92,8 +92,10 @@ The floating glass navigation supports tapping and horizontal finger sliding.
 Combined weekends show both dates in their daily columns, with one assignment.
 Team reordering starts only from its handle on touch and mouse. The lifted row
 stays horizontally aligned, follows vertical movement, and moves neighbors at
-measured row midpoints, including unequal row heights and gaps. Release inside
-the list settles the row and saves once; cancellation or an outside release
+measured row midpoints, including unequal row heights and gaps. Dragging above
+or below the list targets the first or last row even with sideways movement.
+Near a visible vertical edge, gentle auto-scrolling keeps the row attached to the finger and updates the insertion position. Release settles
+and saves once; Escape, touch/pointer cancellation or loss of the gesture
 restores the original stack. Arrow keys retain accessible seniority reordering.
 Feedback uses a feature-detected 8ms vibration, throttled to one per 80ms with
 no queue, on supporting browsers. iPhone Safari gets visual selection/lift/drop
@@ -197,7 +199,12 @@ them. CI must compare committed images, never regenerate them automatically.
   real Google login or shared database writes.
 - Check screen-reader announcements, contrast, zoom and keyboard focus after
   dismissing dialogs in English/Hebrew. Both editors restore focus to their
-  calendar button after dismissal.
+  calendar button after dismissal. Their main Save action fills the footer;
+  destructive confirmations retain Cancel. Dialogs fade without scaling editable
+  text, and phone/coarse-pointer controls use at least 16px (or larger user text
+  settings). Browser font/transform/viewport checks do not prove native Safari
+  focus zoom prevention; confirm keyboard opening/closing and manual pinch zoom
+  on a real iPhone.
 - Verify database permissions and atomic publication/swap/history rules only in an
   empty development project following [Supabase setup](docs/SUPABASE_SETUP.md).
   Browser RPC fakes verify client contracts and UI responses, not RLS, PostgreSQL
@@ -214,7 +221,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
-- Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action is prominently displayed. Descriptions appear on calendar dates.
+- Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action appears only when selected dates have a saved constraint or note. Descriptions appear on calendar dates.
 - Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.
 - Distinct pastel engineer colors with contrasting text, compact dates, and no repeated duty times. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.
 

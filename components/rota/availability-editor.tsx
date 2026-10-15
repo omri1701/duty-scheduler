@@ -28,6 +28,7 @@ export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSav
  function range(a:string,b:string){return dates(a<b?a:b,addDays(a<b?b:a,1)).filter(d=>d.startsWith(month))}
  const {container,bindContainer,ignoreClick}=useHoldDrag({enabled:!disabled&&!open,holdMs:280,onStart:key=>{anchor.current=key;select([key])},onMove:key=>{if(anchor.current)select(range(anchor.current,key))},onEnd:key=>{const a=anchor.current;anchor.current='';if(!a||!key){close();return}const days=range(a,key);select(days);edit(days)},onCancel:close});
  function toggle(d:string){if(ignoreClick()||disabled)return;select([d]);if(mobile){tactileTick();tactileVisual(container.current?.querySelector(`[data-gesture-key="${d}"]`)??null)}edit([d])}
+ const hasPersistedSelection=selection.some(d=>!!state.constraints[person]?.[d]||!!state.constraintNotes?.[person]?.[d]);
  const hasNotes=selection.some(d=>!!state.constraintNotes?.[person]?.[d]);
  function conflicts(value:EditKind){return selection.some(d=>{
   const previous=state.constraints[person]?.[d],description=state.constraintNotes?.[person]?.[d]??'';
@@ -60,9 +61,8 @@ export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSav
    <button disabled={saving} aria-pressed={kind==='prefer'} className={kind==='prefer'?'chosen prefer':''} onClick={()=>setKind('prefer')}>{t('Prefer duty','מעדיף תורנות')}</button>
   </div>
   <label className="field-label">{t('Description (optional)','תיאור (לא חובה)')}<textarea disabled={saving} value={note} maxLength={300} rows={2} placeholder={t('Vacation, appointment…','חופשה, תור…')} onChange={e=>setNote(e.target.value)}/></label>
-  <Button disabled={saving} variant="outline" className="remove-constraint" onClick={()=>save('clear')}><Trash2 size={16}/>{t('Remove constraint','הסרת אילוץ')}</Button>
+  {hasPersistedSelection&&<Button disabled={saving} variant="outline" className="remove-constraint" onClick={()=>save('clear')}><Trash2 size={16}/>{t('Remove constraint','הסרת אילוץ')}</Button>}
   <div className="editor-actions">
-   <Button disabled={saving} variant="outline" onClick={close}>{t('Cancel','ביטול')}</Button>
    <Button disabled={saving} onClick={()=>save(kind)}>{t('Save','שמירה')}</Button>
   </div>
   <EditorDialog open={!!confirmation} onClose={()=>{if(!saveLock.current)setConfirmation(null)}} saving={saving} lang={lang} role="alertdialog" title={t('Replace existing availability?','להחליף את הזמינות הקיימת?')} description={confirmation?warning(confirmation.value):''}>

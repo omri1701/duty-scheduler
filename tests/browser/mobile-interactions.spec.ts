@@ -112,7 +112,7 @@ test('mobile rejects unassigned drag targets and cannot cancel an assignment sav
   await page.route('**/rest/v1/rpc/duty_save_schedule', async route => {await pending; await route.fallback();});
   await first.click();
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
-  await expect(page.getByRole('button', {name: 'Cancel', exact: true})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'Close', exact: true})).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeVisible();
   release();

@@ -14,6 +14,35 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
   let pressed: HTMLElement | null = null;
   let visual: ReturnType<typeof dragPresentation> | null = null;
   let settling = false;
+  let scrollFrame = 0;
+  let pointer = {x: 0, y: 0};
+  let scroller: HTMLElement | null = null;
+  function stopScrolling() {if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = 0;}
+  function startScrolling() {
+    // Team lists currently scroll with the page; also respect a containing scroll
+    // panel if one is present. Never change calendar swap/range gestures.
+    scroller = root.parentElement;
+    while (scroller && !( /auto|scroll/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+    let previous = performance.now();
+    const tick = (now: number) => {
+      if (!g?.active || !visual) return;
+      if (!getOptions().enabled) {cancel(); return;}
+      const rect = scroller?.getBoundingClientRect();
+      const top = Math.max(0, rect?.top ?? 0), bottom = Math.min(window.innerHeight, rect?.bottom ?? window.innerHeight);
+      const edge = Math.min(80, (bottom - top) / 3);
+      const proximity = pointer.y < top + edge ? -Math.min(1, (top + edge - pointer.y) / edge) : pointer.y > bottom - edge ? Math.min(1, (pointer.y - bottom + edge) / edge) : 0;
+      const delta = proximity * 360 * Math.min(32, now - previous) / 1000;
+      previous = now;
+      if (delta) {
+        if (scroller) scroller.scrollBy({top: delta, behavior: 'instant'});
+        else window.scrollBy({top: delta, behavior: 'instant'});
+        // A stationary finger still crosses row midpoints as content scrolls.
+        move(pointer.x, pointer.y, new Event('scroll'));
+      }
+      if (g?.active) scrollFrame = requestAnimationFrame(tick);
+    };
+    scrollFrame = requestAnimationFrame(tick);
+  }
   function element(key: string | null) {
     return key ? [...(root.querySelectorAll?.<HTMLElement>('[data-gesture-key]') ?? [])].find(el => el.dataset.gestureKey === key) ?? null : null;
   }
@@ -23,6 +52,7 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     return el && root.contains(el) ? el.dataset.gestureKey ?? null : null;
   }
   function clear() {
+    stopScrolling();
     if (timer) clearTimeout(timer);
     timer = undefined;
     pressed?.classList.remove('gesture-pressed'); pressed = null;
@@ -49,6 +79,7 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
       const source = element(g.key);
       if (source && !root.classList.contains('availability-grid')) visual = dragPresentation(root, source, g.x, g.y, root.classList.contains('team-list'));
       else tactileVisual(source);
+      if (reorder && visual) startScrolling();
     }
   }
   function start(x: number, y: number, touch: boolean, id: number) {
@@ -59,10 +90,12 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     const key = at(x, y);
     if (!key || element(key)?.matches(':disabled')) return;
     g = {key, x, y, active: false, touch, last: key, id, valid: true};
+    pointer = {x, y};
     if (touch) {pressed = element(key); pressed?.classList.add('gesture-pressed'); timer = setTimeout(activate, getOptions().holdMs ?? 360);}
   }
   function move(x: number, y: number, e: Event) {
     if (!g) return;
+    pointer = {x, y};
     if (!getOptions().enabled) {cancel(); return;}
     const moved = Math.hypot(x - g.x, y - g.y);
     if (!g.active) {

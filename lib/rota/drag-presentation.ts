@@ -71,9 +71,15 @@ export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: n
   return {
     follow,
     hit(px: number, py: number) {
-      if (px < bounds.left || px > bounds.right || py < bounds.top || py > bounds.bottom) return null;
+      // Only team reorders use hit(): sideways movement never invalidates a drop.
+      // Original row midpoints remain stable while neighbors animate; translate
+      // them by the list's scroll delta rather than measuring animated rows.
+      const scrollDelta = root.getBoundingClientRect().top - bounds.top;
+      const measured = rows.map(row => ({...row.rect, top: row.rect.top + scrollDelta, bottom: row.rect.bottom + scrollDelta}));
+      if (py <= measured[0]?.top) return rows[0].el.dataset.gestureKey ?? null;
+      if (py >= measured.at(-1)!.bottom) return rows.at(-1)!.el.dataset.gestureKey ?? null;
       const center = original.top + original.height / 2 + py - y;
-      return rows[verticalInsertion(rows.map(row => row.rect), from, center)]?.el.dataset.gestureKey ?? null;
+      return rows[verticalInsertion(measured, from, center)]?.el.dataset.gestureKey ?? null;
     },
     hover(target: HTMLElement | null) {
       if (!reorder) {tactileVisual(target); return;}
@@ -86,7 +92,7 @@ export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: n
     finish(target: HTMLElement | null, animate = true, settled = () => {}) {
       if (animation) {animation.onfinish = null; animation.cancel();}
       const to = rows.findIndex(row => row.el === target);
-      const offset = reorder ? reorderOffsets(rows.map(row => row.rect), from, to < 0 ? from : to)[from] : 0;
+      const offset = reorder ? reorderOffsets(rows.map(row => row.rect), from, to < 0 ? from : to)[from] + root.getBoundingClientRect().top - bounds.top : 0;
       const destination = target?.getBoundingClientRect() ?? source.getBoundingClientRect();
       if (reorder) this.hover(target);
       if (!animate || reduced || !ghost.animate) {reset(); settled(); return;}

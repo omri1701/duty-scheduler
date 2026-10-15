@@ -62,13 +62,13 @@ for(const lang of ['en','he'] as const) test(`vertical team stack, cancellation,
  }
  await reorder(0,3);await reorder(3,0);await reorder(0,1);await reorder(1,0);
  expect(await order(page)).toEqual(initial);
- for(const cancel of ['escape','outside','touchcancel'] as const){
+ for(const cancel of ['escape','pointercancel','touchcancel'] as const){
   if(cancel==='touchcancel'&&!mobile)continue;
   const a=await start(0),target=(await rows(page).nth(2).boundingBox())!;
   await move(a.x,target.y+target.height/2);
   if(cancel==='escape'){await page.keyboard.press('Escape');if(!mobile)await page.mouse.up()}
   else if(cancel==='touchcancel')await touchEvent(page,'touchcancel',a.x,target.y);
-  else await end(1,target.y);
+  else await page.evaluate(()=>document.dispatchEvent(new PointerEvent('pointercancel')));
   await expect(page.locator('.mobile-drag-preview')).toHaveCount(0);
   expect(await order(page)).toEqual(initial);expect(calls()).toHaveLength(4);
  }

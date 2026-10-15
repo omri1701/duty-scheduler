@@ -11,7 +11,7 @@ async function centered(page:Page,dialog:Locator){
 test('duty modal dismisses local edits, keeps nested selects open, restores focus and locks pending saves',async({page,openApp,backend},info)=>{
  await openApp();
  const cell=duty(page,'2026-11-02'),dialog=page.getByRole('dialog',{name:'Edit duty',exact:true});
- for(const dismissal of ['outside','escape','cancel','close']){
+ for(const dismissal of ['outside','escape','close']){
   await cell.click();await centered(page,dialog);
   await page.getByRole('combobox',{name:'Primary engineer',exact:true}).click();
   // Radix temporarily hides the dialog from the accessibility tree while its
@@ -21,7 +21,7 @@ test('duty modal dismisses local edits, keeps nested selects open, restores focu
   await expect(dialog).toBeVisible();
   if(dismissal==='outside')await page.mouse.click(5,5);
   else if(dismissal==='escape')await page.keyboard.press('Escape');
-  else await dialog.getByRole('button',{name:dismissal==='cancel'?'Cancel':'Close',exact:true}).click();
+  else await dialog.getByRole('button',{name:'Close',exact:true}).click();
   await expect(dialog).toBeHidden();await expect(cell).toBeFocused();
   expect(backend.calls.filter(c=>c.name==='duty_save_schedule')).toHaveLength(0);
  }
@@ -30,7 +30,7 @@ test('duty modal dismisses local edits, keeps nested selects open, restores focu
  await page.route('**/rest/v1/rpc/duty_save_schedule',async route=>{await gate;await route.fallback()});
  const request=page.waitForRequest('**/rest/v1/rpc/duty_save_schedule');
  await dialog.getByRole('button',{name:'Save assignment',exact:true}).click();await request;
- await expect(dialog.getByRole('button',{name:'Cancel',exact:true})).toBeDisabled();
+ await expect(dialog.getByRole('button',{name:'Save assignment',exact:true})).toBeDisabled();
  await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeDisabled();
  await page.keyboard.press('Escape');await page.mouse.click(5,5);await expect(dialog).toBeVisible();
  release();await expect(dialog).toBeHidden();
@@ -42,13 +42,13 @@ test('availability is centered, supports every dismissal, and discards unsaved n
  backend.raw.months[0].current_publication_id=null;
  await openApp('a');await page.getByRole('tab').nth(1).click();
  const cell=page.locator('.availability-day[data-gesture-key="2026-11-04"]');
- for(const dismissal of ['outside','escape','cancel','close']){
+ for(const dismissal of ['outside','escape','close']){
   await cell.click();const dialog=page.getByRole('dialog');await centered(page,dialog);
   await expect(page.getByLabel('Description (optional)')).toHaveValue('Synthetic vacation');
   await page.getByLabel('Description (optional)').fill('Unsaved local changes');
   if(dismissal==='outside')await page.mouse.click(5,5);
   else if(dismissal==='escape')await page.keyboard.press('Escape');
-  else await dialog.getByRole('button',{name:dismissal==='cancel'?'Cancel':'Close',exact:true}).click();
+  else await dialog.getByRole('button',{name:'Close',exact:true}).click();
   await expect(dialog).toBeHidden();await expect(cell).toBeFocused();
   await expect(cell).toHaveAttribute('aria-pressed','false');
  }
