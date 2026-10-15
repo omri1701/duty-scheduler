@@ -1,9 +1,35 @@
 import {tactileVisual} from '../tactile.ts';
 
-// Presentation only. The shared gesture and caller still decide whether to commit.
+type Boundary = {top: number; bottom: number; height: number};
+
+export function verticalInsertion(rows: Boundary[], from: number, y: number) {
+  let to = from;
+  rows.forEach((row, i) => {
+    const midpoint = (row.top + row.bottom) / 2;
+    if (i < from && y <= midpoint) to = Math.min(to, i);
+    if (i > from && y >= midpoint) to = Math.max(to, i);
+  });
+  return to;
+}
+
+// Heights travel with rows; measured gaps belong to the vertical slots.
+export function reorderOffsets(rows: Boundary[], from: number, to: number) {
+  const order = rows.map((_, i) => i);
+  order.splice(to, 0, order.splice(from, 1)[0]);
+  const offsets = rows.map(() => 0);
+  let top = rows[0].top;
+  order.forEach((index, slot) => {
+    offsets[index] = top - rows[index].top;
+    top += rows[index].height + (rows[slot + 1] ? rows[slot + 1].top - rows[slot].bottom : 0);
+  });
+  return offsets;
+}
+
+// Presentation only. The gesture and caller still decide whether to commit.
 export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: number, y: number, reorder: boolean) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const original = source.getBoundingClientRect();
+  const bounds = root.getBoundingClientRect();
   const rows = reorder ? [...root.querySelectorAll<HTMLElement>('[data-gesture-key]')].map(el => ({el, rect: el.getBoundingClientRect()})) : [];
   const from = rows.findIndex(row => row.el === source);
   const ghost = source.cloneNode(true) as HTMLElement;
@@ -22,38 +48,54 @@ export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: n
   wrapper.setAttribute('aria-hidden', 'true');
   wrapper.append(ghost);
   document.body.append(wrapper);
-  let dx = 0, dy = -6;
+  const visibility = source.style.visibility;
+  if (reorder) source.style.visibility = 'hidden';
+  let dx = 0, dy = 0;
+  let animation: Animation | undefined;
   function follow(px: number, py: number) {
-    dx = px - x; dy = py - y - (reduced ? 0 : 6);
-    ghost.style.transform = `translate3d(${dx}px,${dy}px,0) scale(${reduced ? 1 : 1.025})`;
+    dx = reorder ? 0 : px - x; dy = py - y - (reduced ? 0 : 6);
+    ghost.style.transform = `translate3d(${dx}px,${dy}px,0) scale(${reduced || reorder ? 1 : 1.025})`;
+  }
+  function reset() {
+    rows.forEach(({el}) => {
+      const transition = el.style.transition;
+      el.style.transition = 'none'; el.style.transform = '';
+      // Reset before React commits the final order, without a reverse transition.
+      void el.offsetHeight;
+      el.style.transition = transition;
+    });
+    source.style.visibility = visibility;
+    wrapper.remove();
   }
   follow(x, y);
   return {
     follow,
     hit(px: number, py: number) {
-      // Use original row positions while the visual rows move aside.
-      return rows.find(({rect}) => px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom)?.el.dataset.gestureKey ?? null;
+      if (px < bounds.left || px > bounds.right || py < bounds.top || py > bounds.bottom) return null;
+      const center = original.top + original.height / 2 + py - y;
+      return rows[verticalInsertion(rows.map(row => row.rect), from, center)]?.el.dataset.gestureKey ?? null;
     },
     hover(target: HTMLElement | null) {
-      tactileVisual(target);
-      if (!reorder) return;
+      if (!reorder) {tactileVisual(target); return;}
       const to = rows.findIndex(row => row.el === target);
+      const offsets = reorderOffsets(rows.map(row => row.rect), from, to < 0 ? from : to);
       rows.forEach(({el}, i) => {
-        const shift = to > from && i > from && i <= to ? -original.height :
-          to >= 0 && to < from && i >= to && i < from ? original.height : 0;
-        if (el !== source) el.style.transform = shift ? `translateY(${shift}px)` : '';
+        if (el !== source) el.style.transform = `translateY(${offsets[i]}px)`;
       });
     },
-    finish(target: HTMLElement | null, animate = true) {
-      rows.forEach(({el}) => {el.style.transform = '';});
+    finish(target: HTMLElement | null, animate = true, settled = () => {}) {
+      if (animation) {animation.onfinish = null; animation.cancel();}
+      const to = rows.findIndex(row => row.el === target);
+      const offset = reorder ? reorderOffsets(rows.map(row => row.rect), from, to < 0 ? from : to)[from] : 0;
       const destination = target?.getBoundingClientRect() ?? source.getBoundingClientRect();
-      if (!animate || reduced || !ghost.animate) {wrapper.remove(); return;}
-      const animation = ghost.animate([
-        {transform: `translate3d(${dx}px,${dy}px,0) scale(1.025)`, opacity: 1},
-        {transform: `translate3d(${destination.left - original.left}px,${destination.top - original.top}px,0) scale(1)`, opacity: .1},
+      if (reorder) this.hover(target);
+      if (!animate || reduced || !ghost.animate) {reset(); settled(); return;}
+      animation = ghost.animate([
+        {transform: ghost.style.transform, opacity: 1},
+        {transform: `translate3d(${reorder ? 0 : destination.left - original.left}px,${reorder ? offset : destination.top - original.top}px,0) scale(1)`, opacity: reorder ? 1 : .1},
       ], {duration: 240, easing: 'cubic-bezier(.2,.85,.25,1)', fill: 'forwards'});
-      animation.onfinish = () => wrapper.remove();
-      animation.oncancel = () => wrapper.remove();
+      animation.onfinish = () => {reset(); settled();};
     },
+    dispose() {if (animation) {animation.onfinish = null; animation.cancel();} reset();},
   };
 }

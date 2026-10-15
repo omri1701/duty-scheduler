@@ -142,6 +142,7 @@ test('engineer availability save, preference and removal before deadline', async
   await expect(page.getByRole('button', {name: /^5 Nov.*Preferred/})).toBeVisible();
   await page.getByRole('button', {name: /^5 Nov.*Preferred/}).click();
   await page.getByRole('button', {name: 'Remove constraint', exact: true}).click();
+  await page.getByRole('alertdialog').getByRole('button', {name: 'Remove constraints and notes', exact: true}).click();
   await expect(day).toBeVisible();
   expect(backend.calls.filter(c => c.name === 'duty_set_constraints').map(c => c.params.p_kind)).toEqual(['no', 'prefer', 'clear']);
 });

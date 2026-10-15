@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {attachHoldDrag} from '../lib/rota/gesture.ts';
 function fixture(t,options={}){
  t.mock.timers.enable({apis:['setTimeout','Date']});
- const root=new EventTarget(),doc=new EventTarget(),win=new EventTarget(),classes=new Set();root.classList={add:x=>classes.add(x),remove:x=>classes.delete(x)};root.contains=el=>!!el;
+ const root=new EventTarget(),doc=new EventTarget(),win=new EventTarget(),classes=new Set();root.classList={add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x)};root.contains=el=>!!el;
  doc.elementFromPoint=x=>x<0?null:{closest:()=>({dataset:{gestureKey:x<50?'2026-10-01':'2026-10-03'}})};
  const oldDoc=globalThis.document,oldWin=globalThis.window;globalThis.document=doc;globalThis.window=win;
  const calls=[],ignore={current:0};let enabled=true;

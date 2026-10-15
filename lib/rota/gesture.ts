@@ -13,6 +13,7 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
   let g: {key: string; x: number; y: number; active: boolean; touch: boolean; last: string | null; id: number; valid: boolean} | null = null;
   let pressed: HTMLElement | null = null;
   let visual: ReturnType<typeof dragPresentation> | null = null;
+  let settling = false;
   function element(key: string | null) {
     return key ? [...(root.querySelectorAll?.<HTMLElement>('[data-gesture-key]') ?? [])].find(el => el.dataset.gestureKey === key) ?? null : null;
   }
@@ -28,8 +29,13 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     root.classList.remove('gesture-active');
   }
   function cancel(animate = true) {
-    visual?.finish(null, animate); visual = null;
-    if (g?.active) {ignoreUntil.current = Date.now() + 700; getOptions().onCancel?.();}
+    const wasSettling = settling;
+    const current = visual;
+    if (animate && current) {
+      settling = true;
+      current.finish(null, true, () => {visual = null; settling = false;});
+    } else {current?.dispose(); visual = null; settling = false;}
+    if (g?.active || wasSettling) {ignoreUntil.current = Date.now() + 700; getOptions().onCancel?.();}
     clear(); g = null;
   }
   function activate() {
@@ -37,7 +43,8 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     if (getOptions().onStart(g.key) === false) {cancel(); return;}
     g.active = true; root.classList.add('gesture-active');
     ignoreUntil.current = Date.now() + 700;
-    if (g.touch && window.matchMedia?.('(max-width: 600px)').matches) {
+    const reorder = root.classList.contains('team-list');
+    if (reorder || (g.touch && window.matchMedia?.('(max-width: 600px)').matches)) {
       tactileTick();
       const source = element(g.key);
       if (source && !root.classList.contains('availability-grid')) visual = dragPresentation(root, source, g.x, g.y, root.classList.contains('team-list'));
@@ -45,10 +52,10 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     }
   }
   function start(x: number, y: number, touch: boolean, id: number) {
-    if (!getOptions().enabled) return;
+    if (!getOptions().enabled || settling) return;
     cancel();
     const hit = document.elementFromPoint(x, y), handle = getOptions().handleSelector;
-    if (touch && handle && !hit?.closest(handle)) return;
+    if (handle && !hit?.closest(handle)) return;
     const key = at(x, y);
     if (!key || element(key)?.matches(':disabled')) return;
     g = {key, x, y, active: false, touch, last: key, id, valid: true};
@@ -67,7 +74,7 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
       const key = at(x, y);
       if (key !== g.last) {
         g.valid = key ? getOptions().onMove(key) !== false : false;
-        if (key && g.valid && g.touch && window.matchMedia?.('(max-width: 600px)').matches) {
+        if (key && g.valid && (root.classList.contains('team-list') || (g.touch && window.matchMedia?.('(max-width: 600px)').matches))) {
           tactileTick();
           if (visual) visual.hover(element(key)); else tactileVisual(element(key));
         } else visual?.hover(null);
@@ -80,9 +87,22 @@ export function attachHoldDrag(root: HTMLDivElement, getOptions: () => HoldDragO
     if (!getOptions().enabled) {cancel(); return;}
     const active = g.active, target = at(x, y);
     if (active && target !== g.last) g.valid = target ? getOptions().onMove(target) !== false : false;
-    visual?.finish(g.valid && target !== g.key ? element(target) : null); visual = null;
+    const validTarget = g.valid ? target : null;
+    const current = visual;
+    const reorder = root.classList.contains('team-list');
+    const destination = validTarget !== g.key ? element(validTarget) : null;
     clear(); g = null;
-    if (active) {if (e.cancelable) e.preventDefault(); ignoreUntil.current = Date.now() + 700; getOptions().onEnd(target);}
+    if (active) {
+      if (e.cancelable) e.preventDefault(); ignoreUntil.current = Date.now() + 700;
+      if (reorder && current) {
+        settling = true;
+        current.finish(destination, true, () => {
+          visual = null; settling = false;
+          ignoreUntil.current = Date.now() + 700;
+          if (getOptions().enabled) getOptions().onEnd(validTarget); else getOptions().onCancel?.();
+        });
+      } else {current?.finish(destination); visual = null; getOptions().onEnd(validTarget);}
+    }
   }
   function ts(e: TouchEvent) {if (e.touches.length !== 1) {cancel(); return;} const p = e.touches[0]; start(p.clientX, p.clientY, true, p.identifier);}
   function tm(e: TouchEvent) {if (!g?.touch) return; if (e.touches.length !== 1) {cancel(); return;} const p = [...e.touches].find(p => p.identifier === g!.id); if (p) move(p.clientX, p.clientY, e);}

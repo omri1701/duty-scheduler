@@ -61,7 +61,9 @@ export class Backend {
     if (name === 'duty_save_schedule') {
       expect(admin).toBe(true);
       if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
-      const state = p.p_state as {duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
+      const state = p.p_state as {team:{id:string;color:string;active:boolean}[];duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
+      state.team.forEach((member, seniority) => Object.assign(this.raw.members.find(m => m.id === member.id)!, member, {seniority}));
+      this.raw.members.sort((a,b) => a.seniority - b.seniority);
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
       this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {

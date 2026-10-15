@@ -73,23 +73,33 @@ development origin and exact trailing-slash redirect independently using
 
 ## Browser and visual regression baseline
 
-Phones up to 600px use bottom tabs, compact monthly calendars and a modal
-availability and duty sheets. The month actions menu contains Versions and the deadline
-setting; Generate and Publish stay visible. Availability notes appear in the
-editor and accessible date labels; only dates with notes have a tiny corner dot.
-Availability keeps one fixed instruction line, showing chronological date ranges
-during selection. Range edits apply to every selected date. If a range contains
-notes, edit those dates individually; bulk Save is disabled to avoid overwriting
-notes with the shared description. Explicit Remove still removes the whole range.
+Phones up to 600px use floating bottom tabs and compact monthly calendars.
+The month actions menu contains Versions and the deadline setting; Generate
+and Publish stay visible.
+Availability and duty editors use the same centered, scrollable Radix modal shell
+as Special Duty on phones and desktop. Outside clicks, Escape, Close and Cancel
+discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.
+Availability notes appear in the editor and accessible date labels; only dates
+with notes have a tiny corner dot. One fixed instruction line shows the unique
+selected-day count during selection and editing, with no calendar movement.
+The modal title shows the actual localized date or chronological date range.
+Range edits apply to every selected date. Replacing conflicting availability or
+notes requires explicit confirmation; a blank shared description warns that old
+notes will be cleared. Removing notes also requires confirmation. Canceling the
+confirmation keeps the editor and existing data; confirmed replacement uses the
+existing atomic RPC. Single-date editing prefills existing descriptions.
 The floating glass navigation supports tapping and horizontal finger sliding.
 Combined weekends show both dates in their daily columns, with one assignment.
-Hold-drag interactions share the existing rules; mobile Team uses drag handles
-and supports arrow-key reordering. Outside taps do not dismiss editing sheets.
+Team reordering starts only from its handle on touch and mouse. The lifted row
+stays horizontally aligned, follows vertical movement, and moves neighbors at
+measured row midpoints, including unequal row heights and gaps. Release inside
+the list settles the row and saves once; cancellation or an outside release
+restores the original stack. Arrow keys retain accessible seniority reordering.
 Feedback uses a feature-detected 8ms vibration, throttled to one per 80ms with
 no queue, on supporting browsers. iPhone Safari gets visual selection/lift/drop
 feedback only. Reduce Motion disables motion and vibration. No hardware
 vibration or real iPhone keyboard/touch behavior has been verified by automation.
-Tablet and desktop keep their existing navigation and dialogs. Phone layout
+Tablet and desktop keep their existing navigation and other dialogs. Phone layout
 regressions cover 320, 375, 390 and 430px, plus unchanged 768 and 1440px layouts;
 actual Safari keyboard, safe areas and touch behavior still need device review.
 
@@ -186,8 +196,8 @@ them. CI must compare committed images, never regenerate them automatically.
   two real sessions seeing persistence/stale-revision conflicts. CI never attempts
   real Google login or shared database writes.
 - Check screen-reader announcements, contrast, zoom and keyboard focus after
-  dismissing dialogs in English/Hebrew. Current duty editor does not restore focus
-  to the calendar button on Escape; retain this known gap for a separate UI fix.
+  dismissing dialogs in English/Hebrew. Both editors restore focus to their
+  calendar button after dismissal.
 - Verify database permissions and atomic publication/swap/history rules only in an
   empty development project following [Supabase setup](docs/SUPABASE_SETUP.md).
   Browser RPC fakes verify client contracts and UI responses, not RLS, PostgreSQL

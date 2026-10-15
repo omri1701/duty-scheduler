@@ -48,7 +48,7 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
           await expect(editor).toHaveValue(original.constraints[0].note);
           await editor.focus();
           if (width <= 600) {
-            await expect(page.locator('.availability-sheet')).toBeVisible();
+            await expect(page.locator('.availability-dialog')).toBeVisible();
             await expect(editor).toHaveCSS('font-size', '16px');
           }
           await fits(page);
@@ -90,13 +90,13 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(day).toHaveAttribute('aria-pressed', 'true');
-  const sheetStyle = await page.locator('.availability-sheet').evaluate(el => {
+  const sheetStyle = await page.locator('.availability-dialog').evaluate(el => {
     const css = getComputedStyle(el), box = el.getBoundingClientRect();
     return {left: css.left, top: css.top, bottom: css.bottom, transform: css.transform, translate: css.translate, x: box.x, y: box.y, height: box.height};
   });
-  expect(sheetStyle.x, JSON.stringify(sheetStyle)).toBe(0);
-  expect(await page.locator('.availability-sheet').evaluate(el => el.getBoundingClientRect().width)).toBe(390);
-  expect(sheetStyle.y + sheetStyle.height).toBe(844);
+  expect(sheetStyle.x, JSON.stringify(sheetStyle)).toBe(12);
+  expect(await page.locator('.availability-dialog').evaluate(el => el.getBoundingClientRect().width)).toBe(366);
+  expect(Math.abs(sheetStyle.y + sheetStyle.height / 2 - 422)).toBeLessThan(1);
   await page.screenshot({path: info.outputPath('availability-sheet.png')});
   await page.keyboard.press('Tab');
   expect(await page.getByRole('dialog').evaluate(el => el.contains(document.activeElement))).toBe(true);
@@ -106,7 +106,7 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
     window.visualViewport!.dispatchEvent(new Event('resize'));
   });
   await expect(page.locator('.nav-row')).toBeHidden();
-  const sheet = await page.locator('.availability-sheet').boundingBox();
+  const sheet = await page.locator('.availability-dialog').boundingBox();
   expect(sheet!.y + sheet!.height).toBeLessThanOrEqual(544);
   await page.evaluate(() => {
     delete (window.visualViewport as unknown as {height?: number}).height;
@@ -141,6 +141,7 @@ test('phone availability hold and drag saves and clears a date range', async ({p
   expect(backend.raw.constraints.filter(c => c.member_id === ids.admin)).toHaveLength(5);
   await selectRange();
   await page.getByRole('button', {name: 'Remove constraint', exact: true}).click();
+  await page.getByRole('alertdialog').getByRole('button', {name: 'Remove constraints and notes', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(backend.raw.constraints.filter(c => c.member_id === ids.admin)).toEqual([]);
   expect(backend.calls.filter(c => c.name === 'duty_set_constraints').map(c => c.params.p_days)).toEqual([

@@ -24,7 +24,7 @@ test('navigation follows horizontal touch, commits on release and respects RTL a
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule')).toEqual([]);
 });
 
-test('mobile cells have only note dots and outside taps retain sheet edits', async ({page, openApp}, info) => {
+test('mobile cells have only note dots and outside taps discard local edits', async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone sheet.');
   await openApp('a');
   await page.getByRole('tab').nth(1).click();
@@ -38,8 +38,9 @@ test('mobile cells have only note dots and outside taps retain sheet edits', asy
   await noted.click();
   await page.getByLabel('Description (optional)').fill('Unsaved edit');
   await page.mouse.click(5, 5);
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByLabel('Description (optional)')).toHaveValue('Unsaved edit');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await noted.click();
+  await expect(page.getByLabel('Description (optional)')).toHaveValue('Synthetic vacation');
   await page.keyboard.press('Escape');
   await expect(noted).toBeFocused();
 });
