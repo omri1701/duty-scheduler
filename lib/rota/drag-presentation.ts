@@ -47,7 +47,8 @@ export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: n
     for (const property of ['font','color','background-color','border','border-radius','padding','width','height','min-width','max-width','box-sizing','text-align']) {
       value.style.setProperty(property, css.getPropertyValue(property));
     }
-    value.style.display = 'inline-block';
+    value.style.display = 'inline-flex';
+    value.style.alignItems = 'center';
     clone.replaceWith(value);
   });
   ghost.removeAttribute('id');

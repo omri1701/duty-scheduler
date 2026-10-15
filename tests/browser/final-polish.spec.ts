@@ -37,6 +37,12 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
   expect(await ghost.evaluate(el=>(el as HTMLElement).inert)).toBe(true);
   await expect(ghost).toHaveAttribute('aria-hidden','true');
   expect(await ghost.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(id === ids.e ? .45 : 1);
+  const roleAlignment=await ghost.locator('.drag-control-value').evaluate(el=>{
+   const range=document.createRange();range.selectNodeContents(el);
+   const text=range.getBoundingClientRect(),box=el.getBoundingClientRect();
+   return Math.abs(text.y+text.height/2-(box.y+box.height/2));
+  });
+  expect(roleAlignment).toBeLessThanOrEqual(2);
   for(const offset of [15,-15,30]){
    if(mobile)await touchEvent(page,'touchmove',x,y+offset);else await page.mouse.move(x,y+offset);
    const actual=await ghost.evaluate(el=>({
