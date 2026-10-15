@@ -95,7 +95,12 @@ stays horizontally aligned, follows vertical movement, and moves neighbors at
 measured row midpoints, including unequal row heights and gaps. Dragging above
 or below the list targets the first or last row even with sideways movement.
 Near a visible vertical edge, gentle auto-scrolling keeps the row attached to the finger and updates the insertion position. Release settles
-and saves once; Escape, touch/pointer cancellation or loss of the gesture
+and saves once. The dropped order stays visible until the server snapshot confirms
+it; a newer external revision takes precedence. Failed saves return smoothly to
+the latest confirmed order and show an error. Reordering is locked until the save
+and reconciliation finish; profile details stay synchronized during that wait.
+Phone handles place larger dots and rank inline in a 44px touch target.
+Escape, touch/pointer cancellation or loss of the gesture
 restores the original stack. Arrow keys retain accessible seniority reordering.
 Feedback uses a feature-detected 8ms vibration, throttled to one per 80ms with
 no queue, on supporting browsers. iPhone Safari gets visual selection/lift/drop

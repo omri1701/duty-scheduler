@@ -1,23 +1,49 @@
 'use client';
 import {useLayoutEffect,useRef,useState} from 'react';
+import {flushSync} from 'react-dom';
+import {useOptimisticTeam} from '@/hooks/use-optimistic-team';
 import {GripVertical} from 'lucide-react';
 import type {Role} from '@/lib/supabase/snapshot';
 import {Checkbox} from '@/components/ui/checkbox';
 import {useHoldDrag} from '@/hooks/use-hold-drag';
 import {ink,type Engineer} from '@/lib/rota/engine';
-export function TeamList({team,monthTotals,historyTotals,lang,onReorder,onActive,readOnly=false,selfId='e0',roles=[],onRole}:{roles?:Role[];onRole?:(id:string,role:string)=>void;readOnly?:boolean;selfId?:string;team:Engineer[];monthTotals:Record<string,number>;historyTotals:Record<string,number>;lang:'en'|'he';onReorder:(team:Engineer[])=>boolean|void|Promise<boolean|void>;onActive:(id:string,active:boolean)=>void}){
+export function TeamList({team,revision,monthTotals,historyTotals,lang,onReorder,onActive,readOnly=false,selfId='e0',roles=[],onRole}:{roles?:Role[];onRole?:(id:string,role:string)=>void;readOnly?:boolean;selfId?:string;team:Engineer[];revision:number;monthTotals:Record<string,number>;historyTotals:Record<string,number>;lang:'en'|'he';onReorder:(team:Engineer[])=>boolean|void|Promise<boolean|void>;onActive:(id:string,active:boolean)=>void}){
  const t=(a:string,b:string)=>lang==='en'?a:b,source=useRef<string|null>(null);
- const [preview,setPreview]=useState<Engineer[]|null>(null),busy=useRef(false),focusAfterMove=useRef<string|null>(null);
- const displayed=preview??team;
- const [dragging,setDragging]=useState<string|null>(null),[announcement,setAnnouncement]=useState(''),[moving,setMoving]=useState(false);
- async function move(from:string,to:string,keyboard=false){if(busy.current||readOnly)return;const a=team.findIndex(p=>p.id===from),b=team.findIndex(p=>p.id===to);if(a<0||b<0||a===b)return;const next=[...team];next.splice(b,0,next.splice(a,1)[0]);if(keyboard)focusAfterMove.current=from;busy.current=true;setMoving(true);setPreview(next);try{const saved=await onReorder(next);setAnnouncement(saved===false?t('Could not reorder. Try again.','\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05e0\u05d5\u05ea \u05d0\u05ea \u05d4\u05e1\u05d3\u05e8. \u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1.'):`${team[a].name} \u00b7 ${b+1}`)}catch{setAnnouncement(t('Could not reorder. Try again.','\u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1.'))}finally{busy.current=false;setMoving(false);setPreview(null)}}
+ const focusAfterMove=useRef<string|null>(null);
+ const failureMessage=t('Could not reorder. Try again.','\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05e0\u05d5\u05ea \u05d0\u05ea \u05d4\u05e1\u05d3\u05e8. \u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1.');
+ const {displayed,moving,reorder}=useOptimisticTeam(team,revision,readOnly,onReorder,failureMessage);
+ const [dragging,setDragging]=useState<string|null>(null),[announcement,setAnnouncement]=useState('');
+ async function move(from:string,to:string,keyboard=false){
+  if(moving||readOnly)return;
+  const a=displayed.findIndex(p=>p.id===from),b=displayed.findIndex(p=>p.id===to);
+  if(a<0||b<0||a===b)return;
+  const next=[...displayed];next.splice(b,0,next.splice(a,1)[0]);
+  if(keyboard)focusAfterMove.current=from;
+  const saved=await reorder(next);
+  if(saved!==undefined)setAnnouncement(saved===false?failureMessage:`${next[b].name} \u00b7 ${b+1}`);
+ }
  function clear(){source.current=null;setDragging(null)}
- const {container,bindContainer}=useHoldDrag({enabled:!readOnly&&!moving,handleSelector:'.team-grip',onStart:id=>{source.current=id;setDragging(id)},onMove:()=>{},onEnd:id=>{if(id&&source.current)move(source.current,id);clear()},onCancel:clear});
+ // The native settle callback removes the ghost/transforms. Commit the keyed
+ // rows in that same callback, before the browser can paint the original stack.
+ const {container,bindContainer}=useHoldDrag({enabled:!readOnly&&!moving,handleSelector:'.team-grip',onStart:id=>{source.current=id;setDragging(id)},onMove:()=>{},onEnd:id=>{flushSync(()=>{if(id&&source.current)void move(source.current,id);clear()})},onCancel:clear});
+ const positions=useRef(new Map<string,number>()),lastOrder=useRef('');
+ useLayoutEffect(()=>{
+  const rows=[...container.current?.querySelectorAll<HTMLElement>('[data-gesture-key]')??[]];
+  const order=displayed.map(p=>p.id).join(',');
+  const next=new Map(rows.map(row=>[row.dataset.gestureKey!,row.getBoundingClientRect().top]));
+  if(lastOrder.current!==order&&!moving&&!dragging&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+   rows.forEach(row=>{
+    const before=positions.current.get(row.dataset.gestureKey!),after=next.get(row.dataset.gestureKey!)!;
+    if(before!==undefined&&before!==after)row.animate([{transform:`translateY(${before-after}px)`},{transform:'translateY(0)'}],{duration:240,easing:'cubic-bezier(.2,.85,.25,1)'});
+   });
+  }
+  positions.current=next;lastOrder.current=order;
+ },[displayed,moving,dragging,container]);
  useLayoutEffect(()=>{
   if(moving||!focusAfterMove.current)return;
   const handle=container.current?.querySelector<HTMLButtonElement>(`[data-gesture-key="${focusAfterMove.current}"] .team-grip`);
   if(!readOnly&&(document.activeElement===document.body||document.activeElement===handle))handle?.focus({preventScroll:true});
   focusAfterMove.current=null;
  },[moving,readOnly,container]);
- return <><p style={{display:readOnly?'none':undefined}} className="gesture-hint">{t('Hold & drag to reorder · Senior → newest','לחיצה ארוכה וגרירה לשינוי הסדר · ותיק ← חדש')}</p><span className="sr-only" aria-live="polite">{announcement}</span><div ref={bindContainer} className="team-list gesture-grid" aria-busy={moving}>{displayed.map((p,i)=><div data-gesture-key={p.id} key={p.id} className={['team-row',!p.active?'inactive':'',dragging===p.id?'drag-source':''].join(' ')}><button disabled={readOnly||moving} className="team-grip" aria-label={`${t('Drag to reorder','גרירה לשינוי הסדר')} ${p.name}`} aria-describedby="team-keyboard-hint" onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();const target=team[i+(e.key==='ArrowUp'?-1:1)];if(target)move(p.id,target.id,true)}}}><GripVertical size={18}/><span>{i+1}</span></button><span className="avatar" style={{background:p.color,color:ink(p.color)}}>{p.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</span><div className="team-name"><strong>{p.name}</strong><small>{roles.find(r=>r.code===p.role)?.can_manage?t('Admin + engineer','מנהל ומהנדס'):p.id===selfId?t('You','אני'):i===team.length-1?t('Newest teammate','חבר הצוות החדש ביותר'):t('Engineer','מהנדס')}</small></div><div className="team-points"><strong>{monthTotals[p.id]??0}</strong><span>{t('this month','החודש')}</span></div><div className="team-points total-points"><strong>{historyTotals[p.id]??0}</strong><span>{t('all months','כל החודשים')}</span></div><label className="team-role" style={{display:readOnly?'none':undefined}} onPointerDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><span className="sr-only">{t('Role','תפקיד')} {p.name}</span><select aria-label={`${t('Role','תפקיד')} ${p.name}`} value={p.role??'engineer'} onChange={e=>onRole?.(p.id,e.target.value)}>{roles.map(r=><option key={r.code} value={r.code}>{lang==='he'?(r.can_manage?'מנהל':'מהנדס'):r.label}</option>)}</select></label><label style={{display:readOnly?'none':undefined}} className="active-checkbox" onPointerDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><Checkbox disabled={p.id===selfId} checked={p.active} onCheckedChange={v=>onActive(p.id,!!v)}/>{t('Active','פעיל')}</label></div>)}</div><span id="team-keyboard-hint" className="sr-only">{t('Use up and down keys to reorder.','אפשר להשתמש במקשי למעלה ולמטה לשינוי הסדר.')}</span></>
+ return <><p style={{display:readOnly?'none':undefined}} className="gesture-hint">{t('Hold & drag to reorder · Senior → newest','לחיצה ארוכה וגרירה לשינוי הסדר · ותיק ← חדש')}</p><span className="sr-only" aria-live="polite">{announcement}</span><div ref={bindContainer} className="team-list gesture-grid" aria-busy={moving}>{displayed.map((p,i)=><div data-gesture-key={p.id} key={p.id} className={['team-row',!p.active?'inactive':'',dragging===p.id?'drag-source':''].join(' ')}><button disabled={readOnly||moving} className="team-grip" aria-label={`${t('Drag to reorder','גרירה לשינוי הסדר')} ${p.name}`} aria-describedby="team-keyboard-hint" onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();const target=displayed[i+(e.key==='ArrowUp'?-1:1)];if(target)move(p.id,target.id,true)}}}><GripVertical size={18}/><span>{i+1}</span></button><span className="avatar" style={{background:p.color,color:ink(p.color)}}>{p.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</span><div className="team-name"><strong>{p.name}</strong><small>{roles.find(r=>r.code===p.role)?.can_manage?t('Admin + engineer','מנהל ומהנדס'):p.id===selfId?t('You','אני'):i===team.length-1?t('Newest teammate','חבר הצוות החדש ביותר'):t('Engineer','מהנדס')}</small></div><div className="team-points"><strong>{monthTotals[p.id]??0}</strong><span>{t('this month','החודש')}</span></div><div className="team-points total-points"><strong>{historyTotals[p.id]??0}</strong><span>{t('all months','כל החודשים')}</span></div><label className="team-role" style={{display:readOnly?'none':undefined}} onPointerDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><span className="sr-only">{t('Role','תפקיד')} {p.name}</span><select aria-label={`${t('Role','תפקיד')} ${p.name}`} value={p.role??'engineer'} onChange={e=>onRole?.(p.id,e.target.value)}>{roles.map(r=><option key={r.code} value={r.code}>{lang==='he'?(r.can_manage?'מנהל':'מהנדס'):r.label}</option>)}</select></label><label style={{display:readOnly?'none':undefined}} className="active-checkbox" onPointerDown={e=>e.stopPropagation()} onTouchStart={e=>e.stopPropagation()}><Checkbox disabled={p.id===selfId} checked={p.active} onCheckedChange={v=>onActive(p.id,!!v)}/>{t('Active','פעיל')}</label></div>)}</div><span id="team-keyboard-hint" className="sr-only">{t('Use up and down keys to reorder.','אפשר להשתמש במקשי למעלה ולמטה לשינוי הסדר.')}</span></>
 }

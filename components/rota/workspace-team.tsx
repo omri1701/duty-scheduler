@@ -42,10 +42,11 @@ export function WorkspaceTeam({
         selfId={meId}
         readOnly={remote.readOnly||!isManager}
         team={state.team}
+        revision={remote.snapshot?.revision ?? 0}
         monthTotals={monthTotals}
         historyTotals={historyTotals}
         lang={lang}
-        onReorder={(team) => update((s) => ({ ...s, team }), false)}
+        onReorder={(team) => update((s) => ({ ...s, team }), false, false)}
         onActive={(id, active) => {
           update(
             (s) => ({ ...s, team: s.team.map((p) => (p.id === id ? { ...p, active } : p)) }),

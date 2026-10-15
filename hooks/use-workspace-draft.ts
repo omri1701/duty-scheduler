@@ -40,7 +40,7 @@ export function useWorkspaceDraft({
     [busy, setBusy] = useState(false);
   const [swap, setSwap] = useState<{ from: string; to: string } | null>(null),
     [swapOverride, setSwapOverride] = useState(false);
-  async function update(fn: (s: State) => State, draft = true) {
+  async function update(fn: (s: State) => State, draft = true, notifyError = true) {
     if (!isManager) return false;
     const s = state,
       n = prepareWorkspaceUpdate(s, fn(s), month, monthDetails, draft);
@@ -51,6 +51,7 @@ export function useWorkspaceDraft({
       await remote.save(n, published);
       return true;
     } catch (e) {
+      if (!notifyError) throw e;
       toast.error((e as Error).message);
       return false;
     }

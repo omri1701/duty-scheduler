@@ -311,7 +311,8 @@
  .team-explainer{font-size:13px;padding:12px;margin-bottom:16px}
  .team-row{display:grid;grid-template-columns:44px 28px minmax(0,1fr) 35px 35px;gap:6px;padding:12px 0}
  .team-row .avatar{display:inline-flex;width:28px;height:28px;font-size:10px}
- .team-grip{min-width:44px;min-height:44px;gap:0;flex-direction:column}
+ .team-grip{min-width:44px;min-height:44px;gap:2px;flex-direction:row;justify-content:center}
+ .team-grip svg{width:22px;height:22px;flex-shrink:0;stroke-width:2.25}
  .team-row .team-name{min-width:0}
  .team-name strong{font-size:14px;overflow-wrap:anywhere}
  .team-name small{font-size:11px}
