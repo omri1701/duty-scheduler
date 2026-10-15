@@ -184,11 +184,13 @@ for(const width of [320,375,390,430])test(`inline grip fits ${width}px in Englis
   await page.getByRole('tab').nth(2).click();
   const measurements=await rows(page).first().evaluate(el=>{
    const box=(selector:string)=>{const r=el.querySelector(selector)!.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};
-   return{handle:box('.team-grip'),icon:box('.team-grip svg'),rank:box('.team-grip span'),avatar:box('.avatar'),overflow:document.documentElement.scrollWidth>innerWidth};
+   const row=el.getBoundingClientRect();
+   return{row:{y:row.y,height:row.height},handle:box('.team-grip'),icon:box('.team-grip svg'),rank:box('.team-grip span'),avatar:box('.avatar'),overflow:document.documentElement.scrollWidth>innerWidth};
   });
-  const {handle,icon,rank,avatar}=measurements;
+  const {row,handle,icon,rank,avatar}=measurements;
   expect(handle.width).toBeGreaterThanOrEqual(44);expect(handle.height).toBeGreaterThanOrEqual(44);
-  expect(icon.width).toBe(22);expect(icon.y+icon.height/2).toBeCloseTo(rank.y+rank.height/2,1);
+  expect(icon.width).toBe(25);expect(Math.abs(handle.y+handle.height/2-(row.y+row.height/2))).toBeLessThanOrEqual(.5); // Bottom border contributes half a pixel.
+  expect(icon.y+icon.height/2).toBeCloseTo(rank.y+rank.height/2,1);
   expect(lang==='en'?icon.x<rank.x&&rank.x<avatar.x:icon.x>rank.x&&rank.x>avatar.x).toBe(true);
   expect(measurements.overflow).toBe(false);
   await page.screenshot({path:info.outputPath(`inline-grip-${width}-${lang}.png`),fullPage:true});

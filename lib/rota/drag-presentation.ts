@@ -33,6 +33,23 @@ export function dragPresentation(root: HTMLDivElement, source: HTMLElement, x: n
   const rows = reorder ? [...root.querySelectorAll<HTMLElement>('[data-gesture-key]')].map(el => ({el, rect: el.getBoundingClientRect()})) : [];
   const from = rows.findIndex(row => row.el === source);
   const ghost = source.cloneNode(true) as HTMLElement;
+  // cloneNode copies option attributes, not the select's live selected value.
+  // Replace native controls before mounting: the preview is only a picture of
+  // the current row, with no duplicate editable role or hidden checkbox input.
+  const controls = source.querySelectorAll<HTMLSelectElement | HTMLInputElement | HTMLTextAreaElement>('select,input,textarea');
+  ghost.querySelectorAll('select,input,textarea').forEach((clone, i) => {
+    const control = controls[i];
+    if (control instanceof HTMLInputElement && control.type === 'hidden') {clone.remove(); return;}
+    const value = document.createElement('span');
+    value.className = 'drag-control-value';
+    value.textContent = control instanceof HTMLSelectElement ? control.selectedOptions[0]?.textContent ?? '' : control.value;
+    const css = getComputedStyle(control);
+    for (const property of ['font','color','background-color','border','border-radius','padding','width','height','min-width','max-width','box-sizing','text-align']) {
+      value.style.setProperty(property, css.getPropertyValue(property));
+    }
+    value.style.display = 'inline-block';
+    clone.replaceWith(value);
+  });
   ghost.removeAttribute('id');
   ghost.removeAttribute('data-gesture-key');
   ghost.querySelectorAll('[id],[data-gesture-key]').forEach(el => {el.removeAttribute('id'); el.removeAttribute('data-gesture-key');});

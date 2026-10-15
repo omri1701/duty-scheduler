@@ -311,8 +311,9 @@ Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject yield
 `rejected`; requester Cancel in either pending state yields `cancelled`. Only final
 approval copies the current publication into a new immutable version. Availability
 conflicts added after creation can be acknowledged at consent but require an
-explicit admin override reason at approval. Weekend caps follow the draft-swap
-rule: a swap cannot increase an engineer's weekend count above one. Secondary
+explicit admin override reason at approval. Published swap requests retain their
+weekend cap: a swap cannot increase an engineer's weekend count above one. Draft
+swaps can instead explicitly approve weekend exceptions in the manager dialog. Secondary
 cover, special date points/spans, draft rows/status and historical versions remain
 intact. Constraint notes are never copied into requests.
 

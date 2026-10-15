@@ -137,7 +137,8 @@ export function applyConstraints(s:State,person:string,selected:string[],kind:'n
  for(const d of selected){if(kind==='clear'){delete c[d];delete notes[d];}else{c[d]=kind;if(note.trim())notes[d]=note.trim().slice(0,300);else delete notes[d];}}
  return {...s,constraints:{...s.constraints,[person]:c},constraintNotes:{...s.constraintNotes,[person]:notes}};
 }
-export type SwapResult = {ok:true;assignments:State['assignments'];conflicts:{person:string;date:string}[]}|{ok:false;reason:string;conflicts?:{person:string;date:string}[]};
+type SwapConflicts = {conflicts:{person:string;date:string}[];weekendConflicts:{person:string;count:number;month:string}[]};
+export type SwapResult = ({ok:true;assignments:State['assignments']} & SwapConflicts)|({ok:false;reason:string} & Partial<SwapConflicts>);
 export function swapDraft(s:State,month:string,from:string,to:string,allowOverride=false):SwapResult{
  if(s.months[month]?.status==='published')return{ok:false,reason:'published'};
  if(from===to)return{ok:false,reason:'same-duty'};
@@ -147,12 +148,17 @@ export function swapDraft(s:State,month:string,from:string,to:string,allowOverri
  if(!x?.primary||!y?.primary)return{ok:false,reason:'unassigned'};
  if(x.primary===y.primary)return{ok:false,reason:'same-person'};
  if(y.primary===x.secondary||x.primary===y.secondary)return{ok:false,reason:'duplicate'};
- if([x.primary,y.primary].some(id=>!s.team.some(p=>p.id===id&&p.active)))return{ok:false,reason:'inactive'};
- const changed=[{duty:a,assignment:{...x,primary:y.primary,override:undefined}},{duty:b,assignment:{...y,primary:x.primary,override:undefined}}];
+ if([x.primary,y.primary,x.secondary,y.secondary].filter(Boolean).some(id=>!s.team.some(p=>p.id===id&&p.active)))return{ok:false,reason:'inactive'};
+ const changed=[{duty:a,assignment:{...x,primary:y.primary}},{duty:b,assignment:{...y,primary:x.primary}}];
  const conflicts=changed.flatMap(({duty,assignment})=>[assignment.primary,assignment.secondary].filter((id):id is string=>!!id).flatMap(id=>unavailable(duty,id,s.constraints).map(date=>({person:id,date}))));
- if(conflicts.length&&!allowOverride)return{ok:false,reason:'availability',conflicts};
- const assignments={...s.assignments};for(const {duty,assignment} of changed)assignments[duty.id]={...assignment,override:conflicts.some(c=>duty.start<=c.date&&c.date<duty.end)?true:undefined};
+ const assignments={...s.assignments};for(const {duty,assignment} of changed)assignments[duty.id]=assignment;
  const counts=weekendCounts({...s,assignments},month),before=weekendCounts(s,month);
- if(Object.keys(counts).some(id=>counts[id]>1&&counts[id]>before[id]))return{ok:false,reason:'weekend-limit'};
- return{ok:true,assignments,conflicts};
+ const weekendConflicts=Object.keys(counts).filter(id=>counts[id]>1&&counts[id]>before[id]).map(person=>({person,count:counts[person],month}));
+ if(!allowOverride&&(conflicts.length||weekendConflicts.length))return{ok:false,reason:conflicts.length?'availability':'weekend-limit',conflicts,weekendConflicts};
+ for(const {duty,assignment} of changed){
+  const availability=conflicts.some(c=>duty.start<=c.date&&c.date<duty.end);
+  const weekend=duty.weekendId&&weekendConflicts.some(c=>c.person===assignment.primary||c.person===assignment.secondary);
+  assignments[duty.id]={...assignment,override:assignment.override||availability||weekend?true:undefined};
+ }
+ return{ok:true,assignments,conflicts,weekendConflicts};
 }

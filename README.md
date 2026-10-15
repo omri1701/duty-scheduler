@@ -99,7 +99,7 @@ and saves once. The dropped order stays visible until the server snapshot confir
 it; a newer external revision takes precedence. Failed saves return smoothly to
 the latest confirmed order and show an error. Reordering is locked until the save
 and reconciliation finish; profile details stay synchronized during that wait.
-Phone handles place larger dots and rank inline in a 44px touch target.
+Phone handles center 25px dots and the inline rank across the full row in a 44px touch target.
 Escape, touch/pointer cancellation or loss of the gesture
 restores the original stack. Arrow keys retain accessible seniority reordering.
 Feedback uses a feature-detected 8ms vibration, throttled to one per 80ms with
@@ -224,7 +224,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
-- Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates; availability conflicts need an explicit manager override. Swaps cannot create a second weekend for an engineer.
+- Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates. Availability conflicts and increased weekend counts above one require explicit manager approval in the draft swap dialog, which lists each affected engineer and resulting weekend count. One confirmation can approve both exceptions; approved assignments retain override metadata. Published swap requests keep their existing consent and approval rules.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action appears only when selected dates have a saved constraint or note. Descriptions appear on calendar dates.
 - Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.

@@ -48,8 +48,8 @@ export function useCalendarInteractions({
     ownPublishedDays.has(from) && eligibleSwapTarget(publishedDuty(from), publishedDuty(to));
   const draftTarget = (from: string, to: string) => {
     const result = swapDraft(state, month, from, to);
-    // Availability exceptions retain their existing manager review flow.
-    return result.ok || result.reason === 'availability';
+    // Policy exceptions open manager review; structural failures remain invalid.
+    return result.ok || result.reason === 'availability' || result.reason === 'weekend-limit';
   };
   function finishCalendarSwap(from: string, to: string) {
     if (requesting) {

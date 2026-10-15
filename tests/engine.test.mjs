@@ -59,6 +59,67 @@ test('special weekends remain separate daily duties even with the same owner',()
 test('migration keeps notes and assigns each old special day without retaining hidden locks',()=>{const s=demo();s.version=1;s.specials=[{id:'sp',title:'Holiday',start:'2026-10-05',end:'2026-10-07',extra:2}];s.assignments['2026-10-05']={primary:'e0',locked:true};s.constraintNotes={e0:{'2026-10-04':'Trip'}};const n=migrate(s);assert.equal(n.version,3);assert.equal(n.assignments['2026-10-06'].primary,'e0');assert.equal(n.assignments['2026-10-05'].locked,undefined);assert.deepEqual(n.constraintNotes,s.constraintNotes);assert.deepEqual(migrate(n),n);});
 test('swaps cannot create a second weekend for an engineer',()=>{const s=swapFixture();s.assignments['2026-10-09']={primary:'e0'};assert.equal(swapDraft(s,'2026-10','2026-10-01','2026-10-02').reason,'weekend-limit');});
 
+test('manager approval reports and persists second and third weekend exceptions with availability',()=>{
+ for(const existing of [1,2]){
+  const s=swapFixture();s.assignments['2026-10-09']={primary:'e0',override:true};
+  if(existing===2)s.assignments['2026-10-16']={primary:'e0',override:true};
+  s.constraints={e0:{'2026-10-03':'no'}};
+  const original=structuredClone(s),preview=swapDraft(s,'2026-10','2026-10-01','2026-10-02');
+  assert.equal(preview.ok,false);assert.deepEqual(preview.weekendConflicts,[{person:'e0',count:existing+1,month:'2026-10'}]);
+  assert.deepEqual(preview.conflicts,[{person:'e0',date:'2026-10-03'}]);
+  const approved=swapDraft(s,'2026-10','2026-10-01','2026-10-02',true);
+  assert.equal(approved.ok,true);assert.equal(weekendCounts({...s,assignments:approved.assignments},'2026-10').e0,existing+1);
+  assert.equal(approved.assignments['2026-10-02'].override,true);assert.deepEqual(approved.assignments['2026-10-09'],s.assignments['2026-10-09']);assert.deepEqual(s,original);
+ }
+});
+
+test('weekend-only approval marks the destination and retains existing assignment overrides',()=>{
+ const s=swapFixture();s.assignments['2026-10-09']={primary:'e0'};s.assignments['2026-10-01'].override=true;
+ const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02',true);
+ assert.ok(r.ok);assert.equal(r.assignments['2026-10-02'].override,true);assert.equal(r.assignments['2026-10-01'].override,true);
+ // Exchanging weekdays leaves an existing approved weekend count unchanged.
+ s.assignments['2026-10-02']={primary:'e0',override:true};s.assignments['2026-10-05']={primary:'e1'};
+ assert.ok(swapDraft(s,'2026-10','2026-10-01','2026-10-05').ok);
+});
+
+test('swap counts distinct split/special weekends including emergency cover and Friday month ownership',()=>{
+ const s=swapFixture();s.splitWeekends=['2026-10-02'];s.assignments['2026-10-03']={primary:'e0'};
+ assert.ok(swapDraft(s,'2026-10','2026-10-01','2026-10-02').ok); // Both halves still count once.
+ s.assignments['2026-10-09']={primary:'e3',secondary:'e0',override:true};
+ s.specials=[{id:'special',title:'Special',start:'2026-10-02',end:'2026-10-04',extra:2}];
+ const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02',true);assert.ok(r.ok);assert.deepEqual(r.weekendConflicts,[]);
+ // Same count: e0 already owned Oct 2 via Saturday, so no new approval is needed.
+ const boundary=demo();boundary.constraints={};boundary.months['2026-07']={status:'draft',deadline:'2026-07-01'};
+ boundary.splitWeekends=['2026-07-31'];boundary.assignments={'2026-07-24':{primary:'e0'},'2026-07-30':{primary:'e0'},'2026-08-01':{primary:'e1'}};
+ assert.deepEqual(swapDraft(boundary,'2026-07','2026-07-30','2026-08-01').weekendConflicts,[{person:'e0',count:2,month:'2026-07'}]);
+ assert.equal(swapDraft(boundary,'2026-08','2026-07-30','2026-08-01',true).reason,'other-month');
+});
+
+test('manager override cannot bypass structural swap failures',()=>{
+ for(const kind of ['published','other-month','unassigned','inactive','missing-primary','inactive-secondary','missing-secondary','duplicate','same-duty']){
+  const s=swapFixture();let from='2026-10-01',to='2026-10-02';
+  if(kind==='published')s.months['2026-10'].status='published';
+  if(kind==='other-month')to='invalid';
+  if(kind==='unassigned')s.assignments[to].primary='';
+  if(kind==='inactive')s.team[1].active=false;
+  if(kind==='missing-primary')s.assignments[to].primary='missing';
+  if(kind==='inactive-secondary')s.team[2].active=false;
+  if(kind==='missing-secondary')s.assignments[from].secondary='missing';
+  if(kind==='duplicate')s.assignments[from].secondary='e1';
+  if(kind==='same-duty')to=from;
+  assert.equal(swapDraft(s,'2026-10',from,to,true).ok,false,kind);
+ }
+});
+
+test('one approval reports both engineers when split weekend swaps increase both counts',()=>{
+ const s=demo();s.constraints={};s.splitWeekends=['2026-10-02','2026-10-09'];
+ s.assignments={'2026-10-02':{primary:'e0'},'2026-10-03':{primary:'e0'},'2026-10-09':{primary:'e1'},'2026-10-10':{primary:'e1'}};
+ const preview=swapDraft(s,'2026-10','2026-10-02','2026-10-09');
+ assert.deepEqual(preview.weekendConflicts,[{person:'e0',count:2,month:'2026-10'},{person:'e1',count:2,month:'2026-10'}]);
+ const approved=swapDraft(s,'2026-10','2026-10-02','2026-10-09',true);assert.ok(approved.ok);
+ assert.equal(approved.assignments['2026-10-02'].override,true);assert.equal(approved.assignments['2026-10-09'].override,true);
+});
+
 test('weekend editor expands a combined assignment and saves two distinct owners atomically',()=>{const s=demo();s.assignments['2026-10-02']={primary:'e0',secondary:'e2'};const [fri,sat]=weekendAssignments(s,'2026-10-02');assert.deepEqual(fri,sat);assert.notEqual(fri,sat);const next=setWeekendAssignments(s,'2026-10-02',{...fri,primary:'e1'},sat);assert.deepEqual(weekendAssignments(next,'2026-10-02'),[{primary:'e1',secondary:'e2'},{primary:'e0',secondary:'e2'}]);assert.equal(blocks('2026-10',[],next.splitWeekends).filter(b=>b.weekendId==='2026-10-02').length,2);assert.equal(s.assignments['2026-10-02'].primary,'e0');});
 test('weekend editor swaps half owners without merging the intermediate state, then can reunite them',()=>{let s=demo();s=setWeekendAssignments(s,'2026-07-31',{primary:'e0'},{primary:'e1'});s=setWeekendAssignments(s,'2026-07-31',{primary:'e1'},{primary:'e0'});assert.deepEqual(weekendAssignments(s,'2026-07-31').map(a=>a.primary),['e1','e0']);assert.equal(s.assignments['2026-08-01'].primary,'e0');s=setWeekendAssignments(s,'2026-07-31',{primary:'e1'},{primary:'e1'});assert.equal(s.splitWeekends.length,0);assert.equal(s.assignments['2026-08-01'],undefined);assert.deepEqual(weekendAssignments(s,'2026-07-31').map(a=>a.primary),['e1','e1']);});
 test('palette migration preserves version-two assignments, seniority, and publication status',()=>{const s=demo();s.version=2;s.months['2026-10'].status='published';s.assignments['2026-10-02']={primary:'e0'};s.team.reverse();const n=migrate(s);assert.equal(n.version,3);assert.deepEqual(n.assignments,s.assignments);assert.deepEqual(n.months,s.months);assert.deepEqual(n.team.map(p=>p.id),s.team.map(p=>p.id));assert.equal(new Set(n.team.map(p=>p.color)).size,12);assert.deepEqual(n.team.map(p=>p.color),COLORS);});
