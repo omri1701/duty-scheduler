@@ -67,9 +67,10 @@ and Supabase. Prioritize token efficiency while preserving correctness, security
 
 ## Verification and delivery
 
-- Application migrations/refactors must preserve `tests/browser` visual baselines
-  and unit regressions. Run `pnpm test:e2e:ci` after the build; see README for fixtures
-  and manual checks. Never regenerate snapshots to hide regressions.
+- Preserve visual/unit regressions; run `pnpm test:e2e:ci` after building.
+  UI redesigns require explained Old/New/Difference galleries and explicit baseline
+  approval (code-change-validation). Require green final Quality.
+  Never regenerate screenshots to hide regressions.
 
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
   Use deterministic scheduling seeds and documented invariants.
