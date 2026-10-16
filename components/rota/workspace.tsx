@@ -1,4 +1,6 @@
 'use client';
+import {MobileNavigation} from './mobile-navigation';
+import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
@@ -29,6 +31,25 @@ import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
 export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
+  const mobile = useMobileLayout();
+  useEffect(() => {
+    if (!mobile || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const sync = () => {
+      const inset = viewport.scale > 1 ? 0 : Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty('--keyboard-inset', `${inset}px`);
+      document.documentElement.classList.toggle('keyboard-open', inset > 150);
+    };
+    sync();
+    viewport.addEventListener('resize', sync);
+    viewport.addEventListener('scroll', sync);
+    return () => {
+      viewport.removeEventListener('resize', sync);
+      viewport.removeEventListener('scroll', sync);
+      document.documentElement.style.removeProperty('--keyboard-inset');
+      document.documentElement.classList.remove('keyboard-open');
+    };
+  }, [mobile]);
   const isManager = remote.isAdmin,
     meId = remote.user!.id;
   const [month, setMonth] = useState(monthNext(todayIsrael().slice(0, 7))),
@@ -241,9 +262,9 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
           </div>
         )}
         <fieldset disabled={!!remote?.saving} className="workspace-controls">
-          <Tabs value={tab} onValueChange={setTab} className="main-tabs">
+          <Tabs value={tab} onValueChange={setTab} className="main-tabs" dir={mobile ? (lang === 'he' ? 'rtl' : 'ltr') : undefined}>
             <div className="nav-row">
-              <TabsList variant="line">
+              {mobile ? <MobileNavigation value={tab} onChange={setTab} t={t} rtl={lang === 'he'} disabled={remote.saving}/> : <TabsList variant="line">
                 <TabsTrigger value="schedule">
                   <CalendarDays />
                   {t('Schedule', 'לוח תורנויות')}
@@ -252,11 +273,11 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
                   <SlidersHorizontal />
                   {t('Availability', 'אילוצים')}
                 </TabsTrigger>
-                <TabsTrigger value="team">
+                <TabsTrigger value="team" aria-label={t('Team & fairness', 'צוות והוגנות')}>
                   <Users />
-                  {t('Team & fairness', 'צוות והוגנות')}
+                  {mobile ? t('Team', 'צוות') : t('Team & fairness', 'צוות והוגנות')}
                 </TabsTrigger>
-              </TabsList>
+              </TabsList>}
               <span className="time-zone">09:00 → 09:00 · {t('Israel time', 'שעון ישראל')}</span>
             </div>
             <WorkspaceToolbar
@@ -385,6 +406,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
           month={month}
           lang={lang}
           onClose={() => setSelected(null)}
+          saving={remote.saving}
           onMonth={(m) => {
             setMonth(m);
             setSelected(null);

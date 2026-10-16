@@ -13,17 +13,22 @@ for(const {name,url,origin,badge} of [
   await openApp('signed-out');
   const indicator=page.locator('.environment-badge');
   if(badge)await expect(indicator).toHaveText(badge);else await expect(indicator).toHaveCount(0);
-  await expect(page.locator('.access-card')).toHaveScreenshot(`${name.replaceAll(' ','-')}-login.png`);
+  await expect.soft(page.locator('.access-card')).toHaveScreenshot(`${name.replaceAll(' ','-')}-login.png`);
   await openApp('admin');
   if(badge)await expect(indicator).toHaveText(badge);else await expect(indicator).toHaveCount(0);
-  await expect(page.locator('.topbar')).toHaveScreenshot(`${name.replaceAll(' ','-')}-workspace.png`);
+  await expect.soft(page.locator('.topbar')).toHaveScreenshot(`${name.replaceAll(' ','-')}-workspace.png`);
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   expect(overflow).toBe(false);
   if(badge==='PROD'){
    expect(backend.calls.every(c=>c.name==='duty_load')).toBe(true);
    await expect(page.getByRole('note')).toContainText('not database-enforced');
    await expect(page.getByRole('button',{name:'Regenerate',exact:true})).toBeDisabled();
-   await expect(page.getByRole('button',{name:'Change month deadline'})).toBeDisabled();
+   const actions=page.getByRole('button',{name:'Month actions'});
+   if(await actions.isVisible()){
+    await actions.click();
+    await expect(page.getByRole('menuitem',{name:'Change month deadline'})).toHaveAttribute('aria-disabled','true');
+    await page.keyboard.press('Escape');
+   }else await expect(page.getByRole('button',{name:'Change month deadline'})).toBeDisabled();
    await expect(duty(page,'2026-11-02')).toBeDisabled();
    await page.getByRole('button',{name:'My profile'}).click();
    await expect(page.getByRole('button',{name:'Save name'})).toBeDisabled();

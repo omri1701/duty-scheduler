@@ -61,7 +61,9 @@ export class Backend {
     if (name === 'duty_save_schedule') {
       expect(admin).toBe(true);
       if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
-      const state = p.p_state as {duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
+      const state = p.p_state as {team:{id:string;color:string;active:boolean}[];duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
+      state.team.forEach((member, seniority) => Object.assign(this.raw.members.find(m => m.id === member.id)!, member, {seniority}));
+      this.raw.members.sort((a,b) => a.seniority - b.seniority);
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
       this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {
@@ -190,6 +192,8 @@ export const test = base.extend<Fixtures>({
       await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
       return target;
     });
+    // Finish intercepted responses before Playwright disposes the page/request context.
+    await Promise.all([...attached].filter(target => !target.isClosed()).map(target => target.unrouteAll({behavior: 'wait'})));
     expect(errors, 'browser errors / unexpected RPC contract').toEqual([]);
     expect(unexpected, 'no external network access').toEqual([]);
   },
@@ -224,4 +228,14 @@ export async function touchEvent(page: Page, type: string, x: number, y: number)
     const touch = new Touch({identifier: 1, target, clientX: x, clientY: y});
     target.dispatchEvent(new TouchEvent(type, {bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [touch], changedTouches: [touch]}));
   }, {type, x, y});
+}
+
+export async function monthAction(page: Page, name: string) {
+  const menu = page.getByRole('button', {name: 'Month actions', exact: true});
+  if (await menu.isVisible()) {
+    await menu.click();
+    await page.getByRole('menuitem', {name, exact: true}).click();
+  } else {
+    await page.getByRole('button', {name, exact: true}).click();
+  }
 }

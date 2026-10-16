@@ -1,9 +1,10 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useHoldDrag } from '@/hooks/use-hold-drag';
+import { useMobileLayout } from '@/hooks/use-mobile-layout';
 import { publishedSwapDuties, eligibleSwapTarget } from '@/lib/supabase/swaps';
 import { todayIsrael } from '@/lib/supabase/snapshot';
-import { ownerMonth, type State, type Duty } from '@/lib/rota/engine';
+import { ownerMonth, swapDraft, type State, type Duty } from '@/lib/rota/engine';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import type { DutySelection } from '@/components/rota/workspace-types';
 
@@ -32,6 +33,7 @@ export function useCalendarInteractions({
   startSwap: (from: string, to: string) => void;
 }) {
   const meId = remote.user!.id;
+  const mobile = useMobileLayout();
   const [requestSelection, setRequestSelection] = useState<DutySelection | null>(null),
     [keyboardSource, setKeyboardSource] = useState<string | null>(null);
   const [dragFrom, setDragFrom] = useState<string | null>(null),
@@ -44,6 +46,11 @@ export function useCalendarInteractions({
   const publishedDuty = (day: string) => publishedDuties.find((d) => d.day === day);
   const requestTarget = (from: string, to: string) =>
     ownPublishedDays.has(from) && eligibleSwapTarget(publishedDuty(from), publishedDuty(to));
+  const draftTarget = (from: string, to: string) => {
+    const result = swapDraft(state, month, from, to);
+    // Policy exceptions open manager review; structural failures remain invalid.
+    return result.ok || result.reason === 'availability' || result.reason === 'weekend-limit';
+  };
   function finishCalendarSwap(from: string, to: string) {
     if (requesting) {
       if (requestTarget(from, to)) {
@@ -77,22 +84,23 @@ export function useCalendarInteractions({
           : !b || ownerMonth(b) !== month || !state.assignments[key]?.primary
       ) {
         dragSource.current = null;
-        return;
+        return false;
       }
       setKeyboardSource(null);
       dragSource.current = key;
       setDragFrom(key);
     },
     onMove: (key) => {
-      if (dragSource.current)
-        setDragOver(!requesting || requestTarget(dragSource.current, key) ? key : null);
+      const valid = !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
+      setDragOver(valid ? key : null);
+      return valid;
     },
     onEnd: (key) => {
       const source = dragSource.current;
       dragSource.current = null;
       setDragFrom(null);
       setDragOver(null);
-      if (source && key) finishCalendarSwap(source, key);
+      if (source && key && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
     },
     onCancel: () => {
       dragSource.current = null;

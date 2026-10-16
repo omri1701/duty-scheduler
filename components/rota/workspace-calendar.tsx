@@ -169,11 +169,11 @@ export function WorkspaceCalendar({
                   ? 'can-swap'
                   : '',
               ].join(' ')}
-              aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(b!.end) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
+              aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
-              <div className="date-line">
+              <div className={combined ? "date-line weekend-dates" : "date-line"}>
                 <span className="day-number">{Number(d.slice(-2))}</span>
-                {b?.weekendId && <span className="weekend-word">{t('WEEKEND', 'סופ״ש')}</span>}
+                {combined && <span className="day-number weekend-end">{Number(addDays(b!.end, -1).slice(-2))}</span>}
                 {b?.kind === 'special' && (
                   <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
                 )}

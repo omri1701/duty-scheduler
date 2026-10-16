@@ -10,6 +10,11 @@ description: "Deliver a Duty feature through a PR when the user explicitly autho
    Use code-change-validation and relevant specialized skills; reuse their results.
    Follow root routing for bounded reviewers when distinct scheduling/security risks justify them.
 3. Review the final diff and pass local checks selected by code-change-validation.
+   For substantial UI changes, follow its gallery/approval gate before baseline writes.
+   Record approved paths, reasons and the pre-update commit in the commit/PR so previous
+   designs remain recoverable. Remove task-created galleries, captures and helpers after
+   approval/validation; preserve existing artifacts and user files. Final Quality must
+   compare committed references before reporting delivery.
    Keep a compact list of completed checks and affected inputs; reuse successes.
    Stage only intended files, excluding local settings, credentials and unrelated changes.
 4. When authorized, make meaningful commits, push the feature branch and open a PR

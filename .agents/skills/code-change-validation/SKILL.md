@@ -9,6 +9,10 @@ description: "Select focused validation for Duty code/config changes, diff revie
    explicitly supplied base for PR reviews; do not assume a branch or fetch all
    history. Read README/package commands only if not already in context.
 2. Select checks by affected behavior:
+   - Visual UI: inspect Linux/Windows expected/actual/diff images yourself; fix regressions.
+     For substantial redesigns, provide a local HTML Old/New/Difference gallery with explanations
+     and its path. Obtain explicit approval before updating references; change only approved
+     paths and compare again.
    - Scheduling: use scheduling-regression and reuse its results.
    - Gestures: `node --test tests/gesture.test.mjs` plus a relevant browser check.
    - Snapshot conversion: `node --test tests/snapshot.test.mjs`.

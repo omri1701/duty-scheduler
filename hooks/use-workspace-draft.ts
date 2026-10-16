@@ -40,7 +40,12 @@ export function useWorkspaceDraft({
     [busy, setBusy] = useState(false);
   const [swap, setSwap] = useState<{ from: string; to: string } | null>(null),
     [swapOverride, setSwapOverride] = useState(false);
-  async function update(fn: (s: State) => State, draft = true) {
+  const [swapSaving, setSwapSaving] = useState(false);
+  function selectSwap(selection: typeof swap) {
+    setSwapOverride(false);
+    setSwap(selection);
+  }
+  async function update(fn: (s: State) => State, draft = true, notifyError = true) {
     if (!isManager) return false;
     const s = state,
       n = prepareWorkspaceUpdate(s, fn(s), month, monthDetails, draft);
@@ -51,6 +56,7 @@ export function useWorkspaceDraft({
       await remote.save(n, published);
       return true;
     } catch (e) {
+      if (!notifyError) throw e;
       toast.error((e as Error).message);
       return false;
     }
@@ -159,9 +165,8 @@ export function useWorkspaceDraft({
     );
   }
   function startSwap(from: string, to: string) {
-    if (from === to) return;
-    setSwapOverride(false);
-    setSwap({ from, to });
+    if (!isManager || swapSaving || from === to) return;
+    selectSwap({ from, to });
   }
   const swapPreview = swap ? swapDraft(state, month, swap.from, swap.to, swapOverride) : null;
   const swapReason = (reason: string) =>
@@ -181,21 +186,26 @@ export function useWorkspaceDraft({
       ),
       inactive: t('Choose active engineers.', 'יש לבחור מהנדסים פעילים.'),
       'weekend-limit': t(
-        'This would give an engineer a second weekend. Edit an assignment manually if an exception is needed.',
-        'ההחלפה תיצור סוף שבוע שני למהנדס. במקרה חריג יש לערוך שיבוץ ידנית.',
+        'This swap adds another weekend. Manager approval is required.',
+        'ההחלפה מוסיפה סוף שבוע נוסף. נדרש אישור מנהל.',
       ),
       availability: t('This swap conflicts with availability.', 'ההחלפה מתנגשת עם אילוצים.'),
     })[reason] ?? reason;
   async function confirmSwap() {
-    if (!swap) return;
+    if (!isManager || !swap || swapSaving) return;
     const result = swapDraft(state, month, swap.from, swap.to, swapOverride);
     if (!result.ok) {
       toast.error(swapReason(result.reason));
       return;
     }
-    if (!(await update((s) => ({ ...s, assignments: result.assignments })))) return;
-    setSwap(null);
-    toast.success(t('Duties swapped.', 'התורנויות הוחלפו.'));
+    setSwapSaving(true);
+    try {
+      if (!(await update((s) => ({ ...s, assignments: result.assignments })))) return;
+      selectSwap(null);
+      toast.success(t('Duties swapped.', 'התורנויות הוחלפו.'));
+    } finally {
+      setSwapSaving(false);
+    }
   }
   const saveDuty: (fn: Parameters<UpdateDraft>[0]) => Promise<void> = async (fn) => {
     if (!(await update(fn))) return;
@@ -249,7 +259,8 @@ export function useWorkspaceDraft({
     },
     swap: {
       selection: swap,
-      setSelection: setSwap,
+      setSelection: selectSwap,
+      saving: swapSaving,
       override: swapOverride,
       setOverride: setSwapOverride,
       preview: swapPreview,

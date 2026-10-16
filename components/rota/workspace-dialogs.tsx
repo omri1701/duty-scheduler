@@ -38,10 +38,11 @@ export function DraftSwapDialog({
     preview: swapPreview,
     reason: swapReason,
     confirm: confirmSwap,
+    saving,
   } = controller;
   return (
-    <Dialog open={!!swap} onOpenChange={(v) => !v && setSwap(null)}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
+    <Dialog open={!!swap} onOpenChange={(v) => !v && !saving && setSwap(null)}>
+      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving}>
         <DialogHeader>
           <DialogTitle>{t('Swap duties', 'החלפת תורנויות')}</DialogTitle>
           <DialogDescription>
@@ -74,26 +75,34 @@ export function DraftSwapDialog({
                 );
               })}
             </div>
-            {swapPreview && !swapPreview.ok && (
+            {swapPreview && !swapPreview.ok && !swapPreview.conflicts?.length && !swapPreview.weekendConflicts?.length && (
               <div className="warning-note">{swapReason(swapPreview.reason)}</div>
             )}
-            {!!swapPreview?.conflicts?.length && (
+            {!!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length) && (
               <div className="warning-note">
-                <p>
+                {!!swapPreview?.conflicts?.length && <p>
+                  {t('Availability conflicts: ', 'התנגשות עם אילוצים: ')}
                   {swapPreview.conflicts
                     .map(
                       (c) =>
                         `${personName(c.person)} · ${fmt(c.date)}${state.constraintNotes?.[c.person]?.[c.date] ? ' · ' + state.constraintNotes[c.person][c.date] : ''}`,
                     )
                     .join(' / ')}
-                </p>
-                <label className="check-label">
-                  <Checkbox checked={swapOverride} onCheckedChange={(v) => setSwapOverride(!!v)} />
-                  {t('Override these constraints as manager', 'חריגה מאילוצים בהחלטת מנהל')}
+                </p>}
+                {swapPreview?.weekendConflicts?.map(c => {
+                  const monthLabel = new Intl.DateTimeFormat(lang === 'he' ? 'he-IL' : 'en-GB', {month:'long',timeZone:'UTC'}).format(new Date(c.month + '-01T12:00:00Z'));
+                  return <p key={c.person}>{t(
+                    `This swap gives ${personName(c.person)} ${c.count} weekends in ${monthLabel}. Approve exception?`,
+                    `ההחלפה נותנת ל${personName(c.person)} ${c.count} סופי שבוע בחודש ${monthLabel}. לאשר חריגה?`,
+                  )}</p>;
+                })}
+                <label className="check-label manager-override">
+                  <Checkbox disabled={saving} checked={swapOverride} onCheckedChange={(v) => setSwapOverride(!!v)} />
+                  {t('Approve these exceptions as manager', 'אישור החריגות כמנהל')}
                 </label>
               </div>
             )}
-            <Button disabled={!swapPreview?.ok} onClick={confirmSwap}>
+            <Button disabled={saving || !swapPreview?.ok} onClick={confirmSwap}>
               {t('Confirm swap', 'אישור החלפה')}
             </Button>
           </>
