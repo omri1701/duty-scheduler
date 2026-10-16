@@ -46,7 +46,7 @@ test('local password form authenticates and opens the real workspace controller'
  await page.getByLabel('Password',{exact:true}).fill('synthetic-password');
  await page.getByRole('button',{name:'Sign in locally'}).click();
  await expect(page.getByRole('tab',{name:'Schedule',exact:true})).toBeVisible();
- expect(backend.calls.map(c=>c.name)).toEqual(['duty_join','duty_load']);
+ expect(backend.calls.map(c=>c.name)).toEqual(['duty_load']);
 });
 
 test('unknown and mismatched project configuration cannot offer login or enter the workspace',async({page,openApp,backend})=>{

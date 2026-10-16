@@ -50,6 +50,12 @@ restore data after sign-out. Refreshes during a save share its final reload, and
 mutations use the last accepted snapshot revision through the typed checked RPC
 surface in `lib/supabase/rpc.ts`. Snapshot validation/conversion remains pure;
 synthetic Node regressions cover session, refresh/save and failed-recovery races.
+Startup shares one server-backed user verification across restoration events and
+overlaps it with an RLS-protected read using the same captured token. The snapshot
+stays unpublished until verification succeeds for the current identity. Existing
+members (including pending/inactive accounts) skip registration; missing profiles
+use the checked join RPC and reload. Focus/visibility events share revalidation
+and refresh work; visible tabs still poll workspace data every 30 seconds.
 
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
@@ -245,7 +251,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates. Availability conflicts and increased weekend counts above one require explicit manager approval in the draft swap dialog, which lists each affected engineer and resulting weekend count. One confirmation can approve both exceptions; approved assignments retain override metadata. Published swap requests keep their existing consent and approval rules.
-- Manual weekend editor: separate Friday and Saturday engineer fields. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
+- Manual weekend editor: separate Friday and Saturday engineer fields. Its displayed range labels Friday–Saturday, including cross-month weekends; the actual duty period still ends Sunday at 09:00. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action appears only when selected dates have a saved constraint or note. Descriptions appear on calendar dates.
 - Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.
 - Distinct pastel engineer colors with contrasting text, compact dates, and no repeated duty times. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.

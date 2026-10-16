@@ -51,3 +51,48 @@ test('save reload wins over a delayed older refresh and supplies the next revisi
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(backend.calls.filter(c => c.name === 'duty_rename_self').map(c => c.params.p_revision)).toEqual([1, 2]);
 });
+
+test('restored private data waits for verified auth and skips registration', async ({page,openApp,backend}) => {
+  const held=gate(),started=gate();let verifications=0;
+  backend.authGate=held.wait;
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/auth/v1/user'){verifications++;started.release();}});
+  const loaded=page.waitForResponse('**/rest/v1/rpc/duty_load');
+  const opening=openApp();
+  try {
+    await started.wait;
+    await loaded;
+    await expect(page.locator('.calendar-grid')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'My profile'})).toHaveCount(0);
+    expect(backend.calls.filter(c=>c.name==='duty_join')).toHaveLength(0);
+  } finally {held.release();}
+  await opening;await expect(page.locator('.calendar-grid')).toBeVisible();
+  expect(verifications).toBe(1);expect(backend.calls.filter(c=>c.name==='duty_load')).toHaveLength(1);
+});
+
+test('focus and visibility share auth revalidation and one workspace load', async ({page,openApp,backend}) => {
+  await openApp();const before=backend.calls.filter(c=>c.name==='duty_load').length;
+  const held=gate(),started=gate();let verifications=0;
+  await page.route('**/auth/v1/user',async route=>{verifications++;started.release();await held.wait;await route.fallback();});
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new Event('visibilitychange'));});
+  await started.wait;
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.dispatchEvent(new Event('visibilitychange'));});
+  const loaded=page.waitForResponse('**/rest/v1/rpc/duty_load');held.release();await loaded;
+  await expect.poll(()=>backend.calls.filter(c=>c.name==='duty_load').length).toBe(before+1);
+  expect(verifications).toBe(1);
+});
+
+for(const identity of ['pending','inactive'] as const) {
+  test(`${identity} restored members do not register again`,async({page,openApp,backend})=>{
+    await openApp(identity);expect(backend.calls.map(c=>c.name)).toEqual(['duty_load']);
+    await expect(page.locator('.calendar-grid')).toHaveCount(0);
+  });
+}
+
+test('a missing profile registers once and remains pending without private workspace data',async({page,openApp,backend})=>{
+  backend.raw.members=backend.raw.members.filter(member=>member.id!==ids.pending);
+  await openApp('pending');
+  await expect(page.getByRole('heading',{name:'Waiting for approval'})).toBeVisible();
+  await expect(page.locator('.calendar-grid')).toHaveCount(0);
+  expect(backend.calls.map(c=>c.name)).toEqual(['duty_load','duty_join','duty_load']);
+  expect(backend.raw.members.find(member=>member.id===ids.pending)).toMatchObject({status:'pending',active:false,role:'engineer'});
+});

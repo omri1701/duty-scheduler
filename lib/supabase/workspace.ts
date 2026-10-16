@@ -1,9 +1,17 @@
-import type {User} from '@supabase/supabase-js';
+import type {Session, User} from '@supabase/supabase-js';
 import {readSnapshot, type Snapshot} from './snapshot.ts';
 import {errorMessage, type DutyClient, type Functions, type MutationArgs, type MutationName} from './rpc.ts';
 import {assertWritable, isReadOnly} from './write-policy.ts';
 
-type Scope = {client: DutyClient; id: string; snapshot: Snapshot | null; request: number; joining: Promise<void>; save: Promise<unknown> | null};
+type Scope = {client: DutyClient; id: string; snapshot: Snapshot | null; request: number; bootstrap: Promise<void> | null; read: {sequence: number; promise: Promise<void>} | null; save: Promise<unknown> | null};
+
+async function read(client: DutyClient, token?: string) {
+  const request = client.rpc('duty_load');
+  if (token) request.setHeader('Authorization', `Bearer ${token}`);
+  const {data, error} = await request;
+  if (error) throw error;
+  return readSnapshot(data);
+}
 
 // Each identity owns its requests, snapshot and save lock. Replacing the scope
 // prevents old completions (including finally/catch) from touching a new session.
@@ -20,10 +28,8 @@ export function createWorkspace(callbacks: {
   async function load(current: Scope) {
     const seq = ++current.request;
     try {
-      const {data, error} = await current.client.rpc('duty_load');
+      const snapshot = await read(current.client);
       if (scope !== current || seq !== current.request) return;
-      if (error) throw error;
-      const snapshot = readSnapshot(data);
       current.snapshot = snapshot; callbacks.snapshot(snapshot);
     } catch (error) {
       if (scope === current && seq === current.request) throw error;
@@ -32,30 +38,53 @@ export function createWorkspace(callbacks: {
   async function refresh() {
     const current = scope;
     if (!current) return;
+    // Give a save dispatched in this turn ownership of its final reload.
+    await Promise.resolve();
+    if (scope !== current) return;
     // The save owns its final reload. A competing read must not publish an
     // intermediate revision or supersede that reload.
     const pendingSave = current.save;
     if (pendingSave) {await pendingSave.catch(() => {}); return;}
-    try {await current.joining;}
-    catch (error) {if (scope === current) throw error; return;}
-    if (scope !== current) return;
-    if (current.save) {await current.save.catch(() => {}); return;}
-    await load(current);
+    if (current.bootstrap) {
+      try {await current.bootstrap;}
+      catch (error) {if (scope === current) throw error;}
+      return;
+    }
+    if (current.read?.sequence === current.request) {await current.read.promise; return;}
+    const promise = load(current), sequence = current.request;
+    current.read = {sequence, promise};
+    try {await promise;}
+    finally {if (current.read?.promise === promise) current.read = null;}
   }
-  async function connect(client: DutyClient, user: User) {
+  async function prepare(client: DutyClient, session: Session) {
+    if (scope?.client === client && scope.id === session.user.id) return undefined;
+    // Only the session observer commits this result after verifying the same token.
+    return read(client, session.access_token);
+  }
+  async function connect(client: DutyClient, user: User, initial?: Snapshot) {
     if (scope?.client !== client || scope.id !== user.id) {
       clear();
-      const current: Scope = {client, id: user.id, snapshot: null, request: 0, joining: Promise.resolve(), save: null};
+      const current: Scope = {client, id: user.id, snapshot: null, request: 0, bootstrap: null, read: null, save: null};
       scope = current;
       const name = String(user.user_metadata?.full_name ?? user.email?.split('@')[0] ?? 'Engineer');
-      current.joining = (async () => {
-        if (isReadOnly(client)) return;
-        assertWritable(client);
-        const {error} = await client.rpc('duty_join', {p_name: name});
-        if (scope === current && error) throw error;
+      current.bootstrap = (async () => {
+        let snapshot = initial ?? await read(client);
+        if (scope !== current) return;
+        // Presence, not approval/revision, distinguishes registration. Pending,
+        // rejected and inactive members already have their own RLS-visible row.
+        if (!snapshot.members.some(member => member.id === user.id) && !isReadOnly(client)) {
+          assertWritable(client);
+          const {error} = await client.rpc('duty_join', {p_name: name});
+          if (scope !== current) return;
+          if (error) throw error;
+          snapshot = await read(client);
+          if (scope !== current) return;
+        }
+        current.snapshot = snapshot; callbacks.snapshot(snapshot);
       })();
-      try {await refresh();}
+      try {await current.bootstrap;}
       catch (error) {if (scope === current) {clear(); throw error;}}
+      finally {current.bootstrap = null;}
     } else await refresh();
   }
   function mutate<N extends MutationName>(name: N, args: MutationArgs<N>): Promise<Functions[N]['Returns']> {
@@ -87,5 +116,5 @@ export function createWorkspace(callbacks: {
     current.save = save;
     return save;
   }
-  return {connect, clear, refresh, mutate, isSaving: () => !!scope?.save};
+  return {connect, prepare, clear, refresh, mutate, isSaving: () => !!scope?.save};
 }

@@ -8,6 +8,39 @@ async function centered(page:Page,dialog:Locator){
  expect(box.x).toBeGreaterThanOrEqual(12);expect(box.y).toBeGreaterThan(0);
 }
 
+for(const lang of ['en','he'] as const)for(const weekend of [
+ {friday:'2026-11-06',sunday:'2026-11-08',previous:0,en:'6 Nov – 7 Nov · Friday–Saturday',he:'6 בנוב׳ – 7 בנוב׳ · שישי–שבת'},
+ {friday:'2026-07-31',sunday:'2026-08-02',previous:4,en:'31 Jul – 1 Aug · Friday–Saturday',he:'31 ביולי – 1 באוג׳ · שישי–שבת'},
+])test(`weekend editor shows Friday and Saturday ${lang} ${weekend.friday}`,async({page,openApp,backend},info)=>{
+ if(weekend.previous){
+  backend.raw.months.push({month:'2026-07',deadline:'2026-06-24',status:'draft',generated:true,current_publication_id:null,publication_sequence:0});
+  backend.raw.assignments.push({id:'boundary-weekend',publication_id:null,day:weekend.friday,end_day:weekend.sunday,primary_id:ids.admin,secondary_id:ids.c,manager_override:false,title:'',extra_points:0,points:1});
+ }
+ const original=backend.raw.assignments.find(row=>row.day===weekend.friday&&row.publication_id===null)!;
+ await openApp();
+ for(let i=0;i<weekend.previous;i++)await page.getByRole('button',{name:'Previous month',exact:true}).click();
+ if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ await duty(page,weekend.friday).click();
+ const dialog=page.getByRole('dialog'),description=dialog.locator('[data-slot="dialog-description"]');
+ await expect(dialog).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
+ await expect(description).toHaveText(weekend[lang]);
+ await expect(dialog.getByRole('combobox',{name:lang==='en'?'Friday primary engineer':'מהנדס ראשי ביום שישי',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('combobox',{name:lang==='en'?'Saturday engineer':'מהנדס ביום שבת',exact:true})).toBeVisible();
+ await dialog.screenshot({path:info.outputPath(`weekend-${lang}.png`)});
+ await dialog.getByRole('button',{name:lang==='en'?'Save assignment':'שמירת השיבוץ',exact:true}).click();
+ await expect(dialog).toBeHidden();
+ expect(backend.raw.assignments.find(row=>row.day===weekend.friday&&row.publication_id===null)).toMatchObject({
+  end_day:weekend.sunday,primary_id:original.primary_id,secondary_id:original.secondary_id,points:1,extra_points:0,title:'',
+ });
+ expect(backend.calls.filter(call=>call.name==='duty_save_schedule')).toHaveLength(1);
+ if(weekend.previous){
+  await page.getByRole('button',{name:lang==='en'?'Next month':'חודש הבא',exact:true}).click();
+  await duty(page,weekend.friday).click();
+  await expect(description).toHaveText(weekend[lang]);
+  await expect(dialog.getByRole('button',{name:lang==='en'?'Open month':'פתיחת החודש',exact:true})).toBeVisible();
+ }
+});
+
 test('duty modal dismisses local edits, keeps nested selects open, restores focus and locks pending saves',async({page,openApp,backend},info)=>{
  await openApp();
  const cell=duty(page,'2026-11-02'),dialog=page.getByRole('dialog',{name:'Edit duty',exact:true});
