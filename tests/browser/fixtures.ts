@@ -34,6 +34,7 @@ export class Backend {
   runtimeOrigin?: string;
   raw = seed();
   calls: Call[] = [];
+  authGate?: Promise<void>;
   invalidated = false;
   failNextSave = false;
   googleEnabled = false;
@@ -41,7 +42,7 @@ export class Backend {
   snapshot(user: string) {
     const raw = structuredClone(this.raw), admin = canManage(raw, user);
     const member = raw.members.find(m => m.id === user)!;
-    if (member.status !== 'approved' || !member.active) return {...raw, revision: null, members: [member], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
+    if (!member || member.status !== 'approved' || !member.active) return {...raw, revision: null, members: member ? [member] : [], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
     if (!admin) {
       raw.members = raw.members.filter(m => m.status === 'approved');
       raw.constraints = raw.constraints.filter(c => c.member_id === user);
@@ -54,7 +55,14 @@ export class Backend {
   }
   rpc(name: string, p: Record<string, unknown>, user: string) {
     this.calls.push({name, params: p, user});
-    if (name === 'duty_join') return null;
+    if (name === 'duty_join') {
+      if (!this.raw.members.some(m=>m.id===user)) {
+        const member=seed().members.find(m=>m.id===user);
+        if (!member) throw Error('Unknown synthetic identity');
+        this.raw.members.push({...member,name:String(p.p_name),role:'engineer',status:'pending',active:false});
+      }
+      return null;
+    }
     if (name === 'duty_load') return this.snapshot(user);
     expect(p.p_revision).toBe(this.raw.revision);
     const admin = canManage(this.raw, user);
@@ -168,7 +176,7 @@ export const test = base.extend<Fixtures>({
             backend.oauthRequests.push(url);
             return route.fulfill({contentType: 'text/html', body: '<h1>Synthetic OAuth handoff</h1>'});
           }
-          if (url.pathname === '/auth/v1/user') return route.fulfill({json: user});
+          if (url.pathname === '/auth/v1/user') {await backend.authGate; return route.fulfill({json: user});}
           if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) {
             user={...user,id:ids.admin,email:'admin@duty.local'};
             return route.fulfill({json:{access_token:token,refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});

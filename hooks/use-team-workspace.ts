@@ -27,7 +27,8 @@ export function useTeamWorkspace(){
     setEnvironment(await getEnvironment());
     unsubscribe=observeSession(c,{
      clear:()=>{workspace.clear();setUser(null)},
-     user:async u=>{setUser(u);await workspace.connect(c,u)},
+     prepare:s=>workspace.prepare(c,s),
+     user:async (u,initial)=>{setUser(u);await workspace.connect(c,u,initial)},
      error:e=>setError(errorMessage(e,'Could not load the team. Please try again.')),
      ready:()=>setLoading(false),
     });
@@ -40,8 +41,8 @@ export function useTeamWorkspace(){
   if(!client||!user)return;
   let alive=true;
   const poll=()=>{if(document.visibilityState==='visible'&&!workspace.isSaving())workspace.refresh().catch(e=>{if(alive)setError(errorMessage(e,'Could not refresh the team. Please try again.'))})};
-  const timer=setInterval(poll,30000);window.addEventListener('focus',poll);
-  return()=>{alive=false;clearInterval(timer);window.removeEventListener('focus',poll)};
+  const timer=setInterval(poll,30000);
+  return()=>{alive=false;clearInterval(timer)};
  },[client,user,workspace]);
  const me=snapshot?.members.find(m=>m.id===user?.id);
  return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
