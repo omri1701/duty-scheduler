@@ -2,11 +2,12 @@
 import {BrandContent,WorkspaceHeader,WorkspaceFooter} from './workspace-frame';
 import {initialCalendarMonth,calendarMonthLabel} from '@/lib/rota/calendar-dates';
 import {MobileNavigation} from './mobile-navigation';
+import {navigationItems,NavigationLabel} from './navigation-presentation';
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
-import { CalendarDays, Users, SlidersHorizontal, Info, Globe } from 'lucide-react';
+import { Info, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { DutyEditor } from '@/components/rota/duty-editor';
@@ -252,18 +253,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           <Tabs value={tab} onValueChange={setTab} className="main-tabs" dir={mobile ? (lang === 'he' ? 'rtl' : 'ltr') : undefined}>
             <div className="nav-row">
               {mobile ? <MobileNavigation value={tab} onChange={setTab} t={t} rtl={lang === 'he'} disabled={remote.saving}/> : <TabsList variant="line">
-                <TabsTrigger value="schedule">
-                  <CalendarDays />
-                  {t('Schedule', 'לוח תורנויות')}
-                </TabsTrigger>
-                <TabsTrigger value="availability">
-                  <SlidersHorizontal />
-                  {t('Availability', 'אילוצים')}
-                </TabsTrigger>
-                <TabsTrigger value="team" aria-label={t('Team & fairness', 'צוות והוגנות')}>
-                  <Users />
-                  {mobile ? t('Team', 'צוות') : t('Team & fairness', 'צוות והוגנות')}
-                </TabsTrigger>
+                {navigationItems(t).map(item=><TabsTrigger key={item.value} value={item.value} aria-label={item.label}><NavigationLabel item={item}/></TabsTrigger>)}
               </TabsList>}
               <span className="time-zone">09:00 → 09:00 · {t('Israel time', 'שעון ישראל')}</span>
             </div>

@@ -1,4 +1,4 @@
-import {CalendarDateLine, CalendarSurface} from './calendar-presentation';
+import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import { Plus, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -67,25 +67,7 @@ export function WorkspaceCalendar({
   } = interactions;
   return (
     <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
-        <div className="segmented">
-          <button
-            className={view === 'team' ? 'selected' : ''}
-            onClick={() => {
-              setView('team');
-              setKeyboardSource(null);
-            }}
-          >
-            {t('Whole team', 'כל הצוות')}
-          </button>
-          <button
-            className={view === 'me' ? 'selected' : ''}
-            onClick={() => {
-              setView('me');
-              setKeyboardSource(null);
-            }}
-          >
-            {t('My duties', 'התורנויות שלי')}
-          </button>
+        <CalendarFilters t={t} value={view} onChange={next=>{setView(next);setKeyboardSource(null)}}>
           {isManager && publication && (
             <button
               className={view === 'published' ? 'selected' : ''}
@@ -97,7 +79,7 @@ export function WorkspaceCalendar({
               {t('Published', '\u05e4\u05d5\u05e8\u05e1\u05dd')}
             </button>
           )}
-        </div>
+        </CalendarFilters>
         <Button
           style={{ display: isManager && !requesting ? undefined : 'none' }}
           variant="ghost"
@@ -174,13 +156,11 @@ export function WorkspaceCalendar({
         {calendarCells(dateCells, calendarBlocks).map(({date:d, period:b, combined}) => {
           const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
-            inside = d.startsWith(month),
             mine = a?.primary === meId || a?.secondary === meId;
           return (
-            <button
+            <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
               disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
               key={d}
-              data-date={d}
               data-gesture-key={b?.id}
               onClick={() => {
                 if (!ignoreDragClick() && b) selectCalendarDuty(b);
@@ -192,13 +172,7 @@ export function WorkspaceCalendar({
               }}
               aria-pressed={requesting && keyboardSource === b?.id}
               aria-describedby={requesting ? 'published-swap-help' : undefined}
-              style={combined ? { gridColumn: 'span 2' } : undefined}
               className={[
-                'day-cell',
-                !inside ? 'outside' : '',
-                b?.weekendId ? 'weekend' : '',
-                combined ? 'combined-weekend' : '',
-                b?.kind === 'special' ? 'special' : '',
                 view === 'me' && !mine ? 'faded' : '',
                 dragFrom === b?.id || keyboardSource === b?.id ? 'drag-source' : '',
                 (dragOver === b?.id && dragFrom !== b?.id) ||
@@ -222,8 +196,8 @@ export function WorkspaceCalendar({
               </CalendarDateLine>
               {b && (
                 <>
-                  <div
-                    className={'assignment-chip ' + (!p ? 'empty-assignment' : '')}
+                  <CalendarAssignment
+                    className={!p ? 'empty-assignment' : ''}
                     style={
                       p
                         ? {
@@ -242,7 +216,7 @@ export function WorkspaceCalendar({
                     ) : (
                       <span>{t('Unassigned', 'ללא שיבוץ')}</span>
                     )}
-                  </div>
+                  </CalendarAssignment>
                   {b.title && <div className="special-title">{b.title}</div>}
                   {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
                   {ownPublishedDays.has(b.id) && requesting && (
@@ -250,7 +224,7 @@ export function WorkspaceCalendar({
                   )}
                 </>
               )}
-            </button>
+            </CalendarDay>
           );
         })}
       </CalendarSurface>

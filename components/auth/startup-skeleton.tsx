@@ -1,12 +1,12 @@
 'use client';
 import {useSyncExternalStore} from 'react';
-import {CalendarDays,SlidersHorizontal,Users,Globe,Info,ArrowRight} from 'lucide-react';
+import {CalendarDays,Globe,Info,ArrowRight} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {tabsListVariants,tabsTriggerStyles} from '@/components/ui/tabs-styles';
+import {LoadingNavigation} from '@/components/rota/navigation-presentation';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
 import type {Environment} from '@/lib/supabase/environment';
 import {addDays,initialCalendarMonth,publicCalendarCells,calendarMonthLabel} from '@/lib/rota/calendar-dates';
-import {CalendarDateLine,CalendarSurface} from '@/components/rota/calendar-presentation';
+import {CalendarDateLine,CalendarSurface,CalendarDay,CalendarAssignment,CalendarFilters} from '@/components/rota/calendar-presentation';
 import {MonthHeading} from '@/components/rota/month-heading';
 import {BrandContent,WorkspaceHeader,WorkspaceFooter} from '@/components/rota/workspace-frame';
 
@@ -34,23 +34,18 @@ export function StartupSkeleton({lang,environment}:{lang:'en'|'he';environment:E
         <div className="workspace-controls">
           <div className="main-tabs group/tabs flex flex-col gap-2 skeleton-tabs" data-orientation="horizontal">
             <div className="nav-row">
-              <div className="mobile-navigation">
-                <div className={tabsListVariants({variant:'line'})} data-slot="tabs-list" data-variant="line">
-                  {[[CalendarDays,t('Schedule','לוח תורנויות')],[SlidersHorizontal,t('Availability','אילוצים')],[Users,t('Team & fairness','צוות והוגנות')]].map(([Icon,label],i)=>{
-                    const Glyph=Icon as typeof CalendarDays;
-                    return <button disabled key={i} className={tabsTriggerStyles} data-slot="tabs-trigger" data-state={i===0?'active':'inactive'}><Glyph/><span className={i===2?'skeleton-team-label':undefined}>{label as string}</span>{i===2&&<span className="skeleton-phone-team-label">{t('Team','צוות')}</span>}</button>;
-                  })}
-                </div>
-              </div>
+              <LoadingNavigation t={t} rtl={lang==='he'}/>
               <span className="time-zone">09:00 → 09:00 · {t('Israel time','שעון ישראל')}</span>
             </div>
             <div className="month-toolbar"><MonthHeading label={month?calendarMonthLabel(month,lang):''} t={t} loading/><div className="toolbar-actions"/></div>
             <div className="workspace-grid">
-              <CalendarSurface lang={lang} gridClassName="skeleton-grid" footer={<> <span><span className="legend-box"/>{t('Weekend = 1 point · Split = ½ each','סופ״ש = נקודה · חצי לכל יום בפיצול')}</span><span><span className="legend-box special-legend"/>{t('Special block','מקטע מיוחד')}</span><span className="skeleton-content">{t('Tap to edit · Hold & drag to swap','לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}</span> </>} toolbar={<><div className="segmented"><button disabled className="selected skeleton-content">{t('Whole team','כל הצוות')}</button><button disabled className="skeleton-content">{t('My duties','התורנויות שלי')}</button></div></>}>
-                  {month&&publicCalendarCells(month).map(({date,period,combined})=><button disabled key={date} data-date={date} className={['day-cell',!date.startsWith(month)?'outside':'',combined?'weekend combined-weekend':''].join(' ')} style={combined?{gridColumn:'span 2'}:undefined}>
+              <CalendarSurface lang={lang} gridClassName="skeleton-grid" footer={<> <span><span className="legend-box"/>{t('Weekend = 1 point · Split = ½ each','סופ״ש = נקודה · חצי לכל יום בפיצול')}</span><span><span className="legend-box special-legend"/>{t('Special block','מקטע מיוחד')}</span><span className="skeleton-content">{t('Tap to edit · Hold & drag to swap','לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}</span> </>} toolbar={<CalendarFilters t={t} loading/>}>
+
+                  {month&&publicCalendarCells(month).map(({date,period,combined})=><CalendarDay disabled key={date} date={date} month={month} combined={combined} weekend={combined}>
+
                     <CalendarDateLine date={date} end={combined?addDays(period!.end,-1):undefined} loading/>
-                    {(date.startsWith(month)||combined)&&<div className="assignment-chip skeleton-content"><span>—</span></div>}
-                  </button>)}
+                    {(date.startsWith(month)||combined)&&<CalendarAssignment loading/>}
+                  </CalendarDay>)}
 
               </CalendarSurface>
               <aside className="side-panel">

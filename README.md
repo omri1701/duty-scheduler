@@ -70,7 +70,10 @@ workspace. Language stays consistent through account changes. There is no minimu
 loading time or shimmer. Only placeholder content pulses on a smooth two-second
 cycle; Reduce Motion disables that pulse and the brief calendar opacity transition.
 Both screens use the same calendar surface (panel, toolbar, weekday row, grid
-and footer), date-line markup, header, footer and month-heading components.
+and footer), day-cell, assignment-chip, filter, date-line, header, footer and
+month-heading components. Loading and interactive navigation share the pill,
+indicator, tab definitions and styles; the loading version has no gesture handlers
+or Radix controls. Inner geometry regressions enforce this shared structure.
 
 Before verification, the shell has no manager-only actions. Unknown publication
 status, private split weekends/special blocks, assignment text and team size can
@@ -127,6 +130,17 @@ notes will be cleared. Removing notes also requires confirmation. Canceling the
 confirmation keeps the editor and existing data; confirmed replacement uses the
 existing atomic RPC. Single-date editing prefills existing descriptions.
 The floating glass navigation supports tapping and horizontal finger sliding.
+Its shared CSS tracks keep equal inner insets and concentric corners in all three
+positions. One responsive gutter places the pill equally far from the left,
+right and bottom safe edges; iPhone home-indicator space is added separately.
+Horizontal intent captures the pointer and retains the original grab position,
+including far above/below the pill. Indicator movement is written once per frame
+without rendering the workspace. A non-passive touch guard prevents native
+panning only after horizontal intent; vertical-first scrolling stays native.
+Release settles to the nearest track; cancellation, lost pill capture, Escape,
+blur, resize or unmount restore the current selection. Reduced Motion disables
+settling animation and haptics. Chromium native-touch tests and iPhone WebKit
+emulation exercise the interaction; actual-device fluidity still needs review.
 Combined weekends show both dates in their daily columns, with one assignment.
 Team reordering starts only from its handle on touch and mouse. The lifted row
 stays horizontally aligned, follows vertical movement, and moves neighbors at

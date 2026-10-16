@@ -18,7 +18,7 @@ async function geometry(page:import('@playwright/test').Page) {
   return page.evaluate(()=>{
     const box=(el:Element)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
     const detail=(el:Element)=>{const css=getComputedStyle(el);return {box:box(el),padding:[css.paddingTop,css.paddingRight,css.paddingBottom,css.paddingLeft],borders:[css.borderTopWidth,css.borderRightWidth,css.borderBottomWidth,css.borderLeftWidth],date:[...el.querySelectorAll('.date-line,.day-number')].map(box),chip:[...el.querySelectorAll('.assignment-chip')].map(box)}};
-    const elements=Object.fromEntries(['.topbar','.top-actions>*','.workspace-status','.nav-row','.nav-row [data-slot=tabs-trigger]','.month-toolbar','.month-title','.month-title>*','.calendar-panel','.calendar-top','.calendar-top .segmented button','.calendar-weekdays span','.coverage-card','.fairness-card','.balance-row'].map(selector=>[selector,[...document.querySelectorAll(selector)].map(box)]));
+    const elements=Object.fromEntries(['.mobile-navigation','.mobile-nav-selection','.topbar','.top-actions>*','.workspace-status','.nav-row','.nav-row [data-slot=tabs-trigger]','.month-toolbar','.month-title','.month-title>*','.calendar-panel','.calendar-top','.calendar-top .segmented button','.calendar-weekdays span','.coverage-card','.fairness-card','.balance-row'].map(selector=>[selector,[...document.querySelectorAll(selector)].map(box)]));
     const grid=document.querySelector('.calendar-grid')!;
     return {elements,pageHeight:document.documentElement.scrollHeight,overflow:document.documentElement.scrollWidth-innerWidth,details:[...grid.querySelectorAll('.day-cell')].map(detail),grid:box(grid),cells:[...grid.querySelectorAll('.day-cell')].map(el=>({date:el.getAttribute('data-date')!,combined:el.classList.contains('combined-weekend'),...box(el)}))};
   });
@@ -62,6 +62,10 @@ for(const width of [320,375,390,430,768,1440])for(const lang of ['en','he'])for(
       const a=shell.elements[selector],b=real.elements[selector];
       expect(a.length,selector).toBe(b.length);
       a.forEach((rect,i)=>{for(const key of ['x','y','width','height'] as const)close(rect[key],b[i][key],`${selector} ${i} ${key}`)});
+    }
+    if(width<=430)for(const selector of ['.mobile-navigation','.mobile-nav-selection']){
+      expect(shell.elements[selector].length).toBe(real.elements[selector].length);
+      shell.elements[selector].forEach((rect,i)=>{for(const key of ['x','y','width','height'] as const)close(rect[key],real.elements[selector][i][key],`${selector} ${key}`)});
     }
     expect(shell.cells.map(c=>[c.date,c.combined])).toEqual(real.cells.map(c=>[c.date,c.combined]));
     close(shell.grid.x,real.grid.x,'absolute grid x');

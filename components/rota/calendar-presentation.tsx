@@ -1,4 +1,27 @@
-import type {ReactNode,Ref} from 'react';
+import type {ReactNode,Ref,ComponentProps} from 'react';
+import type {Translate} from './workspace-types';
+
+export function CalendarDay({date,month,combined=false,weekend=false,special=false,className='',style,...props}:ComponentProps<'button'>&{
+  date:string;month:string;combined?:boolean;weekend?:boolean;special?:boolean;
+}) {
+  return <button {...props} data-date={date} style={{...style,...(combined?{gridColumn:'span 2'}:{})}}
+    className={['day-cell',!date.startsWith(month)?'outside':'',weekend?'weekend':'',combined?'combined-weekend':'',special?'special':'',className].join(' ')}/>;
+}
+
+export function CalendarAssignment({loading=false,className='',children,...props}:ComponentProps<'div'>&{loading?:boolean}) {
+  return <div {...props} className={'assignment-chip '+(loading?'skeleton-content ': '')+className}>{loading?<span>—</span>:children}</div>;
+}
+
+export function CalendarFilters({t,value='team',onChange,loading=false,children}:{
+  t:Translate;value?:string;onChange?:(value:string)=>void;loading?:boolean;children?:ReactNode;
+}) {
+  return <div className="segmented">
+    {(['team','me'] as const).map(view=><button key={view} disabled={loading} className={[value===view?'selected':'',loading?'skeleton-content':''].join(' ')} onClick={onChange?()=>onChange(view):undefined}>
+      {view==='team'?t('Whole team','כל הצוות'):t('My duties','התורנויות שלי')}
+    </button>)}
+    {children}
+  </div>;
+}
 
 // Public presentation only: both startup and the verified calendar use this
 // exact surface. Identity, permissions, interactions and data stay with callers.
