@@ -55,6 +55,9 @@ synthetic Node regressions cover session, refresh/save and failed-recovery races
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,
 rejecting missing assets or CSS that lacks the responsive workspace styles.
+Production Turbopack filesystem caching is disabled: DEV served byte-identical
+pre-PR #22 CSS after receiving the updated source and restoring Vercel's build
+cache. Development caching and dependency caching retain their defaults.
 For a different production port, use `pnpm exec next start --port 3000`.
 
 The repository is ready to import into Vercel using its **Next.js** framework
@@ -183,6 +186,8 @@ DUTY_E2E_URL=https://duty-scheduler-dev.vercel.app pnpm exec playwright test res
 
 A Vercel sign-in redirect fails this check; protected deployments require
 authorized access before their assets can be verified.
+The environment-indicator tests simulate deployed hostnames while loading local
+assets; their success does not verify a hosted deployment.
 
 ### Intentional snapshot updates and migration comparison
 
