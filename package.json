@@ -12,7 +12,7 @@
     "test:e2e:report": "playwright show-report",
     "test:e2e:ci": "node scripts/browser-container.mjs",
     "dev": "node scripts/dev-environment.mjs dev",
-    "build": "next build",
+    "build": "next build && node scripts/verify-production-css.mjs",
     "start": "next start --port 5173",
     "lint": "eslint .",
     "dev:local": "node scripts/dev-environment.mjs local",

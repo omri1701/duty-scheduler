@@ -53,6 +53,11 @@ synthetic Node regressions cover session, refresh/save and failed-recovery races
 
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
+The build also verifies the emitted stylesheets linked by the generated page,
+rejecting missing assets or CSS that lacks the responsive workspace styles.
+Production Turbopack filesystem caching is disabled: DEV served byte-identical
+pre-PR #22 CSS after receiving the updated source and restoring Vercel's build
+cache. Development caching and dependency caching retain their defaults.
 For a different production port, use `pnpm exec next start --port 3000`.
 
 The repository is ready to import into Vercel using its **Next.js** framework
@@ -168,6 +173,21 @@ cases check both roles and languages across six widths; touch-only cases skip
 desktop. Linux and Windows keep separate visual references.
 Behavior assertions use roles/labels; date keys identify gesture targets because
 their accessible names change with assignment and language.
+
+`responsive-css.spec.ts` checks loaded CSS/JS assets, floating phone and desktop
+navigation, hidden phone-only labels and seven-column calendar geometry at 1440,
+390 and 320px in English and Hebrew RTL. It retains captures without updating
+visual references. To smoke-test an accessible deployed DEV build with the same
+synthetic accounts and intercepted backend (no real member data or writes):
+
+```sh
+DUTY_E2E_URL=https://duty-scheduler-dev.vercel.app pnpm exec playwright test responsive-css.spec.ts --project=desktop
+```
+
+A Vercel sign-in redirect fails this check; protected deployments require
+authorized access before their assets can be verified.
+The environment-indicator tests simulate deployed hostnames while loading local
+assets; their success does not verify a hosted deployment.
 
 ### Intentional snapshot updates and migration comparison
 
