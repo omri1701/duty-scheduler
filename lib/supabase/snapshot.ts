@@ -66,4 +66,4 @@ export function schedulePayload(s:State){
  }
  return {team:s.team.map(({id,color,active})=>({id,color,active})),months:s.months,duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
 }
-export function todayIsrael(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jerusalem',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+export {todayIsrael} from '../rota/calendar-dates.ts';

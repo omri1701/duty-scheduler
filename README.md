@@ -57,12 +57,32 @@ members (including pending/inactive accounts) skip registration; missing profile
 use the checked join RPC and reload. Focus/visibility events share revalidation
 and refresh work; visible tabs still poll workspace data every 30 seconds.
 
-While initial access or a changed identity is being verified, a static public
-calendar skeleton mirrors the responsive workspace frame. It contains no member
-or schedule data and no interactive controls. Verification failure returns to the
-access screen; only approved active members mount the real workspace. Language
-stays consistent through account changes. There is no minimum loading time or
-shimmer; Reduce Motion disables the brief calendar opacity transition.
+While initial access or a changed identity is being verified, a public calendar
+skeleton reuses the header, month selector, navigation styling, date-cell traversal
+and responsive calendar CSS. Lightweight date helpers resolve the next Israel
+calendar month at hydration, including leading/trailing dates, four-to-six week
+rows and ordinary combined Friday/Saturday cells. Static HTML reserves an undated
+grid until the browser date is known, so a cached build cannot show stale dates.
+The shell uses no member, role or schedule data; disabled controls are inert and
+hidden from assistive technology, with a separate loading status. Verification
+failure returns to the access screen; only approved active members mount the real
+workspace. Language stays consistent through account changes. There is no minimum
+loading time or shimmer. Only placeholder content pulses on a smooth two-second
+cycle; Reduce Motion disables that pulse and the brief calendar opacity transition.
+Both screens use the same calendar surface (panel, toolbar, weekday row, grid
+and footer), date-line markup, header, footer and month-heading components.
+
+Before verification, the shell has no manager-only actions. Unknown publication
+status, private split weekends/special blocks, assignment text and team size can
+change the verified layout. Existing role-specific layouts remain intact; the
+public shell cannot predict those differences. Geometry regressions compare
+individual controls, rows, cells, date spans and assignment chips in both roles
+and languages at six widths, including padding, borders and weekend spans.
+They assert absolute grid placement for ordinary engineer calendars and require
+manager offsets to equal the measured space added by verified controls. Full
+private-fixture captures retain absolute bounds and full-page screenshots so
+role-dependent offsets and private-content changes remain visible. These checks
+do not promise identical total page height before team size and private data are known.
 
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.

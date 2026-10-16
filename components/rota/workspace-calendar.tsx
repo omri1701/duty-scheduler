@@ -1,3 +1,5 @@
+import {CalendarDateLine, CalendarSurface} from './calendar-presentation';
+import {calendarCells} from '@/lib/rota/calendar-dates';
 import { Plus, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, ink, type State, type Duty } from '@/lib/rota/engine';
@@ -64,8 +66,7 @@ export function WorkspaceCalendar({
     selectCalendarDuty,
   } = interactions;
   return (
-    <section className="calendar-panel">
-      <div className="calendar-top">
+    <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
         <div className="segmented">
           <button
             className={view === 'team' ? 'selected' : ''}
@@ -108,35 +109,78 @@ export function WorkspaceCalendar({
           <Plus />
           {t('Special block', 'מקטע מיוחד')}
         </Button>
-      </div>
-      {!isManager && monthDetails.status !== 'published' && (
+      </>} beforeGrid={!isManager && monthDetails.status !== 'published' && (
         <div className="inline-note">
           {t('The manager has not published this month yet.', 'המנהל עדיין לא פרסם את החודש הזה.')}
         </div>
       )}
-      <div className="calendar-weekdays">
-        {(lang === 'en'
-          ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-          : ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
-        ).map((d, i) => (
-          <span className={i > 4 ? 'weekend-label' : ''} key={d}>
-            {d}
-          </span>
-        ))}
-      </div>
-      <div ref={dragContainer} className="calendar-grid gesture-grid">
-        {dateCells.map((d) => {
-          const b = calendarBlocks.find((b) => b.start <= d && d < b.end),
-            a = b ? calendarState.assignments[b.id] : undefined,
+      footer={<>
+        <span>
+          <span className="legend-box" />
+          {t('Weekend = 1 point · Split = ½ each', 'סופ״ש = נקודה · חצי לכל יום בפיצול')}
+        </span>
+        <span>
+          <span className="legend-box special-legend" />
+          {t('Special block', 'מקטע מיוחד')}
+        </span>
+        <span id="published-swap-help" aria-live="polite">
+          {requesting
+            ? keyboardSource
+              ? t(
+                  'Choose another engineer’s duty · Escape cancels',
+                  'בחרו תורנות של מהנדס אחר · Escape לביטול',
+                )
+              : t(
+                  'Drag your duty · On mobile, hold first · Or select two dates',
+                  'גררו תורנות שלכם · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים',
+                )
+            : t('Tap to edit · Hold & drag to swap', 'לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}
+        </span>
+      </>} notices={<>
+
+      {isManager && assigned < blockCount && (
+        <div className="inline-note">
+          <Info size={17} />
+          {monthDetails.generated
+            ? t(
+                'Uncovered dates need a decision. Open a date to see candidates and override a constraint if necessary.',
+                'תאריכים ללא כיסוי דורשים החלטה. פתחו יום לצפייה במועמדים וחריגה מאילוץ במידת הצורך.',
+              )
+            : t(
+                'Ready when you are. Generate a draft using the team’s availability.',
+                'כשתהיו מוכנים, צרו טיוטה לפי אילוצי הצוות.',
+              )}
+        </div>
+      )}
+      {!!conflicts.length && (
+        <div className="warning-note">
+          {t(
+            `${conflicts.length} assignments conflict with availability. Review them before publishing.`,
+            'קיימות התנגשויות עם אילוצים. יש לבדוק אותן לפני פרסום.',
+          )}
+        </div>
+      )}
+      {!!gaps.length && (
+        <div className="inline-note">
+          {t('Spacing to review:', 'מרווחים לבדיקה:')}{' '}
+          {gaps
+            .slice(0, 3)
+            .map(({ p, b }) => `${p.name} · ${fmt(b.start)}`)
+            .join(' / ')}{' '}
+          — {t('consecutive duties are allowed when needed.', 'תורנויות רצופות מותרות בעת הצורך.')}
+        </div>
+      )}
+      </>}>
+        {calendarCells(dateCells, calendarBlocks).map(({date:d, period:b, combined}) => {
+          const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
             inside = d.startsWith(month),
-            mine = a?.primary === meId || a?.secondary === meId,
-            combined = b?.kind === 'weekend' && b.end === addDays(b.start, 2);
-          if (combined && d !== b.start) return null;
+            mine = a?.primary === meId || a?.secondary === meId;
           return (
             <button
               disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
               key={d}
+              data-date={d}
               data-gesture-key={b?.id}
               onClick={() => {
                 if (!ignoreDragClick() && b) selectCalendarDuty(b);
@@ -171,13 +215,11 @@ export function WorkspaceCalendar({
               ].join(' ')}
               aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
-              <div className={combined ? "date-line weekend-dates" : "date-line"}>
-                <span className="day-number">{Number(d.slice(-2))}</span>
-                {combined && <span className="day-number weekend-end">{Number(addDays(b!.end, -1).slice(-2))}</span>}
+              <CalendarDateLine date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {b?.kind === 'special' && (
                   <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
                 )}
-              </div>
+              </CalendarDateLine>
               {b && (
                 <>
                   <div
@@ -211,62 +253,6 @@ export function WorkspaceCalendar({
             </button>
           );
         })}
-      </div>
-      <div className="calendar-footer">
-        <span>
-          <span className="legend-box" />
-          {t('Weekend = 1 point · Split = ½ each', 'סופ״ש = נקודה · חצי לכל יום בפיצול')}
-        </span>
-        <span>
-          <span className="legend-box special-legend" />
-          {t('Special block', 'מקטע מיוחד')}
-        </span>
-        <span id="published-swap-help" aria-live="polite">
-          {requesting
-            ? keyboardSource
-              ? t(
-                  'Choose another engineer’s duty · Escape cancels',
-                  'בחרו תורנות של מהנדס אחר · Escape לביטול',
-                )
-              : t(
-                  'Drag your duty · On mobile, hold first · Or select two dates',
-                  'גררו תורנות שלכם · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים',
-                )
-            : t('Tap to edit · Hold & drag to swap', 'לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}
-        </span>
-      </div>
-      {isManager && assigned < blockCount && (
-        <div className="inline-note">
-          <Info size={17} />
-          {monthDetails.generated
-            ? t(
-                'Uncovered dates need a decision. Open a date to see candidates and override a constraint if necessary.',
-                'תאריכים ללא כיסוי דורשים החלטה. פתחו יום לצפייה במועמדים וחריגה מאילוץ במידת הצורך.',
-              )
-            : t(
-                'Ready when you are. Generate a draft using the team’s availability.',
-                'כשתהיו מוכנים, צרו טיוטה לפי אילוצי הצוות.',
-              )}
-        </div>
-      )}
-      {!!conflicts.length && (
-        <div className="warning-note">
-          {t(
-            `${conflicts.length} assignments conflict with availability. Review them before publishing.`,
-            'קיימות התנגשויות עם אילוצים. יש לבדוק אותן לפני פרסום.',
-          )}
-        </div>
-      )}
-      {!!gaps.length && (
-        <div className="inline-note">
-          {t('Spacing to review:', 'מרווחים לבדיקה:')}{' '}
-          {gaps
-            .slice(0, 3)
-            .map(({ p, b }) => `${p.name} · ${fmt(b.start)}`)
-            .join(' / ')}{' '}
-          — {t('consecutive duties are allowed when needed.', 'תורנויות רצופות מותרות בעת הצורך.')}
-        </div>
-      )}
-    </section>
+      </CalendarSurface>
   );
 }

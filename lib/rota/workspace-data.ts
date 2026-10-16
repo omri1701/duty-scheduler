@@ -1,8 +1,5 @@
 import {
-  addDays,
-  dayOf,
   monthNext,
-  dates,
   totals,
   allKnownBlocks,
   unavailable,
@@ -48,13 +45,7 @@ export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
 }
 export type WorkspaceMetrics = ReturnType<typeof workspaceMetrics>;
 
-export function calendarDates(month: string) {
-  const dateCells = dates(
-    addDays(month + '-01', -dayOf(month + '-01')),
-    addDays(monthNext(month) + '-01', (7 - dayOf(monthNext(month) + '-01')) % 7),
-  );
-  return dateCells;
-}
+export {calendarDates} from './calendar-dates.ts';
 
 // A draft edit can also touch a carried weekend or special range in another month.
 export function prepareWorkspaceUpdate(

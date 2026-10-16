@@ -9,7 +9,7 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
  const [email,setEmail]=useState('admin@duty.local'),[password,setPassword]=useState(''),[returnUrl,setReturnUrl]=useState('');
  useEffect(()=>{try{localStorage.removeItem('duty-demo-v1')}catch{}},[]);
  const pending=!!remote.user,rejected=remote.me?.status==='rejected',inactive=remote.me?.status==='approved'&&!remote.me.active,local=remote.environment?.target==='local';
- if(remote.loading)return <StartupSkeleton lang={lang}/>;
+ if(remote.loading)return <StartupSkeleton lang={lang} environment={remote.environment}/>;
  return <main className="access-page" dir={lang==='he'?'rtl':'ltr'}><section className="access-card">
   <div className="access-top"><span className="brand"><span className="brand-symbol">d<span>·</span></span> duty</span><EnvironmentBadge environment={remote.environment}/><Button variant="ghost" onClick={()=>setLang(lang==='en'?'he':'en')}>{lang==='en'?'עברית':'English'}</Button></div>
   <InspectionWarning environment={remote.environment} lang={lang}/>

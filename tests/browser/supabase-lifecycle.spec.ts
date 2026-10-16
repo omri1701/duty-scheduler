@@ -61,11 +61,11 @@ test('restored private data waits for verified auth and skips registration', asy
   try {
     await started.wait;
     await loaded;
-    await expect(page.locator('.calendar-grid')).toHaveCount(0);
+    await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toHaveCount(0);
     await expect(page.getByRole('button',{name:'My profile'})).toHaveCount(0);
     expect(backend.calls.filter(c=>c.name==='duty_join')).toHaveLength(0);
   } finally {held.release();}
-  await opening;await expect(page.locator('.calendar-grid')).toBeVisible();
+  await opening;await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toBeVisible();
   expect(verifications).toBe(1);expect(backend.calls.filter(c=>c.name==='duty_load')).toHaveLength(1);
 });
 
@@ -84,7 +84,7 @@ test('focus and visibility share auth revalidation and one workspace load', asyn
 for(const identity of ['pending','inactive'] as const) {
   test(`${identity} restored members do not register again`,async({page,openApp,backend})=>{
     await openApp(identity);expect(backend.calls.map(c=>c.name)).toEqual(['duty_load']);
-    await expect(page.locator('.calendar-grid')).toHaveCount(0);
+    await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toHaveCount(0);
   });
 }
 
@@ -92,7 +92,7 @@ test('a missing profile registers once and remains pending without private works
   backend.raw.members=backend.raw.members.filter(member=>member.id!==ids.pending);
   await openApp('pending');
   await expect(page.getByRole('heading',{name:'Waiting for approval'})).toBeVisible();
-  await expect(page.locator('.calendar-grid')).toHaveCount(0);
+  await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toHaveCount(0);
   expect(backend.calls.map(c=>c.name)).toEqual(['duty_load','duty_join','duty_load']);
   expect(backend.raw.members.find(member=>member.id===ids.pending)).toMatchObject({status:'pending',active:false,role:'engineer'});
 });
