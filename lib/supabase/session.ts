@@ -38,6 +38,9 @@ export function observeSession<T = undefined>(client: DutyClient, callbacks: {
         if (!data.user) {clear(); callbacks.ready(); return;}
         if (error) throw error;
         if (data.user.id !== session.user.id) throw Error('The sign-in identity changed. Please try again.');
+        // duty_join used to enforce this on every startup. Preserve that gate
+        // for existing profiles using only the server-verified user response.
+        if (!data.user.email_confirmed_at || data.user.is_anonymous) throw Error('A verified account is required');
         identity = data.user.id;
         await callbacks.user(data.user, prepared);
         if (alive && seq === sequence) callbacks.ready();

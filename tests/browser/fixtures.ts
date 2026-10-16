@@ -159,7 +159,7 @@ export const test = base.extend<Fixtures>({
       const key = ['rejected', 'inactive'].includes(identity) ? 'a' : identity;
       if (identity === 'rejected') backend.raw.members.find(m => m.id === ids.a)!.status = 'rejected';
       if (identity === 'inactive') backend.raw.members.find(m => m.id === ids.a)!.active = false;
-      let user = {id: ids[key], email: `${key}@example.invalid`, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
+      let user = {id: ids[key], email: `${key}@example.invalid`, email_confirmed_at: NOW, is_anonymous: false, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
       const token = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: user.id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;

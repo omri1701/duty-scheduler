@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {observeSession} from '../lib/supabase/session.ts';
 
-const user = id => ({id, email: `${id}@example.invalid`, user_metadata: {}});
+const user = id => ({id, email: `${id}@example.invalid`, email_confirmed_at:'2026-10-09T10:00:00Z',is_anonymous:false,user_metadata: {}});
 const response = id => ({data: {user: id ? user(id) : null}, error: null});
 const session = (id = 'admin', token = id) => id ? {user: user(id), access_token: token} : null;
 const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {resolve = yes; reject = no;}); return {promise, resolve, reject};};
@@ -150,5 +150,13 @@ test('token refresh while initial verification and prefetch are held shares the 
     read.resolve('private result');
     auth.resolve(fail?{data:{user:null},error:{message:'Revoked session'}}:response('admin'));await pending;
     assert.equal(f.users.length,fail?0:1);assert.equal(f.errors.length,fail?1:0);stop();
+  }
+});
+
+test('server-verified unconfirmed or anonymous users cannot publish prefetched data',async()=>{
+  for(const flags of [{email_confirmed_at:null},{is_anonymous:true}]){
+    const f=fixture();f.queue.push(Promise.resolve({data:{user:{...user('admin'),...flags}},error:null}));
+    const stop=observeSession(f.client,f.callbacks);await stop.refresh();
+    assert.deepEqual(f.users,[]);assert.equal(f.cleared,1);assert.equal(f.errors[0].message,'A verified account is required');stop();
   }
 });
