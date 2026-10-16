@@ -57,6 +57,13 @@ members (including pending/inactive accounts) skip registration; missing profile
 use the checked join RPC and reload. Focus/visibility events share revalidation
 and refresh work; visible tabs still poll workspace data every 30 seconds.
 
+While initial access or a changed identity is being verified, a static public
+calendar skeleton mirrors the responsive workspace frame. It contains no member
+or schedule data and no interactive controls. Verification failure returns to the
+access screen; only approved active members mount the real workspace. Language
+stays consistent through account changes. There is no minimum loading time or
+shimmer; Reduce Motion disables the brief calendar opacity transition.
+
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,

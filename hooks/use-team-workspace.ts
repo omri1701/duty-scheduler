@@ -26,7 +26,7 @@ export function useTeamWorkspace(){
     setClient(c);
     setEnvironment(await getEnvironment());
     unsubscribe=observeSession(c,{
-     clear:()=>{workspace.clear();setUser(null)},
+     clear:()=>{workspace.clear();setUser(null);setLoading(true)},
      prepare:s=>workspace.prepare(c,s),
      user:async (u,initial)=>{setUser(u);await workspace.connect(c,u,initial)},
      error:e=>setError(errorMessage(e,'Could not load the team. Please try again.')),

@@ -30,7 +30,7 @@ import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
-export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
+export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
     if (!mobile || !window.visualViewport) return;
@@ -53,7 +53,6 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   const isManager = remote.isAdmin,
     meId = remote.user!.id;
   const [month, setMonth] = useState(monthNext(todayIsrael().slice(0, 7))),
-    [lang, setLang] = useState<'en' | 'he'>('en'),
     [tab, setTab] = useState('schedule');
   const state = remote.state!;
   const [profileOpen, setProfileOpen] = useState(false),
@@ -64,10 +63,6 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   const [person, setPerson] = useState(meId),
     [view, setView] = useState('team');
   const t = (en: string, he: string) => (lang === 'en' ? en : he);
-  useEffect(() => {
-    document.documentElement.lang = lang;
-    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
-  }, [lang]);
   const duties = useMemo(
     () => blocks(month, state.specials, state.splitWeekends),
     [month, state.specials, state.splitWeekends],
