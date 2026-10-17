@@ -43,6 +43,7 @@ for(const width of [320,375,390,430,768,1440])for(const lang of ['en','he'])for(
     const gallery=process.env.DUTY_STARTUP_GALLERY;
     const capture=async(phase:string)=>{const body=await page.screenshot({fullPage:true});await info.attach(phase,{body,contentType:'image/png'});if(gallery){mkdirSync(gallery,{recursive:true});writeFileSync(join(gallery,`after-${width}-${lang}-${role}-${phase}.png`),body)}};
     let shell!:Awaited<ReturnType<typeof geometry>>;
+    let safeShell:Awaited<ReturnType<typeof geometry>>|undefined;
     try {
       await expect(page.locator('.startup-skeleton .day-cell')).toHaveCount(publicCalendarCells(MONTH).length);
       await expect(page.locator('.startup-skeleton')).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
@@ -50,10 +51,23 @@ for(const width of [320,375,390,430,768,1440])for(const lang of ['en','he'])for(
       expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(width);
       shell=await geometry(page);
       await capture('shell');
+      if(width<=430){
+        const safe=await page.addStyleTag({content:'.nav-row{--nav-safe-left:0px;--nav-safe-right:0px;--nav-safe-bottom:34px}'});
+        safeShell=await geometry(page);
+        expect(await page.locator('.startup-skeleton [data-slot=tabs-list]').evaluate(node=>getComputedStyle(node).pointerEvents)).toBe('none');
+        await safe.evaluate(node=>(node as HTMLStyleElement).remove());
+      }
     } finally {release();}
     await expect(page.locator('.admin-avatar')).toBeVisible();
     const real=await geometry(page);
     await capture('real');
+    if(safeShell){
+      const safe=await page.addStyleTag({content:'.nav-row{--nav-safe-left:0px;--nav-safe-right:0px;--nav-safe-bottom:34px}'}),safeReal=await geometry(page);
+      for(const selector of ['.mobile-navigation','.mobile-nav-selection','.nav-row [data-slot=tabs-trigger]']){
+        safeShell.elements[selector].forEach((rect,i)=>{for(const key of ['x','y','width','height'] as const)close(rect[key],safeReal.elements[selector][i][key],`safe-area skeleton ${selector} ${key}`)});
+      }
+      await safe.evaluate(node=>(node as HTMLStyleElement).remove());
+    }
     if(gallery)writeFileSync(join(gallery,`after-${width}-${lang}-${role}.json`),JSON.stringify({width,lang,role,shell,real},null,2));
     expect(real.overflow).toBe(0);
     await info.attach('element-bounds',{body:JSON.stringify({width,lang,role,shell,real},null,2),contentType:'application/json'});

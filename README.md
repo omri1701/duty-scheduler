@@ -131,11 +131,14 @@ confirmation keeps the editor and existing data; confirmed replacement uses the
 existing atomic RPC. Single-date editing prefills existing descriptions.
 The floating glass navigation supports tapping and horizontal finger sliding.
 Its shared CSS tracks keep equal inner insets and concentric corners in all three
-positions. One responsive gutter sets equal physical left, right and bottom
-margins, with safe-area insets acting as minimum clearances rather than extra
-padding. Both sides use the larger horizontal inset to preserve symmetry. On
-iPhones the home-indicator safe area can require a larger physical bottom gap;
-the pill meets that safe edge without adding another gutter above it.
+positions. The shared 54px pill has 44px tab targets and 5px inner padding, with
+16px outer margins where safe areas allow. Both sides use the larger horizontal
+inset to preserve symmetry. Only the non-interactive background padding may
+extend into the bottom safe area; tab targets stay entirely above it. A 34px
+bottom inset therefore gives a 29px physical pill gap, rather than 16px. The
+browser's dynamic safe-area values apply in Safari and standalone mode; no
+device-specific offset or cached viewport height is used. Loading uses the same
+geometry with disabled controls and no pointer targets.
 Horizontal intent captures the pointer and retains the original grab position,
 including far above/below the pill. Indicator movement is written once per frame
 without rendering the workspace. A non-passive touch guard prevents native

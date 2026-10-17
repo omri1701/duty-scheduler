@@ -15,17 +15,22 @@ async function bounds(page:Page){
 function close(a:number,b:number,label:string){expect(Math.abs(a-b),label).toBeLessThan(.08)}
 async function aligned(page:Page,index:number){
   const b=await bounds(page),selected=b.tabs[index],top=b.indicator.y-b.pill.y,bottom=b.pill.bottom-b.indicator.bottom;
+  close(b.pill.height,54,'compact white pill height');close(top,5,'balanced five-pixel indicator inset');
   close(top,bottom,'top and bottom inset');
   close(b.indicator.x,selected.x,'indicator follows actual tab x');close(b.indicator.width,selected.width,'indicator equals actual track width');
   close(b.indicator.height,selected.height,'indicator equals actual track height');
   close(b.radius-b.indicatorRadius,top,'concentric rounded corners');
   const left=Math.min(...b.tabs.map(tab=>tab.x))-b.pill.x,right=b.pill.right-Math.max(...b.tabs.map(tab=>tab.right));
   close(left,top,'left outer track inset');close(right,top,'right outer track inset');
-  for(const tab of b.tabs)close(tab.width,b.tabs[0].width,'equal tab tracks');
+  for(const tab of b.tabs){
+    close(tab.width,b.tabs[0].width,'equal tab tracks');
+    expect(tab.width).toBeGreaterThanOrEqual(44);expect(tab.height).toBeGreaterThanOrEqual(44);
+    expect(b.viewport.top+b.viewport.height-tab.bottom+.08,'interactive targets stay above the system safe area').toBeGreaterThanOrEqual(b.safe[2]);
+  }
   const outerLeft=b.pill.x-b.viewport.left,outerRight=b.viewport.left+b.viewport.width-b.pill.right,
     outerBottom=b.viewport.top+b.viewport.height-b.pill.bottom;
   close(outerLeft,outerRight,'physical left/right margins remain symmetric');
-  close(outerBottom,Math.max(outerLeft,b.safe[2]),'physical bottom matches sides or the minimum safe-area clearance');
+  close(outerBottom,Math.max(16,b.safe[2]-bottom),'only the non-interactive inset may enter the safe area');
   expect(outerLeft+.08).toBeGreaterThanOrEqual(Math.max(b.safe[0],b.safe[1]));
   return b;
 }
@@ -37,6 +42,7 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
     if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
     const tabs=page.getByRole('tab'),nav=page.locator('.mobile-navigation');
     const initial=await bounds(page),gutter=initial.pill.x-initial.viewport.left;
+    close(gutter,16,'sixteen-pixel design gutter');
     // WebKit quantizes emulated mouse input. Check tracking against the actual
     // delivered pointer coordinates, retaining the same tight layout tolerance.
     await nav.evaluate(node=>{
@@ -44,12 +50,27 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
       host.addEventListener('pointerdown',event=>{pointer.id=event.pointerId;pointer.startX=pointer.x=event.clientX});
       host.addEventListener('pointermove',event=>{pointer.x=event.clientX});
     });
-    for(const safe of [null,{left:0,right:0,bottom:34},{left:12,right:20,bottom:34}]){
+    for(const safe of [null,{left:0,right:0,bottom:34},{left:12,right:20,bottom:34},{left:0,right:0,bottom:0},{left:0,right:0,bottom:34}]){
       if(safe)await page.addStyleTag({content:`.nav-row{--nav-safe-left:${safe.left}px;--nav-safe-right:${safe.right}px;--nav-safe-bottom:${safe.bottom}px}`});
       for(const index of [0,1,2]){
         await tabs.nth(index).click();const measured=await aligned(page,index);
         close(measured.pill.x-measured.viewport.left,Math.max(gutter,safe?.left??0,safe?.right??0),'safe insets are minimum clearances without an additional gutter');
+        const tab=measured.tabs[index];
+        for(const content of await tabs.nth(index).locator('svg,.navigation-compact-label').all()){
+          const box=(await content.boundingBox())!;
+          expect(box.y+.08).toBeGreaterThanOrEqual(tab.y);expect(box.y+box.height).toBeLessThanOrEqual(tab.bottom+.08);
+          expect(box.x+.08).toBeGreaterThanOrEqual(tab.x);expect(box.x+box.width).toBeLessThanOrEqual(tab.right+.08);
+        }
       }
+      const measured=await bounds(page);
+      expect(await nav.evaluate(node=>getComputedStyle(node).pointerEvents)).toBe('none');
+      expect(await tabs.first().evaluate(node=>getComputedStyle(node).pointerEvents)).toBe('auto');
+      // The background can enter the safe region; that strip must never start
+      // navigation. Hit-test and actually drag it, rather than trusting CSS alone.
+      const x=measured.pill.x+measured.pill.width/2,y=measured.pill.bottom-1;
+      expect(await page.evaluate(({x,y})=>!!document.elementFromPoint(x,y)?.closest('.mobile-navigation'),{x,y})).toBe(false);
+      await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+30,y);await page.mouse.up();
+      await expect(nav).not.toHaveAttribute('data-sliding','true');await expect(tabs.nth(2)).toHaveAttribute('aria-selected','true');
     }
     await tabs.nth(0).click();const b=await aligned(page,0);
     const start=b.tabs[0],x=start.x+start.width*.28,y=start.y+start.height/2,direction=lang==='he'?-1:1;
