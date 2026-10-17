@@ -131,8 +131,11 @@ confirmation keeps the editor and existing data; confirmed replacement uses the
 existing atomic RPC. Single-date editing prefills existing descriptions.
 The floating glass navigation supports tapping and horizontal finger sliding.
 Its shared CSS tracks keep equal inner insets and concentric corners in all three
-positions. One responsive gutter places the pill equally far from the left,
-right and bottom safe edges; iPhone home-indicator space is added separately.
+positions. One responsive gutter sets equal physical left, right and bottom
+margins, with safe-area insets acting as minimum clearances rather than extra
+padding. Both sides use the larger horizontal inset to preserve symmetry. On
+iPhones the home-indicator safe area can require a larger physical bottom gap;
+the pill meets that safe edge without adding another gutter above it.
 Horizontal intent captures the pointer and retains the original grab position,
 including far above/below the pill. Indicator movement is written once per frame
 without rendering the workspace. A non-passive touch guard prevents native

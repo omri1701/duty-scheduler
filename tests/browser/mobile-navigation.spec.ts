@@ -5,9 +5,11 @@ async function bounds(page:Page){
   return page.locator('.mobile-navigation').evaluate(node=>{
     const box=(element:Element)=>{const b=element.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};
     const row=getComputedStyle(node.parentElement!),pill=getComputedStyle(node),indicator=node.querySelector('.mobile-nav-selection')!;
+    const viewport=window.visualViewport!;
     return {pill:box(node),indicator:box(indicator),tabs:[...node.querySelectorAll('[role=tab]')].map(box),
       radius:parseFloat(pill.borderTopLeftRadius),indicatorRadius:parseFloat(getComputedStyle(indicator).borderTopLeftRadius),
-      safe:[row.getPropertyValue('--nav-safe-left'),row.getPropertyValue('--nav-safe-right'),row.getPropertyValue('--nav-safe-bottom')].map(parseFloat),viewport:innerWidth,height:innerHeight};
+      safe:[row.getPropertyValue('--nav-safe-left'),row.getPropertyValue('--nav-safe-right'),row.getPropertyValue('--nav-safe-bottom')].map(parseFloat),
+      viewport:{left:viewport.offsetLeft,top:viewport.offsetTop,width:viewport.width,height:viewport.height}};
   });
 }
 function close(a:number,b:number,label:string){expect(Math.abs(a-b),label).toBeLessThan(.08)}
@@ -20,8 +22,11 @@ async function aligned(page:Page,index:number){
   const left=Math.min(...b.tabs.map(tab=>tab.x))-b.pill.x,right=b.pill.right-Math.max(...b.tabs.map(tab=>tab.right));
   close(left,top,'left outer track inset');close(right,top,'right outer track inset');
   for(const tab of b.tabs)close(tab.width,b.tabs[0].width,'equal tab tracks');
-  close(b.pill.x-b.safe[0],b.viewport-b.pill.right-b.safe[1],'outer left/right safe margins');
-  close(b.pill.x-b.safe[0],b.height-b.pill.bottom-b.safe[2],'outer side/bottom safe margins');
+  const outerLeft=b.pill.x-b.viewport.left,outerRight=b.viewport.left+b.viewport.width-b.pill.right,
+    outerBottom=b.viewport.top+b.viewport.height-b.pill.bottom;
+  close(outerLeft,outerRight,'physical left/right margins remain symmetric');
+  close(outerBottom,Math.max(outerLeft,b.safe[2]),'physical bottom matches sides or the minimum safe-area clearance');
+  expect(outerLeft+.08).toBeGreaterThanOrEqual(Math.max(b.safe[0],b.safe[1]));
   return b;
 }
 
@@ -31,6 +36,7 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
     await page.setViewportSize({width,height:900});await openApp();
     if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
     const tabs=page.getByRole('tab'),nav=page.locator('.mobile-navigation');
+    const initial=await bounds(page),gutter=initial.pill.x-initial.viewport.left;
     // WebKit quantizes emulated mouse input. Check tracking against the actual
     // delivered pointer coordinates, retaining the same tight layout tolerance.
     await nav.evaluate(node=>{
@@ -38,9 +44,12 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
       host.addEventListener('pointerdown',event=>{pointer.id=event.pointerId;pointer.startX=pointer.x=event.clientX});
       host.addEventListener('pointermove',event=>{pointer.x=event.clientX});
     });
-    for(const safe of [false,true]){
-      if(safe)await page.addStyleTag({content:'.nav-row{--nav-safe-left:12px;--nav-safe-right:20px;--nav-safe-bottom:34px}'});
-      for(const index of [0,1,2]){await tabs.nth(index).click();await aligned(page,index)}
+    for(const safe of [null,{left:0,right:0,bottom:34},{left:12,right:20,bottom:34}]){
+      if(safe)await page.addStyleTag({content:`.nav-row{--nav-safe-left:${safe.left}px;--nav-safe-right:${safe.right}px;--nav-safe-bottom:${safe.bottom}px}`});
+      for(const index of [0,1,2]){
+        await tabs.nth(index).click();const measured=await aligned(page,index);
+        close(measured.pill.x-measured.viewport.left,Math.max(gutter,safe?.left??0,safe?.right??0),'safe insets are minimum clearances without an additional gutter');
+      }
     }
     await tabs.nth(0).click();const b=await aligned(page,0);
     const start=b.tabs[0],x=start.x+start.width*.28,y=start.y+start.height/2,direction=lang==='he'?-1:1;
@@ -87,6 +96,24 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
     expect(await nav.locator('.mobile-nav-selection').evaluate(node=>getComputedStyle(node).transitionDuration)).toBe('0s');
     await page.emulateMedia({reducedMotion:'no-preference'});
     expect(parseFloat(await nav.locator('.mobile-nav-selection').evaluate(node=>getComputedStyle(node).transitionDuration))).toBeGreaterThan(0);
+    await page.emulateMedia({reducedMotion:'reduce'});
+    // Fixed placement follows the visible viewport through scroll and browser
+    // viewport height changes, without measuring or caching a device-specific offset.
+    // The short availability fixture needs additional content height to scroll.
+    await page.addStyleTag({content:'.app-shell{min-height:200vh}'});
+    for(const height of [900,680,800,900]){
+      await page.setViewportSize({width,height});
+      await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
+      await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
+      await aligned(page,1);
+      await page.evaluate(()=>scrollTo(0,0));await aligned(page,1);
+    }
+    // Exercise the lifecycle notifications used on foreground/BFCache return.
+    await page.evaluate(()=>{
+      window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await aligned(page,1);
     expect(backend.calls.filter(call=>call.name==='duty_save_schedule')).toEqual([]);
   });
 }

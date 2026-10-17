@@ -197,7 +197,7 @@
  .workspace-status button{font-size:12px;min-width:44px;padding-inline:8px}
  .inspection-warning{font-size:13px;padding:12px}
  .main-tabs{gap:0;min-width:0}
- .nav-row{--nav-gutter:clamp(8px,2vw,12px);--nav-safe-left:env(safe-area-inset-left);--nav-safe-right:env(safe-area-inset-right);--nav-safe-bottom:env(safe-area-inset-bottom);position:fixed;inset-inline:0;bottom:0;z-index:30;display:block;padding:8px calc(var(--nav-gutter) + var(--nav-safe-right)) calc(var(--nav-gutter) + var(--nav-safe-bottom)) calc(var(--nav-gutter) + var(--nav-safe-left));border:0;pointer-events:none}
+ .nav-row{--nav-gutter:clamp(8px,2vw,12px);--nav-safe-left:env(safe-area-inset-left);--nav-safe-right:env(safe-area-inset-right);--nav-safe-bottom:env(safe-area-inset-bottom);position:fixed;inset-inline:0;bottom:0;z-index:30;display:block;padding:8px max(var(--nav-gutter),var(--nav-safe-left),var(--nav-safe-right)) max(var(--nav-gutter),var(--nav-safe-bottom));border:0;pointer-events:none}
  .nav-row .time-zone{display:none}
  .mobile-navigation{--nav-inset:4px;--nav-item-height:54px;position:relative;margin:auto;padding:var(--nav-inset);border-radius:calc(var(--nav-item-height)/2 + var(--nav-inset));background:#f9fcfa;box-shadow:0 4px 18px #173e321c,inset 0 0 0 1px #ffffffa6;pointer-events:auto;touch-action:pan-y pinch-zoom}
  @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.mobile-navigation{background:#f9fcfad9;backdrop-filter:blur(20px) saturate(130%);-webkit-backdrop-filter:blur(20px) saturate(130%)}}
