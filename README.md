@@ -242,14 +242,39 @@ authorized access before their assets can be verified.
 The environment-indicator tests simulate deployed hostnames while loading local
 assets; their success does not verify a hosted deployment.
 
-### Intentional snapshot updates and migration comparison
+### Automatic visual review and approved snapshot updates
+
+Every authorized UI change includes the relevant screenshot checks automatically.
+The normal Playwright reporters generate `work/visual-review/index.html` and
+`manifest.json` when running tests; keep the custom reporter enabled when filtering
+tests. The gallery groups BEFORE/AFTER/DIFFERENCE and opacity overlays by project,
+viewport, language and platform. It lists exact reference paths, source/head
+commits and before/candidate SHA-256 hashes, including missing references and
+differences from retries. Immutable run folders preserve earlier review evidence
+when subsequent focused checks run. Pixel differences do not establish intent: the primary
+agent inspects every candidate, explains changed components and possible regressions,
+and fixes unintended changes before asking for approval.
+
+Quality uploads the portable `visual-review` artifact even when comparisons fail
+and links it in the run summary. Download/extract it and open `index.html`.
+The primary agent automatically adds the current artifact link and assessment to
+the authorized PR description (or one concise authorized comment); a local gallery
+is the fallback. CI remains read-only and never posts with elevated PR credentials.
+
+**The user must explicitly approve the presented images/paths before any reference
+is changed.** Earlier design approval does not approve changed candidates. After
+approval, verify current reference/candidate hashes against the review manifest,
+copy only the approved candidates to the approved paths, record approval scope and
+hashes in the PR, and rerun affected comparisons and final Quality. Do not use a
+blanket snapshot update to change unapproved references. Reuse completed checks
+for unchanged inputs; never loosen screenshot tolerances or infer approval from CI.
 
 ```sh
-# Canonical Linux snapshots, only after reviewing an intentional UI change:
-pnpm test:e2e:ci visual.spec.ts --update-snapshots
-# Windows reference set when developing natively on Windows:
-pnpm test:e2e:update
-# Compare (does not update missing or mismatched snapshots):
+# Focused canonical review (does not update references):
+pnpm test:e2e:ci visual.spec.ts
+# Native Windows review with its own reference set:
+pnpm test:e2e visual.spec.ts
+# Final full comparison after copying only explicitly approved candidates:
 pnpm test:e2e:ci
 pnpm test:e2e:report
 ```

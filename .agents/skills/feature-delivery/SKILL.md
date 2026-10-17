@@ -3,25 +3,33 @@ name: feature-delivery
 description: "Deliver a Duty feature through a PR when the user explicitly authorizes end-to-end Git delivery; ordinary implementation does not authorize commit or push."
 ---
 
-1. Confirm the requested base and Git write authorization from the session. Inspect
-   status, preserve unrelated changes, fetch that base and start the requested feature
-   branch from its latest commit. Reuse an existing matching branch safely.
-2. Implement the smallest complete feature following AGENTS.md and existing architecture.
-   Use code-change-validation and relevant specialized skills; reuse their results.
-   Follow root routing for bounded reviewers when distinct scheduling/security risks justify them.
-3. Review the final diff and pass local checks selected by code-change-validation.
-   For substantial UI changes, follow its gallery/approval gate before baseline writes.
-   Record approved paths, reasons and the pre-update commit in the commit/PR so previous
-   designs remain recoverable. Remove task-created galleries, captures and helpers after
-   approval/validation; preserve existing artifacts and user files. Final Quality must
-   compare committed references before reporting delivery.
-   Keep a compact list of completed checks and affected inputs; reuse successes.
-   Stage only intended files, excluding local settings, credentials and unrelated changes.
-4. When authorized, make meaningful commits, push the feature branch and open a PR
-   against the requested base. Wait for required `quality` on the final head and correct
-   introduced failures; do not report success while checks are pending/unavailable.
-   Diagnose failures before retrying; rerun only affected checks after fixes.
-   If an external operation is blocked, report it and retain completed local work.
-5. Report PR URL, commit, validation, review results and concrete manual follow-up.
-   Never merge, deploy, change production settings or apply remote migrations without
-   separate explicit authorization. Do not infer Git write permission on future tasks.
+1. Confirm base and Git authorization. Inspect status, preserve changes and fetch
+   the intended base; reuse an existing matching branch safely.
+2. Implement the smallest coherent feature following AGENTS.md and existing
+   architecture. Use code-change-validation and relevant specialized skills;
+   follow root routing for meaningful bounded risk reviews.
+3. For every UI change with screenshot differences, automatically prepare visual
+   review without reminders. The primary agent inspects BEFORE/AFTER/DIFFERENCE
+   and overlays, explains intended component changes/suspected regressions, and
+   links the current Quality `visual-review` artifact in the authorized PR
+   description (or one concise authorized comment), listing exact paths/hashes.
+   Keep CI read-only; use existing primary-agent PR authorization, not elevated
+   credentials for PR code. Do not create an unnecessary subagent.
+   NEVER write references before explicit user approval of those images/paths.
+   Finish review preparation and other authorized checks before waiting. Earlier
+   design approval excludes later candidate changes. After approval, verify
+   before/candidate hashes, copy only approved references, rerun affected visuals,
+   and continue authorized commit/push/final Quality without repeated permission
+   questions. Record approval scope, hashes, source/review and pre-update commits.
+   Preserve review evidence through approval/verification and preserve user files.
+4. Stage only intended changes, excluding credentials/local settings. When
+   authorized, commit/push and create/update the intended PR. Wait for exact-head
+   Quality; diagnose failures and rerun only affected checks. Reuse successes for
+   unchanged inputs. Correct regressions without suppressing checks. If strict
+   visual failures await approval, report the artifact and exact pending scope;
+   do not update references or claim merge readiness. Report blocked operations
+   and preserve completed work.
+5. Report PR, commit, checks, risks and concrete follow-up. Require green final
+   Quality before declaring ready to merge. Never merge, deploy, alter production
+   settings, migrate hosted databases or rewrite history without separate explicit
+   authorization. Git authorization does not extend to unrelated future tasks.

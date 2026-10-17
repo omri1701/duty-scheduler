@@ -1,5 +1,5 @@
 // Use the same Chromium, Ubuntu and fonts locally and in Quality CI.
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -27,7 +27,11 @@ try {
   }
   const linux = process.platform === 'linux';
   const url = external ?? (linux ? 'http://127.0.0.1:8787' : 'http://host.docker.internal:8787');
-  browser = spawn('docker', ['run', '--rm', '--ipc=host', ...(linux ? ['--network=host'] : []), '-e', `DUTY_E2E_URL=${url}`, '-e', `CI=${process.env.CI ?? ''}`, '-v', `${root}:/work`, '-w', '/work', image, 'node', 'node_modules/@playwright/test/cli.js', 'test', '--workers=2', ...process.argv.slice(2)], {cwd: root, stdio: 'inherit'});
+  const source = process.env.GITHUB_SHA || spawnSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).stdout?.trim();
+  const head = process.env.VISUAL_REVIEW_HEAD_SHA || source;
+  const status = spawnSync('git', ['status', '--porcelain'], {cwd: root, encoding: 'utf8'});
+  const tree = status.status === 0 ? (status.stdout.trim() ? 'dirty' : 'clean') : 'unavailable';
+  browser = spawn('docker', ['run', '--rm', '--ipc=host', ...(linux ? ['--network=host'] : []), '-e', `DUTY_E2E_URL=${url}`, '-e', `CI=${process.env.CI ?? ''}`, '-e', `VISUAL_REVIEW_SOURCE_SHA=${source ?? ''}`, '-e', `VISUAL_REVIEW_HEAD_SHA=${head ?? ''}`, '-e', `VISUAL_REVIEW_TREE_STATE=${tree}`, '-v', `${root}:/work`, '-w', '/work', image, 'node', 'node_modules/@playwright/test/cli.js', 'test', '--workers=2', ...process.argv.slice(2)], {cwd: root, stdio: 'inherit'});
   process.exitCode = await new Promise((resolve, reject) => {browser.on('error', reject); browser.on('exit', code => resolve(code ?? 1));});
 } catch (error) {console.error(error.message); process.exitCode = 1;}
 finally {stop();}

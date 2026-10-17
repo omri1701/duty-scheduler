@@ -7,6 +7,7 @@ import {PROJECTS} from '../../lib/supabase/environment';
 test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='https://duty-scheduler-prod.vercel.app';});
 
 async function snapshot(page: Page, name: string) {
+  test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
   // Collect every visual difference while retaining a failing test result.

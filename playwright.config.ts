@@ -12,7 +12,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: {timeout: 8_000, toHaveScreenshot: {animations: 'disabled', caret: 'hide', maxDiffPixels: 0}},
   snapshotPathTemplate: '{testDir}/snapshots/{platform}/{projectName}/{arg}{ext}',
-  reporter: [['list'], ['html', {open: 'never'}]],
+  reporter: [['list'], ['html', {open: 'never'}], ['./scripts/visual-review-reporter.mjs']],
   use: {
     baseURL: external ?? 'http://127.0.0.1:8787',
     locale: 'en-GB', timezoneId: 'Asia/Jerusalem', colorScheme: 'light',
