@@ -45,6 +45,8 @@ return, plus localhost. These are never added to Production.
 
 After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
+Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their Duty session without Google OAuth. Signing out clears the Duty session without signing out of Google; choosing a different account still requires that identity's own membership approval.
+
 The first account is **not** automatically made admin. Confirm the environment/project and the owner's actual `auth.users.id`, then execute [the operator-only first-admin script](../supabase/admin/promote-first-admin.sql). It verifies the exact confirmed Google identity and pending profile, refuses an existing admin, and atomically promotes the row and increments `duty_workspace.revision` under its lock. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
 Approved admins can approve later join requests and change approved members' roles in **Team & fairness**. Multiple admins are supported, and at least one active approved admin must remain. Every admin can also receive duties. Approved people can change their own display name through their avatar; subsequent logins do not overwrite it.

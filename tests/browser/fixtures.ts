@@ -163,13 +163,14 @@ export const test = base.extend<Fixtures>({
       if (identity === 'rejected') backend.raw.members.find(m => m.id === ids.a)!.status = 'rejected';
       if (identity === 'inactive') backend.raw.members.find(m => m.id === ids.a)!.active = false;
       let user = {id: ids[key], email: `${key}@example.invalid`, email_confirmed_at: NOW, is_anonymous: false, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
-      const token = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: user.id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
+      const tokenFor = (id: string) => [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
+      const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
       await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn}) => {
         localStorage.clear();
         if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
-        if (!signedOut) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
+        if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
       }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
@@ -182,8 +183,8 @@ export const test = base.extend<Fixtures>({
           }
           if (url.pathname === '/auth/v1/user') {await backend.authGate; return backend.authFailure ? route.fulfill({status:401,json:{message:'Synthetic session expired',code:'bad_jwt'}}) : route.fulfill({json: user});}
           if (url.pathname === '/auth/v1/token' && ((url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) || (url.searchParams.get('grant_type')==='pkce' && backend.googleEnabled))) {
-            user={...user,id:ids.admin,email:'admin@duty.local'};
-            return route.fulfill({json:{access_token:token,refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
+            if (url.searchParams.get('grant_type')==='password' || identity==='signed-out') user={...user,id:ids.admin,email:'admin@duty.local'};
+            return route.fulfill({json:{access_token:tokenFor(user.id),refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
           }
           if (url.pathname === '/auth/v1/logout') return route.fulfill({status: 204});
           if (url.pathname.startsWith('/rest/v1/rpc/')) {

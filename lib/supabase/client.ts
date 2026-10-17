@@ -41,7 +41,7 @@ export async function signInWithGoogle(){
  if(!response.ok)throw Error('Could not check Google sign-in. Please try again.');
  const settings=await response.json() as {external?:{google?:boolean}};
  if(settings.external?.google!==true)throw Error('Google sign-in is not enabled yet. The manager needs to finish the Google setup in Supabase.');
- const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:environment.readOnly?'https://duty-scheduler-prod.vercel.app/':window.location.origin+'/',skipBrowserRedirect:environment.readOnly}});
+ const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{queryParams:{prompt:'select_account'},redirectTo:environment.readOnly?'https://duty-scheduler-prod.vercel.app/':window.location.origin+'/',skipBrowserRedirect:environment.readOnly}});
  if(error)throw error;
  if(environment.readOnly&&data.url)window.open(data.url,'_blank','noopener,noreferrer');
 }
