@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests} from '../lib/supabase/swaps.ts';
+import {todayIsrael} from '../lib/rota/calendar-dates.ts';
 
-test('swap choices use the current publication, active primaries and strictly future dates',()=>{
+test('Israeli midnight expires yesterday, including a continuing Friday weekend',()=>{
+ const raw={months:[{month:'2026-10',current_publication_id:'p'}],members:[{id:'a',active:true,status:'approved'}],assignments:[
+  {id:'friday',day:'2026-10-16',end_day:'2026-10-18',primary_id:'a',publication_id:'p'},
+  {id:'saturday',day:'2026-10-17',end_day:'2026-10-18',primary_id:'a',publication_id:'p'},
+  {id:'sunday',day:'2026-10-18',end_day:'2026-10-19',primary_id:'a',publication_id:'p'},
+ ]};
+ const ids=instant=>publishedSwapDuties(raw,'2026-10',todayIsrael(new Date(instant))).map(d=>d.id);
+ assert.deepEqual(ids('2026-10-16T21:00:00Z'),['saturday','sunday']);
+ assert.deepEqual(ids('2026-10-17T20:59:59Z'),['saturday','sunday']);
+ assert.deepEqual(ids('2026-10-17T21:00:00Z'),['sunday']);
+});
+
+test('swap choices use the current publication, active primaries and today or later dates',()=>{
  const raw={months:[{month:'2026-10',status:'draft',current_publication_id:'current'}],members:[{id:'e',active:true,status:'approved'},{id:'off',active:false,status:'approved'}],assignments:[
   {id:'draft',publication_id:null,day:'2026-10-12',primary_id:'e'},
   {id:'old',publication_id:'old',day:'2026-10-12',primary_id:'e'},
@@ -12,7 +25,7 @@ test('swap choices use the current publication, active primaries and strictly fu
   {id:'open',publication_id:'current',day:'2026-10-12',primary_id:null},
   {id:'future',publication_id:'current',day:'2026-10-12',primary_id:'e'},
  ]};
- assert.deepEqual(publishedSwapDuties(raw,'2026-10','2026-10-09').map(d=>d.id),['future']);
+ assert.deepEqual(publishedSwapDuties(raw,'2026-10','2026-10-09').map(d=>d.id),['today','future']);
  assert.deepEqual(publishedSwapDuties(raw,'2026-11','2026-10-09'),[]);
 });
 

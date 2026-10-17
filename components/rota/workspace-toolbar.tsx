@@ -43,13 +43,13 @@ export function WorkspaceToolbar({
   return (
     <div className="month-toolbar">
       <MonthHeading label={monthLabel} t={t} onChange={changeMonth}/>
-      <div className="toolbar-actions">
+      <div className={'toolbar-actions'+(reopened ? ' reopened-actions' : '')}>
         {isManager && (
           <>
             {(
               <DropdownMenu.Root dir={t('ltr', 'rtl') as 'ltr' | 'rtl'}>
                 <DropdownMenu.Trigger asChild>
-                  <Button variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
+                  <Button className="month-actions-menu" variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
                     <Ellipsis />
                   </Button>
                 </DropdownMenu.Trigger>
@@ -70,6 +70,7 @@ export function WorkspaceToolbar({
             ) : (
               <>
                 <Button
+                  className="generate-month-action"
                   variant="outline"
                   disabled={readOnly || busy || !metrics.active.length}
                   onClick={runGenerate}
@@ -81,8 +82,9 @@ export function WorkspaceToolbar({
                       ? t('Regenerate', 'שיבוץ מחדש')
                       : t('Generate month', 'יצירת שיבוץ')}
                 </Button>
-                {reopened && <Button data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
+                {reopened && <Button className="cancel-draft-action" data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
                 <Button
+                  className="publish-month-action"
                   disabled={
                     readOnly || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
                   }

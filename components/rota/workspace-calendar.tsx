@@ -12,6 +12,7 @@ export function WorkspaceCalendar({
   calendarState,
   calendarBlocks,
   dateCells,
+  today,
   month,
   monthDetails,
   lang,
@@ -37,6 +38,7 @@ export function WorkspaceCalendar({
   calendarState: State;
   calendarBlocks: Duty[];
   dateCells: string[];
+  today: string;
   month: string;
   monthDetails: State['months'][string];
   lang: Language;
@@ -189,7 +191,7 @@ export function WorkspaceCalendar({
               ].join(' ')}
               aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
-              <CalendarDateLine date={d} end={combined ? addDays(b!.end,-1) : undefined}>
+              <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {b?.kind === 'special' && (
                   <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
                 )}

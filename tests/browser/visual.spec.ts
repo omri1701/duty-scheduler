@@ -22,6 +22,17 @@ async function snapshot(page: Page, name: string) {
   await expect.soft(page).toHaveScreenshot(name + '.png', {fullPage: true});
 }
 
+for(const lang of ['en','he'])test(`today accent in combined weekend ${lang}`,async({page,openApp})=>{
+  await openApp();
+  await page.clock.setFixedTime(new Date('2026-11-07T12:00:00Z'));
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  await expect(duty(page,'2026-11-06').locator('[aria-current="date"]')).toHaveText('7');
+  await snapshot(page,`today-weekend-draft-${lang}`);
+  await page.getByRole('button',{name:lang==='en'?'Published':'פורסם',exact:true}).click();
+  await snapshot(page,`today-weekend-published-${lang}`);
+});
+
 test('access states', async ({page, openApp}) => {
   await openApp('signed-out'); await snapshot(page, 'signed-out');
   await page.getByRole('button', {name: 'עברית', exact: true}).click();

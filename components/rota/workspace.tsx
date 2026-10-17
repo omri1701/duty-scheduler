@@ -29,8 +29,9 @@ import {
 } from './workspace-dialogs';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
+import {useIsraelToday} from '@/hooks/use-israel-today';
 import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
-import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
+import { fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics, visibleCalendarBlocks } from '@/lib/rota/workspace-data';
@@ -59,6 +60,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const [month, setMonth] = useState(initialCalendarMonth),
     [tab, setTab] = useState('schedule');
   const state = remote.state!;
+  const today = useIsraelToday();
   const [profileOpen, setProfileOpen] = useState(false),
     [historyOpen, setHistoryOpen] = useState(false);
   const [help, setHelp] = useState(false),
@@ -99,7 +101,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     ? monthDetails.status === 'published'
     : !!remote &&
       (remote.snapshot?.months.find((m) => m.month === month)?.status === 'published' ||
-        monthDetails.deadline < todayIsrael());
+        monthDetails.deadline < today);
   const metrics = workspaceMetrics(state, month, duties);
   const displayMetrics = calendarState === state ? metrics : workspaceMetrics(calendarState, month, blocks(month, calendarState.specials, calendarState.splitWeekends));
   const locale = lang === 'en' ? 'en-GB' : 'he-IL';
@@ -118,6 +120,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     state,
     month,
     tab,
+    today,
     requesting,
     publication,
     duties: calendarBlocks,
@@ -303,6 +306,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                   calendarState={calendarState}
                   calendarBlocks={calendarBlocks}
                   dateCells={dateCells}
+                  today={today}
                   month={month}
                   monthDetails={monthDetails}
                   lang={lang}

@@ -10,6 +10,29 @@ Native Next.js needs only a project URL and publishable key; no service-role key
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
 
+## Unmerged migrations in local development
+
+`pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.
+Use `pnpm dev:local` to test unmerged database features. It runs the same setup as
+`pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
+migrations with `supabase migration up --local`, preserving existing local data.
+Stop the existing development server before starting another on port 5173. Check
+`/api/config`'s Supabase URL and the environment badge to verify the actual target.
+
+A missing `duty_cancel_draft(p_month text, p_revision bigint)` RPC on hosted DEV
+means its incremental migration has not been released there; local setup cannot
+change a hosted database. Follow the approved [database-first release](DEPLOYMENT.md)
+after merge. Do not push feature migrations to hosted environments or reset them.
+If the function exists, verify authenticated EXECUTE grants and the PostgREST
+schema cache before changing the client. Never restore drafts from client data.
+
+`pnpm exec node supabase/tests/calendar-rpc.mjs` verifies Cancel Draft through real
+LOCAL Auth/PostgREST, including manager grants, exact parameter discovery,
+December/January ownership, revision races and transactional failure rollback.
+It requires unused synthetic far-future months, cleans only its own fixtures and
+refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
+swap eligibility with a transaction-local frozen clock and rolls everything back.
+
 ## 1. Create the Google OAuth client
 
 Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
