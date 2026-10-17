@@ -1,6 +1,7 @@
 import {test, expect, monthAction, duty, keyboardRequest, confirmRequest} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
+import {existsSync} from 'node:fs';
 
 // Retain the deployed Production baseline (no badge). Environment-specific
 // headers/access states have their own new snapshots in environment.spec.ts.
@@ -10,6 +11,13 @@ async function snapshot(page: Page, name: string) {
   test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
+  // With updateSnapshots:none Playwright reports missing references without an
+  // actual attachment. Retain the candidate explicitly for the review gallery.
+  if(!existsSync(test.info().snapshotPath(name+'.png'))) {
+    const path=test.info().outputPath(name+'-actual.png');
+    await page.screenshot({path,fullPage:true,animations:'disabled',caret:'hide'});
+    await test.info().attach(name+'-actual.png',{path,contentType:'image/png'});
+  }
   // Collect every visual difference while retaining a failing test result.
   await expect.soft(page).toHaveScreenshot(name + '.png', {fullPage: true});
 }

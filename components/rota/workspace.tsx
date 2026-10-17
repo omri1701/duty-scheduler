@@ -93,15 +93,15 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     interactions.resetSelection();
     setCalendarChoice({month, status: monthDetails.status, version, mine: choice.mine});
   }
-  const calendarState = viewingDraft ? state : fromSnapshot(remote.snapshot!, meId, undefined, true);
+  const calendarState = !isManager || viewingDraft ? state : fromSnapshot(remote.snapshot!, meId, undefined, true);
   const calendarBlocks = visibleCalendarBlocks(calendarState, month);
-  const displayMetrics = workspaceMetrics(calendarState, month, blocks(month, calendarState.specials, calendarState.splitWeekends));
   const constraintsClosed = isManager
     ? monthDetails.status === 'published'
     : !!remote &&
       (remote.snapshot?.months.find((m) => m.month === month)?.status === 'published' ||
         monthDetails.deadline < todayIsrael());
   const metrics = workspaceMetrics(state, month, duties);
+  const displayMetrics = calendarState === state ? metrics : workspaceMetrics(calendarState, month, blocks(month, calendarState.specials, calendarState.splitWeekends));
   const locale = lang === 'en' ? 'en-GB' : 'he-IL';
   const fmt = (d: string, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }) =>
     new Date(d + 'T12:00:00Z').toLocaleDateString(locale, { ...opts, timeZone: 'Asia/Jerusalem' });
