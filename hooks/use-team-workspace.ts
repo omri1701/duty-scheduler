@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import type {User} from '@supabase/supabase-js';
 import {getSupabase,getEnvironment,signInWithGoogle,signInLocally,completeInspectionLogin} from '@/lib/supabase/client';
 import type {Environment} from '@/lib/supabase/environment';
@@ -44,8 +44,10 @@ export function useTeamWorkspace(){
   const timer=setInterval(poll,30000);
   return()=>{alive=false;clearInterval(timer)};
  },[client,user,workspace]);
- const me=snapshot?.members.find(m=>m.id===user?.id);
- return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
+ const userId=user?.id;
+ const state=useMemo(()=>snapshot&&userId?fromSnapshot(snapshot,userId):null,[snapshot,userId]);
+ const me=snapshot?.members.find(m=>m.id===userId);
+ return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state,
   refresh:()=>workspace.refresh(),
   async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async signInLocal(email:string,password:string){try{setError('');await signInLocally(email,password)}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},

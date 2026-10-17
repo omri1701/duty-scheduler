@@ -1,3 +1,5 @@
+import {useMemo} from 'react';
+import {historicalTotals} from '@/lib/rota/workspace-data';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { TeamList } from '@/components/rota/team-list';
@@ -24,7 +26,8 @@ export function WorkspaceTeam({
   t: Translate;
   update: UpdateDraft;
 }) {
-  const { active, monthTotals, historyTotals } = metrics;
+  const { active, monthTotals } = metrics;
+  const historyTotals=useMemo(()=>historicalTotals(state),[state]);
   return (
     <section className="team-panel">
       <div className="section-heading">

@@ -57,6 +57,19 @@ members (including pending/inactive accounts) skip registration; missing profile
 use the checked join RPC and reload. Focus/visibility events share revalidation
 and refresh work; visible tabs still poll workspace data every 30 seconds.
 
+The verified calendar and navigation stay on the initial JavaScript path. Team,
+Availability, the phone month-actions menu and dialog features load on first use.
+Pending dialogs show a small native modal with keyboard dismissal; failed imports
+offer a local Retry without reloading the calendar. Loaded dialogs retain their
+existing Radix forms, focus and save behavior. No idle prefetch competes with
+startup. Code loading is independent of identity; private feature instances still
+belong to the verified, identity-keyed workspace and disappear on account changes.
+Snapshot projections are memoized by the complete accepted snapshot and user ID;
+calendar metrics and date formatting reuse unchanged inputs. Historical fairness
+totals are calculated only inside Team, and closed history previews do not convert
+publication snapshots. Snapshot fetching, verification, revision checks and the
+scheduling algorithm are unchanged.
+
 While initial access or a changed identity is being verified, a public calendar
 skeleton reuses the header, month selector, navigation styling, date-cell traversal
 and responsive calendar CSS. Lightweight date helpers resolve the next Israel

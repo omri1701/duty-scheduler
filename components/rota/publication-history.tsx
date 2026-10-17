@@ -1,5 +1,5 @@
 'use client';
-import {useState} from 'react';
+import {useMemo,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
@@ -8,8 +8,10 @@ import {addDays,blocks,dates,dayOf,monthNext,ink} from '@/lib/rota/engine';
 export function PublicationHistory({remote,month,open,onOpenChange,lang}:{remote:TeamWorkspace;month:string;open:boolean;onOpenChange:(open:boolean)=>void;lang:'en'|'he'}){
  const [selected,setSelected]=useState<string|null>(null),[action,setAction]=useState<{id:string;kind:'restore'|'delete'}|null>(null),[error,setError]=useState('');
  const t=(en:string,he:string)=>lang==='en'?en:he,raw=remote.snapshot!;
- const versions=raw.publications.filter(p=>p.month===month).sort((a,b)=>b.version-a.version),current=raw.months.find(m=>m.month===month)?.current_publication_id;
- const viewed=versions.find(p=>p.id===selected)??versions[0],preview=viewed?fromSnapshot(raw,remote.user!.id,viewed.id):null,bs=preview?blocks(month,preview.specials,preview.splitWeekends):[];
+ const versions=useMemo(()=>open?raw.publications.filter(p=>p.month===month).sort((a,b)=>b.version-a.version):[],[open,raw.publications,month]),current=raw.months.find(m=>m.month===month)?.current_publication_id;
+ const viewed=versions.find(p=>p.id===selected)??versions[0];
+ const preview=useMemo(()=>open&&viewed?fromSnapshot(raw,remote.user!.id,viewed.id):null,[open,raw,remote.user,viewed]);
+ const bs=useMemo(()=>preview?blocks(month,preview.specials,preview.splitWeekends):[],[month,preview]);
  const cells=dates(addDays(month+'-01',-dayOf(month+'-01')),addDays(monthNext(month)+'-01',(7-dayOf(monthNext(month)+'-01'))%7));
  const target=versions.find(p=>p.id===action?.id);
  async function confirm(){if(!action)return;try{if(action.kind==='restore')await remote.restore(action.id);else await remote.deleteVersion(action.id);setAction(null);setError('');if(action.kind==='restore')onOpenChange(false)}catch(e){setError((e as Error).message)}}

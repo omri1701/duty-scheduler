@@ -1,6 +1,8 @@
 import {MonthHeading} from './month-heading';
-import { SlidersHorizontal, Sparkles, Check, Ellipsis, History } from 'lucide-react';
-import {DropdownMenu} from 'radix-ui';
+import { SlidersHorizontal, Sparkles, Check, Ellipsis } from 'lucide-react';
+import {useRef,useState} from 'react';
+import {DeferredFeature,deferred} from './deferred-feature';
+const MonthActions=deferred(()=>import('./month-actions').then(m=>m.MonthActions));
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { Button } from '@/components/ui/button';
 import type { State } from '@/lib/rota/engine';
@@ -38,6 +40,7 @@ export function WorkspaceToolbar({
   onPublish: () => void;
 }) {
   const mobile = useMobileLayout();
+  const [menuRequested,setMenuRequested]=useState(false),menuTrigger=useRef<HTMLButtonElement>(null);
   return (
     <div className="month-toolbar">
       <MonthHeading label={monthLabel} status={monthDetails.status} t={t} onChange={changeMonth}/>
@@ -45,23 +48,9 @@ export function WorkspaceToolbar({
         {isManager && (
           <>
             {mobile ? (
-              <DropdownMenu.Root dir={t('ltr', 'rtl') as 'ltr' | 'rtl'}>
-                <DropdownMenu.Trigger asChild>
-                  <Button variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
-                    <Ellipsis />
-                  </Button>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content className="mobile-action-menu" align="end" sideOffset={8} collisionPadding={16}>
-                    <DropdownMenu.Item onSelect={onHistory}>
-                      <History />{t('Versions', 'גרסאות')}
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item disabled={readOnly} onSelect={onSettings}>
-                      <SlidersHorizontal />{t('Change month deadline', 'שינוי מועד אחרון לחודש')}
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Root>
+              menuRequested?<DeferredFeature lang={t('en','he') as 'en'|'he'} onClose={()=>{setMenuRequested(false);queueMicrotask(()=>menuTrigger.current?.focus())}}><MonthActions t={t} readOnly={readOnly} onHistory={onHistory} onSettings={onSettings}/></DeferredFeature>:
+              <Button ref={menuTrigger} variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')} aria-haspopup="menu" aria-expanded={false}
+                onClick={()=>setMenuRequested(true)} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();setMenuRequested(true)}}}><Ellipsis/></Button>
             ) : <><Button variant="outline" onClick={onHistory}>
               {t('Versions', 'גרסאות')}
             </Button>
