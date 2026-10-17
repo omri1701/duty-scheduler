@@ -254,7 +254,10 @@ export function MonthSettingsDialog({
 }) {
   return (
     <Dialog open={settings} onOpenChange={setSettings}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} onCloseAutoFocus={event => {
+        const trigger = document.querySelector<HTMLButtonElement>('[data-month-tool="deadline"]');
+        if (trigger?.getClientRects().length) {event.preventDefault(); trigger.focus();}
+      }}>
         <DialogHeader>
           <DialogTitle>
             {t('Change month deadline', 'שינוי מועד אחרון לחודש')} · {monthLabel}

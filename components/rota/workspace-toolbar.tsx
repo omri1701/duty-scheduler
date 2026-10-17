@@ -40,8 +40,15 @@ export function WorkspaceToolbar({
   reopened: boolean;
   onCancelDraft: () => void;
 }) {
+  const generateLabel = busy ? t('Generating…','משבץ…') : monthDetails.generated ? t('Regenerate','שיבוץ מחדש') : t('Generate month','יצירת שיבוץ');
   return (
-    <div className="month-toolbar">
+    <div className="month-toolbar" dir={t('ltr','rtl')}>
+      {isManager && <div className="desktop-month-tools">
+        <Button data-month-tool="versions" variant="outline" onClick={onHistory}><History/>{t('Versions','גרסאות')}</Button>
+        <Button data-month-tool="deadline" variant="outline" disabled={readOnly} onClick={onSettings}>
+          <SlidersHorizontal/>{t('Change month deadline','שינוי מועד אחרון לחודש')}
+        </Button>
+      </div>}
       <MonthHeading label={monthLabel} t={t} onChange={changeMonth}/>
       <div className={'toolbar-actions'+(reopened ? ' reopened-actions' : '')}>
         {isManager && (
@@ -65,6 +72,7 @@ export function WorkspaceToolbar({
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
             )}
+            <div className="workflow-actions">
             {monthDetails.status === 'published' ? (
               <Button data-draft-action disabled={readOnly} onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
             ) : (
@@ -74,13 +82,11 @@ export function WorkspaceToolbar({
                   variant="outline"
                   disabled={readOnly || busy || !metrics.active.length}
                   onClick={runGenerate}
+                  aria-label={generateLabel}
                 >
                   <Sparkles className={busy ? 'spin' : ''} />
-                  {busy
-                    ? t('Generating…', 'משבץ…')
-                    : monthDetails.generated
-                      ? t('Regenerate', 'שיבוץ מחדש')
-                      : t('Generate month', 'יצירת שיבוץ')}
+                  <span className="workflow-label-wide">{generateLabel}</span>
+                  <span className="workflow-label-compact" aria-hidden="true">{busy || monthDetails.generated ? generateLabel : t('Generate','יצירה')}</span>
                 </Button>
                 {reopened && <Button className="cancel-draft-action" data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
                 <Button
@@ -95,6 +101,7 @@ export function WorkspaceToolbar({
                 </Button>
               </>
             )}
+            </div>
           </>
         )}
       </div>

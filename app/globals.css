@@ -400,8 +400,11 @@
 .month-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding-block:12px}
 .month-title{justify-content:center;justify-self:center;max-width:100%}
 .month-title button{min-width:44px;min-height:44px}
-.toolbar-actions{justify-self:stretch;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
-.toolbar-actions>button[data-state]{margin-inline-end:auto}
+.toolbar-actions{justify-self:stretch;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:12px;min-width:0}
+.toolbar-actions>.month-actions-menu{flex:0 0 44px;width:44px;height:44px;padding:0;margin:0}
+.desktop-month-tools{display:none}
+.workflow-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0;margin-inline-start:auto}
+.workflow-label-compact{display:none}
 .toolbar-actions:empty{display:none}
 .calendar-top{justify-content:flex-start;flex-wrap:wrap;padding-block:8px}
 .calendar-top:empty{display:none}
@@ -412,10 +415,15 @@
 .calendar-top>button:last-child:not(.my-duties-toggle){margin-inline-start:auto}
 .calendar-grid .adjacent-duty{opacity:.6;cursor:default}
 .calendar-grid .day-cell{gap:5px}
-@media(min-width:1440px){
- .month-toolbar{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+@media(min-width:1024px){
+ .month-toolbar{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px}
+ .desktop-month-tools{display:flex;align-items:center;gap:8px;grid-column:1;grid-row:1;min-width:0}
+ .desktop-month-tools button{height:44px;padding-inline:12px;font-size:13px;gap:6px;white-space:nowrap}
+ .desktop-month-tools svg{width:16px;height:16px}
  .month-title{grid-column:2}
- .toolbar-actions{grid-column:3;justify-self:end}
+ .toolbar-actions{grid-column:3;grid-row:1;justify-self:end}
+ .toolbar-actions>.month-actions-menu{display:none}
+ .workflow-actions>button{height:44px;padding-inline:12px;font-size:13px;white-space:nowrap}
 }
 @media(max-width:600px){
  .month-title{justify-self:stretch}
@@ -431,10 +439,18 @@
 .current-date{position:relative;color:#164b40;isolation:isolate;font-weight:750}
 .current-date::before{content:"";position:absolute;z-index:-1;inset-block-start:50%;inset-inline-start:50%;transform:translate(-50%,-50%);width:1.65em;height:1.65em;border-radius:50%;background:#e3edc9;box-shadow:inset 0 0 0 1px #a1b980}
 [dir=rtl] .current-date::before{transform:translate(50%,-50%)}
-@media(max-width:600px){
- .month-toolbar:has(.reopened-actions) .month-title{padding-inline:48px}
- .reopened-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;position:static}
- .reopened-actions .month-actions-menu{position:absolute;inset-inline-start:0;inset-block-start:12px;margin:0}
- .reopened-actions>button:not(.month-actions-menu){width:100%;min-width:0;height:44px;padding-inline:6px;font-size:12px;gap:4px;white-space:nowrap}
- .reopened-actions>button:not(.month-actions-menu)>svg{display:none}
+@media(max-width:1023px){
+ .month-title{grid-row:1}
+ .toolbar-actions{grid-row:2}
+ .workflow-actions{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);flex:1;max-width:440px}
+ .workflow-actions>button{width:100%;min-width:0;height:44px;padding-inline:6px;font-size:12px;gap:4px;white-space:nowrap}
+ .workflow-actions>button>svg,.workflow-label-wide{display:none}
+ .workflow-label-compact{display:inline}
+}
+@media(min-width:1024px) and (max-width:1279px){
+ .desktop-month-tools button,.workflow-actions>button{font-size:12px;padding-inline:8px}
+ .workflow-actions>button>svg{display:none}
+}
+@media(max-width:374px){
+ .workflow-actions>button{font-size:11px;padding-inline:4px}
 }
