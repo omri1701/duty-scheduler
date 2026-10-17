@@ -9,15 +9,15 @@ not recreate them. The application exposes only checked RPCs and RLS-filtered re
 supabase/
   schemas/
     tables/                 # 11 tables: columns, constraints, FKs, indexes and RLS
-    functions/duty_private/ # 19 checked implementations and internal helpers
-    functions/public/       # 11 API-compatible, invoker RPC wrappers
+    functions/duty_private/ # 20 checked implementations and internal helpers
+    functions/public/       # 12 API-compatible, invoker RPC wrappers
     constraints/            # Deferred month/publication cyclic FK
     triggers/               # Publication-pointer swap reconciliation
     policies/               # One select policy per table
     grants/                 # Explicit table and function privileges
     shared.sql              # Application-private schema only
   reference-data/           # 4 lookup tables + required workspace singleton
-  migrations/               # 2 generated fresh-install migrations
+  migrations/               # 2 frozen baselines plus incremental migrations
   archive/migrations/       # 8 immutable historical files, outside CLI discovery
   admin/                    # Operator-only first-admin procedure; never an RPC
   tests/                    # Clean schema, permission, publication, swap and bootstrap checks

@@ -117,6 +117,15 @@ development origin and exact trailing-slash redirect independently using
 Phones up to 600px use floating bottom tabs and compact monthly calendars.
 The month actions menu contains Versions and the deadline setting; Generate
 and Publish stay visible.
+The month heading is centered independently of manager actions. Published months
+show Whole team / My duties; engineers see no filter on an unpublished month.
+Managers reopen a published month to edit a draft, with independent Draft / Published
+and My duties controls. Special Block appears only in Draft. Cancel Draft requires
+confirmation and atomically restores the current publication without creating a version.
+Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
+Adjacent dates retain their assignments in the complete Sunday–Saturday grid, with
+faded, display-only cells. Both halves of a weekend belong to Friday's month;
+editing or generating that month does not reopen the adjacent month.
 Availability and duty editors use the same centered, scrollable Radix modal shell
 as Special Duty on phones and desktop. Outside clicks, Escape and Close
 discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.
@@ -325,7 +334,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
-- Published duty swap requests: approved members drag their future primary duty onto another engineer’s duty (or select two dates with the keyboard). The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
+- Published duty swap requests: approved members drag their primary duty starting today or later onto another engineer’s duty (or select two dates with tap or the keyboard). Eligibility uses the date in Asia/Jerusalem, including today after 09:00; a weekend starting yesterday remains ineligible. The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.

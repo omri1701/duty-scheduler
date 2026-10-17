@@ -119,7 +119,7 @@ for(const width of [320,375,390,430,768,1440])for(const lang of ['en','he'])for(
       const shellRow=shell.elements['.month-title'][0],realRow=real.elements['.month-title'][0];
       close(a.y+a.height/2-shellRow.y-shellRow.height/2,b.y+b.height/2-realRow.y-realRow.height/2,`month control ${i} alignment`);
     }
-    for(const selector of ['.calendar-weekdays span','.calendar-top .segmented button','.coverage-card']) {
+    for(const selector of ['.calendar-weekdays span',...(role==='engineer'?['.calendar-top .segmented button']:[]),'.coverage-card']) {
       shell.elements[selector].forEach((rect,i)=>{
         close(rect.width,real.elements[selector][i].width,`${selector} ${i} width`);
         close(rect.height,real.elements[selector][i].height,`${selector} ${i} height`);

@@ -1,14 +1,14 @@
 import {
-  monthNext,
+  blocks,
   totals,
   allKnownBlocks,
   unavailable,
   ownerMonth,
   normalizeWeekends,
-  overlap,
   type State,
   type Duty,
 } from './engine.ts';
+import {calendarDates} from './calendar-dates.ts';
 
 // Workspace projections: scheduling rules remain in the React-free engine.
 export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
@@ -16,8 +16,8 @@ export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
     active = state.team.filter((p) => p.active),
     monthTotals = totals(state, owned),
     historyTotals = totals(state, allKnownBlocks(state));
-  const assigned = duties.filter((b) => state.assignments[b.id]?.primary).length;
-  const conflicts = duties.filter((b) => {
+  const assigned = owned.filter((b) => state.assignments[b.id]?.primary).length;
+  const conflicts = owned.filter((b) => {
     const a = state.assignments[b.id];
     return (
       a &&
@@ -47,31 +47,27 @@ export type WorkspaceMetrics = ReturnType<typeof workspaceMetrics>;
 
 export {calendarDates} from './calendar-dates.ts';
 
-// A draft edit can also touch a carried weekend or special range in another month.
-export function prepareWorkspaceUpdate(
-  s: State,
-  changed: State,
-  month: string,
-  monthDetails: State['months'][string],
-  draft = true,
-) {
-  const n = normalizeWeekends(changed);
+// Populate every visible date, keeping combined weekends as one period.
+export function visibleCalendarBlocks(state: State, month: string) {
+  const months = new Set(calendarDates(month).map(day => day.slice(0, 7)));
+  const duties = new Map<string, Duty>();
+  for (const m of months) for (const b of blocks(m, state.specials, state.splitWeekends)) duties.set(b.id, b);
+  return [...duties.values()];
+}
+
+export function prepareWorkspaceUpdate(s: State, changed: State, month: string, monthDetails: State['months'][string], draft = true) {
+  // Normalization must not merge a different month's independent split weekend.
+  const n = normalizeWeekends({...changed, splitWeekends: changed.splitWeekends?.filter(f => f.startsWith(month))});
+  n.splitWeekends = [...(changed.splitWeekends ?? []).filter(f => !f.startsWith(month)), ...(n.splitWeekends ?? [])];
   if (draft) {
-    const months = {
-      ...n.months,
-      [month]: { ...(n.months[month] ?? monthDetails), status: 'draft' as const },
-    };
-    const specialsChanged = JSON.stringify(s.specials) !== JSON.stringify(n.specials);
-    for (const b of [...allKnownBlocks(s), ...allKnownBlocks(n)]) {
-      const changed =
-        JSON.stringify(s.assignments[b.id]) !== JSON.stringify(n.assignments[b.id]) ||
-        specialsChanged;
-      if (changed)
-        for (const m of Object.keys(months))
-          if (overlap(b, { start: m + '-01', end: monthNext(m) + '-01' }))
-            months[m] = { ...months[m], status: 'draft' };
+    const before = new Map(allKnownBlocks(s).map(b => [b.id, b]));
+    const after = new Map(allKnownBlocks(n).map(b => [b.id, b]));
+    for (const [id, b] of new Map([...before, ...after])) {
+      const changedDuty = JSON.stringify(s.assignments[id]) !== JSON.stringify(n.assignments[id]) ||
+        JSON.stringify(before.get(id)) !== JSON.stringify(after.get(id));
+      if (changedDuty && ownerMonth(b) !== month) throw Error('Edit duties in their owning month.');
     }
-    n.months = months;
+    n.months = {...n.months, [month]: {...(n.months[month] ?? monthDetails), status: 'draft'}};
   }
   return n;
 }

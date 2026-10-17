@@ -13,6 +13,7 @@ export type Functions = {
   duty_rename_self: Operation<Revision & {p_name: string}>;
   duty_set_role: Operation<Revision & {p_member: string; p_role: string}>;
   duty_restore_publication: Operation<Revision & {p_publication: string}>;
+  duty_cancel_draft: Operation<Revision & {p_month: string}>;
   duty_delete_publication: Operation<Revision & {p_publication: string}>;
   duty_request_swap: Operation<Revision & {p_from: string; p_to: string; p_explanation: string}>;
   duty_resolve_swap: Operation<Revision & {p_request: string; p_action: 'accept' | 'decline' | 'approve' | 'reject' | 'cancel'; p_override_reason: string}, string>;

@@ -2,7 +2,7 @@ import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, Cale
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import { Plus, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { addDays, ink, type State, type Duty } from '@/lib/rota/engine';
+import { addDays, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { CalendarInteractions } from '@/hooks/use-calendar-interactions';
 import type { Language, Translate, FormatDate } from './workspace-types';
@@ -12,6 +12,7 @@ export function WorkspaceCalendar({
   calendarState,
   calendarBlocks,
   dateCells,
+  today,
   month,
   monthDetails,
   lang,
@@ -25,6 +26,9 @@ export function WorkspaceCalendar({
   publication,
   view,
   setView,
+  reopened,
+  viewingDraft,
+  setVersion,
   onSpecial,
   metrics,
   interactions,
@@ -34,6 +38,7 @@ export function WorkspaceCalendar({
   calendarState: State;
   calendarBlocks: Duty[];
   dateCells: string[];
+  today: string;
   month: string;
   monthDetails: State['months'][string];
   lang: Language;
@@ -47,6 +52,9 @@ export function WorkspaceCalendar({
   publication: string | null | undefined;
   view: string;
   setView: (view: string) => void;
+  reopened: boolean;
+  viewingDraft: boolean;
+  setVersion: (version: string) => void;
   onSpecial: () => void;
   metrics: WorkspaceMetrics;
   interactions: CalendarInteractions;
@@ -55,7 +63,6 @@ export function WorkspaceCalendar({
   const { assigned, conflicts, gaps } = metrics;
   const {
     keyboardSource,
-    setKeyboardSource,
     dragFrom,
     dragOver,
     ownPublishedDays,
@@ -67,21 +74,14 @@ export function WorkspaceCalendar({
   } = interactions;
   return (
     <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
-        <CalendarFilters t={t} value={view} onChange={next=>{setView(next);setKeyboardSource(null)}}>
-          {isManager && publication && (
-            <button
-              className={view === 'published' ? 'selected' : ''}
-              onClick={() => {
-                setView('published');
-                setKeyboardSource(null);
-              }}
-            >
-              {t('Published', '\u05e4\u05d5\u05e8\u05e1\u05dd')}
-            </button>
-          )}
-        </CalendarFilters>
+        {reopened ? <>
+          <div className="segmented" role="group" aria-label={t('Schedule version', '\u05d2\u05e8\u05e1\u05ea \u05dc\u05d5\u05d7')}>
+            {(['draft', 'published'] as const).map(version => <button key={version} aria-pressed={viewingDraft === (version === 'draft')} className={viewingDraft === (version === 'draft') ? 'selected' : ''} onClick={() => setVersion(version)}>{version === 'draft' ? t('Draft', '\u05d8\u05d9\u05d5\u05d8\u05d4') : t('Published', '\u05e4\u05d5\u05e8\u05e1\u05dd')}</button>)}
+          </div>
+          <button className="my-duties-toggle" aria-pressed={view === 'me'} onClick={() => setView(view === 'me' ? 'team' : 'me')}>{t('My duties', '\u05d4\u05ea\u05d5\u05e8\u05e0\u05d5\u05d9\u05d5\u05ea \u05e9\u05dc\u05d9')}</button>
+        </> : (isManager || !!publication) && <CalendarFilters t={t} value={view} onChange={setView}/>}
         <Button
-          style={{ display: isManager && !requesting ? undefined : 'none' }}
+          style={{ display: viewingDraft ? undefined : 'none' }}
           variant="ghost"
           onClick={() => {
             onSpecial();
@@ -156,14 +156,15 @@ export function WorkspaceCalendar({
         {calendarCells(dateCells, calendarBlocks).map(({date:d, period:b, combined}) => {
           const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
-            mine = a?.primary === meId || a?.secondary === meId;
+            mine = a?.primary === meId || a?.secondary === meId,
+            interactive = !!b && d.startsWith(month) && ownerMonth(b) === month;
           return (
             <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
-              disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
+              disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id))}
               key={d}
-              data-gesture-key={b?.id}
+              data-gesture-key={interactive ? b?.id : undefined}
               onClick={() => {
-                if (!ignoreDragClick() && b) selectCalendarDuty(b);
+                if (interactive && !ignoreDragClick() && b) selectCalendarDuty(b);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
@@ -173,6 +174,7 @@ export function WorkspaceCalendar({
               aria-pressed={requesting && keyboardSource === b?.id}
               aria-describedby={requesting ? 'published-swap-help' : undefined}
               className={[
+                !interactive ? 'adjacent-duty' : '',
                 view === 'me' && !mine ? 'faded' : '',
                 dragFrom === b?.id || keyboardSource === b?.id ? 'drag-source' : '',
                 (dragOver === b?.id && dragFrom !== b?.id) ||
@@ -189,7 +191,7 @@ export function WorkspaceCalendar({
               ].join(' ')}
               aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
-              <CalendarDateLine date={d} end={combined ? addDays(b!.end,-1) : undefined}>
+              <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {b?.kind === 'special' && (
                   <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
                 )}
@@ -219,9 +221,7 @@ export function WorkspaceCalendar({
                   </CalendarAssignment>
                   {b.title && <div className="special-title">{b.title}</div>}
                   {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
-                  {ownPublishedDays.has(b.id) && requesting && (
-                    <small className="request-swap-hint">{t('Request swap', 'בקשת החלפה')}</small>
-                  )}
+
                 </>
               )}
             </CalendarDay>

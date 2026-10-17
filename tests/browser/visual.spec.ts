@@ -1,6 +1,7 @@
 import {test, expect, monthAction, duty, keyboardRequest, confirmRequest} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
+import {existsSync} from 'node:fs';
 
 // Retain the deployed Production baseline (no badge). Environment-specific
 // headers/access states have their own new snapshots in environment.spec.ts.
@@ -10,9 +11,27 @@ async function snapshot(page: Page, name: string) {
   test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
+  // With updateSnapshots:none Playwright reports missing references without an
+  // actual attachment. Retain the candidate explicitly for the review gallery.
+  if(!existsSync(test.info().snapshotPath(name+'.png'))) {
+    const path=test.info().outputPath(name+'-actual.png');
+    await page.screenshot({path,fullPage:true,animations:'disabled',caret:'hide'});
+    await test.info().attach(name+'-actual.png',{path,contentType:'image/png'});
+  }
   // Collect every visual difference while retaining a failing test result.
   await expect.soft(page).toHaveScreenshot(name + '.png', {fullPage: true});
 }
+
+for(const lang of ['en','he'])test(`today accent in combined weekend ${lang}`,async({page,openApp})=>{
+  await openApp();
+  await page.clock.setFixedTime(new Date('2026-11-07T12:00:00Z'));
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  await expect(duty(page,'2026-11-06').locator('[aria-current="date"]')).toHaveText('7');
+  await snapshot(page,`today-weekend-draft-${lang}`);
+  await page.getByRole('button',{name:lang==='en'?'Published':'פורסם',exact:true}).click();
+  await snapshot(page,`today-weekend-published-${lang}`);
+});
 
 test('access states', async ({page, openApp}) => {
   await openApp('signed-out'); await snapshot(page, 'signed-out');
@@ -29,6 +48,23 @@ test('published swap confirmation and outgoing request', async ({page, openApp})
 });
 test('pending approval', async ({page, openApp}) => {
   await openApp('pending'); await snapshot(page, 'pending-approval');
+});
+
+for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({page,openApp,backend})=>{
+  backend.raw.months[0].status='published';
+  await openApp();
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  const button=(en:string,he:string)=>page.getByRole('button',{name:lang==='en'?en:he,exact:true});
+  await snapshot(page,`manager-published-${lang}`);
+  await button('Next month','חודש הבא').click();
+  await snapshot(page,`manager-new-${lang}`);
+  await button('Previous month','חודש קודם').click();
+  await button('Reopen draft','פתיחת טיוטה').click();
+  await button('Published','פורסם').click();
+  await button('My duties','התורנויות שלי').click();
+  await snapshot(page,`manager-reopened-published-${lang}`);
+  await button('Cancel draft','ביטול טיוטה').click();
+  await snapshot(page,`manager-cancel-draft-${lang}`);
 });
 test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) => {
   await openApp(); await snapshot(page, 'admin-draft-en');

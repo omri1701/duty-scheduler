@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {calendarDates,calendarCells,publicCalendarCells,dayOf,addDays} from '../lib/rota/calendar-dates.ts';
 import {blocks} from '../lib/rota/engine.ts';
+import {visibleCalendarBlocks} from '../lib/rota/workspace-data.ts';
 
 test('public calendar uses the real ordinary date grid for every month across boundaries',()=>{
   for(let year=2024;year<=2028;year++)for(let m=1;m<=12;m++){
     const month=`${year}-${String(m).padStart(2,'0')}`,days=calendarDates(month);
     assert.equal(days.length%7,0);
     assert.equal(dayOf(days[0]),0);assert.equal(dayOf(days.at(-1)),6);
-    const actual=calendarCells(days,blocks(month,[])),publicCells=publicCalendarCells(month);
+    const actual=calendarCells(days,visibleCalendarBlocks({specials:[],splitWeekends:[]},month)),publicCells=publicCalendarCells(month);
     assert.deepEqual(publicCells.map(c=>[c.date,c.combined]),actual.map(c=>[c.date,c.combined]),month);
     for(const cell of publicCells.filter(c=>c.combined)){
       assert.equal(dayOf(cell.date),5);

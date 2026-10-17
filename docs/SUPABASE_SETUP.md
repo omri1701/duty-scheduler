@@ -10,6 +10,29 @@ Native Next.js needs only a project URL and publishable key; no service-role key
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
 
+## Unmerged migrations in local development
+
+`pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.
+Use `pnpm dev:local` to test unmerged database features. It runs the same setup as
+`pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
+migrations with `supabase migration up --local`, preserving existing local data.
+Stop the existing development server before starting another on port 5173. Check
+`/api/config`'s Supabase URL and the environment badge to verify the actual target.
+
+A missing `duty_cancel_draft(p_month text, p_revision bigint)` RPC on hosted DEV
+means its incremental migration has not been released there; local setup cannot
+change a hosted database. Follow the approved [database-first release](DEPLOYMENT.md)
+after merge. Do not push feature migrations to hosted environments or reset them.
+If the function exists, verify authenticated EXECUTE grants and the PostgREST
+schema cache before changing the client. Never restore drafts from client data.
+
+`pnpm exec node supabase/tests/calendar-rpc.mjs` verifies Cancel Draft through real
+LOCAL Auth/PostgREST, including manager grants, exact parameter discovery,
+December/January ownership, revision races and transactional failure rollback.
+It requires unused synthetic far-future months, cleans only its own fixtures and
+refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
+swap eligibility with a transaction-local frozen clock and rolls everything back.
+
 ## 1. Create the Google OAuth client
 
 Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
@@ -77,6 +100,16 @@ A regular duty spans one date; an intact weekend spans Friday through Sunday and
 
 Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
 
+New publications contain only duties owned by that month: weekdays by date and both
+weekend halves by Friday, including a split/special Saturday in the next month.
+`duty_cancel_draft(p_month, p_revision)` is separate from historical version restoration.
+It requires an active approved manager, takes the existing workspace revision lock,
+reads the current publication pointer, verifies owned coverage, and replaces only
+that owner's working rows in one transaction. It restores Published status without
+changing the pointer, sequence, history, requests, membership, availability, or any
+other month's rows/status. Missing coverage or a conflicting boundary row rejects
+the entire operation. The client sends no restoration rows or publication ID.
+
 ## Permissions and validation
 
 The [browser regression baseline](../README.md#browser-and-visual-regression-baseline)
@@ -92,7 +125,7 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-Fresh projects use only the two generated baseline migrations documented in
+Fresh projects replay the two frozen baseline migrations and subsequent incremental migrations documented in
 [database architecture](../supabase/README.md). Historical migrations are archived
 outside active CLI discovery. Tokyo's already-applied history remains unchanged;
 never push the replacement history or run a reset there.

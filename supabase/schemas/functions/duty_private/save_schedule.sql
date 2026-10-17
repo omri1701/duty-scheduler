@@ -19,8 +19,8 @@ begin
  end loop;
  delete from public.duty_assignments where publication_id is null and day not in (select (value->>'day')::date from jsonb_array_elements(p_state->'duties'));
  for item in select value from jsonb_array_elements(p_state->'duties') loop
-  if not exists(select 1 from public.duty_months where month=to_char((item->>'day')::date,'YYYY-MM')) then
-   insert into public.duty_months(month,deadline) values(to_char((item->>'day')::date,'YYYY-MM'),date_trunc('month',(item->>'day')::date)::date-7);
+  if not exists(select 1 from public.duty_months where month=duty_private.duty_owner((item->>'day')::date)) then
+   insert into public.duty_months(month,deadline) values(duty_private.duty_owner((item->>'day')::date),(duty_private.duty_owner((item->>'day')::date)||'-01')::date-7);
   end if;
   insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
   values((item->>'day')::date,(item->>'end_day')::date,nullif(item->>'primary_id','')::uuid,nullif(item->>'secondary_id','')::uuid,coalesce((item->>'manager_override')::boolean,false),coalesce(item->>'title',''),coalesce((item->>'extra_points')::numeric,0))
@@ -30,8 +30,8 @@ begin
  if p_publish is not null then
   if not exists(select 1 from public.duty_months where month=p_publish) then raise exception 'Unknown month'; end if;
   first_day:=(p_publish||'-01')::date; last_day:=(first_day+interval '1 month'-interval '1 day')::date;
-  -- Validate an entire carried combined weekend; a split prior Friday is separate.
-  if exists(select 1 from public.duty_assignments where publication_id is null and day=first_day-1 and end_day=first_day+1) then first_day:=first_day-1; end if;
+  -- Validate only this month's owned dates, including its final Friday's Saturday.
+  if extract(dow from first_day)=6 then first_day:=first_day+1; end if;
   if extract(dow from last_day)=5 then last_day:=last_day+1; end if;
   for d in select generate_series(first_day,last_day,interval '1 day')::date loop
    select * into a from public.duty_assignments where publication_id is null and day<=d and end_day>d;
@@ -42,7 +42,7 @@ begin
   update public.duty_months set publication_sequence=publication_sequence+1 where month=p_publish returning publication_sequence into next_version;
   insert into public.duty_publications(month,version,published_by) values(p_publish,next_version,auth.uid()) returning id into publication;
   insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
-  select publication,day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments where publication_id is null and day<=last_day and end_day>first_day;
+  select publication,day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=p_publish;
   update public.duty_months set current_publication_id=publication,status='published',generated=true where month=p_publish;
  end if;
  update public.duty_workspace set revision=revision+1 where id;

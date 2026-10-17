@@ -111,7 +111,7 @@
 
 /* Soft ownership colors and a quieter, compact calendar. */
 .calendar-grid .assignment-chip{box-shadow:none;border:1px solid #0000000a!important;font-weight:600;border-radius:7px}
-.calendar-grid{--calendar-cell-min-height:110px}
+.calendar-grid{--calendar-cell-min-height:92px}
 .calendar-grid .day-cell{min-height:var(--calendar-cell-min-height);gap:8px;padding-block:10px}
 .calendar-grid .combined-weekend{background:#edf4f0}
 .calendar-grid .weekend{background:#edf4f0}
@@ -222,7 +222,7 @@
  .calendar-grid .day-cell{transition:box-shadow 160ms ease,background-color 160ms ease}
  .mobile-drag-layer .day-cell,.mobile-drag-layer .team-row{opacity:1;overflow:hidden}
  .mobile-drag-layer .day-cell .date-line{width:100%}
- .month-title{width:100%;display:grid;grid-template-columns:44px minmax(0,1fr) 44px auto;gap:4px}
+ .month-title{width:100%;display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:4px}
  .month-title h2{min-width:0;font-size:20px;letter-spacing:-.5px;text-align:center;line-height:1.2}
  .month-title button{width:44px;height:44px;border:0;background:transparent;border-radius:12px}
  [dir=rtl] .month-title button svg{transform:rotate(180deg)}
@@ -243,7 +243,7 @@
  .segmented button{font-size:12px;padding:8px;border-radius:9px;min-height:44px}
  .calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:0}
  .calendar-weekdays span{font-size:10px;padding:9px 0;text-align:center}
- .calendar-grid{--calendar-cell-min-height:88px}
+ .calendar-grid{--calendar-cell-min-height:76px}
  .calendar-grid .day-cell{display:flex;align-items:stretch;min-height:var(--calendar-cell-min-height);gap:5px;padding:7px 2px;border-inline-end:1px solid #e5eae7;border-bottom:1px solid #e5eae7}
  .calendar-grid .day-cell.outside{display:flex}
  .calendar-grid .date-line{min-height:18px;justify-content:center;gap:2px;flex-wrap:wrap}
@@ -394,4 +394,63 @@
  @keyframes placeholder-pulse{0%,100%{opacity:.68}50%{opacity:1}}
  .app-shell:not(.startup-skeleton) .calendar-panel{animation:workspace-ready 160ms ease-out}
  @keyframes workspace-ready{from{opacity:.96}to{opacity:1}}
+}
+
+/* The month stays centered independently of manager controls. */
+.month-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding-block:12px}
+.month-title{justify-content:center;justify-self:center;max-width:100%}
+.month-title button{min-width:44px;min-height:44px}
+.toolbar-actions{justify-self:stretch;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:12px;min-width:0}
+.toolbar-actions>.month-actions-menu{flex:0 0 44px;width:44px;height:44px;padding:0;margin:0}
+.desktop-month-tools{display:none}
+.workflow-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0;margin-inline-start:auto}
+.workflow-label-compact{display:none}
+.toolbar-actions:empty{display:none}
+.calendar-top{justify-content:flex-start;flex-wrap:wrap;padding-block:8px}
+.calendar-top:empty{display:none}
+.calendar-top button{min-height:44px}
+.calendar-top .segmented{flex-wrap:nowrap}
+.my-duties-toggle{border:1px solid #dce4df;border-radius:10px;padding:8px 10px;color:#526b5b;font-size:13px;background:#fff}
+.my-duties-toggle[aria-pressed=true]{background:#e4eedf;border-color:#9ab38d;color:#244c37}
+.calendar-top>button:last-child:not(.my-duties-toggle){margin-inline-start:auto}
+.calendar-grid .adjacent-duty{opacity:.6;cursor:default}
+.calendar-grid .day-cell{gap:5px}
+@media(min-width:1024px){
+ .month-toolbar{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px}
+ .desktop-month-tools{display:flex;align-items:center;gap:8px;grid-column:1;grid-row:1;min-width:0}
+ .desktop-month-tools button{height:44px;padding-inline:12px;font-size:13px;gap:6px;white-space:nowrap}
+ .desktop-month-tools svg{width:16px;height:16px}
+ .month-title{grid-column:2}
+ .toolbar-actions{grid-column:3;grid-row:1;justify-self:end}
+ .toolbar-actions>.month-actions-menu{display:none}
+ .workflow-actions>button{height:44px;padding-inline:12px;font-size:13px;white-space:nowrap}
+}
+@media(max-width:600px){
+ .month-title{justify-self:stretch}
+ .calendar-top{gap:6px;padding-inline:8px}
+ .calendar-top .segmented button{padding-inline:8px}
+ .my-duties-toggle{font-size:12px;padding-inline:8px}
+ .calendar-top>button{padding-inline:8px}
+}
+
+@media(min-width:601px){.calendar-grid .assignment-chip{line-height:20px}}
+
+/* Date-number accent reserves no extra space, including a combined Saturday. */
+.current-date{position:relative;color:#164b40;isolation:isolate;font-weight:750}
+.current-date::before{content:"";position:absolute;z-index:-1;inset-block-start:50%;inset-inline-start:50%;transform:translate(-50%,-50%);width:1.65em;height:1.65em;border-radius:50%;background:#e3edc9;box-shadow:inset 0 0 0 1px #a1b980}
+[dir=rtl] .current-date::before{transform:translate(50%,-50%)}
+@media(max-width:1023px){
+ .month-title{grid-row:1}
+ .toolbar-actions{grid-row:2}
+ .workflow-actions{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);flex:1;max-width:440px}
+ .workflow-actions>button{width:100%;min-width:0;height:44px;padding-inline:6px;font-size:12px;gap:4px;white-space:nowrap}
+ .workflow-actions>button>svg,.workflow-label-wide{display:none}
+ .workflow-label-compact{display:inline}
+}
+@media(min-width:1024px) and (max-width:1279px){
+ .desktop-month-tools button,.workflow-actions>button{font-size:12px;padding-inline:8px}
+ .workflow-actions>button>svg{display:none}
+}
+@media(max-width:374px){
+ .workflow-actions>button{font-size:11px;padding-inline:4px}
 }
