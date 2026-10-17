@@ -17,7 +17,8 @@ export function DeferredFeature({lang,onClose,active=true,children}: Feedback & 
  useLayoutEffect(()=>{
   if(!modal||!active)return;
   const trigger=focus.trigger;
-  return()=>{queueMicrotask(()=>{if(trigger instanceof HTMLElement&&trigger.isConnected)trigger.focus({preventScroll:true})})};
+  // Let the previous modal release its focus trap before returning focus (WebKit).
+  return()=>{setTimeout(()=>{if(trigger instanceof HTMLElement&&trigger.isConnected)trigger.focus({preventScroll:true})},0)};
  },[modal,active,focus.trigger]);
  return visited||active?<FeedbackContext.Provider value={{lang,onClose,active}}>{children}</FeedbackContext.Provider>:null;
 }

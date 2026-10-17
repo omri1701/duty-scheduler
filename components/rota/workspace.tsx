@@ -206,7 +206,11 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           </Button>
           <button
             className="avatar admin-avatar"
-            onClick={() => setProfileOpen(true)}
+            onClick={(event) => {
+              // Safari does not focus clicked buttons; retain the modal's return target.
+              event.currentTarget.focus({preventScroll:true});
+              setProfileOpen(true);
+            }}
             aria-label={t('My profile', 'הפרופיל שלי')}
           >
             {remote?.me?.name
