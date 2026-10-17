@@ -24,6 +24,7 @@ import {
   SpecialDutyDialog,
   MonthSettingsDialog,
   PublishDialog,
+  CancelDraftDialog,
   WorkspaceHelpDialog,
 } from './workspace-dialogs';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
@@ -32,7 +33,7 @@ import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
 import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
-import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
+import { calendarDates, workspaceMetrics, visibleCalendarBlocks } from '@/lib/rota/workspace-data';
 export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
@@ -64,7 +65,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     [settings, setSettings] = useState(false),
     [publishOpen, setPublishOpen] = useState(false);
   const [person, setPerson] = useState(meId),
-    [view, setView] = useState('team');
+    [calendarChoice, setCalendarChoice] = useState({month: '', status: '', version: 'draft', mine: false});
+  const [cancelDraftMonth, setCancelDraftMonth] = useState<string | null>(null);
   const t = (en: string, he: string) => (lang === 'en' ? en : he);
   const duties = useMemo(
     () => blocks(month, state.specials, state.splitWeekends),
@@ -77,15 +79,23 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const publication = remote.snapshot!.months.find(
     (m) => m.month === month,
   )?.current_publication_id;
-  const requesting = !isManager || view === 'published';
-  const calendarState =
-    isManager && view === 'published' && publication
-      ? fromSnapshot(remote.snapshot!, meId, publication)
-      : state;
-  const calendarBlocks =
-    calendarState === state
-      ? duties
-      : blocks(month, calendarState.specials, calendarState.splitWeekends);
+  const reopened = isManager && !!publication && monthDetails.status === 'draft';
+  const choice = calendarChoice.month === month && calendarChoice.status === monthDetails.status
+    ? calendarChoice : {version: 'draft', mine: false};
+  const viewingDraft = isManager && monthDetails.status === 'draft' && (!reopened || choice.version === 'draft');
+  const requesting = !viewingDraft;
+  const view = choice.mine ? 'me' : 'team';
+  function setView(next: string) {
+    interactions.cancelKeyboard();
+    setCalendarChoice({month, status: monthDetails.status, version: choice.version, mine: next === 'me'});
+  }
+  function setVersion(version: string) {
+    interactions.resetSelection();
+    setCalendarChoice({month, status: monthDetails.status, version, mine: choice.mine});
+  }
+  const calendarState = viewingDraft ? state : fromSnapshot(remote.snapshot!, meId, undefined, true);
+  const calendarBlocks = visibleCalendarBlocks(calendarState, month);
+  const displayMetrics = workspaceMetrics(calendarState, month, blocks(month, calendarState.specials, calendarState.splitWeekends));
   const constraintsClosed = isManager
     ? monthDetails.status === 'published'
     : !!remote &&
@@ -110,7 +120,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     tab,
     requesting,
     publication,
-    duties,
+    duties: calendarBlocks,
     monthDetails,
     openDuty: draft.editor.openDuty,
     startSwap: draft.swap.start,
@@ -121,6 +131,11 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     setMonth(m);
     draft.resetSpecialDates(m);
     interactions.resetSelection();
+    setCalendarChoice({month: m, status: '', version: 'draft', mine: false});
+    setSelected(null);
+    draft.swap.setSelection(null);
+    setPublishOpen(false);
+    setCancelDraftMonth(null);
   }
   async function saveConstraints(days: string[], kind: 'no' | 'prefer' | 'clear', note: string) {
     try {
@@ -147,6 +162,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     )
       return;
     setPublishOpen(false);
+    setCalendarChoice({month, status: 'published', version: 'draft', mine: false});
+    interactions.resetSelection();
     toast.success(t('Schedule published.', 'הלוח פורסם.'));
   }
   function exportBackup() {
@@ -264,12 +281,14 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               readOnly={remote.readOnly}
               busy={busy}
               metrics={metrics}
-              blockCount={duties.length}
+              blockCount={metrics.owned.length}
               t={t}
               changeMonth={changeMonth}
               runGenerate={runGenerate}
               onHistory={() => setHistoryOpen(true)}
               onSettings={() => setSettings(true)}
+              reopened={reopened}
+              onCancelDraft={() => setCancelDraftMonth(month)}
               onReopen={() => update((s) => s)}
               onPublish={() => setPublishOpen(true)}
             />
@@ -297,18 +316,21 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                   publication={publication}
                   view={view}
                   setView={setView}
+                  reopened={reopened}
+                  viewingDraft={viewingDraft}
+                  setVersion={setVersion}
                   onSpecial={() => {
                     draft.special.setOpen(true);
                     draft.special.setTitle('');
                   }}
-                  metrics={metrics}
+                  metrics={displayMetrics}
                   interactions={interactions}
-                  blockCount={duties.length}
+                  blockCount={displayMetrics.owned.length}
                 />
                 <WorkspaceSummary
                   readOnly={remote.readOnly}
-                  metrics={metrics}
-                  blockCount={duties.length}
+                  metrics={displayMetrics}
+                  blockCount={displayMetrics.owned.length}
                   monthDetails={monthDetails}
                   meId={meId}
                   isManager={isManager}
@@ -396,6 +418,18 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         nickname={nickname}
         personName={personName}
       />
+      <CancelDraftDialog open={cancelDraftMonth !== null} onOpenChange={open => {if (!open) setCancelDraftMonth(null)}} saving={remote.saving} lang={lang} t={t} monthLabel={monthLabel} onConfirm={async () => {
+        if (!cancelDraftMonth) return;
+        try {
+          await remote.cancelDraft(cancelDraftMonth);
+          interactions.resetSelection();
+          setSelected(null);
+          draft.swap.setSelection(null);
+          setCancelDraftMonth(null);
+          setCalendarChoice({month, status: 'published', version: 'draft', mine: false});
+          toast.success(t('Published schedule restored.', '\u05d4\u05dc\u05d5\u05d7 \u05e9\u05e4\u05d5\u05e8\u05e1\u05dd \u05e9\u05d5\u05d7\u05d6\u05e8.'));
+        } catch (e) {toast.error((e as Error).message)}
+      }}/>
       <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
       <MonthSettingsDialog
         settings={settings}

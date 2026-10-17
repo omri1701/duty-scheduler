@@ -20,11 +20,11 @@ test('calendar dates retain complete Sunday–Saturday rows at leap and month bo
   assert.equal(calendarDates('2026-02').length, 28);
 });
 
-test('coverage includes carried weekends while monthly points belong to their Friday month', () => {
+test('coverage and monthly points exclude weekends owned by the previous Friday month', () => {
   const state = publishedMonths();
   state.assignments['2026-07-31'] = {primary: 'e0'};
   const august = workspaceMetrics(state, '2026-08', blocks('2026-08', []));
-  assert.equal(august.assigned, 1);
+  assert.equal(august.assigned, 0);
   assert.ok(!august.owned.some(duty => duty.id === '2026-07-31'));
   assert.equal(august.monthTotals.e0, 0);
   assert.equal(august.historyTotals.e0, 1);
@@ -45,7 +45,7 @@ test('coverage warnings include emergency constraints and respect manager overri
     ['2026-08-04', '2026-08-05']);
 });
 
-test('editing a carried weekend reopens both overlapping months without touching later history', () => {
+test('editing a boundary weekend reopens only its owning month', () => {
   const state = publishedMonths();
   state.assignments['2026-07-31'] = {primary: 'e0'};
   const before = structuredClone(state);
@@ -53,17 +53,17 @@ test('editing a carried weekend reopens both overlapping months without touching
     ...state, assignments: {...state.assignments, '2026-07-31': {primary: 'e1'}},
   }, '2026-07', state.months['2026-07']);
   assert.equal(next.months['2026-07'].status, 'draft');
-  assert.equal(next.months['2026-08'].status, 'draft');
+  assert.equal(next.months['2026-08'].status, 'published');
   assert.equal(next.months['2026-09'].status, 'published');
   assert.deepEqual(state, before);
 });
 
-test('special-range edits retain the existing invalidation of all known months', () => {
+test('special-range edits reopen only their owning month', () => {
   const state = publishedMonths();
   const next = prepareWorkspaceUpdate(state, {...state, specials: [
     {id: 'special', title: 'Coverage', start: '2026-08-03', end: '2026-08-04', extra: 1},
   ]}, '2026-08', state.months['2026-08']);
-  assert.deepEqual(Object.values(next.months).map(month => month.status), ['draft', 'draft', 'draft']);
+  assert.deepEqual(Object.values(next.months).map(month => month.status), ['published', 'draft', 'published']);
 });
 
 test('deadline and publication updates normalize weekends without reopening published months', () => {
@@ -75,4 +75,10 @@ test('deadline and publication updates normalize weekends without reopening publ
   assert.equal(next.months['2026-08'].deadline, '2026-07-25');
   assert.deepEqual(Object.values(next.months).map(month => month.status),
     ['published', 'published', 'published']);
+});
+
+test('editing a different owner fails without mutating either month', () => {
+  const state = publishedMonths(), before = structuredClone(state);
+  assert.throws(() => prepareWorkspaceUpdate(state, {...state, assignments: {'2026-07-31': {primary:'e1'}}}, '2026-08', state.months['2026-08']), /owning month/);
+  assert.deepEqual(state, before);
 });

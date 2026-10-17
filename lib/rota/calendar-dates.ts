@@ -23,9 +23,8 @@ export function calendarCells<T extends Period>(dateCells:string[],periods:reado
 }
 
 export function publicCalendarCells(month:string) {
-  const begin=month+'-01',end=monthNext(month)+'-01';
   const dateCells=calendarDates(month);
-  const weekends=dateCells.filter(d=>dayOf(d)===5&&d<end&&addDays(d,2)>begin)
+  const weekends=dateCells.filter(d=>dayOf(d)===5)
     .map(start=>({start,end:addDays(start,2),kind:'weekend'}));
   return calendarCells(dateCells,weekends);
 }

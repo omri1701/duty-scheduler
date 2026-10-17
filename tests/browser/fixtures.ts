@@ -1,5 +1,5 @@
 import {test as base, expect, type Page} from '@playwright/test';
-import {addDays, blocks} from '../../lib/rota/engine';
+import {addDays, blocks, dayOf} from '../../lib/rota/engine';
 import {canManage, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 
@@ -75,8 +75,9 @@ export class Backend {
       const state = p.p_state as {team:{id:string;color:string;active:boolean}[];duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
       state.team.forEach((member, seniority) => Object.assign(this.raw.members.find(m => m.id === member.id)!, member, {seniority}));
       this.raw.members.sort((a,b) => a.seniority - b.seniority);
+      const draftIds = new Map(this.raw.assignments.filter(d => d.publication_id === null).map(d => [d.day, d.id]));
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
-      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
+      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: draftIds.get(d.day) ?? `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {
         let m = this.raw.months.find(m => m.month === month);
         if (!m) {m = {month, ...value, current_publication_id: null, publication_sequence: 0}; this.raw.months.push(m);}
@@ -99,6 +100,15 @@ export class Backend {
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
       this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === publication.id).map(d => ({...d, id: d.id + '-restored', publication_id: null})));
       this.raw.months.find(m => m.month === publication.month)!.status = 'draft';
+    } else if (name === 'duty_cancel_draft') {
+      expect(admin).toBe(true);
+      if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
+      const m = this.raw.months.find(m => m.month === p.p_month)!;
+      expect(m.status).toBe('draft'); expect(m.current_publication_id).toBeTruthy();
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === m.month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === m.current_publication_id && owns(d)).map(d => ({...d, id: d.id + '-cancelled', publication_id: null})));
+      m.status = 'published'; m.generated = true;
     } else if (name === 'duty_request_swap') {
       const from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
       expect(from.primary_id).toBe(user); expect(to.primary_id).not.toBe(user);
@@ -213,7 +223,7 @@ export const test = base.extend<Fixtures>({
   },
 });
 export {expect};
-export const duty = (page: Page, day: string) => page.locator(`button[data-gesture-key="${day}"]`).filter({has: page.locator('.date-line')});
+export const duty = (page: Page, day: string) => page.locator(`button[data-date="${day}"]`).filter({has: page.locator('.date-line')});
 export async function keyboardRequest(page: Page) {
   await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
   await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
@@ -223,8 +233,8 @@ export async function confirmRequest(page: Page) {
   await page.getByRole('button', {name: 'Confirm Request', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
 }
-export async function drag(page: Page, touch = false) {
-  const from = duty(page, '2026-11-02'), to = duty(page, '2026-11-03');
+export async function drag(page: Page, touch = false, fromDay = '2026-11-02', toDay = '2026-11-03') {
+  const from = duty(page, fromDay), to = duty(page, toDay);
   await from.scrollIntoViewIfNeeded();
   const a = (await from.boundingBox())!, b = (await to.boundingBox())!;
   const x = a.x + a.width / 2, y = a.y + a.height / 2, tx = b.x + b.width / 2, ty = b.y + b.height / 2;

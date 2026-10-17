@@ -77,6 +77,16 @@ A regular duty spans one date; an intact weekend spans Friday through Sunday and
 
 Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
 
+New publications contain only duties owned by that month: weekdays by date and both
+weekend halves by Friday, including a split/special Saturday in the next month.
+`duty_cancel_draft(p_month, p_revision)` is separate from historical version restoration.
+It requires an active approved manager, takes the existing workspace revision lock,
+reads the current publication pointer, verifies owned coverage, and replaces only
+that owner's working rows in one transaction. It restores Published status without
+changing the pointer, sequence, history, requests, membership, availability, or any
+other month's rows/status. Missing coverage or a conflicting boundary row rejects
+the entire operation. The client sends no restoration rows or publication ID.
+
 ## Permissions and validation
 
 The [browser regression baseline](../README.md#browser-and-visual-regression-baseline)
@@ -92,7 +102,7 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-Fresh projects use only the two generated baseline migrations documented in
+Fresh projects replay the two frozen baseline migrations and subsequent incremental migrations documented in
 [database architecture](../supabase/README.md). Historical migrations are archived
 outside active CLI discovery. Tokyo's already-applied history remains unchanged;
 never push the replacement history or run a reset there.

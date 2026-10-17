@@ -6,8 +6,8 @@ BEGIN
     RAISE EXCEPTION 'Expected exactly 11 application tables';
   END IF;
   IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 30 THEN
-    RAISE EXCEPTION 'Expected exactly 30 application functions';
+      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 32 THEN
+    RAISE EXCEPTION 'Expected exactly 32 application functions';
   END IF;
   IF (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
       WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 21

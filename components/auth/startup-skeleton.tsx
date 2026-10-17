@@ -44,7 +44,7 @@ export function StartupSkeleton({lang,environment}:{lang:'en'|'he';environment:E
                   {month&&publicCalendarCells(month).map(({date,period,combined})=><CalendarDay disabled key={date} date={date} month={month} combined={combined} weekend={combined}>
 
                     <CalendarDateLine date={date} end={combined?addDays(period!.end,-1):undefined} loading/>
-                    {(date.startsWith(month)||combined)&&<CalendarAssignment loading/>}
+                    <CalendarAssignment loading/>
                   </CalendarDay>)}
 
               </CalendarSurface>

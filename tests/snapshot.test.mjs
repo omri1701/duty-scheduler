@@ -2,7 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fromSnapshot,schedulePayload,canManage,readSnapshot} from '../lib/supabase/snapshot.ts';
 import {addDays,blocks,totals} from '../lib/rota/engine.ts';
+import {visibleCalendarBlocks} from '../lib/rota/workspace-data.ts';
 const member=(id,role='engineer',status='approved')=>({id,email:id+'@example.invalid',name:id,role,status,active:true,seniority:1,color:'#adc9ee'});
+
+test('manager published calendar reads current snapshots across adjacent months, preserving private drafts',()=>{
+ const raw=fixture();
+ raw.months=[{month:'2027-12',status:'draft',generated:true,current_publication_id:'dec'}, {month:'2028-01',status:'draft',generated:true,current_publication_id:'jan'}];
+ raw.publications=[{id:'dec',month:'2027-12'},{id:'jan',month:'2028-01'}];
+ raw.assignments=[row('2027-12-31','engineer','dec',{end_day:'2028-01-02'}),row('2028-01-03','engineer','jan'),row('2027-12-31','admin',null,{end_day:'2028-01-02'}),row('2028-01-03','admin',null)];
+ const published=fromSnapshot(raw,'admin',undefined,true),draft=fromSnapshot(raw,'admin');
+ assert.equal(published.assignments['2027-12-31'].primary,'engineer');
+ assert.equal(published.assignments['2028-01-03'].primary,'engineer');
+ assert.equal(draft.assignments['2027-12-31'].primary,'admin');
+ const visible=visibleCalendarBlocks(published,'2028-01');
+ assert.equal(visible.filter(b=>b.id==='2027-12-31').length,1);
+ assert.equal(visible.find(b=>b.id==='2027-12-31').end,'2028-01-02');
+ raw.months[1].current_publication_id=null;
+ assert.equal(fromSnapshot(raw,'admin',undefined,true).assignments['2028-01-03'],undefined);
+});
 const row=(day,primary='admin',publication=null,options={})=>({id:(publication??'draft')+'-'+day,publication_id:publication,day,end_day:addDays(day,1),primary_id:primary,secondary_id:null,manager_override:false,title:'',extra_points:0,points:1,...options});
 function fixture(){return {revision:4,members:[member('admin','admin'),member('engineer'),member('waiting','engineer','pending')],roles:[{code:'admin',label:'Admin',can_manage:true},{code:'engineer',label:'Engineer',can_manage:false}],memberStatuses:[],monthStatuses:[],constraintTypes:[],months:[{month:'2026-10',deadline:'2026-09-24',status:'draft',generated:true,current_publication_id:'v2',publication_sequence:2}],constraints:[{member_id:'engineer',day:'2026-10-01',kind:'no',note:'Vacation'}],assignments:[row('2026-10-01','admin'),row('2026-10-01','admin','v1'),row('2026-10-01','engineer','v2')],publications:[{id:'v1',month:'2026-10',version:1,published_at:'2026-09-20',published_by:'admin'},{id:'v2',month:'2026-10',version:2,published_at:'2026-09-21',published_by:'admin'}]}}
 test('admin sees only draft rows and approved engineers',()=>{const state=fromSnapshot(fixture(),'admin');assert.equal(state.assignments['2026-10-01'].primary,'admin');assert.equal(state.months['2026-10'].status,'draft');assert.deepEqual(state.team.map(m=>m.id),['admin','engineer']);assert.equal(state.constraintNotes.engineer['2026-10-01'],'Vacation')});

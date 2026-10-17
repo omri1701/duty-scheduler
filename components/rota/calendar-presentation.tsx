@@ -16,7 +16,7 @@ export function CalendarFilters({t,value='team',onChange,loading=false,children}
   t:Translate;value?:string;onChange?:(value:string)=>void;loading?:boolean;children?:ReactNode;
 }) {
   return <div className="segmented">
-    {(['team','me'] as const).map(view=><button key={view} disabled={loading} className={[value===view?'selected':'',loading?'skeleton-content':''].join(' ')} onClick={onChange?()=>onChange(view):undefined}>
+    {(['team','me'] as const).map(view=><button key={view} disabled={loading} aria-pressed={value===view} className={[value===view?'selected':'',loading?'skeleton-content':''].join(' ')} onClick={onChange?()=>onChange(view):undefined}>
       {view==='team'?t('Whole team','כל הצוות'):t('My duties','התורנויות שלי')}
     </button>)}
     {children}

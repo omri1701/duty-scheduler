@@ -117,6 +117,15 @@ development origin and exact trailing-slash redirect independently using
 Phones up to 600px use floating bottom tabs and compact monthly calendars.
 The month actions menu contains Versions and the deadline setting; Generate
 and Publish stay visible.
+The month heading is centered independently of manager actions. Published months
+show Whole team / My duties; engineers see no filter on an unpublished month.
+Managers reopen a published month to edit a draft, with independent Draft / Published
+and My duties controls. Special Block appears only in Draft. Cancel Draft requires
+confirmation and atomically restores the current publication without creating a version.
+Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
+Adjacent dates retain their assignments in the complete Sunday–Saturday grid, with
+faded, display-only cells. Both halves of a weekend belong to Friday's month;
+editing or generating that month does not reopen the adjacent month.
 Availability and duty editors use the same centered, scrollable Radix modal shell
 as Special Duty on phones and desktop. Outside clicks, Escape and Close
 discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.

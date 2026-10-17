@@ -91,3 +91,8 @@ GRANT ALL ON FUNCTION public.duty_set_constraints(p_member uuid, p_days date[], 
 REVOKE ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) TO authenticated;
 GRANT ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) TO service_role;
+
+REVOKE ALL ON FUNCTION duty_private.cancel_draft(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.cancel_draft(text, bigint) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_cancel_draft(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_cancel_draft(text, bigint) TO authenticated, service_role;

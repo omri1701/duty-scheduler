@@ -43,13 +43,13 @@ function applyRows(state:State,rows:DutyRow[]){
  }
  state.specials=specials;state.splitWeekends=[...splits];return state;
 }
-export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string):State{
+export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string,published=false):State{
  const admin=canManage(raw,userId);
  const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
- for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
+ for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication&&!published?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
  for(const c of raw.constraints){(state.constraints[c.member_id]??={})[c.day]=c.kind;if(c.note)(state.constraintNotes![c.member_id]??={})[c.day]=c.note}
  if(previewPublication)return applyRows(state,raw.assignments.filter(r=>r.publication_id===previewPublication));
- if(admin)return applyRows(state,raw.assignments.filter(r=>r.publication_id===null));
+ if(admin&&!published)return applyRows(state,raw.assignments.filter(r=>r.publication_id===null));
  const current=new Set(raw.months.map(m=>m.current_publication_id)),publicationMonths=new Map(raw.publications.map(p=>[p.id,p.month]));
  // The owning Friday's publication wins over a copied weekend in the next month.
  const rows=raw.assignments.filter(r=>r.publication_id&&current.has(r.publication_id)).sort((a,b)=>Number(publicationMonths.get(a.publication_id!)===rowOwner(a))-Number(publicationMonths.get(b.publication_id!)===rowOwner(b)));

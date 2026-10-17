@@ -102,6 +102,12 @@ begin
  select jsonb_set(schedule,'{duties}',schedule->'duties'||jsonb_agg(jsonb_build_object('day',d::date,'end_day',d::date+case when extract(dow from d)=5 and d::date<>'2026-07-31'::date then 2 else 1 end,'primary_id',admin_id,'title',case when d::date='2026-08-01'::date then 'Boundary holiday' else '' end,'extra_points',case when d::date='2026-08-01'::date then 2 else 0 end))) into schedule from generate_series('2026-07-01'::date,'2026-08-31'::date,interval '1 day') d where extract(dow from d)<>6 or d::date='2026-08-01'::date;
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev,'2026-08');
  select current_publication_id into boundary_version from public.duty_months where month='2026-08';
+ -- A legacy August version may include July's Saturday. Keep history restoration
+ -- coverage without making new publications copy a different owner's duties.
+ reset role;
+ insert into public.duty_assignments(publication_id,day,end_day,primary_id,title,extra_points)
+ select boundary_version,day,end_day,primary_id,title,extra_points from public.duty_assignments where publication_id is null and day='2026-08-01';
+ set local role authenticated;
  -- Replace the old split with a combined Friday, then restore the August snapshot.
  select jsonb_set(schedule,'{duties}',jsonb_agg(case when entry->>'day'='2026-07-31' then jsonb_set(entry,'{end_day}','"2026-08-02"'::jsonb) else entry end)) into schedule from jsonb_array_elements(schedule->'duties') entry where entry->>'day'<>'2026-08-01';
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev);
@@ -127,3 +133,4 @@ begin
 end $$;
 select 'PASS: pending first signup, explicit bootstrap, two admins, last-admin protection, FK lookups, own profile, RLS, private notes, stale revisions, validation, stable points, boundary restore/publication, immutable versions, restore, delete, version numbering, deactivation and anonymous access' as result;
 rollback;
+\ir cancel-draft.sql

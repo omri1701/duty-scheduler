@@ -30,6 +30,23 @@ test('published swap confirmation and outgoing request', async ({page, openApp})
 test('pending approval', async ({page, openApp}) => {
   await openApp('pending'); await snapshot(page, 'pending-approval');
 });
+
+for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({page,openApp,backend})=>{
+  backend.raw.months[0].status='published';
+  await openApp();
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  const button=(en:string,he:string)=>page.getByRole('button',{name:lang==='en'?en:he,exact:true});
+  await snapshot(page,`manager-published-${lang}`);
+  await button('Next month','חודש הבא').click();
+  await snapshot(page,`manager-new-${lang}`);
+  await button('Previous month','חודש קודם').click();
+  await button('Reopen draft','פתיחת טיוטה').click();
+  await button('Published','פורסם').click();
+  await button('My duties','התורנויות שלי').click();
+  await snapshot(page,`manager-reopened-published-${lang}`);
+  await button('Cancel draft','ביטול טיוטה').click();
+  await snapshot(page,`manager-cancel-draft-${lang}`);
+});
 test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) => {
   await openApp(); await snapshot(page, 'admin-draft-en');
   await duty(page, '2026-11-02').click(); await snapshot(page, 'duty-editor-en');
