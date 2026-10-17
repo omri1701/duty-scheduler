@@ -8,6 +8,8 @@ test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='h
 
 async function snapshot(page: Page, name: string) {
   test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
+  // References describe the usable feature, rather than its transient code loader.
+  await expect(page.locator('[role="status"][aria-busy="true"]')).toHaveCount(0);
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
   // Collect every visual difference while retaining a failing test result.

@@ -79,7 +79,7 @@ test('account switching discards a pending private feature before its chunk comp
 test('secondary tab failures keep Schedule usable and retry in Hebrew',async({page,openApp})=>{
  const team=chunk('Team order');await openApp();await page.getByRole('button',{name:'Switch to Hebrew'}).click();let recovered=false;
  await page.route(`**${team}`,route=>recovered?route.continue():route.fulfill({status:503,body:'Temporarily unavailable'}));
- await page.getByRole('tab').nth(2).click();await expect(page.getByRole('alert')).toContainText('לא ניתן לטעון כרגע');
+ await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-panel').getByRole('alert')).toContainText('לא ניתן לטעון כרגע');
  await expect(page.locator('.team-panel')).toHaveAttribute('dir','rtl');
  await page.getByRole('tab').nth(0).click();await expect(page.locator('.calendar-grid')).toBeVisible();
  await page.getByRole('tab').nth(2).click();recovered=true;await page.getByRole('button',{name:'ניסיון נוסף',exact:true}).click();

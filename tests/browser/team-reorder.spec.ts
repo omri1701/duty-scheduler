@@ -10,7 +10,7 @@ for(const lang of ['en','he'] as const) test(`vertical team stack, cancellation,
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
- await page.getByRole('tab').nth(2).click();
+ await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  await page.addStyleTag({content:`.gesture-grid.team-list > [data-gesture-key="${ids.a}"]{padding-block:22px}.gesture-grid.team-list > [data-gesture-key="${ids.c}"]{padding-block:18px}.gesture-grid.team-list > .team-row:nth-child(2){margin-bottom:11px}.gesture-grid.team-list > .team-row:nth-child(4){margin-bottom:7px}`});
  const initial=await order(page),mobile=info.project.name==='mobile';
  const calls=()=>backend.calls.filter(c=>c.name==='duty_save_schedule');
@@ -89,7 +89,7 @@ for(const lang of ['en','he'] as const) test(`vertical team stack, cancellation,
 });
 
 test('engineers see the team in read-only mode with disabled reorder handles',async({page,openApp,backend})=>{
- await openApp('a');await page.getByRole('tab').nth(2).click();
+ await openApp('a');await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  const initial=await order(page);
  for(const handle of await rows(page).locator('.team-grip').all())await expect(handle).toBeDisabled();
  expect(await order(page)).toEqual(initial);

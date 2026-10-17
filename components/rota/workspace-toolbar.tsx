@@ -49,7 +49,8 @@ export function WorkspaceToolbar({
           <>
             {mobile ? (
               menuRequested?<DeferredFeature lang={t('en','he') as 'en'|'he'} onClose={()=>{setMenuRequested(false);queueMicrotask(()=>menuTrigger.current?.focus())}}><MonthActions t={t} readOnly={readOnly} onHistory={onHistory} onSettings={onSettings}/></DeferredFeature>:
-              <Button ref={menuTrigger} variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')} aria-haspopup="menu" aria-expanded={false}
+              <Button ref={menuTrigger} variant="outline" size="icon" data-state="closed" aria-label={t('Month actions', 'פעולות לחודש')} aria-haspopup="menu" aria-expanded={false}
+                onPointerDown={event=>{if(event.button===0&&!event.ctrlKey)event.preventDefault()}}
                 onClick={()=>setMenuRequested(true)} onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();setMenuRequested(true)}}}><Ellipsis/></Button>
             ) : <><Button variant="outline" onClick={onHistory}>
               {t('Versions', 'גרסאות')}
