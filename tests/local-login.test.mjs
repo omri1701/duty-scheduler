@@ -21,7 +21,7 @@ test('Production inspection retains hosted Google redirects and exchanges only a
  t.mock.method(globalThis,'fetch',async url=>url==='/api/config'?Response.json({url:PROJECTS.prod,key:'sb_publishable_synthetic'}):Response.json({external:{google:true}}));
  const client=await mod.getSupabase();
  const popup=t.mock.method(window,'open',()=>{});
- t.mock.method(client.auth,'signInWithOAuth',async request=>{assert.equal(request.provider,'google');assert.deepEqual(request.options,{redirectTo:'https://duty-scheduler-prod.vercel.app/',skipBrowserRedirect:true});return {data:{url:PROJECTS.prod+'/auth/v1/authorize'},error:null};});
+ t.mock.method(client.auth,'signInWithOAuth',async request=>{assert.equal(request.provider,'google');assert.deepEqual(request.options,{queryParams:{prompt:'select_account'},redirectTo:'https://duty-scheduler-prod.vercel.app/',skipBrowserRedirect:true});return {data:{url:PROJECTS.prod+'/auth/v1/authorize'},error:null};});
  await mod.signInWithGoogle();
  assert.equal(popup.mock.callCount(),1);
  const exchange=t.mock.method(client.auth,'exchangeCodeForSession',async(code,options)=>{assert.equal(code,'one-time-synthetic');assert.deepEqual(options,{flowId:'synthetic-flow'});return {error:null};});

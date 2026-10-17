@@ -15,6 +15,7 @@ test('signed out, OAuth denial, provider configuration and PKCE handoff', async 
   await expect(page.getByRole('heading', {name: 'Synthetic OAuth handoff'})).toBeVisible();
   const params = backend.oauthRequests[0].searchParams;
   expect(params.get('provider')).toBe('google');
+  expect(params.get('prompt')).toBe('select_account');
   expect(params.get('redirect_to')).toBe(new URL('/', baseURL).href);
   // Docker Desktop's HTTP host alias is not a secure context; Supabase uses
   // its existing plain fallback there, and S256 on localhost / HTTPS.
