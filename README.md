@@ -57,6 +57,36 @@ members (including pending/inactive accounts) skip registration; missing profile
 use the checked join RPC and reload. Focus/visibility events share revalidation
 and refresh work; visible tabs still poll workspace data every 30 seconds.
 
+While initial access or a changed identity is being verified, a public calendar
+skeleton reuses the header, month selector, navigation styling, date-cell traversal
+and responsive calendar CSS. Lightweight date helpers resolve the next Israel
+calendar month at hydration, including leading/trailing dates, four-to-six week
+rows and ordinary combined Friday/Saturday cells. Static HTML reserves an undated
+grid until the browser date is known, so a cached build cannot show stale dates.
+The shell uses no member, role or schedule data; disabled controls are inert and
+hidden from assistive technology, with a separate loading status. Verification
+failure returns to the access screen; only approved active members mount the real
+workspace. Language stays consistent through account changes. There is no minimum
+loading time or shimmer. Only placeholder content pulses on a smooth two-second
+cycle; Reduce Motion disables that pulse and the brief calendar opacity transition.
+Both screens use the same calendar surface (panel, toolbar, weekday row, grid
+and footer), day-cell, assignment-chip, filter, date-line, header, footer and
+month-heading components. Loading and interactive navigation share the pill,
+indicator, tab definitions and styles; the loading version has no gesture handlers
+or Radix controls. Inner geometry regressions enforce this shared structure.
+
+Before verification, the shell has no manager-only actions. Unknown publication
+status, private split weekends/special blocks, assignment text and team size can
+change the verified layout. Existing role-specific layouts remain intact; the
+public shell cannot predict those differences. Geometry regressions compare
+individual controls, rows, cells, date spans and assignment chips in both roles
+and languages at six widths, including padding, borders and weekend spans.
+They assert absolute grid placement for ordinary engineer calendars and require
+manager offsets to equal the measured space added by verified controls. Full
+private-fixture captures retain absolute bounds and full-page screenshots so
+role-dependent offsets and private-content changes remain visible. These checks
+do not promise identical total page height before team size and private data are known.
+
 `pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,
@@ -100,6 +130,23 @@ notes will be cleared. Removing notes also requires confirmation. Canceling the
 confirmation keeps the editor and existing data; confirmed replacement uses the
 existing atomic RPC. Single-date editing prefills existing descriptions.
 The floating glass navigation supports tapping and horizontal finger sliding.
+Its shared CSS tracks keep equal inner insets and concentric corners in all three
+positions. The shared 54px pill has 44px tab targets and 5px inner padding, with
+16px outer margins where safe areas allow. Both sides use the larger horizontal
+inset to preserve symmetry. Only the non-interactive background padding may
+extend into the bottom safe area; tab targets stay entirely above it. A 34px
+bottom inset therefore gives a 29px physical pill gap, rather than 16px. The
+browser's dynamic safe-area values apply in Safari and standalone mode; no
+device-specific offset or cached viewport height is used. Loading uses the same
+geometry with disabled controls and no pointer targets.
+Horizontal intent captures the pointer and retains the original grab position,
+including far above/below the pill. Indicator movement is written once per frame
+without rendering the workspace. A non-passive touch guard prevents native
+panning only after horizontal intent; vertical-first scrolling stays native.
+Release settles to the nearest track; cancellation, lost pill capture, Escape,
+blur, resize or unmount restore the current selection. Reduced Motion disables
+settling animation and haptics. Chromium native-touch tests and iPhone WebKit
+emulation exercise the interaction; actual-device fluidity still needs review.
 Combined weekends show both dates in their daily columns, with one assignment.
 Team reordering starts only from its handle on touch and mouse. The lifted row
 stays horizontally aligned, follows vertical movement, and moves neighbors at
@@ -195,14 +242,46 @@ authorized access before their assets can be verified.
 The environment-indicator tests simulate deployed hostnames while loading local
 assets; their success does not verify a hosted deployment.
 
-### Intentional snapshot updates and migration comparison
+### Automatic visual review and approved snapshot updates
+
+Every authorized UI change includes the relevant screenshot checks automatically.
+The normal Playwright reporters generate `work/visual-review/index.html` and
+`manifest.json` when running tests; keep the custom reporter enabled when filtering
+tests. The gallery groups BEFORE/AFTER/DIFFERENCE and opacity overlays by project,
+viewport, language and platform. It lists exact reference paths, source/head
+commits and before/candidate SHA-256 hashes, including missing references and
+differences from retries. Immutable run folders preserve earlier review evidence
+when subsequent focused checks run. Pixel differences do not establish intent: the primary
+agent inspects every candidate, explains changed components and possible regressions,
+and fixes unintended changes before asking for approval.
+
+Quality uploads the portable `visual-review` artifact even when comparisons fail
+and links it in the run summary. Download/extract it and open `index.html`.
+The primary agent automatically adds the current artifact link and assessment to
+the authorized PR description (or one concise authorized comment); a local gallery
+is the fallback. CI remains read-only and never posts with elevated PR credentials.
+
+**The user must explicitly approve the presented images/paths before any reference
+is changed.** Earlier design approval does not approve changed candidates. After
+approval, verify current reference/candidate hashes against the review manifest,
+copy only the approved candidates to the approved paths, record approval scope and
+hashes in the PR, and rerun affected comparisons and final Quality. Do not use a
+blanket snapshot update to change unapproved references. Reuse completed checks
+for unchanged inputs; never loosen screenshot tolerances or infer approval from CI.
+
+After approval and successful validation, automatically remove task-created local
+galleries, comparisons, recordings, manifests and reports; audit accidentally
+tracked temporary artifacts. Record approval scope/hashes in the PR first.
+Preserve user/unrelated files, test/reproducibility inputs, permanent review
+scripts, CI integration and approved references. GitHub Actions artifacts expire
+through their retention policy; do not delete them manually.
 
 ```sh
-# Canonical Linux snapshots, only after reviewing an intentional UI change:
-pnpm test:e2e:ci visual.spec.ts --update-snapshots
-# Windows reference set when developing natively on Windows:
-pnpm test:e2e:update
-# Compare (does not update missing or mismatched snapshots):
+# Focused canonical review (does not update references):
+pnpm test:e2e:ci visual.spec.ts
+# Native Windows review with its own reference set:
+pnpm test:e2e visual.spec.ts
+# Final full comparison after copying only explicitly approved candidates:
 pnpm test:e2e:ci
 pnpm test:e2e:report
 ```

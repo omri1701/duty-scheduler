@@ -1,3 +1,5 @@
+import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
+import {calendarCells} from '@/lib/rota/calendar-dates';
 import { Plus, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, ink, type State, type Duty } from '@/lib/rota/engine';
@@ -64,27 +66,8 @@ export function WorkspaceCalendar({
     selectCalendarDuty,
   } = interactions;
   return (
-    <section className="calendar-panel">
-      <div className="calendar-top">
-        <div className="segmented">
-          <button
-            className={view === 'team' ? 'selected' : ''}
-            onClick={() => {
-              setView('team');
-              setKeyboardSource(null);
-            }}
-          >
-            {t('Whole team', 'כל הצוות')}
-          </button>
-          <button
-            className={view === 'me' ? 'selected' : ''}
-            onClick={() => {
-              setView('me');
-              setKeyboardSource(null);
-            }}
-          >
-            {t('My duties', 'התורנויות שלי')}
-          </button>
+    <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
+        <CalendarFilters t={t} value={view} onChange={next=>{setView(next);setKeyboardSource(null)}}>
           {isManager && publication && (
             <button
               className={view === 'published' ? 'selected' : ''}
@@ -96,7 +79,7 @@ export function WorkspaceCalendar({
               {t('Published', '\u05e4\u05d5\u05e8\u05e1\u05dd')}
             </button>
           )}
-        </div>
+        </CalendarFilters>
         <Button
           style={{ display: isManager && !requesting ? undefined : 'none' }}
           variant="ghost"
@@ -108,111 +91,12 @@ export function WorkspaceCalendar({
           <Plus />
           {t('Special block', 'מקטע מיוחד')}
         </Button>
-      </div>
-      {!isManager && monthDetails.status !== 'published' && (
+      </>} beforeGrid={!isManager && monthDetails.status !== 'published' && (
         <div className="inline-note">
           {t('The manager has not published this month yet.', 'המנהל עדיין לא פרסם את החודש הזה.')}
         </div>
       )}
-      <div className="calendar-weekdays">
-        {(lang === 'en'
-          ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-          : ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
-        ).map((d, i) => (
-          <span className={i > 4 ? 'weekend-label' : ''} key={d}>
-            {d}
-          </span>
-        ))}
-      </div>
-      <div ref={dragContainer} className="calendar-grid gesture-grid">
-        {dateCells.map((d) => {
-          const b = calendarBlocks.find((b) => b.start <= d && d < b.end),
-            a = b ? calendarState.assignments[b.id] : undefined,
-            p = state.team.find((p) => p.id === a?.primary),
-            inside = d.startsWith(month),
-            mine = a?.primary === meId || a?.secondary === meId,
-            combined = b?.kind === 'weekend' && b.end === addDays(b.start, 2);
-          if (combined && d !== b.start) return null;
-          return (
-            <button
-              disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
-              key={d}
-              data-gesture-key={b?.id}
-              onClick={() => {
-                if (!ignoreDragClick() && b) selectCalendarDuty(b);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  interactions.cancelKeyboard();
-                }
-              }}
-              aria-pressed={requesting && keyboardSource === b?.id}
-              aria-describedby={requesting ? 'published-swap-help' : undefined}
-              style={combined ? { gridColumn: 'span 2' } : undefined}
-              className={[
-                'day-cell',
-                !inside ? 'outside' : '',
-                b?.weekendId ? 'weekend' : '',
-                combined ? 'combined-weekend' : '',
-                b?.kind === 'special' ? 'special' : '',
-                view === 'me' && !mine ? 'faded' : '',
-                dragFrom === b?.id || keyboardSource === b?.id ? 'drag-source' : '',
-                (dragOver === b?.id && dragFrom !== b?.id) ||
-                (keyboardSource && b && requestTarget(keyboardSource, b.id))
-                  ? 'drag-target'
-                  : '',
-                (
-                  requesting
-                    ? b && ownPublishedDays.has(b.id)
-                    : monthDetails.status === 'draft' && a?.primary
-                )
-                  ? 'can-swap'
-                  : '',
-              ].join(' ')}
-              aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
-            >
-              <div className={combined ? "date-line weekend-dates" : "date-line"}>
-                <span className="day-number">{Number(d.slice(-2))}</span>
-                {combined && <span className="day-number weekend-end">{Number(addDays(b!.end, -1).slice(-2))}</span>}
-                {b?.kind === 'special' && (
-                  <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
-                )}
-              </div>
-              {b && (
-                <>
-                  <div
-                    className={'assignment-chip ' + (!p ? 'empty-assignment' : '')}
-                    style={
-                      p
-                        ? {
-                            borderInlineStartColor: p.color,
-                            background: p.color,
-                            color: ink(p.color),
-                          }
-                        : undefined
-                    }
-                  >
-                    {p ? (
-                      <span>
-                        {nickname(p.id)}
-                        {p.id === meId && <small> {t('(you)', '(אני)')}</small>}
-                      </span>
-                    ) : (
-                      <span>{t('Unassigned', 'ללא שיבוץ')}</span>
-                    )}
-                  </div>
-                  {b.title && <div className="special-title">{b.title}</div>}
-                  {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
-                  {ownPublishedDays.has(b.id) && requesting && (
-                    <small className="request-swap-hint">{t('Request swap', 'בקשת החלפה')}</small>
-                  )}
-                </>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <div className="calendar-footer">
+      footer={<>
         <span>
           <span className="legend-box" />
           {t('Weekend = 1 point · Split = ½ each', 'סופ״ש = נקודה · חצי לכל יום בפיצול')}
@@ -234,7 +118,8 @@ export function WorkspaceCalendar({
                 )
             : t('Tap to edit · Hold & drag to swap', 'לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}
         </span>
-      </div>
+      </>} notices={<>
+
       {isManager && assigned < blockCount && (
         <div className="inline-note">
           <Info size={17} />
@@ -267,6 +152,81 @@ export function WorkspaceCalendar({
           — {t('consecutive duties are allowed when needed.', 'תורנויות רצופות מותרות בעת הצורך.')}
         </div>
       )}
-    </section>
+      </>}>
+        {calendarCells(dateCells, calendarBlocks).map(({date:d, period:b, combined}) => {
+          const a = b ? calendarState.assignments[b.id] : undefined,
+            p = state.team.find((p) => p.id === a?.primary),
+            mine = a?.primary === meId || a?.secondary === meId;
+          return (
+            <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
+              disabled={readOnly || !b || (requesting && !publishedDuty(b.id))}
+              key={d}
+              data-gesture-key={b?.id}
+              onClick={() => {
+                if (!ignoreDragClick() && b) selectCalendarDuty(b);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  interactions.cancelKeyboard();
+                }
+              }}
+              aria-pressed={requesting && keyboardSource === b?.id}
+              aria-describedby={requesting ? 'published-swap-help' : undefined}
+              className={[
+                view === 'me' && !mine ? 'faded' : '',
+                dragFrom === b?.id || keyboardSource === b?.id ? 'drag-source' : '',
+                (dragOver === b?.id && dragFrom !== b?.id) ||
+                (keyboardSource && b && requestTarget(keyboardSource, b.id))
+                  ? 'drag-target'
+                  : '',
+                (
+                  requesting
+                    ? b && ownPublishedDays.has(b.id)
+                    : monthDetails.status === 'draft' && a?.primary
+                )
+                  ? 'can-swap'
+                  : '',
+              ].join(' ')}
+              aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
+            >
+              <CalendarDateLine date={d} end={combined ? addDays(b!.end,-1) : undefined}>
+                {b?.kind === 'special' && (
+                  <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
+                )}
+              </CalendarDateLine>
+              {b && (
+                <>
+                  <CalendarAssignment
+                    className={!p ? 'empty-assignment' : ''}
+                    style={
+                      p
+                        ? {
+                            borderInlineStartColor: p.color,
+                            background: p.color,
+                            color: ink(p.color),
+                          }
+                        : undefined
+                    }
+                  >
+                    {p ? (
+                      <span>
+                        {nickname(p.id)}
+                        {p.id === meId && <small> {t('(you)', '(אני)')}</small>}
+                      </span>
+                    ) : (
+                      <span>{t('Unassigned', 'ללא שיבוץ')}</span>
+                    )}
+                  </CalendarAssignment>
+                  {b.title && <div className="special-title">{b.title}</div>}
+                  {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
+                  {ownPublishedDays.has(b.id) && requesting && (
+                    <small className="request-swap-hint">{t('Request swap', 'בקשת החלפה')}</small>
+                  )}
+                </>
+              )}
+            </CalendarDay>
+          );
+        })}
+      </CalendarSurface>
   );
 }

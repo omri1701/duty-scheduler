@@ -88,10 +88,26 @@ jobs:
       - name: Production build
         run: pnpm build
       - name: Browser and visual regression baseline
+        env:
+          VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         # One browser invocation owns this runner's report directories.
         # Reuses build and JS dependencies. The pinned image supplies Chromium
         # and fonts once; do not also run playwright install.
         run: pnpm test:e2e:ci
+      - name: Retain screenshot comparison gallery
+        id: visual-review
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review
+          path: work/visual-review/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Link screenshot review in Quality summary
+        if: ${{ !cancelled() }}
+        env:
+          VISUAL_REVIEW_URL: ${{ steps.visual-review.outputs.artifact-url }}
+        run: node scripts/visual-review-reporter.mjs --ci-summary
       - name: Retain browser report and failure traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

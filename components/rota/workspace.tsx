@@ -1,10 +1,13 @@
 'use client';
+import {BrandContent,WorkspaceHeader,WorkspaceFooter} from './workspace-frame';
+import {initialCalendarMonth,calendarMonthLabel} from '@/lib/rota/calendar-dates';
 import {MobileNavigation} from './mobile-navigation';
+import {navigationItems,NavigationLabel} from './navigation-presentation';
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
-import { CalendarDays, Users, SlidersHorizontal, Info, Download, Globe } from 'lucide-react';
+import { Info, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { DutyEditor } from '@/components/rota/duty-editor';
@@ -30,7 +33,7 @@ import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
-export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
+export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
     if (!mobile || !window.visualViewport) return;
@@ -52,8 +55,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   }, [mobile]);
   const isManager = remote.isAdmin,
     meId = remote.user!.id;
-  const [month, setMonth] = useState(monthNext(todayIsrael().slice(0, 7))),
-    [lang, setLang] = useState<'en' | 'he'>('en'),
+  const [month, setMonth] = useState(initialCalendarMonth),
     [tab, setTab] = useState('schedule');
   const state = remote.state!;
   const [profileOpen, setProfileOpen] = useState(false),
@@ -64,10 +66,6 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   const [person, setPerson] = useState(meId),
     [view, setView] = useState('team');
   const t = (en: string, he: string) => (lang === 'en' ? en : he);
-  useEffect(() => {
-    document.documentElement.lang = lang;
-    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
-  }, [lang]);
   const duties = useMemo(
     () => blocks(month, state.specials, state.splitWeekends),
     [month, state.specials, state.splitWeekends],
@@ -97,7 +95,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   const locale = lang === 'en' ? 'en-GB' : 'he-IL';
   const fmt = (d: string, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }) =>
     new Date(d + 'T12:00:00Z').toLocaleDateString(locale, { ...opts, timeZone: 'Asia/Jerusalem' });
-  const monthLabel = fmt(month + '-15', { month: 'long', year: 'numeric' });
+  const monthLabel = calendarMonthLabel(month,lang);
   const personName = (id?: string) =>
     state.team.find((p) => p.id === id)?.name ?? t('Unassigned', 'ללא שיבוץ');
   const nickname = (id?: string) => personName(id).split(' ')[0];
@@ -195,16 +193,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
   return (
     <div className="app-shell" dir={lang === 'he' ? 'rtl' : 'ltr'}>
       <Toaster position="bottom-center" richColors />
-      <header className="topbar">
-        <Link className="brand" href="/" aria-label="Duty home">
-          <span className="brand-symbol">
-            d<span>·</span>
-          </span>{' '}
-          duty
-          <span className="brand-divider" />
-          <span className="brand-context">{t('Engineering', 'הנדסה')}</span>
-        </Link>
-        <div className="top-actions">
+      <WorkspaceHeader brand={<Link className="brand" href="/" aria-label="Duty home"><BrandContent t={t}/></Link>}>
           {remote.environment?.badge?<EnvironmentBadge environment={remote.environment}/>:<span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>}
           <Button
             variant="ghost"
@@ -230,8 +219,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
               {t('Sign out', 'יציאה')}
             </Button>
           )}
-        </div>
-      </header>
+      </WorkspaceHeader>
       <main className="main-wrap">
         <div className="workspace-status">
           <span>
@@ -265,18 +253,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
           <Tabs value={tab} onValueChange={setTab} className="main-tabs" dir={mobile ? (lang === 'he' ? 'rtl' : 'ltr') : undefined}>
             <div className="nav-row">
               {mobile ? <MobileNavigation value={tab} onChange={setTab} t={t} rtl={lang === 'he'} disabled={remote.saving}/> : <TabsList variant="line">
-                <TabsTrigger value="schedule">
-                  <CalendarDays />
-                  {t('Schedule', 'לוח תורנויות')}
-                </TabsTrigger>
-                <TabsTrigger value="availability">
-                  <SlidersHorizontal />
-                  {t('Availability', 'אילוצים')}
-                </TabsTrigger>
-                <TabsTrigger value="team" aria-label={t('Team & fairness', 'צוות והוגנות')}>
-                  <Users />
-                  {mobile ? t('Team', 'צוות') : t('Team & fairness', 'צוות והוגנות')}
-                </TabsTrigger>
+                {navigationItems(t).map(item=><TabsTrigger key={item.value} value={item.value} aria-label={item.label}><NavigationLabel item={item}/></TabsTrigger>)}
               </TabsList>}
               <span className="time-zone">09:00 → 09:00 · {t('Israel time', 'שעון ישראל')}</span>
             </div>
@@ -379,13 +356,7 @@ export function RotaWorkspace({ remote }: { remote: TeamWorkspace }) {
             onSelection={setRequestSelection}
           />
         </fieldset>
-        <footer className="app-footer">
-          <span>Duty</span>
-          <button onClick={exportBackup}>
-            <Download size={14} />
-            {t('Export backup', 'ייצוא גיבוי')}
-          </button>
-        </footer>
+        <WorkspaceFooter t={t} onExport={exportBackup}/>
       </main>
       <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} />
       {isManager && (

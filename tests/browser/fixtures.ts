@@ -35,6 +35,9 @@ export class Backend {
   raw = seed();
   calls: Call[] = [];
   authGate?: Promise<void>;
+  configGate?: Promise<void>;
+  loadGate?: Promise<void>;
+  authFailure = false;
   invalidated = false;
   failNextSave = false;
   googleEnabled = false;
@@ -140,12 +143,12 @@ export class Backend {
   }
 }
 
-type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page) => Promise<Page>};
+type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean}) => Promise<Page>};
 export const test = base.extend<Fixtures>({
   backend: async ({}, provide) => {await provide(new Backend());},
   openApp: async ({page, backend, baseURL}, provide) => {
     const attached = new Set<Page>(), errors: string[] = [], unexpected: string[] = [];
-    await provide(async (identity = 'admin', target = page) => {
+    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false} = {}) => {
       if (!attached.has(target)) {
         attached.add(target);
         target.on('pageerror', error => errors.push(error.message));
@@ -163,26 +166,28 @@ export const test = base.extend<Fixtures>({
       const token = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: user.id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn}) => {
         localStorage.clear();
+        if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
         if (!signedOut) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey});
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
-        if (url.pathname === '/api/config') return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only'}});
+        if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only'}});}
         if (url.origin === backend.url) {
           if (url.pathname === '/auth/v1/settings') return route.fulfill({json: {external: {google: backend.googleEnabled}}});
           if (url.pathname === '/auth/v1/authorize') {
             backend.oauthRequests.push(url);
             return route.fulfill({contentType: 'text/html', body: '<h1>Synthetic OAuth handoff</h1>'});
           }
-          if (url.pathname === '/auth/v1/user') {await backend.authGate; return route.fulfill({json: user});}
-          if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) {
+          if (url.pathname === '/auth/v1/user') {await backend.authGate; return backend.authFailure ? route.fulfill({status:401,json:{message:'Synthetic session expired',code:'bad_jwt'}}) : route.fulfill({json: user});}
+          if (url.pathname === '/auth/v1/token' && ((url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) || (url.searchParams.get('grant_type')==='pkce' && backend.googleEnabled))) {
             user={...user,id:ids.admin,email:'admin@duty.local'};
             return route.fulfill({json:{access_token:token,refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
           }
           if (url.pathname === '/auth/v1/logout') return route.fulfill({status: 204});
           if (url.pathname.startsWith('/rest/v1/rpc/')) {
+            if (url.pathname.endsWith('/duty_load')) await backend.loadGate;
             try {return await route.fulfill({json: backend.rpc(url.pathname.split('/').at(-1)!, route.request().postDataJSON() ?? {}, user.id)});}
             catch (error) {
               const message = (error as Error).message;
@@ -196,8 +201,8 @@ export const test = base.extend<Fixtures>({
         unexpected.push(url.origin + url.pathname);
         return route.abort('blockedbyclient');
       });
-      await target.goto(backend.runtimeOrigin??'/');
-      await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
+      await target.goto((backend.runtimeOrigin??'/')+(oauthReturn?'?code=synthetic-oauth-code':''));
+      if (waitForReady) await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
       return target;
     });
     // Finish intercepted responses before Playwright disposes the page/request context.

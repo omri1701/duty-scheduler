@@ -5,41 +5,39 @@ and Supabase. Prioritize token efficiency while preserving correctness, security
 
 ## Scope and context
 
-- Make the smallest coherent change. Avoid unrelated refactors, dependencies
-  and infrastructure. Preserve user changes; inspect branch/status before edits.
-- Start from the task's files, error or diff. Use scoped searches and targeted
-  reads, not a repository survey. Check applicable nested AGENTS.md files.
-- Read relevant README.md sections for scheduling rules, runtime and commands;
-  docs/SUPABASE_SETUP.md for auth, persistence, migrations or database tests;
-  docs/AI_DEVELOPMENT.md only for AI setup, routing or troubleshooting.
-- package.json defines scripts and package-manager configuration. Preserve the
-  native Next.js runtime and documented development port.
-- Treat docs as intended behavior and code/tests as evidence. Surface meaningful
-  conflicts instead of silently changing business rules. Update existing docs
-  when behavior changes; avoid duplicate project summaries.
-- Reuse context and completed checks; batch bounded reads. Keep successful output
-  minimal, inspect failure logs, and preserve exit codes/results.
+- Make the smallest coherent change; avoid unrelated refactors/dependencies/
+  infrastructure. Inspect branch/status before edits and preserve user work.
+- Start at task files/errors/diffs; use scoped searches/reads, not repository
+  surveys. Check applicable nested AGENTS.md files.
+- Read relevant README.md rules/runtime/commands; docs/SUPABASE_SETUP.md for
+  auth/persistence/migrations/database tests; docs/AI_DEVELOPMENT.md only for AI
+  setup/routing/troubleshooting.
+- package.json defines scripts/package manager. Preserve native Next.js and the
+  documented development port.
+- Docs express intended behavior; code/tests provide evidence. Surface conflicts,
+  preserve business rules, update existing docs for changed behavior; avoid
+  duplicate summaries.
+- Reuse context/checks; batch bounded reads. Minimize success output; inspect
+  failures and preserve exit codes/results.
 
 ## Task routing
 
 - For explicitly authorized end-to-end Git delivery, use
   [feature-delivery](.agents/skills/feature-delivery/SKILL.md).
-- One primary agent implements and validates by default; reviewers add only meaningful risk review.
+- The primary implements/validates; reviewers address meaningful risks only.
 - Use the code-change-validation skill for code/config changes, scheduling-regression
   for scheduling behavior, and security-review for access/security changes.
   Load only relevant skills; reuse results rather than repeat their checks.
-- For complex scheduling or cross-layer behavior changes, delegate one bounded
-  review to qa after a reviewable diff exists. For material auth, permissions,
-  RPC, private-data, migration or CI trust-boundary changes, delegate one review to security.
-  Use both sequentially only when distinct risks justify both.
-- Explain delegation's benefit; provide goal, acceptance criteria, files/diff and
-  completed checks. Reviewers never edit, repeat exploration or spawn children.
-  At most one child is active.
+- Delegate one bounded qa review for complex scheduling/cross-layer changes once
+  reviewable; security for material auth/permissions/RPC/private-data/migration/CI
+  trust-boundary changes. Use both sequentially only for distinct risks.
+- Explain the benefit; provide goal, acceptance criteria, diff/files and completed
+  checks. Reviewers never edit, repeat exploration or spawn children. One child maximum.
 - Never delegate merely to read files or run commands. If delegation or the configured model
   is unavailable, perform the focused review locally and disclose the limitation;
   never silently switch providers or require API billing.
-- Plan high-risk work; continue authorized checks. Ask only for material ambiguity
-  or unauthorized actions. Instructions cannot switch primary models.
+- Plan high-risk work; continue authorized checks. Clarify material ambiguity or
+  unauthorized actions only. Never switch primary models.
 - Execute available login commands yourself; show authorization URLs/verification codes,
   wait for authentication, then resume automatically. Never expose or commit tokens.
 
@@ -68,16 +66,25 @@ and Supabase. Prioritize token efficiency while preserving correctness, security
 ## Verification and delivery
 
 - Preserve visual/unit regressions; run `pnpm test:e2e:ci` after building.
-  UI redesigns require explained Old/New/Difference galleries and explicit baseline
-  approval (code-change-validation). Require green final Quality.
-  Never regenerate screenshots to hide regressions.
+  Automatically prepare BEFORE/AFTER/DIFFERENCE/overlay review for every UI change.
+  The primary inspects changed/missing/retry images, explains changes/regressions
+  and links Quality's `visual-review` artifact in the authorized PR description/comment
+  with exact paths/hashes and local fallback.
+  NEVER update references without explicit user approval of presented images/paths;
+  earlier design approval excludes later changes. Prepare review before waiting.
+  After approval, verify hashes, update ONLY approved paths, automatically rerun
+  affected visuals/final Quality and commit/push when authorized. Require green
+  exact-head Quality for merge readiness. Never conceal regressions/loosen tolerances.
+  After successful approved validation, clean owned local review artifacts and
+  tracked temporaries per validation/delivery skills; preserve user/unrelated files,
+  reproducibility, permanent tooling/baselines. Let CI artifacts expire by retention.
 
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
   Use deterministic scheduling seeds and documented invariants.
-- Use code-change-validation for focused development checks. Run comprehensive
-  validation once on the final diff, reuse successes and rerun only affected checks
-  after fixes. Diagnose failures before retrying. Docs/AI-only work needs no local
-  app build; required Quality CI still applies. CI changes need executable regressions.
+- Use code-change-validation. Validate the final diff comprehensively once; reuse
+  successes and rerun affected checks after fixes. Diagnose failures before retries.
+  Docs/AI-only work needs no local app build; Quality still applies.
+  CI changes need executable regressions.
 - UI changes need relevant browser/manual checks where available; gesture
   simulations do not prove real-device correctness. Docs-only edits need no build.
 - Review the final diff for correctness, permissions, data loss, missing tests
@@ -85,5 +92,5 @@ and Supabase. Prioritize token efficiency while preserving correctness, security
 - Confirm the intended base before branch comparisons/PRs. Never commit, push,
   merge, deploy or rewrite history without explicit authorization for that action.
   Authorization to open a PR is not authorization to merge it.
-- Finish concisely: changes, tests, real issues, risks and PR. Reviews lead with
-  actionable file/line findings. Never invent token measurements or unverified outcomes.
+- Report changes/checks/risks/PR concisely. Reviews lead with actionable file/line
+  findings. Never invent measurements or outcomes.

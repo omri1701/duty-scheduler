@@ -1,4 +1,5 @@
-import { ChevronLeft, ChevronRight, SlidersHorizontal, Sparkles, Check, Ellipsis, History } from 'lucide-react';
+import {MonthHeading} from './month-heading';
+import { SlidersHorizontal, Sparkles, Check, Ellipsis, History } from 'lucide-react';
 import {DropdownMenu} from 'radix-ui';
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { Button } from '@/components/ui/button';
@@ -39,28 +40,7 @@ export function WorkspaceToolbar({
   const mobile = useMobileLayout();
   return (
     <div className="month-toolbar">
-      <div className="month-title">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => changeMonth(-1)}
-          aria-label={t('Previous month', 'חודש קודם')}
-        >
-          <ChevronLeft />
-        </Button>
-        <h2>{monthLabel}</h2>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => changeMonth(1)}
-          aria-label={t('Next month', 'חודש הבא')}
-        >
-          <ChevronRight />
-        </Button>
-        <span className={'status-badge ' + monthDetails.status}>
-          {monthDetails.status === 'published' ? t('Published', 'פורסם') : t('Draft', 'טיוטה')}
-        </span>
-      </div>
+      <MonthHeading label={monthLabel} status={monthDetails.status} t={t} onChange={changeMonth}/>
       <div className="toolbar-actions">
         {isManager && (
           <>

@@ -1,13 +1,11 @@
+import {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
+export {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
 export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string };
 export type Special = { id: string; title: string; start: string; end: string; extra: number };
 export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string };
 export type Assignment = { primary: string; secondary?: string; locked?: boolean; override?: boolean };
 export type Constraints = Record<string, Record<string, 'no'|'prefer'>>;
 export type State = { team: Engineer[]; splitWeekends?: string[]; specials: Special[]; constraints: Constraints; constraintNotes?: Record<string, Record<string,string>>; assignments: Record<string, Assignment>; months: Record<string, { deadline: string; status: 'draft'|'published'; generated?: boolean }>; version: number };
-export const addDays = (s:string,n:number) => {const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
-export const dayOf = (s:string) => new Date(s+'T12:00:00Z').getUTCDay();
-export const monthNext = (m:string,n=1) => {const d=new Date(m+'-15T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,7)};
-export function dates(start:string,end:string){const result:string[]=[];for(let d=start;d<end;d=addDays(d,1))result.push(d);return result;}
 export const overlap=(a:{start:string;end:string},b:{start:string;end:string})=>a.start<b.end&&b.start<a.end;
 export const ownerMonth=(b:Duty)=>(b.weekendId??b.start).slice(0,7);
 export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]):Duty[]{
