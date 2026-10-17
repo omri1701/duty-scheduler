@@ -269,6 +269,13 @@ hashes in the PR, and rerun affected comparisons and final Quality. Do not use a
 blanket snapshot update to change unapproved references. Reuse completed checks
 for unchanged inputs; never loosen screenshot tolerances or infer approval from CI.
 
+After approval and successful validation, automatically remove task-created local
+galleries, comparisons, recordings, manifests and reports; audit accidentally
+tracked temporary artifacts. Record approval scope/hashes in the PR first.
+Preserve user/unrelated files, test/reproducibility inputs, permanent review
+scripts, CI integration and approved references. GitHub Actions artifacts expire
+through their retention policy; do not delete them manually.
+
 ```sh
 # Focused canonical review (does not update references):
 pnpm test:e2e:ci visual.spec.ts

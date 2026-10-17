@@ -22,22 +22,28 @@ description: "Select focused validation for Duty code/config changes, diff revie
 3. For every authorized UI change, automatically run relevant visual tests;
    retain the custom reporter. It generates `work/visual-review/index.html` and
    `manifest.json`; Quality uploads `visual-review` even after comparison failures.
-   Reuse unchanged evidence instead of repeating suites for gallery preparation.
-   Inspect every changed/missing reference and retry difference on relevant
-   Linux/Windows platforms. Fix regressions; explain intended component changes
-   and suspicious differences. Present BEFORE/AFTER/DIFFERENCE/overlay, grouped
-   by project, viewport/language, with exact paths and candidate hashes.
+   Reuse unchanged evidence. Inspect changed/missing references and retry differences
+   on relevant Linux/Windows platforms. Fix regressions; explain intended/suspicious
+   differences. Present BEFORE/AFTER/DIFFERENCE/overlay by project, viewport/language,
+   with exact paths and candidate hashes.
    Automatically link the current CI artifact in the authorized PR description
    (or one concise authorized comment), with assessment and commit identity.
    Users extract the ZIP/open index.html; retain a local fallback.
    NEVER update references without explicit user approval of presented paths/images.
-   Complete preparation, list approval scope, then wait. Earlier design approval
-   excludes later image changes; investigate flakes instead of approving them.
+   Prepare review, list scope, then wait. Earlier approval excludes later changes;
+   investigate flakes.
    After approval, verify before/candidate hashes, copy ONLY approved candidates,
    record approval/paths/hashes/source commit, rerun affected visuals and final
    Quality automatically. New differences return to review. Never blanket-update
    unapproved references or loosen tolerances.
+   After approval and successful validation, automatically delete task-created
+   local galleries, comparison screenshots, recordings, manifests and reports;
+   audit/remove accidentally tracked temporaries. Verify cleanup targets stay
+   within the workspace. Preserve user/unrelated files, test/reproducibility
+   inputs, permanent generators, CI integration and approved baselines. Record
+   approval evidence in the PR before cleanup. Never manually delete GitHub
+   Actions artifacts; retention handles expiration.
 4. Follow root security-review routing. Parallelize independent checks; preserve
-   logs/exit codes, diagnose failures, rerun only affected checks. Review final
-   correctness, permissions, data loss, missing tests and unrelated edits. Report
-   actual results, pending approval and limitations honestly.
+   logs/exit codes, diagnose failures and rerun affected checks. Review correctness,
+   permissions, data loss, missing tests/unrelated edits. Report results,
+   pending approval and limitations honestly.

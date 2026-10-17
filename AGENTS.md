@@ -67,22 +67,24 @@ and Supabase. Prioritize token efficiency while preserving correctness, security
 
 - Preserve visual/unit regressions; run `pnpm test:e2e:ci` after building.
   Automatically prepare BEFORE/AFTER/DIFFERENCE/overlay review for every UI change.
-  The primary agent inspects all changed/missing/retry images, explains intended
-  component changes/regressions and links Quality's `visual-review` artifact in
-  the authorized PR description/comment, with exact paths/hashes and local fallback.
+  The primary inspects changed/missing/retry images, explains changes/regressions
+  and links Quality's `visual-review` artifact in the authorized PR description/comment
+  with exact paths/hashes and local fallback.
   NEVER update references without explicit user approval of presented images/paths;
-  earlier design approval excludes later image changes. Finish review preparation
-  before waiting. After approval, verify hashes, update ONLY approved paths and
-  automatically rerun affected visuals/final Quality, committing/pushing when
-  authorized. Reuse unchanged checks; require green exact-head Quality before
-  declaring merge readiness. Never conceal regressions or loosen tolerances.
+  earlier design approval excludes later changes. Prepare review before waiting.
+  After approval, verify hashes, update ONLY approved paths, automatically rerun
+  affected visuals/final Quality and commit/push when authorized. Require green
+  exact-head Quality for merge readiness. Never conceal regressions/loosen tolerances.
+  After successful approved validation, clean owned local review artifacts and
+  tracked temporaries per validation/delivery skills; preserve user/unrelated files,
+  reproducibility, permanent tooling/baselines. Let CI artifacts expire by retention.
 
 - Add focused regressions for changed behavior; reproduce bugs first when practical.
   Use deterministic scheduling seeds and documented invariants.
-- Use code-change-validation for focused development checks. Run comprehensive
-  validation once on the final diff, reuse successes and rerun only affected checks
-  after fixes. Diagnose failures before retrying. Docs/AI-only work needs no local
-  app build; required Quality CI still applies. CI changes need executable regressions.
+- Use code-change-validation. Validate the final diff comprehensively once; reuse
+  successes and rerun affected checks after fixes. Diagnose failures before retries.
+  Docs/AI-only work needs no local app build; Quality still applies.
+  CI changes need executable regressions.
 - UI changes need relevant browser/manual checks where available; gesture
   simulations do not prove real-device correctness. Docs-only edits need no build.
 - Review the final diff for correctness, permissions, data loss, missing tests

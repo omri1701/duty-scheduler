@@ -21,7 +21,13 @@ description: "Deliver a Duty feature through a PR when the user explicitly autho
    before/candidate hashes, copy only approved references, rerun affected visuals,
    and continue authorized commit/push/final Quality without repeated permission
    questions. Record approval scope, hashes, source/review and pre-update commits.
-   Preserve review evidence through approval/verification and preserve user files.
+   Preserve evidence through approval/verification; record approval in the PR.
+   After successful approved validation, automatically remove task-created local
+   galleries, comparison screenshots, recordings, manifests and reports. Audit
+   accidentally tracked temporaries and remove where appropriate. Verify targets
+   stay within the workspace; preserve user/unrelated files, test/reproducibility
+   inputs, permanent generators, CI integration and approved baselines. Never
+   manually delete GitHub Actions artifacts; let retention expire them.
 4. Stage only intended changes, excluding credentials/local settings. When
    authorized, commit/push and create/update the intended PR. Wait for exact-head
    Quality; diagnose failures and rerun only affected checks. Reuse successes for
