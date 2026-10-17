@@ -14,8 +14,7 @@ import {
 export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
   const owned = duties.filter((b) => ownerMonth(b) === month),
     active = state.team.filter((p) => p.active),
-    monthTotals = totals(state, owned),
-    historyTotals = totals(state, allKnownBlocks(state));
+    monthTotals = totals(state, owned);
   const assigned = duties.filter((b) => state.assignments[b.id]?.primary).length;
   const conflicts = duties.filter((b) => {
     const a = state.assignments[b.id];
@@ -41,7 +40,10 @@ export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
       .map((b) => ({ p, b }));
   });
 
-  return { owned, active, monthTotals, historyTotals, assigned, conflicts, gaps };
+  return { owned, active, monthTotals, assigned, conflicts, gaps };
+}
+export function historicalTotals(state: State) {
+  return totals(state, allKnownBlocks(state));
 }
 export type WorkspaceMetrics = ReturnType<typeof workspaceMetrics>;
 

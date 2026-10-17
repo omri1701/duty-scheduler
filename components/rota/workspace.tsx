@@ -10,22 +10,10 @@ import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indic
 import { Info, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { DutyEditor } from '@/components/rota/duty-editor';
-import { ProfileDialog } from '@/components/rota/profile-dialog';
-import { PublicationHistory } from '@/components/rota/publication-history';
 import { SwapRequests } from '@/components/rota/swap-requests';
-import { WorkspaceAvailability } from './workspace-availability';
 import { WorkspaceToolbar } from './workspace-toolbar';
 import { WorkspaceCalendar } from './workspace-calendar';
 import { WorkspaceSummary } from './workspace-summary';
-import { WorkspaceTeam } from './workspace-team';
-import {
-  DraftSwapDialog,
-  SpecialDutyDialog,
-  MonthSettingsDialog,
-  PublishDialog,
-  WorkspaceHelpDialog,
-} from './workspace-dialogs';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
 import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
@@ -33,6 +21,17 @@ import { todayIsrael, fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics } from '@/lib/rota/workspace-data';
+import {DeferredFeature,deferred} from './deferred-feature';
+const DutyEditor=deferred(()=>import('./duty-editor').then(m=>m.DutyEditor));
+const ProfileDialog=deferred(()=>import('./profile-dialog').then(m=>m.ProfileDialog));
+const PublicationHistory=deferred(()=>import('./publication-history').then(m=>m.PublicationHistory));
+const WorkspaceAvailability=deferred(()=>import('./workspace-availability').then(m=>m.WorkspaceAvailability));
+const WorkspaceTeam=deferred(()=>import('./workspace-team').then(m=>m.WorkspaceTeam));
+const DraftSwapDialog=deferred(()=>import('./workspace-dialogs').then(m=>m.DraftSwapDialog));
+const SpecialDutyDialog=deferred(()=>import('./workspace-dialogs').then(m=>m.SpecialDutyDialog));
+const MonthSettingsDialog=deferred(()=>import('./workspace-dialogs').then(m=>m.MonthSettingsDialog));
+const PublishDialog=deferred(()=>import('./workspace-dialogs').then(m=>m.PublishDialog));
+const WorkspaceHelpDialog=deferred(()=>import('./workspace-dialogs').then(m=>m.WorkspaceHelpDialog));
 export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
@@ -78,10 +77,10 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     (m) => m.month === month,
   )?.current_publication_id;
   const requesting = !isManager || view === 'published';
-  const calendarState =
+  const calendarState = useMemo(() =>
     isManager && view === 'published' && publication
       ? fromSnapshot(remote.snapshot!, meId, publication)
-      : state;
+      : state, [isManager, view, publication, remote.snapshot, meId, state]);
   const calendarBlocks =
     calendarState === state
       ? duties
@@ -91,15 +90,17 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     : !!remote &&
       (remote.snapshot?.months.find((m) => m.month === month)?.status === 'published' ||
         monthDetails.deadline < todayIsrael());
-  const metrics = workspaceMetrics(state, month, duties);
+  const metrics = useMemo(() => workspaceMetrics(state, month, duties), [state, month, duties]);
   const locale = lang === 'en' ? 'en-GB' : 'he-IL';
-  const fmt = (d: string, opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }) =>
-    new Date(d + 'T12:00:00Z').toLocaleDateString(locale, { ...opts, timeZone: 'Asia/Jerusalem' });
-  const monthLabel = calendarMonthLabel(month,lang);
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, {day:'numeric',month:'short',timeZone:'Asia/Jerusalem'}), [locale]);
+  const fmt = (d: string, opts?: Intl.DateTimeFormatOptions) => opts
+    ? new Date(d + 'T12:00:00Z').toLocaleDateString(locale, { ...opts, timeZone: 'Asia/Jerusalem' })
+    : dateFormatter.format(new Date(d + 'T12:00:00Z'));
+  const monthLabel = useMemo(() => calendarMonthLabel(month,lang), [month,lang]);
   const personName = (id?: string) =>
     state.team.find((p) => p.id === id)?.name ?? t('Unassigned', 'ללא שיבוץ');
   const nickname = (id?: string) => personName(id).split(' ')[0];
-  const dateCells = calendarDates(month);
+  const dateCells = useMemo(() => calendarDates(month), [month]);
   const draft = useWorkspaceDraft({ remote, state, month, monthDetails, t });
   const { update, runGenerate, busy } = draft;
   const { selected, setSelected } = draft.editor;
@@ -205,7 +206,11 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           </Button>
           <button
             className="avatar admin-avatar"
-            onClick={() => setProfileOpen(true)}
+            onClick={(event) => {
+              // Safari does not focus clicked buttons; retain the modal's return target.
+              event.currentTarget.focus({preventScroll:true});
+              setProfileOpen(true);
+            }}
             aria-label={t('My profile', 'הפרופיל שלי')}
           >
             {remote?.me?.name
@@ -320,7 +325,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               </div>
             </TabsContent>
             <TabsContent value="availability">
-              <WorkspaceAvailability
+              <DeferredFeature lang={lang}><WorkspaceAvailability
                 state={state}
                 month={month}
                 person={person}
@@ -332,10 +337,10 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                 constraintsClosed={constraintsClosed||remote.readOnly}
                 t={t}
                 saveConstraints={saveConstraints}
-              />
+              /></DeferredFeature>
             </TabsContent>
             <TabsContent value="team">
-              <WorkspaceTeam
+              <DeferredFeature lang={lang}><WorkspaceTeam
                 remote={remote}
                 state={state}
                 metrics={metrics}
@@ -344,7 +349,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                 lang={lang}
                 t={t}
                 update={update}
-              />
+              /></DeferredFeature>
             </TabsContent>
           </Tabs>
           <SwapRequests
@@ -358,19 +363,19 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         </fieldset>
         <WorkspaceFooter t={t} onExport={exportBackup}/>
       </main>
-      <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} />
+      <DeferredFeature lang={lang} active={profileOpen} onClose={()=>setProfileOpen(false)}><ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} /></DeferredFeature>
       {isManager && (
-        <PublicationHistory
+        <DeferredFeature lang={lang} active={historyOpen} onClose={()=>setHistoryOpen(false)}><PublicationHistory
           key={month}
           remote={remote}
           month={month}
           open={historyOpen}
           onOpenChange={setHistoryOpen}
           lang={lang}
-        />
+        /></DeferredFeature>
       )}
       {selected && (
-        <DutyEditor
+        <DeferredFeature lang={lang} active={true} onClose={()=>setSelected(null)}><DutyEditor
           key={selected.id}
           state={state}
           duty={selected}
@@ -384,9 +389,9 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           }}
           onSave={draft.editor.save}
           onRemoveSpecial={draft.editor.removeSpecial}
-        />
+        /></DeferredFeature>
       )}
-      <DraftSwapDialog
+      <DeferredFeature lang={lang} active={!!draft.swap.selection} onClose={()=>draft.swap.setSelection(null)}><DraftSwapDialog
         controller={draft.swap}
         state={state}
         duties={duties}
@@ -395,9 +400,9 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         fmt={fmt}
         nickname={nickname}
         personName={personName}
-      />
-      <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
-      <MonthSettingsDialog
+      /></DeferredFeature>
+      <DeferredFeature lang={lang} active={draft.special.open} onClose={()=>draft.special.setOpen(false)}><SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} /></DeferredFeature>
+      <DeferredFeature lang={lang} active={settings} onClose={()=>setSettings(false)}><MonthSettingsDialog
         settings={settings}
         setSettings={setSettings}
         monthLabel={monthLabel}
@@ -410,8 +415,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
             false,
           );
         }}
-      />
-      <PublishDialog
+      /></DeferredFeature>
+      <DeferredFeature lang={lang} active={publishOpen} onClose={()=>setPublishOpen(false)}><PublishDialog
         publishOpen={publishOpen}
         setPublishOpen={setPublishOpen}
         monthLabel={monthLabel}
@@ -420,8 +425,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         lang={lang}
         t={t}
         onPublish={publish}
-      />
-      <WorkspaceHelpDialog help={help} setHelp={setHelp} lang={lang} t={t} />
+      /></DeferredFeature>
+      <DeferredFeature lang={lang} active={help} onClose={()=>setHelp(false)}><WorkspaceHelpDialog help={help} setHelp={setHelp} lang={lang} t={t} /></DeferredFeature>
     </div>
   );
 }

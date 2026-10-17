@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {blocks, demo} from '../lib/rota/engine.ts';
-import {calendarDates, workspaceMetrics, prepareWorkspaceUpdate} from '../lib/rota/workspace-data.ts';
+import {blocks, demo, allKnownBlocks, totals} from '../lib/rota/engine.ts';
+import {calendarDates, workspaceMetrics, historicalTotals, prepareWorkspaceUpdate} from '../lib/rota/workspace-data.ts';
 
 function publishedMonths() {
   const state = demo();
@@ -27,7 +27,20 @@ test('coverage includes carried weekends while monthly points belong to their Fr
   assert.equal(august.assigned, 1);
   assert.ok(!august.owned.some(duty => duty.id === '2026-07-31'));
   assert.equal(august.monthTotals.e0, 0);
-  assert.equal(august.historyTotals.e0, 1);
+  assert.equal(historicalTotals(state).e0, 1);
+});
+
+test('calendar metrics never traverse history; historical totals retain exact engine results after updates', () => {
+  const state=publishedMonths();
+  state.assignments['2026-07-31']={primary:'e0',secondary:'e1'};
+  const calendarOnly={...state,get months(){throw Error('History traversed')}};
+  assert.doesNotThrow(()=>workspaceMetrics(calendarOnly,'2026-08',blocks('2026-08',[])));
+  assert.throws(()=>historicalTotals(calendarOnly),/History traversed/);
+  assert.deepEqual(historicalTotals(state),totals(state,allKnownBlocks(state)));
+  const changed={...state,assignments:{...state.assignments,'2026-08-03':{primary:'e1'}}};
+  assert.equal(historicalTotals(changed).e1,historicalTotals(state).e1+1);
+  assert.deepEqual(historicalTotals(changed),totals(changed,allKnownBlocks(changed)));
+  assert.equal(historicalTotals(state).e1,1);
 });
 
 test('coverage warnings include emergency constraints and respect manager overrides', () => {

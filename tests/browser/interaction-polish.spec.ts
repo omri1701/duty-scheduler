@@ -120,7 +120,7 @@ for(const lang of ['en','he'] as const)test(`edge drops, sideways tracking, auto
  const mobile=info.project.name==='mobile';
  const template=backend.raw.members[1];
  for(let i=0;i<20;i++)backend.raw.members.push({...template,id:`30000000-0000-4000-8000-${String(i).padStart(12,'0')}`,name:`Synthetic teammate ${i}`,email:`extra${i}@example.invalid`,seniority:7+i});
- await openApp();if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();await page.getByRole('tab').nth(2).click();
+ await openApp();if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  const rows=page.locator('.gesture-grid.team-list > .team-row'),order=()=>rows.evaluateAll(els=>els.map(el=>el.getAttribute('data-gesture-key'))),calls=()=>backend.calls.filter(c=>c.name==='duty_save_schedule');
  const initial=await order();
  async function start(index:number){

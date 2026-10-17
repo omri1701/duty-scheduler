@@ -53,7 +53,7 @@ for (const lang of ['en','he'] as const) test(`optimistic drop survives latency,
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
  if (lang==='he') await page.getByRole('button',{name:'Switch to Hebrew'}).click();
- await page.getByRole('tab').nth(2).click();
+ await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  const initial = await order(page), expected = [...initial.slice(1,3),initial[0],...initial.slice(3)];
  const stale = backend.snapshot(ids.admin), held = gate(), started = gate();
  let writes = 0, staleLoads = 0;
@@ -123,7 +123,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
  if(failure==='network')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
- await page.getByRole('tab').nth(2).click();
+ await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  const initial=await order(page), expected=[...initial.slice(1,3),initial[0],...initial.slice(3)];
  const held=gate(),started=gate();let writes=0;
  const external=[...initial].reverse();
@@ -165,7 +165,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
 });
 
 test('failed keyboard reorder retains focus and respects reduced motion',async({page,openApp,backend})=>{
- await openApp();await page.getByRole('tab').nth(2).click();
+ await openApp();await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
  const initial=await order(page),handle=rows(page).first().locator('.team-grip');
  backend.failNextSave=true;
  await handle.focus();await page.keyboard.press('ArrowDown');
@@ -181,7 +181,7 @@ for(const width of [320,375,390,430])test(`inline grip fits ${width}px in Englis
  await page.setViewportSize({width,height:1000});await openApp();
  for(const lang of ['en','he']){
   if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
-  await page.getByRole('tab').nth(2).click();
+  await page.getByRole('tab').nth(2).click();await expect(page.locator('.team-list')).toBeVisible();
   const measurements=await rows(page).first().evaluate(el=>{
    const box=(selector:string)=>{const r=el.querySelector(selector)!.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};
    const row=el.getBoundingClientRect();
