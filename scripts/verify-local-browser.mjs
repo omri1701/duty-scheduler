@@ -4,12 +4,13 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {webkit,devices,expect} from '@playwright/test';
 import {createClient} from '@supabase/supabase-js';
 import {assertToolbar,assertMonthMenu} from '../tests/browser/toolbar-assertions.ts';
+import {traverseMonths} from '../tests/browser/month-navigation.ts';
 import {zoomContext,setBrowserZoom} from '../tests/browser/zoom-context.mjs';
 import {LOCAL_PASSWORD} from './local-supabase.mjs';
 import {initialCalendarMonth} from '../lib/rota/calendar-dates.ts';
 import {blocks,ownerMonth,dayOf,addDays} from '../lib/rota/engine.ts';
 import {fromSnapshot,schedulePayload} from '../lib/supabase/snapshot.ts';
-const origin='http://localhost:5173',out='work/runtime-investigation/corrected';
+const origin=process.env.DUTY_RUNTIME_URL??'http://localhost:5173',out='work/runtime-investigation/corrected';
 const config=await(await fetch(origin+'/api/config')).json();
 assert.equal(config.url,'http://127.0.0.1:58321','Refuse hosted databases');
 const client=createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
@@ -26,12 +27,15 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const assets=[];page.on('response',r=>{if(['stylesheet','script'].includes(r.request().resourceType()))assets.push({path:new URL(r.url()).pathname,status:r.status()});});
 const states=[];
 async function verifyState(state) {
+ const navigation=await traverseMonths(page);
+ states.push({state,navigation});
  for(const width of [1024,1280,1440]) {
   await page.setViewportSize({width,height:1000});
   for(const zoom of [1,1.25,1.5,2]) {
    assert.equal(await setBrowserZoom(context,page,zoom),zoom);
    for(const language of ['en','he']) {
     if(language==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+    if(width===1280&&state==='reopened')await traverseMonths(page);
     const toolbar=await assertToolbar(page);
     const menu=toolbar.containerWidth<960?await assertMonthMenu(page):null;
     states.push({state,width,zoom,language,toolbar,menu});

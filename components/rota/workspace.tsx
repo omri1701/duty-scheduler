@@ -270,6 +270,9 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           </div>
         )}
         <fieldset disabled={!!remote?.saving} className="workspace-controls">
+          {/* Keep the fieldset's layout child stable when month-keyed requests remount.
+              Otherwise Chromium can skip the preceding size-query toolbar subtree. */}
+          <div>
           <Tabs value={tab} onValueChange={setTab} className="main-tabs" dir={mobile ? (lang === 'he' ? 'rtl' : 'ltr') : undefined}>
             <div className="nav-row">
               {mobile ? <MobileNavigation value={tab} onChange={setTab} t={t} rtl={lang === 'he'} disabled={remote.saving}/> : <TabsList variant="line">
@@ -381,6 +384,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
             selection={requestSelection}
             onSelection={setRequestSelection}
           />
+          </div>
         </fieldset>
         <WorkspaceFooter t={t} onExport={exportBackup}/>
       </main>

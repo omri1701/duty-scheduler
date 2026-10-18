@@ -56,6 +56,13 @@ at all widths/zooms and leaves a reopened draft for review.
 This optional write test refuses hosted targets and non-synthetic members. With
 only the two default local members, it fills uncovered duties through the checked
 schedule RPC before the initial publication; it does not relax scheduling rules.
+Each state also traverses 24 consecutive months forward and back using visible
+44px navigation targets, including keyboard recovery without reloading. Set
+`DUTY_RUNTIME_URL` to an independently running LOCAL review server when port 5173
+must keep serving the iPhone's hosted DEV connection; the check still refuses
+hosted databases. Browser regressions include completed Swap Requests: replacing
+that month-keyed section directly inside the fieldset could collapse Chromium's
+preceding size-query toolbar. A stable fieldset child isolates those replacements.
 
 ## 1. Create the Google OAuth client
 
