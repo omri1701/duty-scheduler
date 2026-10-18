@@ -31,6 +31,28 @@ test('role capabilities come from the role lookup',()=>{const raw=fixture();raw.
 test('combined weekend is a single stored duty row',()=>{const raw=fixture();raw.assignments=[row('2026-10-02','admin',null,{end_day:'2026-10-04'})];const state=fromSnapshot(raw,'admin');assert.equal(blocks('2026-10',state.specials,state.splitWeekends).find(b=>b.start==='2026-10-02').points,1);const payload=schedulePayload(state);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').end_day,'2026-10-04');assert.equal(payload.duties.some(r=>r.day==='2026-10-03'),false)});
 test('holiday points survive reassignment and split-weekend round trip',()=>{const raw=fixture();raw.assignments=[row('2026-10-02','admin',null,{title:'Holiday',extra_points:2,points:2.5}),row('2026-10-03','engineer',null,{points:0.5})];const state=fromSnapshot(raw,'admin');state.assignments['2026-10-02'].primary='engineer';const payload=schedulePayload(state);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').extra_points,2);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').primary_id,'engineer');assert.equal(payload.duties.find(r=>r.day==='2026-10-03').extra_points,0);assert.equal(totals(state,blocks('2026-10',state.specials,state.splitWeekends)).engineer,3)});
 test('new workspace stays empty until generation is requested',()=>{const raw=fixture();raw.assignments=[];raw.publications=[];raw.months=[];const state=fromSnapshot(raw,'admin');assert.deepEqual(state.assignments,{});assert.deepEqual(schedulePayload(state).duties,[])});
+test('published manager view uses the publication without duplicate working rows',()=>{
+ const raw=fixture();raw.months[0].status='published';raw.assignments=raw.assignments.filter(r=>r.publication_id!==null);
+ const state=fromSnapshot(raw,'admin');assert.equal(state.assignments['2026-10-01'].primary,'engineer');
+ assert.equal(state.months['2026-10'].status,'published');
+ assert.deepEqual(schedulePayload(state).duties,[]);
+ assert.deepEqual(schedulePayload(state,'2026-10').duties,[],'Settings saves must not recreate assignments');
+});
+test('scoped draft save excludes other months and carried weekends',()=>{
+ const state=fromSnapshot(fixture(),'admin');state.months['2026-11']={deadline:'2026-10-24',status:'draft',generated:true};
+ state.assignments['2026-11-02']={primary:'engineer'};
+ const payload=schedulePayload(state,'2026-11');
+ assert.deepEqual(Object.keys(payload.months),['2026-11']);
+ assert(payload.duties.every(r=>r.day>='2026-11-01'));
+ assert.equal(schedulePayload(state,'2026-10').duties.some(r=>r.day==='2026-11-02'),false);
+});
+test('reopened draft and adjacent published month use separate schedule sources',()=>{
+ const raw=fixture();raw.months.push({month:'2026-11',status:'published',generated:true,current_publication_id:'nov'});
+ raw.publications.push({id:'nov',month:'2026-11'});raw.assignments.push(row('2026-11-02','engineer','nov'));
+ const state=fromSnapshot(raw,'admin');assert.equal(state.assignments['2026-10-01'].primary,'admin');
+ assert.equal(state.assignments['2026-11-02'].primary,'engineer');
+ assert.equal(schedulePayload(state).duties.some(r=>r.day==='2026-11-02'),false);
+});
 test('Friday owner publication wins across a month boundary',()=>{const raw=fixture();raw.months=[{month:'2026-07',deadline:'2026-06-24',status:'published',current_publication_id:'july'},{month:'2026-08',deadline:'2026-07-24',status:'published',current_publication_id:'august'}];raw.publications=[{id:'july',month:'2026-07'},{id:'august',month:'2026-08'}];raw.assignments=[row('2026-07-31','admin','august',{end_day:'2026-08-02'}),row('2026-07-31','engineer','july'),row('2026-08-01','admin','july')];const state=fromSnapshot(raw,'engineer');assert.equal(state.assignments['2026-07-31'].primary,'engineer');assert.equal(state.assignments['2026-08-01'].primary,'admin');assert.deepEqual(state.splitWeekends,['2026-07-31'])});
 
 test('snapshot validation accepts nullable revisions, optional swaps and extra database columns',()=>{

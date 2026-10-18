@@ -97,6 +97,13 @@ comparison with canonical required rows; local seeds do not deploy required DML.
 Test both a fresh reset and the upgrade from the prior version, then validate
 Development before separately approving Production application.
 
+PR #28 changes only existing tables/functions: NULL-publication assignment rows
+exist for open drafts; Published months use their current immutable publication
+without working duplicates. The revised conversion is intentionally fail-closed
+on ambiguous Published working data. See the [revised migration plan](../docs/SUPABASE_SETUP.md#pr-28-revised-migration-plan--hosted-approval-required)
+for exact migrations, preservation rules and approval requirements. The prior
+hosted Cancel Draft plan is superseded; no hosted migration is currently authorized.
+
 Quality now enforces paired canonical definitions, new incremental migrations and
 SQL regressions against the exact PR base. It tests real local upgrades with existing
 synthetic identities/private notes/publications and a safe isolated deployment probe.

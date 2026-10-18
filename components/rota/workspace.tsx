@@ -295,7 +295,10 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               onSettings={() => setSettings(true)}
               reopened={reopened}
               onCancelDraft={() => setCancelDraftMonth(month)}
-              onReopen={() => update((s) => s)}
+              onReopen={async () => {
+                if (!publication) return;
+                try {await remote.restore(publication)} catch (e) {toast.error((e as Error).message)}
+              }}
               onPublish={() => setPublishOpen(true)}
             />
             <TabsContent

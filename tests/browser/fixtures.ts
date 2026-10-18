@@ -76,7 +76,8 @@ export class Backend {
       state.team.forEach((member, seniority) => Object.assign(this.raw.members.find(m => m.id === member.id)!, member, {seniority}));
       this.raw.members.sort((a,b) => a.seniority - b.seniority);
       const draftIds = new Map(this.raw.assignments.filter(d => d.publication_id === null).map(d => [d.day, d.id]));
-      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7);
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !state.months[owns(d)] || state.months[owns(d)].status === 'published' && p.p_publish !== owns(d));
       this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: draftIds.get(d.day) ?? `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {
         let m = this.raw.months.find(m => m.month === month);
@@ -97,8 +98,9 @@ export class Backend {
     } else if (name === 'duty_restore_publication') {
       expect(admin).toBe(true);
       const publication = this.raw.publications.find(v => v.id === p.p_publication)!;
-      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
-      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === publication.id).map(d => ({...d, id: d.id + '-restored', publication_id: null})));
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === publication.month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === publication.id && owns(d)).map(d => ({...d, id: d.id + '-restored', publication_id: null})));
       this.raw.months.find(m => m.month === publication.month)!.status = 'draft';
     } else if (name === 'duty_cancel_draft') {
       expect(admin).toBe(true);
@@ -107,7 +109,6 @@ export class Backend {
       expect(m.status).toBe('draft'); expect(m.current_publication_id).toBeTruthy();
       const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === m.month;
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
-      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === m.current_publication_id && owns(d)).map(d => ({...d, id: d.id + '-cancelled', publication_id: null})));
       m.status = 'published'; m.generated = true;
     } else if (name === 'duty_request_swap') {
       const from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
@@ -143,8 +144,14 @@ export class Backend {
     this.raw.revision!++;
     return null;
   }
-  publish(month: string, rows = this.raw.assignments.filter(d => d.publication_id === null)) {
+  publish(month: string, rows?: DutyRow[]) {
     const m = this.raw.months.find(m => m.month === month)!;
+    if (!rows) {
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === month;
+      rows = this.raw.assignments.filter(d => d.publication_id === null && owns(d));
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      m.status = 'published';
+    }
     const id = `publication-${++m.publication_sequence}`;
     this.raw.publications.push({id, month, version: m.publication_sequence, published_at: NOW, published_by: ids.admin});
     this.raw.assignments.push(...rows.map(d => ({...d, id: `${id}-${d.day}`, publication_id: id})));

@@ -63,11 +63,12 @@ test('published manager requests from own duties by tap and drag, never directly
 
 test('reopened versions and My Duties are independent, Cancel Draft confirms and restores',async({page,backend,openApp})=>{
   backend.raw.months[0].status='published';
-  backend.raw.assignments.find(d=>d.publication_id===null && d.day==='2026-11-02')!.primary_id=ids.admin;
   const history=structuredClone(backend.raw.publications),live=backend.raw.months[0].current_publication_id;
   await openApp();
   await page.getByRole('button',{name:'Reopen draft',exact:true}).click();
   await expect(page.getByRole('button',{name:'Cancel draft',exact:true})).toBeVisible();
+  backend.raw.assignments.find(d=>d.publication_id===null && d.day==='2026-11-02')!.primary_id=ids.admin;
+  await page.reload();
   await expect(page.getByRole('button',{name:'Draft',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(duty(page,'2026-11-02')).toContainText('Avery');
   await page.getByRole('button',{name:'My duties',exact:true}).click();
@@ -94,9 +95,10 @@ test('reopened versions and My Duties are independent, Cancel Draft confirms and
   await expect(page.getByRole('button',{name:'Whole team',exact:true})).toBeVisible();
   expect(backend.raw.publications).toEqual(history);
   expect(backend.raw.months[0].current_publication_id).toBe(live);
-  expect(backend.raw.assignments.find(d=>d.publication_id===null&&d.day==='2026-11-02')!.primary_id).toBe(ids.a);
+  expect(backend.raw.assignments.filter(d=>d.publication_id===null)).toHaveLength(0);
   await page.getByRole('button',{name:'Reopen draft',exact:true}).click();
   await expect(page.getByRole('button',{name:'Draft',exact:true})).toHaveAttribute('aria-pressed','true');
+  expect(backend.raw.assignments.find(d=>d.publication_id===null&&d.day==='2026-11-02')!.primary_id).toBe(ids.a);
   await page.getByRole('button',{name:'Published',exact:true}).click();
   await page.getByRole('button',{name:'Next month',exact:true}).click();
   await expect(page.getByRole('button',{name:'Generate month',exact:true})).toBeVisible();

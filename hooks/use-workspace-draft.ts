@@ -54,7 +54,7 @@ export function useWorkspaceDraft({
       const published = Object.keys(n.months).find(
         (m) => n.months[m].status === 'published' && s.months[m]?.status !== 'published',
       );
-      await remote.save(n, published);
+      await remote.save(n, published, month);
       return true;
     } catch (e) {
       if (!notifyError) throw e;

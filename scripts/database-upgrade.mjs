@@ -62,8 +62,11 @@ assert.equal(query(fingerprintSQL), freshFingerprint, 'Populated upgrade schema/
 assert.deepEqual(JSON.parse(query(referenceQuery)), freshReferenceData, 'Upgraded static reference data differs from fresh replay');
 // Extra nullable/defaulted columns and new rows are valid expansions. All previous
 // fixture values must remain present, including private notes and history.
-assert.equal(query(`select (${snapshotSQL.trim().replace(/;$/, '')})::jsonb @> '${before.replaceAll("'", "''")}'::jsonb;`),
-  't', 'Upgrade changed existing identities, profiles, private notes, history, assignments or revision');
+// Migrations may advance the workspace revision to invalidate old snapshots;
+// revision must never go backwards. Feature conversion fixtures check exact deltas.
+assert.equal(query(`select ((${snapshotSQL.trim().replace(/;$/, '')})::jsonb - 'revision') @> ('${before.replaceAll("'", "''")}'::jsonb - 'revision')
+  and (select revision from public.duty_workspace where id) >= ${JSON.parse(before).revision};`),
+  't', 'Upgrade changed existing identities, profiles, private notes, history, assignments or decreased revision');
 console.log('PASS: incremental upgrade from base preserves synthetic existing data');
 // Fresh gates explicitly require empty operational data. Reset ONLY this local DB.
 run(cli, ['db', 'reset', '--local', '--no-seed', '--yes', ...localArgs]);

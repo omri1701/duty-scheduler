@@ -67,7 +67,15 @@ begin
  perform public.duty_save_schedule(schedule,rev,'2099-10');
  select current_publication_id into version_one from public.duty_months where month='2099-10';
  select points into value from public.duty_assignments where publication_id=version_one and day='2099-10-04';
+ -- Independent settings do not materialize a draft for a Published month.
+ select revision into rev from public.duty_workspace;
+ perform public.duty_set_constraints(admin_id,array['2099-10-04'::date],'prefer','Independent availability',rev);
+ if (select status from public.duty_months where month='2099-10')<>'published' then raise exception 'Availability reopened a published month'; end if;
+ select revision into rev from public.duty_workspace;
+ perform public.duty_save_schedule(jsonb_build_object('team','[]'::jsonb,'duties','[]'::jsonb,'months',jsonb_build_object('2099-10',jsonb_build_object('deadline','2099-09-26','status','published','generated',true))),rev);
+ if exists(select 1 from public.duty_assignments where publication_id is null) then raise exception 'Published settings recreated working rows'; end if;
  -- Update only the engineer field; holiday points must remain unchanged.
+ select revision into rev from public.duty_workspace;perform public.duty_restore_publication(version_one,rev);
  schedule:=jsonb_set(schedule,'{duties,3,primary_id}',to_jsonb(second_id::text));
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev);
  if (select primary_id from public.duty_assignments where publication_id=version_one and day='2099-10-04')<>admin_id then raise exception 'Draft changed a saved version'; end if;
@@ -97,6 +105,7 @@ begin
  select revision into rev from public.duty_workspace;perform public.duty_delete_publication(version_one,rev);
  if (select current_publication_id from public.duty_months where month='2099-10')<>kept then raise exception 'Deleting old version changed current version'; end if;
  -- Special Saturday at a month boundary stays in Friday's publication.
+ schedule:=jsonb_build_object('team','[]'::jsonb,'months','{}'::jsonb,'duties','[]'::jsonb);
  schedule:=jsonb_set(schedule,'{months,2026-07}','{"deadline":"2026-06-24","status":"draft","generated":true}'::jsonb);
  schedule:=jsonb_set(schedule,'{months,2026-08}','{"deadline":"2026-07-24","status":"draft","generated":true}'::jsonb);
  select jsonb_set(schedule,'{duties}',schedule->'duties'||jsonb_agg(jsonb_build_object('day',d::date,'end_day',d::date+case when extract(dow from d)=5 and d::date<>'2026-07-31'::date then 2 else 1 end,'primary_id',admin_id,'title',case when d::date='2026-08-01'::date then 'Boundary holiday' else '' end,'extra_points',case when d::date='2026-08-01'::date then 2 else 0 end))) into schedule from generate_series('2026-07-01'::date,'2026-08-31'::date,interval '1 day') d where extract(dow from d)<>6 or d::date='2026-08-01'::date;
@@ -109,11 +118,17 @@ begin
  select boundary_version,day,end_day,primary_id,title,extra_points from public.duty_assignments where publication_id is null and day='2026-08-01';
  set local role authenticated;
  -- Replace the old split with a combined Friday, then restore the August snapshot.
- select jsonb_set(schedule,'{duties}',jsonb_agg(case when entry->>'day'='2026-07-31' then jsonb_set(entry,'{end_day}','"2026-08-02"'::jsonb) else entry end)) into schedule from jsonb_array_elements(schedule->'duties') entry where entry->>'day'<>'2026-08-01';
+ schedule:=jsonb_set(schedule,'{months}',(schedule->'months')-'2026-08');
+ select jsonb_set(schedule,'{duties}',jsonb_agg(case when entry->>'day'='2026-07-31' then jsonb_set(entry,'{end_day}','"2026-08-02"'::jsonb) else entry end)) into schedule from jsonb_array_elements(schedule->'duties') entry where entry->>'day'<'2026-08-01';
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev);
  select revision into rev from public.duty_workspace;perform public.duty_restore_publication(boundary_version,rev);
- if (select end_day from public.duty_assignments where publication_id is null and day='2026-07-31')<>'2026-08-01'::date then raise exception 'Restoring August erased the July Friday half'; end if;
- if (select points from public.duty_assignments where publication_id is null and day='2026-08-01')<>2.5 then raise exception 'Boundary holiday lost its extra points'; end if;
+ if (select end_day from public.duty_assignments where publication_id is null and day='2026-07-31')<>'2026-08-02'::date or exists(select 1 from public.duty_assignments where publication_id is null and day='2026-08-01') then raise exception 'Restoring August changed July-owned weekend'; end if;
+ -- Reopen July's split shape explicitly; August restore must never own it.
+ reset role;
+ update public.duty_assignments set end_day='2026-08-01' where publication_id is null and day='2026-07-31';
+ insert into public.duty_assignments(day,end_day,primary_id,title,extra_points) values('2026-08-01','2026-08-02',admin_id,'Boundary holiday',2);
+ set local role authenticated;
+ schedule:=jsonb_set(schedule,'{months,2026-08}','{"deadline":"2026-07-24","status":"draft","generated":true}'::jsonb);
  -- Rebuild the payload from the restored draft for the next publish.
  select jsonb_set(schedule,'{duties}',jsonb_agg(to_jsonb(a))) into schedule from public.duty_assignments a where publication_id is null;
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev,'2026-07');
@@ -121,6 +136,7 @@ begin
  select revision into rev from public.duty_workspace;perform public.duty_delete_publication(kept,rev);
  if (select current_publication_id from public.duty_months where month='2099-10') is not null or (select status from public.duty_months where month='2099-10')<>'draft' then raise exception 'Deleting the last version left month published'; end if;
  -- Deactivation retains published references and blocks that member's workspace access.
+ schedule:=jsonb_build_object('team','[]'::jsonb,'months','{}'::jsonb,'duties','[]'::jsonb);
  schedule:=jsonb_set(schedule,'{team}',jsonb_build_array(jsonb_build_object('id',engineer_id,'name','Ignored spoof','role','admin','color','#adc9ee','active',false)));
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev);
  if (select name from public.duty_members where id=engineer_id)<>'My chosen name' or (select role from public.duty_members where id=engineer_id)<>'engineer' then raise exception 'Bulk save overwrote profile or role'; end if;

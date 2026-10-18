@@ -129,17 +129,64 @@ The former `manager_identity`, `duty_specials` and `duty_split_weekends` tables 
 
 A regular duty spans one date; an intact weekend spans Friday through Sunday and is one stored row. Split or special weekend dates use separate rows in the same duty table. Extra points belong to the duty date and survive changing the assigned engineer. Selecting a special range in the UI sets those dates' extra points together.
 
-Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
+Publishing validates all owned dates, creates a new immutable version with foreign-key duty rows, removes the month's working rows and marks it Published in one transaction. Published months read directly from the current version. Reopen copies that version into a working draft; historical restoration uses the same checked operation with the selected version. Both preserve the live publication and touch only that month's Friday-owned duties. Engineers always see the current publication; managers can switch between their draft and the publication. Deleting the live version selects the newest remaining version. Deleting the last version keeps an existing draft or copies the deleted version into a draft first. Version numbers are not reused.
 
 New publications contain only duties owned by that month: weekdays by date and both
 weekend halves by Friday, including a split/special Saturday in the next month.
 `duty_cancel_draft(p_month, p_revision)` is separate from historical version restoration.
 It requires an active approved manager, takes the existing workspace revision lock,
-reads the current publication pointer, verifies owned coverage, and replaces only
-that owner's working rows in one transaction. It restores Published status without
+rechecks manager authorization after acquiring the lock, reads the current publication
+pointer, and deletes only that owner's working rows in one transaction. It restores Published status without
 changing the pointer, sequence, history, requests, membership, availability, or any
-other month's rows/status. Missing coverage or a conflicting boundary row rejects
-the entire operation. The client sends no restoration rows or publication ID.
+other month's rows/status. It never copies publication rows back into working data.
+Titles, extra points, emergency cover, manual overrides and split/combined weekends
+are all encoded in assignments, so deleting those rows removes the entire draft.
+Availability, deadlines, team settings, requests and approvals are independent and
+survive cancellation. Availability edits do not reopen a published schedule.
+The client sends no restoration rows or publication ID. All checked manager writes
+revalidate authorization after the workspace lock; stale revisions fail atomically.
+
+### PR #28 revised migration plan — hosted approval required
+
+The previous approval to apply the two older migrations is superseded. No hosted
+DEV or Production migration is authorized by this plan. Feature validation uses
+only disposable LOCAL databases. Keep PR #28 unmerged and visual references unchanged.
+
+The pending chain, in order, is:
+
+1. `20261017185214_cancel_month_draft.sql` (unchanged historical prerequisite).
+2. `20261017211958_today_inclusive_published_swaps.sql` (unchanged prerequisite).
+3. `20261018183148_draft_publication_lifecycle.sql` (new conversion and final RPCs).
+
+Review and approve the entire revised chain before any hosted write; never deploy
+the old Cancel implementation alone to unblock the button. Follow the approved
+database-first release path in [DEPLOYMENT.md](DEPLOYMENT.md), with recovery evidence,
+a defined write-quiescence window and exact migration/source hashes. Obtain separate
+approval for DEV, inspect read-only contracts and lifecycle behavior there, then
+seek the normal reviewed Production release and Environment approval. App rollback
+does not reverse this SQL; use a reviewed forward fix or approved recovery procedure.
+
+Conversion takes the workspace lock and compares each Published month's owned
+working rows with its current publication, excluding row IDs. Exact redundant
+copies are deleted; every nonempty workspace advances its revision once to
+invalidate old snapshots, including requests waiting on the migration lock.
+Reopened drafts and never-published drafts retain their rows and IDs. Publications,
+legacy adjacent rows within historical versions, publication pointers/sequences,
+membership, private availability, deadlines, requests and approvals remain intact.
+Friday ownership decides whether a boundary Saturday is working data for the month.
+
+Conversion aborts atomically for divergent Published working rows, missing owning
+months/publication pointers, or requests referencing a disposable working row.
+Completed swaps may explain divergent copies, but that alone is insufficient to
+discard them. Identify affected months in a read-only preflight and review them
+individually before approving conversion; do not automatically overwrite, delete,
+or relabel ambiguous data. No hosted preflight or real-data conversion has run here.
+
+`supabase/tests/lifecycle-upgrade.mjs` executes this exact migration on complete
+synthetic published/reopened/never-published schedules, history, cross-year weekend
+specials, availability, requests and approvals. It proves both conversion preservation
+and refusal/rollback for ambiguous rows. `lifecycle-races.mjs` uses separate real
+PostgreSQL sessions, including a held-lock demotion with a predicted new revision.
 
 ## Permissions and validation
 
@@ -422,6 +469,8 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
 node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
 node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
 pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler --no-backup
 ```
 

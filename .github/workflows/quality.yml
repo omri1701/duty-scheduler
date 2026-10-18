@@ -151,6 +151,8 @@ jobs:
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
           node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
           node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
       - name: Incremental upgrade preserves existing data
         env:
           DATABASE_BASE: ${{ needs.scope.outputs.base }}
