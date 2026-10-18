@@ -23,7 +23,7 @@ export async function verifyProductionCss(directory = '.next') {
   // Checking the files linked by HTML catches stale output as well as omitted assets.
   for (const selector of ['.mobile-navigation', '.mobile-nav-selection', '.mobile-availability-legend',
     '.mobile-availability-weekdays', '.calendar-grid', '.availability-grid', '.team-grip', '.editor-dialog',
-    '.desktop-month-tools', '.workflow-actions', '.workflow-label-wide', '.workflow-label-compact']) {
+    '.desktop-month-tools', '.workflow-actions', '.month-toolbar-container', '.mobile-action-menu']) {
     assert(css.includes(selector), `Production CSS is missing ${selector}`);
   }
   assert(/@media\s*\(max-width:\s*600px\)/.test(css), 'Production CSS is missing the phone breakpoint');

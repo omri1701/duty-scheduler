@@ -42,6 +42,7 @@ export function WorkspaceToolbar({
 }) {
   const generateLabel = busy ? t('Generating…','משבץ…') : monthDetails.generated ? t('Regenerate','שיבוץ מחדש') : t('Generate month','יצירת שיבוץ');
   return (
+    <div className="month-toolbar-container">
     <div className="month-toolbar" dir={t('ltr','rtl')}>
       {isManager && <div className="desktop-month-tools">
         <Button data-month-tool="versions" variant="outline" onClick={onHistory}><History/>{t('Versions','גרסאות')}</Button>
@@ -61,7 +62,7 @@ export function WorkspaceToolbar({
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Portal>
-                  <DropdownMenu.Content className="mobile-action-menu" align="end" sideOffset={8} collisionPadding={16}>
+                  <DropdownMenu.Content className="mobile-action-menu" align="start" sideOffset={8} collisionPadding={16}>
                     <DropdownMenu.Item onSelect={onHistory}>
                       <History />{t('Versions', 'גרסאות')}
                     </DropdownMenu.Item>
@@ -85,8 +86,7 @@ export function WorkspaceToolbar({
                   aria-label={generateLabel}
                 >
                   <Sparkles className={busy ? 'spin' : ''} />
-                  <span className="workflow-label-wide">{generateLabel}</span>
-                  <span className="workflow-label-compact" aria-hidden="true">{busy || monthDetails.generated ? generateLabel : t('Generate','יצירה')}</span>
+                  <span className="workflow-label">{generateLabel}</span>
                 </Button>
                 {reopened && <Button className="cancel-draft-action" data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
                 <Button
@@ -105,6 +105,7 @@ export function WorkspaceToolbar({
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }

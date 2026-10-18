@@ -57,7 +57,7 @@ async function main() {
   }
   if (stopping) return;
   if (!ready) throw Error('Next.js DEV configuration did not become ready; tunnel was not started.');
-  await verifyServedCss('http://localhost:5173');
+  await verifyServedCss('http://localhost:5173',{attempts:30});
   const binary = existsSync('work/ngrok/ngrok.exe') ? resolve('work/ngrok/ngrok.exe') : 'ngrok';
   start(binary,['http','http://localhost:5173',`--url=${selected.DUTY_DEV_ORIGIN}`,`--config=${config}`,'--inspect=false','--log=false'],{stdio:'ignore'});
   console.log(`Mobile DEV: ${selected.DUTY_DEV_ORIGIN}\nKeep this terminal running. Ctrl+C stops Next.js and ngrok.`);

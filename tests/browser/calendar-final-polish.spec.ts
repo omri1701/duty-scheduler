@@ -40,7 +40,9 @@ test('iPhone all manager states keep menu and workflow actions on one row',async
           expect(box.clipped).toBe(false);
         }
         expect(boxes[0].width).toBe(44);
-        for(const box of boxes.slice(1))expect(Math.abs(box.width-boxes[1].width)).toBeLessThan(1);
+        for(const button of await page.locator('.workflow-actions>button').all()) {
+          expect(await button.evaluate(el=>Number.parseFloat(getComputedStyle(el).paddingInlineStart))).toBeGreaterThanOrEqual(9);
+        }
         expect(lang==='en'?boxes[1].x-(boxes[0].x+44):boxes[0].x-(boxes[1].x+boxes[1].width)).toBeGreaterThanOrEqual(12);
         const title=(await page.locator('.month-title').boundingBox())!,toolbar=(await page.locator('.month-toolbar').boundingBox())!;
         expect(Math.abs(title.x+title.width/2-toolbar.x-toolbar.width/2)).toBeLessThan(1);

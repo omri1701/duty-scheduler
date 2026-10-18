@@ -26,3 +26,14 @@ test('served CSS gate rejects old bytes at the same successful asset URL',async 
  assert.throws(()=>assertCssSource('/* no stylesheet fingerprint */',hash),/does not match/);
  assert.throws(()=>assertCssSource(`:root{--duty-css-source:${hash}}:root{--duty-css-source:${cssSourceHash('old')}}`,hash),/does not match/);
 });
+
+test('readiness permits a cold compile longer than the former five-second timeout',{timeout:12000},async t=>{
+ const hash=await currentCssHash();
+ const server=createServer((req,res)=>{
+  if(req.url==='/')setTimeout(()=>res.end('<link rel="stylesheet" href="/globals.css">'),5200);
+  else res.end(`:root{--duty-css-source:${hash}}`);
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ assert.equal(await verifyServedCss(`http://127.0.0.1:${server.address().port}`),hash);
+});

@@ -18,6 +18,7 @@ export function assertCssSources(stylesheets, expected) {
 // This fingerprint travels through the same transform/cache as the stylesheet.
 export default function cssSourcePlugin() {
   return {postcssPlugin: 'duty-css-source', Once(root) {
+    if (!root.source.input.file?.replaceAll('\\','/').endsWith('/globals.css')) return;
     root.append({selector: ':root', nodes: [{prop: '--duty-css-source', value: cssSourceHash(root.source.input.css)}]});
   }};
 }

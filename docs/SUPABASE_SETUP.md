@@ -45,12 +45,14 @@ swap eligibility with a transaction-local frozen clock and rolls everything back
 With `pnpm dev:local` running, `pnpm test:runtime:local` checks the real served
 app through local password Auth and PostgREST, without backend interception. It
 checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
-CSS source fingerprints, computed toolbar layout, ordinary reload and fresh
+CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
+100/125/150/200%, the popup menu, ordinary reload and fresh
 browser sessions. Captures and computed evidence go to
 `work/runtime-investigation/corrected`. Add `-- --exercise-cancel` to exercise
 cancellation on the current synthetic LOCAL month: it publishes if necessary,
 regenerates, cancels through the browser, verifies restored assignments/status
-and preserved history/other assignments, then leaves a reopened draft for review.
+and preserved history/other assignments, verifies New/Published/Reopened states
+at all widths/zooms and leaves a reopened draft for review.
 This optional write test refuses hosted targets and non-synthetic members. With
 only the two default local members, it fills uncovered duties through the checked
 schedule RPC before the initial publication; it does not relax scheduling rules.

@@ -20,6 +20,8 @@ pnpm dev:select # optional interactive selector
 ```
 
 `pnpm dev` is the Development default. Stop the server before switching targets;
+an occupied port 5173 now fails before LOCAL setup or any readiness check, so
+the launcher cannot accidentally validate an older server using another target.
 no command rewrites `.env.local`. See [local targets and setup](docs/SUPABASE_SETUP.md#localhost-environment-selector)
 for one-time keys, Docker setup, test accounts and Production login. Sessions are
 isolated by actual project URL and local port.
@@ -95,10 +97,17 @@ Turbopack filesystem transform caching is disabled for development and productio
 pre-PR #22 CSS after receiving the updated source and restoring Vercel's build
 cache, and a long-running localhost server later served old CSS with current
 toolbar JSX. Restarting that server corrected its output without a layout edit.
-The PostCSS transform embeds the SHA-256 of its actual stylesheet input; the
+Tailwind 4.2.1 can retain an old compiler AST when a save changes the file between
+Next reading its input and Tailwind sampling its mtime. This was reproduced with
+two inputs and an unchanged sampled mtime. Framework directives/theme utilities
+now live in `app/tailwind.css`; custom application rules in `app/globals.css` bypass
+that compiler cache. The source fingerprint runs **before** compilation, so a
+cached AST also retains its old fingerprint instead of claiming newer input. The
 development launcher checks downloaded CSS against the source before reporting
 readiness, and the production build checks the linked output. Dependency caching
-retains its defaults. A CSS fingerprint failure requires stopping/restarting the
+retains its defaults. Mobile readiness waits for a cold application/CSS compile
+instead of treating a five-second timeout as a broken server. A CSS fingerprint
+failure requires stopping/restarting the
 server before validation; adding layout overrides cannot repair stale assets.
 For a different production port, use `pnpm exec next start --port 3000`.
 
@@ -248,6 +257,12 @@ navigation, hidden phone-only labels and seven-column calendar geometry at 1440,
 visual references. `toolbar-runtime.spec.ts` additionally verifies the CSS source
 fingerprint, computed toolbar displays, visible labels, row alignment, centering,
 touch heights and overflow at desktop and iPhone WebKit widths in both languages.
+The toolbar uses its container width: direct tools fit from 960px of content;
+narrower containers show the styled ellipsis menu and a separate month row.
+Workflow buttons have natural content widths, with narrower padding only when a
+reopened draft needs it. `toolbar-zoom.spec.ts` uses isolated Chromium tab zoom
+(100/125/150/200%), including the menu background, border, shadow, collision,
+stacking and Escape/focus behavior, in New/Published/Reopened states and RTL.
 For the real LOCAL app with Auth/PostgREST and no backend interception, use
 `pnpm test:runtime:local` after `pnpm dev:local`; see [the LOCAL verification
 procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).

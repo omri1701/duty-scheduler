@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {PROJECTS,connectionTarget,validatePublicKey,validateDevOrigin} from '../lib/supabase/environment.ts';
 import {verifyServedCss} from './verify-served-css.mjs';
+import {requireDevelopmentPort} from './development-port.mjs';
 
 export function selectConfiguration(mode, env, productionConfirmed = false) {
   if (!['local','dev','prod'].includes(mode)) throw Error('Select local, dev or prod.');
@@ -35,6 +36,7 @@ async function main() {
     try {confirmed=(await prompt.question('PRODUCTION: application read-only safeguard only. Type INSPECT PRODUCTION to continue: '))==='INSPECT PRODUCTION';}
     finally {prompt.close();}
   }
+  await requireDevelopmentPort();
   let env;
   if (mode === 'local') {
     const {prepareLocal} = await import('./local-supabase.mjs');

@@ -2,7 +2,7 @@ import {test} from './fixtures';
 import {webkit, devices} from '@playwright/test';
 import {assertToolbar} from './toolbar-assertions';
 
-for (const width of [1024,1280,1440,375,390,430]) {
+for (const width of [1024,1280,1440,340,375,390,430]) {
   test(`served toolbar CSS and geometry at ${width}px`, async ({page,openApp},info) => {
     test.skip(info.project.name !== 'desktop', 'Run the matrix once.');
     const browser = width < 1024 ? await webkit.launch() : null;
