@@ -23,6 +23,15 @@ A missing `duty_cancel_draft(p_month text, p_revision bigint)` RPC on hosted DEV
 means its incremental migration has not been released there; local setup cannot
 change a hosted database. Follow the approved [database-first release](DEPLOYMENT.md)
 after merge. Do not push feature migrations to hosted environments or reset them.
+The calendar changes require both `20261017185214_cancel_month_draft.sql` and
+`20261017211958_today_inclusive_published_swaps.sql`. A hosted database with only
+the two baseline migrations supports neither the new cancellation RPC nor the
+today-inclusive swap behavior. After explicit approval to merge and migrate hosted DEV, merge
+the reviewed PR into `develop`; its exact-head Quality run invokes the
+Development release: dry-run/push pending migrations, verify history and database
+contract, then deploy the matching app. Inspect that run's database and deployment
+results before testing hosted DEV. Do not run a feature-branch hosted migration
+push separately; see [release and retry details](DEPLOYMENT.md#development-and-production).
 If the function exists, verify authenticated EXECUTE grants and the PostgREST
 schema cache before changing the client. Never restore drafts from client data.
 
@@ -32,6 +41,19 @@ December/January ownership, revision races and transactional failure rollback.
 It requires unused synthetic far-future months, cleans only its own fixtures and
 refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
 swap eligibility with a transaction-local frozen clock and rolls everything back.
+
+With `pnpm dev:local` running, `pnpm test:runtime:local` checks the real served
+app through local password Auth and PostgREST, without backend interception. It
+checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
+CSS source fingerprints, computed toolbar layout, ordinary reload and fresh
+browser sessions. Captures and computed evidence go to
+`work/runtime-investigation/corrected`. Add `-- --exercise-cancel` to exercise
+cancellation on the current synthetic LOCAL month: it publishes if necessary,
+regenerates, cancels through the browser, verifies restored assignments/status
+and preserved history/other assignments, then leaves a reopened draft for review.
+This optional write test refuses hosted targets and non-synthetic members. With
+only the two default local members, it fills uncovered duties through the checked
+schedule RPC before the initial publication; it does not relax scheduling rules.
 
 ## 1. Create the Google OAuth client
 

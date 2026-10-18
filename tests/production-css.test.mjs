@@ -4,6 +4,7 @@ import {mkdtemp, mkdir, readFile, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {verifyProductionCss} from '../scripts/verify-production-css.mjs';
+import {currentCssHash} from '../scripts/css-source.mjs';
 
 test('verify the CSS linked by production HTML, rejecting stale output and failed asset emission', async context => {
   const directory = await mkdtemp(path.join(tmpdir(), 'duty-css-test-'));
@@ -15,11 +16,16 @@ test('verify the CSS linked by production HTML, rejecting stale output and faile
   const css = await readFile('app/globals.css', 'utf8');
   // Simulate an older cached stylesheet alongside a correctly emitted new asset.
   const stale = css.slice(0, css.indexOf('/* Phone-only additions'));
-  await writeFile(path.join(directory, 'static/immutable/chunks/current.css'), css);
+  const fingerprint = `:root{--duty-css-source:${await currentCssHash()}}`;
+  await writeFile(path.join(directory, 'static/immutable/chunks/current.css'), css + fingerprint);
   await writeFile(path.join(directory, 'static/immutable/chunks/old.css'), stale);
   await writeFile(htmlPath, html('current'));
   assert.equal(await verifyProductionCss(directory), 1);
+  await writeFile(htmlPath, html('current') + html('old'));
+  await assert.rejects(verifyProductionCss(directory), /does not match/);
   await writeFile(htmlPath, html('old'));
+  await assert.rejects(verifyProductionCss(directory), /does not match/);
+  await writeFile(path.join(directory, 'static/immutable/chunks/old.css'), stale + fingerprint);
   await assert.rejects(verifyProductionCss(directory), /missing \.mobile-navigation/);
   await writeFile(htmlPath, html('missing'));
   await assert.rejects(verifyProductionCss(directory), {code: 'ENOENT'});

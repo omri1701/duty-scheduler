@@ -5,6 +5,7 @@ import {resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {readDevelopmentEnv,selectConfiguration} from './dev-environment.mjs';
 import {PROJECTS} from '../lib/supabase/environment.ts';
+import {verifyServedCss} from './verify-served-css.mjs';
 
 const children = new Set();
 let stopping = false;
@@ -56,6 +57,7 @@ async function main() {
   }
   if (stopping) return;
   if (!ready) throw Error('Next.js DEV configuration did not become ready; tunnel was not started.');
+  await verifyServedCss('http://localhost:5173');
   const binary = existsSync('work/ngrok/ngrok.exe') ? resolve('work/ngrok/ngrok.exe') : 'ngrok';
   start(binary,['http','http://localhost:5173',`--url=${selected.DUTY_DEV_ORIGIN}`,`--config=${config}`,'--inspect=false','--log=false'],{stdio:'ignore'});
   console.log(`Mobile DEV: ${selected.DUTY_DEV_ORIGIN}\nKeep this terminal running. Ctrl+C stops Next.js and ngrok.`);

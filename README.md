@@ -91,9 +91,15 @@ do not promise identical total page height before team size and private data are
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,
 rejecting missing assets or CSS that lacks the responsive workspace styles.
-Production Turbopack filesystem caching is disabled: DEV served byte-identical
+Turbopack filesystem transform caching is disabled for development and production: DEV served byte-identical
 pre-PR #22 CSS after receiving the updated source and restoring Vercel's build
-cache. Development caching and dependency caching retain their defaults.
+cache, and a long-running localhost server later served old CSS with current
+toolbar JSX. Restarting that server corrected its output without a layout edit.
+The PostCSS transform embeds the SHA-256 of its actual stylesheet input; the
+development launcher checks downloaded CSS against the source before reporting
+readiness, and the production build checks the linked output. Dependency caching
+retains its defaults. A CSS fingerprint failure requires stopping/restarting the
+server before validation; adding layout overrides cannot repair stale assets.
 For a different production port, use `pnpm exec next start --port 3000`.
 
 The repository is ready to import into Vercel using its **Next.js** framework
@@ -239,7 +245,13 @@ their accessible names change with assignment and language.
 `responsive-css.spec.ts` checks loaded CSS/JS assets, floating phone and desktop
 navigation, hidden phone-only labels and seven-column calendar geometry at 1440,
 390 and 320px in English and Hebrew RTL. It retains captures without updating
-visual references. To smoke-test an accessible deployed DEV build with the same
+visual references. `toolbar-runtime.spec.ts` additionally verifies the CSS source
+fingerprint, computed toolbar displays, visible labels, row alignment, centering,
+touch heights and overflow at desktop and iPhone WebKit widths in both languages.
+For the real LOCAL app with Auth/PostgREST and no backend interception, use
+`pnpm test:runtime:local` after `pnpm dev:local`; see [the LOCAL verification
+procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).
+To smoke-test an accessible deployed DEV build with the same
 synthetic accounts and intercepted backend (no real member data or writes):
 
 ```sh
