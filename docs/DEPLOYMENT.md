@@ -274,6 +274,23 @@ Production, if still on the two baselines, applies them in order before the app.
 Both paths must match Quality's fresh-install catalog/RLS/RPC/reference contract.
 Never change an applied migration; any correction needs a new reviewed migration.
 
+On 2026-10-19 the owner authorized a one-time PR #28 DEV maintenance exception.
+The pinned CLI applied this exact chain to `qhndiuahuxczujxxitsm`; no fallback
+deletion was needed. Successful database CI, fresh LOCAL replay and hosted
+schema/RLS/RPC/reference contracts matched. The compatible `9bd1b3e` feature
+Preview was verified READY and explicitly assigned only to the stable DEV domain,
+with its actual feature branch/SHA metadata. Existing Vercel Authentication,
+the domain's `develop` binding and the `master` release mechanism were preserved.
+The normal release function subsequently verified zero pending migrations.
+
+This local exception checked the unchanged `develop` head, active release runs
+and DEV alias before cutover stages; it did not acquire Actions' `release-develop`
+concurrency lock. Retain that distinction in its release evidence. This was a
+single authorized maintenance operation, not an alternative release workflow.
+No repository protections, workflow gates or Production settings were changed.
+Visual baseline approval and deployed Google/browser acceptance remain separate
+gates recorded in PR #28. Do not infer merge readiness from this DEV deployment.
+
 Before **each** hosted conversion, including the future Production release, repeat
 a read-only, single-snapshot data preflight using the migration's exact
 `duty_owner` and JSON comparison rules. Check publication pointers/history, working
@@ -288,7 +305,8 @@ The client at `30926dcdcad2e4038c31a52980de57803ffe41f3` is incompatible with th
 final migration: manager reads require working copies, Reopen toggles status
 through Save, and Save submits every month. The final schema removes Published
 working copies and requires the Restore RPC for Reopen. **Do not apply this chain
-while that client must keep serving.** Review and authorize a compatible staged
+while that client must keep serving.** The owner accepted DEV downtime for the
+completed coordinated cutover above. For any remaining environment, authorize a compatible staged
 transition or a coordinated maintenance cutover covering old browser sessions,
 application build failure and rollback before proceeding. A migration's data
 preflight passing does not waive this compatibility gate.

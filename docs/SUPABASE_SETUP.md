@@ -146,25 +146,33 @@ survive cancellation. Availability edits do not reopen a published schedule.
 The client sends no restoration rows or publication ID. All checked manager writes
 revalidate authorization after the workspace lock; stale revisions fail atomically.
 
-### PR #28 revised migration plan — hosted approval required
+### PR #28 lifecycle migration — DEV cutover
 
-The previous approval to apply the two older migrations is superseded. No hosted
-DEV or Production migration is authorized by this plan. Feature validation uses
-only disposable LOCAL databases. Keep PR #28 unmerged and visual references unchanged.
+On 2026-10-19 the owner authorized the complete three-file chain and a coordinated
+DEV maintenance cutover without merging PR #28. All three files were applied to
+Frankfurt DEV with the pinned CLI, preserving their committed versions and names.
+No fallback deletion was necessary. Keep visual approvals separate; this exception
+does not authorize a merge, future feature releases or any Production operation.
 
-The pending chain, in order, is:
+The applied DEV chain, in order, is:
 
 1. `20261017185214_cancel_month_draft.sql` (unchanged historical prerequisite).
 2. `20261017211958_today_inclusive_published_swaps.sql` (unchanged prerequisite).
 3. `20261018183148_draft_publication_lifecycle.sql` (new conversion and final RPCs).
 
-Review and approve the entire revised chain before any hosted write; never deploy
-the old Cancel implementation alone to unblock the button. Follow the approved
-database-first release path in [DEPLOYMENT.md](DEPLOYMENT.md), with recovery evidence,
-a defined write-quiescence window and exact migration/source hashes. Obtain separate
-approval for DEV, inspect read-only contracts and lifecycle behavior there, then
-seek the normal reviewed Production release and Environment approval. App rollback
-does not reverse this SQL; use a reviewed forward fix or approved recovery procedure.
+DEV now serves the compatible `9bd1b3e` application at
+`https://duty-scheduler-dev.vercel.app/`. The normal release function verified that
+the complete matching history skips all three files. Schema/RLS/RPC/reference-data
+contracts matched successful database CI and fresh LOCAL replay. A hosted checked-RPC
+acceptance transaction exercised lifecycle, permissions, specials, boundary weekends
+and published swaps, then rolled back all probe writes. This SQL check does not
+verify Google authentication or replace browser acceptance. Vercel Authentication
+remains enabled; real deployed login acceptance is recorded separately in PR #28.
+
+Future releases follow [DEPLOYMENT.md](DEPLOYMENT.md). Production still needs its
+own data preflight, release authorization, trusted Quality evidence and Environment
+approval. App rollback does not reverse this SQL; use a reviewed forward fix or
+approved recovery procedure.
 
 Conversion takes the workspace lock and compares each Published month's owned
 working rows with its current publication, excluding row IDs. Exact redundant
@@ -180,7 +188,9 @@ months/publication pointers, or requests referencing a disposable working row.
 Completed swaps may explain divergent copies, but that alone is insufficient to
 discard them. Identify affected months in a read-only preflight and review them
 individually before approving conversion; do not automatically overwrite, delete,
-or relabel ambiguous data. No hosted preflight or real-data conversion has run here.
+or relabel ambiguous data without explicit environment-specific authorization.
+DEV's repeated preflight found no blockers, and before/after digests confirmed
+preservation of existing schedules, requests, constraints, deadlines and members.
 
 `supabase/tests/lifecycle-upgrade.mjs` executes this exact migration on complete
 synthetic published/reopened/never-published schedules, history, cross-year weekend
