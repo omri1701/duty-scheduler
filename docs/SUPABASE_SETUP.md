@@ -471,6 +471,7 @@ node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
 node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
 node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
 node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-release.mjs supabase_db_duty-scheduler
 pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler --no-backup
 ```
 
