@@ -100,10 +100,11 @@ try {
   await expect(page.getByRole('button',{name:'Reopen draft',exact:true})).toBeVisible();
   const after=await load();
   assert.equal(after.months.find(m=>m.month===month).status,'published');
-  assert.deepEqual(fields(after.assignments.filter(r=>r.publication_id===null&&owned(r))),expected);
+  assert.deepEqual(after.assignments.filter(r=>r.publication_id===null&&owned(r)),[]);
+  assert.deepEqual(fields(after.assignments.filter(r=>r.publication_id===pub&&owned(r))),expected);
   assert.deepEqual(after.publications,before.publications);
   assert.deepEqual(after.assignments.filter(r=>r.publication_id!==null||!owned(r)),before.assignments.filter(r=>r.publication_id!==null||!owned(r)));
-  const cancellation={target:config.url,month,httpStatus:response.status(),status:'published',restoredAssignments:expected.length,revisionBefore:before.revision,revisionAfter:after.revision,historyPreserved:true,otherAssignmentsPreserved:true};
+  const cancellation={target:config.url,month,httpStatus:response.status(),status:'published',publishedAssignments:expected.length,workingAssignments:0,revisionBefore:before.revision,revisionAfter:after.revision,historyPreserved:true,otherAssignmentsPreserved:true};
   await writeFile(`${out}/cancel-draft.json`,JSON.stringify(cancellation,null,2));console.log('Real browser Cancel Draft:',JSON.stringify(cancellation));
   await verifyState('published');
   await page.getByRole('button',{name:'Next month',exact:true}).click();

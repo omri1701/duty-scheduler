@@ -50,7 +50,8 @@ CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
 browser sessions. Captures and computed evidence go to
 `work/runtime-investigation/corrected`. Add `-- --exercise-cancel` to exercise
 cancellation on the current synthetic LOCAL month: it publishes if necessary,
-regenerates, cancels through the browser, verifies restored assignments/status
+regenerates, cancels through the browser, verifies removal of working rows and
+the unchanged published assignments/status,
 and preserved history/other assignments, verifies New/Published/Reopened states
 at all widths/zooms and leaves a reopened draft for review.
 This optional write test refuses hosted targets and non-synthetic members. With
