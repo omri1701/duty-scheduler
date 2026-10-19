@@ -11,7 +11,7 @@ begin
   select * into b from public.duty_assignments where publication_id=publication and day=r.to_day and end_day=r.to_end_day;
   if a.id is null or b.id is null or a.primary_id is distinct from r.requester_id
    or b.primary_id is null or b.primary_id=r.requester_id
-   or a.day<=(now() at time zone 'Asia/Jerusalem')::date or b.day<=(now() at time zone 'Asia/Jerusalem')::date then
+   or a.day<(now() at time zone 'Asia/Jerusalem')::date or b.day<(now() at time zone 'Asia/Jerusalem')::date then
    update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,
     resolved_at=now(),resolved_by=null where id=r.id;
   elsif b.primary_id is distinct from r.other_id then

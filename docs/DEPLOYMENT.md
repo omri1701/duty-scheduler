@@ -262,6 +262,65 @@ status and endpoint. Credentials and database URL/password variants are redacted
 SQL diagnostics and unrelated build output remain suppressed. The original release
 error may be unrecoverable if an older runner discarded its subprocess stderr.
 
+## Draft/publication lifecycle release gate
+
+The lifecycle chain is `20261017185214_cancel_month_draft.sql`,
+`20261017211958_today_inclusive_published_swaps.sql`, then
+`20261018183148_draft_publication_lifecycle.sql`. Use the pinned CLI and these
+committed filenames so history records their exact versions and names. Do not use
+timestamp-generating SQL tools, repair history or replay a manually applied file.
+An exact matching history makes the normal Development release skip all three;
+Production, if still on the two baselines, applies them in order before the app.
+Both paths must match Quality's fresh-install catalog/RLS/RPC/reference contract.
+Never change an applied migration; any correction needs a new reviewed migration.
+
+On 2026-10-19 the owner authorized a one-time PR #28 DEV maintenance exception.
+The pinned CLI applied this exact chain to `qhndiuahuxczujxxitsm`; no fallback
+deletion was needed. Successful database CI, fresh LOCAL replay and hosted
+schema/RLS/RPC/reference contracts matched. The compatible `9bd1b3e` feature
+Preview was verified READY and explicitly assigned only to the stable DEV domain,
+with its actual feature branch/SHA metadata. Existing Vercel Authentication,
+the domain's `develop` binding and the `master` release mechanism were preserved.
+The normal release function subsequently verified zero pending migrations.
+
+This local exception checked the unchanged `develop` head, active release runs
+and DEV alias before cutover stages; it did not acquire Actions' `release-develop`
+concurrency lock. Retain that distinction in its release evidence. This was a
+single authorized maintenance operation, not an alternative release workflow.
+No repository protections, workflow gates or Production settings were changed.
+Visual baseline approval and deployed Google/browser acceptance remain separate
+gates recorded in PR #28. Do not infer merge readiness from this DEV deployment.
+
+Before **each** hosted conversion, including the future Production release, repeat
+a read-only, single-snapshot data preflight using the migration's exact
+`duty_owner` and JSON comparison rules. Check publication pointers/history, working
+row disposition, draft differences, request/approval references, overlaps and
+Friday-owned adjacent-month coverage. Report only sanitized counts/reasons. DEV
+results do not establish Production safety. Any ambiguous ownership or Published
+working-row divergence blocks release; obtain a separate approved repair plan.
+Production still requires explicit release authorization, current trusted Quality
+evidence and protected Environment approval; this preflight grants no write access.
+
+The client at `30926dcdcad2e4038c31a52980de57803ffe41f3` is incompatible with the
+final migration: manager reads require working copies, Reopen toggles status
+through Save, and Save submits every month. The final schema removes Published
+working copies and requires the Restore RPC for Reopen. **Do not apply this chain
+while that client must keep serving.** The owner accepted DEV downtime for the
+completed coordinated cutover above. For any remaining environment, authorize a compatible staged
+transition or a coordinated maintenance cutover covering old browser sessions,
+application build failure and rollback before proceeding. A migration's data
+preflight passing does not waive this compatibility gate.
+
+For schema-only recovery, retain the selected project's application routine
+definitions plus owners, grants/RLS and catalog fingerprint; no Auth or operational
+rows are needed. Rehearse a new forward repair using `CREATE OR REPLACE` for the
+affected routines, retain security attributes/ACLs, compare the full contract and
+reload/discover PostgREST RPCs. Do not drop application schemas or rewrite migration
+history. Obtain explicit approval for the recovery SQL before hosted execution.
+This repairs definitions only: it cannot restore removed working rows or make the
+old client compatible. Data recovery requires the separately approved backup and
+reconciliation procedure below; do not reverse the lifecycle with schema SQL.
+
 ## Failure and recovery
 
 - Quality/approval/credential failure: no migration/app deployment starts.
@@ -328,6 +387,11 @@ back the failing file. Probes never enter committed history; the disposable DB i
 reset afterward locally; CI discards the disposable container without another
 replay. The upgrade harness also restores a synthetic logical dump into a second
 LOCAL database and compares data, migration history and catalog/reference contracts.
+`supabase/tests/lifecycle-release.mjs` additionally runs the exact lifecycle chain
+through the same release function and real CLI on populated LOCAL fixtures. It
+checks the pending Production path, already-applied Development skip, exact history,
+fresh/upgrade contracts, preserved drafts/history/approvals, legacy Reopen refusal
+and schema-only routine repair. Every fixture is synthetic and reset afterward.
 This is isolated end-to-end verification, not a claimed live
 Vercel rollout. Live domain/OAuth acceptance needs an authorized post-merge
 Development release with configured Environment secrets.

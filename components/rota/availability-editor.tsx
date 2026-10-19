@@ -8,6 +8,7 @@ import {dateRange,shortDate} from '@/lib/date-format';
 import {Button} from '@/components/ui/button';
 import {useHoldDrag} from '@/hooks/use-hold-drag';
 import {dates,addDays,type State} from '@/lib/rota/engine';
+import {calendarOwnerMonth} from '@/lib/rota/calendar-dates';
 type EditKind='no'|'prefer'|'clear';
 export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSave}:{state:State;month:string;person:string;cells:string[];lang:'en'|'he';disabled:boolean;onSave:(days:string[],kind:EditKind,note:string)=>boolean|void|Promise<boolean|void>}){
  const mobile=useMobileLayout();
@@ -25,7 +26,8 @@ export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSav
  function edit(days:string[]){if(!days.length)return;setNote(days.length===1?state.constraintNotes?.[person]?.[days[0]]??'':'');setKind(state.constraints[person]?.[days[0]]??'no');setConfirmation(null);setOpen(true)}
  function close(){if(saveLock.current)return;setOpen(false);setConfirmation(null);setSelection([]);selectionRef.current=[];anchor.current='';setNote('')}
  function select(days:string[]){const unique=[...new Set(days)];selectionRef.current=unique;setSelection(unique);if(unique.length)lastSelected.current=unique[0]}
- function range(a:string,b:string){return dates(a<b?a:b,addDays(a<b?b:a,1)).filter(d=>d.startsWith(month))}
+ const owns=(d:string)=>calendarOwnerMonth(d)===month;
+ function range(a:string,b:string){return dates(a<b?a:b,addDays(a<b?b:a,1)).filter(owns)}
  const {container,bindContainer,ignoreClick}=useHoldDrag({enabled:!disabled&&!open,holdMs:280,onStart:key=>{anchor.current=key;select([key])},onMove:key=>{if(anchor.current)select(range(anchor.current,key))},onEnd:key=>{const a=anchor.current;anchor.current='';if(!a||!key){close();return}const days=range(a,key);select(days);edit(days)},onCancel:close});
  function toggle(d:string){if(ignoreClick()||disabled)return;select([d]);if(mobile){tactileTick();tactileVisual(container.current?.querySelector(`[data-gesture-key="${d}"]`)??null)}edit([d])}
  const hasPersistedSelection=selection.some(d=>!!state.constraints[person]?.[d]||!!state.constraintNotes?.[person]?.[d]);
@@ -75,6 +77,6 @@ export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSav
  </EditorDialog>
  <div className="mobile-availability-legend" aria-hidden="true"><span><i className="availability-marker no"/>{t('Unavailable','לא זמין')}</span><span><i className="availability-marker prefer"/>{t('Preferred','מועדף')}</span></div>
  <div className="mobile-availability-weekdays" aria-hidden="true">{(lang==='en'?['Sun','Mon','Tue','Wed','Thu','Fri','Sat']:['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳']).map(d=><span key={d}>{d}</span>)}</div>
- <div ref={bindContainer} className="availability-grid gesture-grid">{cells.map(d=>{const status=state.constraints[person]?.[d],outside=!d.startsWith(month),selected=selection.includes(d),n=state.constraintNotes?.[person]?.[d],label=status==='no'?t('Unavailable','לא זמין'):status==='prefer'?t('Preferred','מועדף'):t('Available','זמין');return <button key={d} type="button" data-gesture-key={!outside?d:undefined} disabled={disabled||outside} onClick={()=>toggle(d)} aria-pressed={selected} aria-label={`${title(d)} · ${label}${n?' · '+n:''}`} className={['availability-day',outside?'outside':'',status??'',selected?'date-selected':''].join(' ')}><span className="availability-weekday">{new Date(d+'T12:00:00Z').toLocaleDateString(lang==='en'?'en-GB':'he-IL',{weekday:'short'})}</span><strong>{Number(d.slice(-2))}</strong>{n?.trim()&&<span className="mobile-note-dot" aria-hidden="true"/>}<span className="availability-description">{n||label}</span></button>})}</div>
+ <div ref={bindContainer} className="availability-grid gesture-grid">{cells.map(d=>{const status=state.constraints[person]?.[d],outside=!owns(d),selected=selection.includes(d),n=state.constraintNotes?.[person]?.[d],label=status==='no'?t('Unavailable','לא זמין'):status==='prefer'?t('Preferred','מועדף'):t('Available','זמין');return <button key={d} type="button" data-gesture-key={!outside?d:undefined} disabled={disabled||outside} onClick={()=>toggle(d)} aria-pressed={selected} aria-label={`${title(d)} · ${label}${n?' · '+n:''}`} className={['availability-day',outside?'outside':'',status??'',selected?'date-selected':''].join(' ')}><span className="availability-weekday">{new Date(d+'T12:00:00Z').toLocaleDateString(lang==='en'?'en-GB':'he-IL',{weekday:'short'})}</span><strong>{Number(d.slice(-2))}</strong>{n?.trim()&&<span className="mobile-note-dot" aria-hidden="true"/>}<span className="availability-description">{n||label}</span></button>})}</div>
  </div>
 }

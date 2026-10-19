@@ -1,7 +1,6 @@
 import {MonthHeading} from './month-heading';
 import { SlidersHorizontal, Sparkles, Check, Ellipsis, History } from 'lucide-react';
 import {DropdownMenu} from 'radix-ui';
-import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { Button } from '@/components/ui/button';
 import type { State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
@@ -21,6 +20,8 @@ export function WorkspaceToolbar({
   onSettings,
   onReopen,
   onPublish,
+  reopened,
+  onCancelDraft,
 }: {
   monthLabel: string;
   monthDetails: State['months'][string];
@@ -36,23 +37,32 @@ export function WorkspaceToolbar({
   onSettings: () => void;
   onReopen: () => void;
   onPublish: () => void;
+  reopened: boolean;
+  onCancelDraft: () => void;
 }) {
-  const mobile = useMobileLayout();
+  const generateLabel = busy ? t('Generating…','משבץ…') : monthDetails.generated ? t('Regenerate','שיבוץ מחדש') : t('Generate month','יצירת שיבוץ');
   return (
-    <div className="month-toolbar">
-      <MonthHeading label={monthLabel} status={monthDetails.status} t={t} onChange={changeMonth}/>
-      <div className="toolbar-actions">
+    <div className="month-toolbar-container">
+    <div className="month-toolbar" dir={t('ltr','rtl')}>
+      {isManager && <div className="desktop-month-tools">
+        <Button data-month-tool="versions" variant="outline" onClick={onHistory}><History/>{t('Versions','גרסאות')}</Button>
+        <Button data-month-tool="deadline" variant="outline" disabled={readOnly} onClick={onSettings}>
+          <SlidersHorizontal/>{t('Change month deadline','שינוי מועד אחרון לחודש')}
+        </Button>
+      </div>}
+      <MonthHeading label={monthLabel} t={t} onChange={changeMonth}/>
+      <div className={'toolbar-actions'+(reopened ? ' reopened-actions' : '')}>
         {isManager && (
           <>
-            {mobile ? (
+            {(
               <DropdownMenu.Root dir={t('ltr', 'rtl') as 'ltr' | 'rtl'}>
                 <DropdownMenu.Trigger asChild>
-                  <Button variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
+                  <Button className="month-actions-menu" variant="outline" size="icon" aria-label={t('Month actions', 'פעולות לחודש')}>
                     <Ellipsis />
                   </Button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Portal>
-                  <DropdownMenu.Content className="mobile-action-menu" align="end" sideOffset={8} collisionPadding={16}>
+                  <DropdownMenu.Content className="mobile-action-menu" align="start" sideOffset={8} collisionPadding={16}>
                     <DropdownMenu.Item onSelect={onHistory}>
                       <History />{t('Versions', 'גרסאות')}
                     </DropdownMenu.Item>
@@ -62,36 +72,25 @@ export function WorkspaceToolbar({
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
-            ) : <><Button variant="outline" onClick={onHistory}>
-              {t('Versions', 'גרסאות')}
-            </Button>
-            <Button
-              variant="outline"
-              aria-label={t('Change month deadline', 'שינוי מועד אחרון לחודש')}
-              onClick={onSettings}
-              disabled={readOnly}
-            >
-              <SlidersHorizontal />
-              {t('Change month deadline', 'שינוי מועד אחרון לחודש')}
-            </Button>
-            </>}
+            )}
+            <div className="workflow-actions">
             {monthDetails.status === 'published' ? (
-              <Button disabled={readOnly} onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
+              <Button data-draft-action disabled={readOnly} onClick={onReopen}>{t('Reopen draft', 'פתיחת טיוטה')}</Button>
             ) : (
               <>
                 <Button
+                  className="generate-month-action"
                   variant="outline"
                   disabled={readOnly || busy || !metrics.active.length}
                   onClick={runGenerate}
+                  aria-label={generateLabel}
                 >
                   <Sparkles className={busy ? 'spin' : ''} />
-                  {busy
-                    ? t('Generating…', 'משבץ…')
-                    : monthDetails.generated
-                      ? t('Regenerate', 'שיבוץ מחדש')
-                      : t('Generate month', 'יצירת שיבוץ')}
+                  <span className="workflow-label">{generateLabel}</span>
                 </Button>
+                {reopened && <Button className="cancel-draft-action" data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
                 <Button
+                  className="publish-month-action"
                   disabled={
                     readOnly || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
                   }
@@ -102,9 +101,11 @@ export function WorkspaceToolbar({
                 </Button>
               </>
             )}
+            </div>
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }

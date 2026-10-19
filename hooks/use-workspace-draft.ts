@@ -7,10 +7,11 @@ import { prepareWorkspaceUpdate } from '@/lib/rota/workspace-data';
 import {
   addDays,
   dates,
-  monthNext,
   generate,
   allKnownBlocks,
   overlap,
+  ownerMonth,
+  dayOf,
   swapDraft,
   type State,
   type Duty,
@@ -53,7 +54,7 @@ export function useWorkspaceDraft({
       const published = Object.keys(n.months).find(
         (m) => n.months[m].status === 'published' && s.months[m]?.status !== 'published',
       );
-      await remote.save(n, published);
+      await remote.save(n, published, month);
       return true;
     } catch (e) {
       if (!notifyError) throw e;
@@ -90,7 +91,7 @@ export function useWorkspaceDraft({
     }, 40);
   }
   function openDuty(b: Duty) {
-    if (isManager) setSelected(b);
+    if (isManager && monthDetails.status === 'draft' && ownerMonth(b) === month) setSelected(b);
   }
   async function addSpecial() {
     if (
@@ -127,6 +128,10 @@ export function useWorkspaceDraft({
       );
       return;
     }
+    if (dates(x.start, x.end).some(d => (dayOf(d) === 6 ? addDays(d, -1) : d).slice(0, 7) !== month)) {
+      toast.error(t('Special blocks must stay within this month’s owned duties.', 'מקטעים מיוחדים חייבים להישאר בתורנויות השייכות לחודש זה.'));
+      return;
+    }
     if (state.specials.some((s) => overlap(s, x))) {
       toast.error(
         t(
@@ -137,7 +142,7 @@ export function useWorkspaceDraft({
       return;
     }
     const touched = allKnownBlocks(state).filter((b) => overlap(b, x));
-    if (touched.some((b) => b.start.slice(0, 7) !== month && state.assignments[b.id]?.primary)) {
+    if (touched.some((b) => ownerMonth(b) !== month && state.assignments[b.id]?.primary)) {
       toast.error(
         t(
           'This overlaps an assigned duty from another month. Edit that month first.',
@@ -149,11 +154,7 @@ export function useWorkspaceDraft({
     const saved = await update((s) => {
       const assignments = { ...s.assignments };
       touched.forEach((b) => delete assignments[b.id]);
-      const months = { ...s.months };
-      for (const m of Object.keys(months))
-        if (m + '-01' < end && monthNext(m) + '-01' > x.start)
-          months[m] = { ...months[m], status: 'draft' };
-      return { ...s, assignments, months, specials: [...s.specials, x] };
+      return { ...s, assignments, specials: [...s.specials, x] };
     });
     if (!saved) return;
     setSpecialOpen(false);

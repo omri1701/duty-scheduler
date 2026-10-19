@@ -3,7 +3,6 @@ import { useRef, useState } from 'react';
 import { useHoldDrag } from '@/hooks/use-hold-drag';
 import { useMobileLayout } from '@/hooks/use-mobile-layout';
 import { publishedSwapDuties, eligibleSwapTarget } from '@/lib/supabase/swaps';
-import { todayIsrael } from '@/lib/supabase/snapshot';
 import { ownerMonth, swapDraft, type State, type Duty } from '@/lib/rota/engine';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import type { DutySelection } from '@/components/rota/workspace-types';
@@ -15,6 +14,7 @@ export function useCalendarInteractions({
   month,
   tab,
   requesting,
+  today,
   publication,
   duties,
   monthDetails,
@@ -26,6 +26,7 @@ export function useCalendarInteractions({
   month: string;
   tab: string;
   requesting: boolean;
+  today: string;
   publication: string | null | undefined;
   duties: Duty[];
   monthDetails: State['months'][string];
@@ -39,7 +40,7 @@ export function useCalendarInteractions({
   const [dragFrom, setDragFrom] = useState<string | null>(null),
     [dragOver, setDragOver] = useState<string | null>(null);
   const dragSource = useRef<string | null>(null);
-  const publishedDuties = publishedSwapDuties(remote.snapshot!, month, todayIsrael());
+  const publishedDuties = publishedSwapDuties(remote.snapshot!, month, today);
   const ownPublishedDays = new Set(
     publishedDuties.filter((d) => d.primary_id === meId).map((d) => d.day),
   );
@@ -60,7 +61,7 @@ export function useCalendarInteractions({
     } else startSwap(from, to);
   }
   function selectCalendarDuty(b: Duty) {
-    if(remote.readOnly)return;
+    if(remote.readOnly || ownerMonth(b) !== month)return;
     if (!requesting) {
       openDuty(b);
       return;
@@ -91,7 +92,7 @@ export function useCalendarInteractions({
       setDragFrom(key);
     },
     onMove: (key) => {
-      const valid = !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
+      const valid = duties.some(b => b.id === key && ownerMonth(b) === month) && !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
       setDragOver(valid ? key : null);
       return valid;
     },
@@ -100,7 +101,7 @@ export function useCalendarInteractions({
       dragSource.current = null;
       setDragFrom(null);
       setDragOver(null);
-      if (source && key && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
+      if (source && key && duties.some(b => b.id === key && ownerMonth(b) === month) && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
     },
     onCancel: () => {
       dragSource.current = null;
@@ -109,6 +110,9 @@ export function useCalendarInteractions({
     },
   });
   function resetSelection() {
+    dragSource.current = null;
+    setDragFrom(null);
+    setDragOver(null);
     setKeyboardSource(null);
     setRequestSelection(null);
   }

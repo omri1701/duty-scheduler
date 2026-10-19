@@ -88,8 +88,9 @@ test('combined weekend dates align with daily columns across month and year', as
   expect(Math.abs(dates[0].x - daily - column)).toBeLessThan(1);
   expect(Math.abs(dates[1].x - daily - 2 * column)).toBeLessThan(1);
   await page.getByRole('button', {name: 'Next month', exact: true}).click();
-  await expect(duty(page, '2027-12-31').locator('.day-number')).toHaveText(['31', '1']);
+  await expect(duty(page, '2027-12-31')).toHaveCount(0);
   await expect(duty(page, '2028-01-01')).toHaveCount(0);
+  await expect(page.locator('.calendar-grid [data-date]').first()).toHaveAttribute('data-date','2028-01-02');
 });
 
 test('mobile rejects unassigned drag targets and cannot cancel an assignment save in flight', async ({page, openApp, backend}, info) => {

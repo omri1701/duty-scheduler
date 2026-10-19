@@ -35,9 +35,10 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  expect(backend.calls.filter(call=>call.name==='duty_save_schedule')).toHaveLength(1);
  if(weekend.previous){
   await page.getByRole('button',{name:lang==='en'?'Next month':'חודש הבא',exact:true}).click();
-  await duty(page,weekend.friday).click();
-  await expect(description).toHaveText(weekend[lang]);
-  await expect(dialog.getByRole('button',{name:lang==='en'?'Open month':'פתיחת החודש',exact:true})).toBeVisible();
+  const adjacent=duty(page,weekend.friday);
+  await expect(adjacent).toHaveCount(0);
+  await expect(page.locator('.calendar-grid [data-date]').first()).toHaveAttribute('data-date','2026-08-02');
+  await expect(dialog).toHaveCount(0);
  }
 });
 

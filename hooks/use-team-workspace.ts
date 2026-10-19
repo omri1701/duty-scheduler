@@ -51,11 +51,12 @@ export function useTeamWorkspace(){
   async signInLocal(email:string,password:string){try{setError('');await signInLocally(email,password)}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async completeInspection(returnUrl:string){try{setError('');await completeInspectionLogin(returnUrl)}catch{setError('Could not complete inspection login. Start Google sign-in again.')}},
   async signOut(){if(client){try{const {error}=await signOutSafely(client);if(error)setError(error.message)}catch(e){setError(errorMessage(e,'Could not sign out. Please try again.'))}}},
-  save:(s:State,publish?:string)=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s),p_publish:publish??null}).then(()=>{}),
+  save:(s:State,publish?:string,month?:string)=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s,month??publish,!!publish),p_publish:publish??null}).then(()=>{}),
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),
   setRole:(person:string,role:string)=>workspace.mutate('duty_set_role',{p_member:person,p_role:role}).then(()=>{}),
   restore:(publication:string)=>workspace.mutate('duty_restore_publication',{p_publication:publication}).then(()=>{}),
+  cancelDraft:(month:string)=>workspace.mutate('duty_cancel_draft',{p_month:month}).then(()=>{}),
   deleteVersion:(publication:string)=>workspace.mutate('duty_delete_publication',{p_publication:publication}).then(()=>{}),
   requestSwap:(from:string,to:string,explanation:string)=>workspace.mutate('duty_request_swap',{p_from:from,p_to:to,p_explanation:explanation}).then(()=>{}),
   async resolveSwap(id:string,action:'accept'|'decline'|'approve'|'reject'|'cancel',overrideReason=''){

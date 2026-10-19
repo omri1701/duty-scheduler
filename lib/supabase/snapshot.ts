@@ -43,27 +43,27 @@ function applyRows(state:State,rows:DutyRow[]){
  }
  state.specials=specials;state.splitWeekends=[...splits];return state;
 }
-export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string):State{
+export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string,published=false):State{
  const admin=canManage(raw,userId);
  const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
- for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
+ for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication&&!published?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
  for(const c of raw.constraints){(state.constraints[c.member_id]??={})[c.day]=c.kind;if(c.note)(state.constraintNotes![c.member_id]??={})[c.day]=c.note}
  if(previewPublication)return applyRows(state,raw.assignments.filter(r=>r.publication_id===previewPublication));
- if(admin)return applyRows(state,raw.assignments.filter(r=>r.publication_id===null));
- const current=new Set(raw.months.map(m=>m.current_publication_id)),publicationMonths=new Map(raw.publications.map(p=>[p.id,p.month]));
+  const current=new Set(raw.months.map(m=>m.current_publication_id)),publicationMonths=new Map(raw.publications.map(p=>[p.id,p.month]));
  // The owning Friday's publication wins over a copied weekend in the next month.
- const rows=raw.assignments.filter(r=>r.publication_id&&current.has(r.publication_id)).sort((a,b)=>Number(publicationMonths.get(a.publication_id!)===rowOwner(a))-Number(publicationMonths.get(b.publication_id!)===rowOwner(b)));
+  const draftMonths=new Set(admin&&!published?raw.months.filter(m=>m.status==='draft').map(m=>m.month):[]);
+  const rows=raw.assignments.filter(r=>r.publication_id?current.has(r.publication_id)&&!draftMonths.has(rowOwner(r)):draftMonths.has(rowOwner(r))).sort((a,b)=>Number(publicationMonths.get(a.publication_id!)===rowOwner(a))-Number(publicationMonths.get(b.publication_id!)===rowOwner(b)));
  const byDay=new Map<string,DutyRow>();
  for(const row of rows){for(const [key,existing] of byDay)if(existing.day<row.end_day&&existing.end_day>row.day)byDay.delete(key);byDay.set(row.day,row)}
  return applyRows(state,[...byDay.values()]);
 }
-export function schedulePayload(s:State){
- const months=new Set([...Object.keys(s.months),...Object.keys(s.assignments).map(d=>d.slice(0,7)),...s.specials.flatMap(x=>[x.start.slice(0,7),addDays(x.end,-1).slice(0,7)])]);
+export function schedulePayload(s:State,month?:string,publish=false){
+  const months=new Set(month?[month]:Object.keys(s.months));
  const duties=new Map<string,ReturnType<typeof blocks>[number]>();
  for(const month of months)for(const duty of blocks(month,s.specials,s.splitWeekends)){
   // Include only explicit data or duties belonging to an existing month; never invent a carried assignment.
-  if(s.months[ownerMonth(duty)]||s.assignments[duty.id]||duty.specialId)duties.set(duty.id,duty);
+   if(months.has(ownerMonth(duty))&&s.months[ownerMonth(duty)]&&(s.months[ownerMonth(duty)].status==='draft'||publish&&ownerMonth(duty)===month))duties.set(duty.id,duty);
  }
- return {team:s.team.map(({id,color,active})=>({id,color,active})),months:s.months,duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
+  return {team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
 }
 export {todayIsrael} from '../rota/calendar-dates.ts';

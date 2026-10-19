@@ -10,6 +10,15 @@ const versions = [['20261011212413', 'clean_baseline'], ['20261011212421', 'requ
 const history = rows => rows.map(row => row.join('|')).join('\n');
 const contract = {migrations: versions, fingerprint: 'expected schema', referenceData: {roles: []}};
 
+test('lifecycle rehearsal rejects a mismatched local reset target before connecting or invoking CLI', () => {
+  const result = spawnSync(process.execPath, ['supabase/tests/lifecycle-release.mjs', 'supabase_db_wrong_local_target'], {
+    encoding: 'utf8', env: {...process.env, SUPABASE_WORKDIR: '.', SUPABASE_CLI: 'must-not-run-supabase'},
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Local config must match inspected container before any reset\/push/);
+  assert.equal(result.stdout, '');
+});
+
 function credentialFixture(branch) {
   return {
     SUPABASE_DB_URL: `postgresql://postgres.${environments[branch].ref}:synthetic-password@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require`,

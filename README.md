@@ -20,6 +20,8 @@ pnpm dev:select # optional interactive selector
 ```
 
 `pnpm dev` is the Development default. Stop the server before switching targets;
+an occupied port 5173 now fails before LOCAL setup or any readiness check, so
+the launcher cannot accidentally validate an older server using another target.
 no command rewrites `.env.local`. See [local targets and setup](docs/SUPABASE_SETUP.md#localhost-environment-selector)
 for one-time keys, Docker setup, test accounts and Production login. Sessions are
 isolated by actual project URL and local port.
@@ -91,9 +93,22 @@ do not promise identical total page height before team size and private data are
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,
 rejecting missing assets or CSS that lacks the responsive workspace styles.
-Production Turbopack filesystem caching is disabled: DEV served byte-identical
+Turbopack filesystem transform caching is disabled for development and production: DEV served byte-identical
 pre-PR #22 CSS after receiving the updated source and restoring Vercel's build
-cache. Development caching and dependency caching retain their defaults.
+cache, and a long-running localhost server later served old CSS with current
+toolbar JSX. Restarting that server corrected its output without a layout edit.
+Tailwind 4.2.1 can retain an old compiler AST when a save changes the file between
+Next reading its input and Tailwind sampling its mtime. This was reproduced with
+two inputs and an unchanged sampled mtime. Framework directives/theme utilities
+now live in `app/tailwind.css`; custom application rules in `app/globals.css` bypass
+that compiler cache. The source fingerprint runs **before** compilation, so a
+cached AST also retains its old fingerprint instead of claiming newer input. The
+development launcher checks downloaded CSS against the source before reporting
+readiness, and the production build checks the linked output. Dependency caching
+retains its defaults. Mobile readiness waits for a cold application/CSS compile
+instead of treating a five-second timeout as a broken server. A CSS fingerprint
+failure requires stopping/restarting the
+server before validation; adding layout overrides cannot repair stale assets.
 For a different production port, use `pnpm exec next start --port 3000`.
 
 The repository is ready to import into Vercel using its **Next.js** framework
@@ -117,6 +132,20 @@ development origin and exact trailing-slash redirect independently using
 Phones up to 600px use floating bottom tabs and compact monthly calendars.
 The month actions menu contains Versions and the deadline setting; Generate
 and Publish stay visible.
+The month heading is centered independently of manager actions. Published months
+show Whole team / My duties; engineers see no filter on an unpublished month.
+Managers reopen a published month to edit a draft, with independent Draft / Published
+and My duties controls. Special Block appears only in Draft. Cancel Draft requires
+confirmation and atomically deletes the working draft, returning to the current publication without creating a version or copying working rows.
+Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
+Schedule and Constraints share the same visible Sunday–Saturday rows. When the
+first is Saturday, both omit the entire first row and start on Sunday the 2nd.
+Both halves of a weekend belong to Friday's month, which includes the cross-month
+Saturday, editable as part of either a combined or split weekend. Constraints can
+select it individually or in a range and save its actual date; existing date-based
+publication/deadline checks still apply. All other adjacent-month dates retain
+their assignments in faded, read-only cells. Editing or generating the owning
+month does not reopen the adjacent month.
 Availability and duty editors use the same centered, scrollable Radix modal shell
 as Special Duty on phones and desktop. Outside clicks, Escape and Close
 discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.
@@ -230,7 +259,19 @@ their accessible names change with assignment and language.
 `responsive-css.spec.ts` checks loaded CSS/JS assets, floating phone and desktop
 navigation, hidden phone-only labels and seven-column calendar geometry at 1440,
 390 and 320px in English and Hebrew RTL. It retains captures without updating
-visual references. To smoke-test an accessible deployed DEV build with the same
+visual references. `toolbar-runtime.spec.ts` additionally verifies the CSS source
+fingerprint, computed toolbar displays, visible labels, row alignment, centering,
+touch heights and overflow at desktop and iPhone WebKit widths in both languages.
+The toolbar uses its container width: direct tools fit from 960px of content;
+narrower containers show the styled ellipsis menu and a separate month row.
+Workflow buttons have natural content widths, with narrower padding only when a
+reopened draft needs it. `toolbar-zoom.spec.ts` uses isolated Chromium tab zoom
+(100/125/150/200%), including the menu background, border, shadow, collision,
+stacking and Escape/focus behavior, in New/Published/Reopened states and RTL.
+For the real LOCAL app with Auth/PostgREST and no backend interception, use
+`pnpm test:runtime:local` after `pnpm dev:local`; see [the LOCAL verification
+procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).
+To smoke-test an accessible deployed DEV build with the same
 synthetic accounts and intercepted backend (no real member data or writes):
 
 ```sh
@@ -325,10 +366,10 @@ them. CI must compare committed images, never regenerate them automatically.
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
-- Published duty swap requests: approved members drag their future primary duty onto another engineer’s duty (or select two dates with the keyboard). The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
+- Published duty swap requests: approved members drag their primary duty starting today or later onto another engineer’s duty (or select two dates with tap or the keyboard). Eligibility uses the date in Asia/Jerusalem, including today after 09:00; a weekend starting yesterday remains ineligible. The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
-- Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys.
+- Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys. Publish removes the month's working rows; Reopen copies the selected publication into a separate mutable draft. Cancel removes that draft completely, including specials, weekend splits, emergency cover and overrides, while keeping history and independent availability/deadline/team/request data.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates. Availability conflicts and increased weekend counts above one require explicit manager approval in the draft swap dialog, which lists each affected engineer and resulting weekend count. One confirmation can approve both exceptions; approved assignments retain override metadata. Published swap requests keep their existing consent and approval rules.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Its displayed range labels Friday–Saturday, including cross-month weekends; the actual duty period still ends Sunday at 09:00. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners and emergency cover automatically recombine into a single Friday–Sunday cell.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action appears only when selected dates have a saved constraint or note. Descriptions appear on calendar dates.
@@ -345,7 +386,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Each month is balanced independently. Past-month points and gaps do not affect generation. All-month totals remain available for reference. Seniority is a soft weight from 1.00 (most senior) to 1.22 (newest), plus a small preference for giving the indivisible remainder to newer engineers. Availability, weekend capacity, and high-point special dates can require exceptions.
 - Generation balances points and spacing, lightly rewards preferences, and explores randomized candidate schedules. Each generation uses a fresh cryptographic seed mixed with the month; deterministic seeds support regression tests. This is a heuristic, not a guarantee of the mathematically optimal schedule. Unavailable primary assignments are never created automatically.
 - Consecutive duties are allowed when needed. Regeneration replaces manual primary assignments; there is no hidden assignment lock. Emergency second engineers receive the same points and are retained.
-- Adding a special range clears affected assignments for review. Assignment edits return affected months to draft. Existing version-1 browser data migrates to daily special coverage, preserves notes and assignments, removes obsolete locks, and reopens drafts for review.
+- Adding a special range clears affected assignments for review. Assignment edits require an open draft. Existing version-1 browser data migrates to daily special coverage, preserves notes and assignments, removes obsolete locks, and reopens drafts for review.
 
 ## Current boundary / next milestone
 

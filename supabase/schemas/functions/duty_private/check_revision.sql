@@ -6,6 +6,8 @@ declare current_revision bigint;
 begin
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
  select revision into current_revision from public.duty_workspace where id for update;
+ -- Membership may have changed while waiting for the workspace lock.
+ if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
  if current_revision is distinct from p_revision then raise exception 'The team data changed. Refresh and try again.' using errcode='40001'; end if;
 end $$;
 

@@ -11,6 +11,7 @@
     "test:e2e:update": "playwright test visual.spec.ts --update-snapshots",
     "test:e2e:report": "playwright show-report",
     "test:e2e:ci": "node scripts/browser-container.mjs",
+    "test:runtime:local": "node scripts/verify-local-browser.mjs",
     "dev": "node scripts/dev-environment.mjs dev",
     "build": "next build && node scripts/verify-production-css.mjs",
     "start": "next start --port 5173",

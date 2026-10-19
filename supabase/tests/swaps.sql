@@ -194,7 +194,7 @@ begin
  select current_publication_id into result from public.duty_months where month='2099-07';
  if (select count(*) from public.duty_assignments where publication_id=result and end_day=day+1 and points=0.5)<>2 then raise exception 'Split weekend recombined or points changed'; end if;
  reset role;
- -- Both today and yesterday are excluded in Israel, even with otherwise valid duties.
+ -- Yesterday is excluded in Israel; deterministic today/midnight coverage follows below.
  current_month:=to_char(today,'YYYY-MM');
  insert into public.duty_months(month,deadline,publication_sequence) values(current_month,today,1);
  insert into public.duty_publications(month,version,published_by) values(current_month,1,admin_id) returning id into pub;
@@ -203,7 +203,6 @@ begin
  insert into public.duty_assignments(publication_id,day,end_day,primary_id) values(pub,today+2,today+3,other_id) returning id into b;
  perform set_config('request.jwt.claim.sub',engineer_id::text,true); set local role authenticated;
  select revision into rev from public.duty_workspace;
- begin perform public.duty_request_swap(a,b,'',rev); raise exception 'Today accepted'; exception when raise_exception then if sqlerrm='Today accepted' then raise; end if; end;
  reset role; update public.duty_assignments set day=today-1,end_day=today where id=a;
  set local role authenticated;
  begin perform public.duty_request_swap(a,b,'',rev); raise exception 'Past duty accepted'; exception when raise_exception then if sqlerrm='Past duty accepted' then raise; end if; end;
@@ -305,3 +304,4 @@ begin
  if (select revision from public.duty_workspace)<>rev+1 then raise exception 'Invalidation did not advance revision'; end if;
 end $$;
 rollback;
+\ir swap-today.sql

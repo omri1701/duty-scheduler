@@ -10,6 +10,61 @@ Native Next.js needs only a project URL and publishable key; no service-role key
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
 
+## Unmerged migrations in local development
+
+`pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.
+Use `pnpm dev:local` to test unmerged database features. It runs the same setup as
+`pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
+migrations with `supabase migration up --local`, preserving existing local data.
+Stop the existing development server before starting another on port 5173. Check
+`/api/config`'s Supabase URL and the environment badge to verify the actual target.
+
+A missing `duty_cancel_draft(p_month text, p_revision bigint)` RPC on hosted DEV
+means its incremental migration has not been released there; local setup cannot
+change a hosted database. Follow the approved [database-first release](DEPLOYMENT.md)
+after merge. Do not push feature migrations to hosted environments or reset them.
+The calendar changes require both `20261017185214_cancel_month_draft.sql` and
+`20261017211958_today_inclusive_published_swaps.sql`. A hosted database with only
+the two baseline migrations supports neither the new cancellation RPC nor the
+today-inclusive swap behavior. After explicit approval to merge and migrate hosted DEV, merge
+the reviewed PR into `develop`; its exact-head Quality run invokes the
+Development release: dry-run/push pending migrations, verify history and database
+contract, then deploy the matching app. Inspect that run's database and deployment
+results before testing hosted DEV. Do not run a feature-branch hosted migration
+push separately; see [release and retry details](DEPLOYMENT.md#development-and-production).
+If the function exists, verify authenticated EXECUTE grants and the PostgREST
+schema cache before changing the client. Never restore drafts from client data.
+
+`pnpm exec node supabase/tests/calendar-rpc.mjs` verifies Cancel Draft through real
+LOCAL Auth/PostgREST, including manager grants, exact parameter discovery,
+December/January ownership, revision races and transactional failure rollback.
+It requires unused synthetic far-future months, cleans only its own fixtures and
+refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
+swap eligibility with a transaction-local frozen clock and rolls everything back.
+
+With `pnpm dev:local` running, `pnpm test:runtime:local` checks the real served
+app through local password Auth and PostgREST, without backend interception. It
+checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
+CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
+100/125/150/200%, the popup menu, ordinary reload and fresh
+browser sessions. Captures and computed evidence go to
+`work/runtime-investigation/corrected`. Add `-- --exercise-cancel` to exercise
+cancellation on the current synthetic LOCAL month: it publishes if necessary,
+regenerates, cancels through the browser, verifies removal of working rows and
+the unchanged published assignments/status,
+and preserved history/other assignments, verifies New/Published/Reopened states
+at all widths/zooms and leaves a reopened draft for review.
+This optional write test refuses hosted targets and non-synthetic members. With
+only the two default local members, it fills uncovered duties through the checked
+schedule RPC before the initial publication; it does not relax scheduling rules.
+Each state also traverses 24 consecutive months forward and back using visible
+44px navigation targets, including keyboard recovery without reloading. Set
+`DUTY_RUNTIME_URL` to an independently running LOCAL review server when port 5173
+must keep serving the iPhone's hosted DEV connection; the check still refuses
+hosted databases. Browser regressions include completed Swap Requests: replacing
+that month-keyed section directly inside the fieldset could collapse Chromium's
+preceding size-query toolbar. A stable fieldset child isolates those replacements.
+
 ## 1. Create the Google OAuth client
 
 Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
@@ -75,7 +130,74 @@ The former `manager_identity`, `duty_specials` and `duty_split_weekends` tables 
 
 A regular duty spans one date; an intact weekend spans Friday through Sunday and is one stored row. Split or special weekend dates use separate rows in the same duty table. Extra points belong to the duty date and survive changing the assigned engineer. Selecting a special range in the UI sets those dates' extra points together.
 
-Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
+Publishing validates all owned dates, creates a new immutable version with foreign-key duty rows, removes the month's working rows and marks it Published in one transaction. Published months read directly from the current version. Reopen copies that version into a working draft; historical restoration uses the same checked operation with the selected version. Both preserve the live publication and touch only that month's Friday-owned duties. Engineers always see the current publication; managers can switch between their draft and the publication. Deleting the live version selects the newest remaining version. Deleting the last version keeps an existing draft or copies the deleted version into a draft first. Version numbers are not reused.
+
+New publications contain only duties owned by that month: weekdays by date and both
+weekend halves by Friday, including a split/special Saturday in the next month.
+`duty_cancel_draft(p_month, p_revision)` is separate from historical version restoration.
+It requires an active approved manager, takes the existing workspace revision lock,
+rechecks manager authorization after acquiring the lock, reads the current publication
+pointer, and deletes only that owner's working rows in one transaction. It restores Published status without
+changing the pointer, sequence, history, requests, membership, availability, or any
+other month's rows/status. It never copies publication rows back into working data.
+Titles, extra points, emergency cover, manual overrides and split/combined weekends
+are all encoded in assignments, so deleting those rows removes the entire draft.
+Availability, deadlines, team settings, requests and approvals are independent and
+survive cancellation. Availability edits do not reopen a published schedule.
+The client sends no restoration rows or publication ID. All checked manager writes
+revalidate authorization after the workspace lock; stale revisions fail atomically.
+
+### PR #28 lifecycle migration — DEV cutover
+
+On 2026-10-19 the owner authorized the complete three-file chain and a coordinated
+DEV maintenance cutover without merging PR #28. All three files were applied to
+Frankfurt DEV with the pinned CLI, preserving their committed versions and names.
+No fallback deletion was necessary. Keep visual approvals separate; this exception
+does not authorize a merge, future feature releases or any Production operation.
+
+The applied DEV chain, in order, is:
+
+1. `20261017185214_cancel_month_draft.sql` (unchanged historical prerequisite).
+2. `20261017211958_today_inclusive_published_swaps.sql` (unchanged prerequisite).
+3. `20261018183148_draft_publication_lifecycle.sql` (new conversion and final RPCs).
+
+DEV now serves the compatible `9bd1b3e` application at
+`https://duty-scheduler-dev.vercel.app/`. The normal release function verified that
+the complete matching history skips all three files. Schema/RLS/RPC/reference-data
+contracts matched successful database CI and fresh LOCAL replay. A hosted checked-RPC
+acceptance transaction exercised lifecycle, permissions, specials, boundary weekends
+and published swaps, then rolled back all probe writes. This SQL check does not
+verify Google authentication or replace browser acceptance. Vercel Authentication
+remains enabled; real deployed login acceptance is recorded separately in PR #28.
+
+Future releases follow [DEPLOYMENT.md](DEPLOYMENT.md). Production still needs its
+own data preflight, release authorization, trusted Quality evidence and Environment
+approval. App rollback does not reverse this SQL; use a reviewed forward fix or
+approved recovery procedure.
+
+Conversion takes the workspace lock and compares each Published month's owned
+working rows with its current publication, excluding row IDs. Exact redundant
+copies are deleted; every nonempty workspace advances its revision once to
+invalidate old snapshots, including requests waiting on the migration lock.
+Reopened drafts and never-published drafts retain their rows and IDs. Publications,
+legacy adjacent rows within historical versions, publication pointers/sequences,
+membership, private availability, deadlines, requests and approvals remain intact.
+Friday ownership decides whether a boundary Saturday is working data for the month.
+
+Conversion aborts atomically for divergent Published working rows, missing owning
+months/publication pointers, or requests referencing a disposable working row.
+Completed swaps may explain divergent copies, but that alone is insufficient to
+discard them. Identify affected months in a read-only preflight and review them
+individually before approving conversion; do not automatically overwrite, delete,
+or relabel ambiguous data without explicit environment-specific authorization.
+DEV's repeated preflight found no blockers, and before/after digests confirmed
+preservation of existing schedules, requests, constraints, deadlines and members.
+
+`supabase/tests/lifecycle-upgrade.mjs` executes this exact migration on complete
+synthetic published/reopened/never-published schedules, history, cross-year weekend
+specials, availability, requests and approvals. It proves both conversion preservation
+and refusal/rollback for ambiguous rows. `lifecycle-races.mjs` uses separate real
+PostgreSQL sessions, including a held-lock demotion with a predicted new revision.
 
 ## Permissions and validation
 
@@ -92,7 +214,7 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-Fresh projects use only the two generated baseline migrations documented in
+Fresh projects replay the two frozen baseline migrations and subsequent incremental migrations documented in
 [database architecture](../supabase/README.md). Historical migrations are archived
 outside active CLI discovery. Tokyo's already-applied history remains unchanged;
 never push the replacement history or run a reset there.
@@ -358,6 +480,9 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
 node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
 node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-release.mjs supabase_db_duty-scheduler
 pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler --no-backup
 ```
 

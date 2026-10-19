@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import path from 'node:path';
+import {assertCssSources, currentCssHash} from './css-source.mjs';
 
 export async function verifyProductionCss(directory = '.next') {
   const html = await readFile(path.join(directory, 'server/app/index.html'), 'utf8');
@@ -17,10 +18,12 @@ export async function verifyProductionCss(directory = '.next') {
     return css;
   }));
   const css = stylesheets.join('\n');
+  assertCssSources(stylesheets, await currentCssHash());
   // These belong to the shared custom stylesheet, independently of utility discovery.
   // Checking the files linked by HTML catches stale output as well as omitted assets.
   for (const selector of ['.mobile-navigation', '.mobile-nav-selection', '.mobile-availability-legend',
-    '.mobile-availability-weekdays', '.calendar-grid', '.availability-grid', '.team-grip', '.editor-dialog']) {
+    '.mobile-availability-weekdays', '.calendar-grid', '.availability-grid', '.team-grip', '.editor-dialog',
+    '.desktop-month-tools', '.workflow-actions', '.month-toolbar-container', '.mobile-action-menu']) {
     assert(css.includes(selector), `Production CSS is missing ${selector}`);
   }
   assert(/@media\s*\(max-width:\s*600px\)/.test(css), 'Production CSS is missing the phone breakpoint');

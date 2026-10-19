@@ -9,15 +9,15 @@ not recreate them. The application exposes only checked RPCs and RLS-filtered re
 supabase/
   schemas/
     tables/                 # 11 tables: columns, constraints, FKs, indexes and RLS
-    functions/duty_private/ # 19 checked implementations and internal helpers
-    functions/public/       # 11 API-compatible, invoker RPC wrappers
+    functions/duty_private/ # 20 checked implementations and internal helpers
+    functions/public/       # 12 API-compatible, invoker RPC wrappers
     constraints/            # Deferred month/publication cyclic FK
     triggers/               # Publication-pointer swap reconciliation
     policies/               # One select policy per table
     grants/                 # Explicit table and function privileges
     shared.sql              # Application-private schema only
   reference-data/           # 4 lookup tables + required workspace singleton
-  migrations/               # 2 generated fresh-install migrations
+  migrations/               # 2 frozen baselines plus incremental migrations
   archive/migrations/       # 8 immutable historical files, outside CLI discovery
   admin/                    # Operator-only first-admin procedure; never an RPC
   tests/                    # Clean schema, permission, publication, swap and bootstrap checks
@@ -96,6 +96,13 @@ checks the final state. Reference changes need separate explicit migrations and
 comparison with canonical required rows; local seeds do not deploy required DML.
 Test both a fresh reset and the upgrade from the prior version, then validate
 Development before separately approving Production application.
+
+PR #28 changes only existing tables/functions: NULL-publication assignment rows
+exist for open drafts; Published months use their current immutable publication
+without working duplicates. The revised conversion is intentionally fail-closed
+on ambiguous Published working data. See the [revised migration plan](../docs/SUPABASE_SETUP.md#pr-28-revised-migration-plan--hosted-approval-required)
+for exact migrations, preservation rules and approval requirements. The prior
+hosted Cancel Draft plan is superseded; no hosted migration is currently authorized.
 
 Quality now enforces paired canonical definitions, new incremental migrations and
 SQL regressions against the exact PR base. It tests real local upgrades with existing

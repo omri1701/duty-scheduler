@@ -2,7 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fromSnapshot,schedulePayload,canManage,readSnapshot} from '../lib/supabase/snapshot.ts';
 import {addDays,blocks,totals} from '../lib/rota/engine.ts';
+import {visibleCalendarBlocks} from '../lib/rota/workspace-data.ts';
 const member=(id,role='engineer',status='approved')=>({id,email:id+'@example.invalid',name:id,role,status,active:true,seniority:1,color:'#adc9ee'});
+
+test('manager published calendar reads current snapshots across adjacent months, preserving private drafts',()=>{
+ const raw=fixture();
+ raw.months=[{month:'2027-12',status:'draft',generated:true,current_publication_id:'dec'}, {month:'2028-01',status:'draft',generated:true,current_publication_id:'jan'}];
+ raw.publications=[{id:'dec',month:'2027-12'},{id:'jan',month:'2028-01'}];
+ raw.assignments=[row('2027-12-31','engineer','dec',{end_day:'2028-01-02'}),row('2028-01-03','engineer','jan'),row('2027-12-31','admin',null,{end_day:'2028-01-02'}),row('2028-01-03','admin',null)];
+ const published=fromSnapshot(raw,'admin',undefined,true),draft=fromSnapshot(raw,'admin');
+ assert.equal(published.assignments['2027-12-31'].primary,'engineer');
+ assert.equal(published.assignments['2028-01-03'].primary,'engineer');
+ assert.equal(draft.assignments['2027-12-31'].primary,'admin');
+ const visible=visibleCalendarBlocks(published,'2028-01');
+ assert.equal(visible.filter(b=>b.id==='2027-12-31').length,1);
+ assert.equal(visible.find(b=>b.id==='2027-12-31').end,'2028-01-02');
+ raw.months[1].current_publication_id=null;
+ assert.equal(fromSnapshot(raw,'admin',undefined,true).assignments['2028-01-03'],undefined);
+});
 const row=(day,primary='admin',publication=null,options={})=>({id:(publication??'draft')+'-'+day,publication_id:publication,day,end_day:addDays(day,1),primary_id:primary,secondary_id:null,manager_override:false,title:'',extra_points:0,points:1,...options});
 function fixture(){return {revision:4,members:[member('admin','admin'),member('engineer'),member('waiting','engineer','pending')],roles:[{code:'admin',label:'Admin',can_manage:true},{code:'engineer',label:'Engineer',can_manage:false}],memberStatuses:[],monthStatuses:[],constraintTypes:[],months:[{month:'2026-10',deadline:'2026-09-24',status:'draft',generated:true,current_publication_id:'v2',publication_sequence:2}],constraints:[{member_id:'engineer',day:'2026-10-01',kind:'no',note:'Vacation'}],assignments:[row('2026-10-01','admin'),row('2026-10-01','admin','v1'),row('2026-10-01','engineer','v2')],publications:[{id:'v1',month:'2026-10',version:1,published_at:'2026-09-20',published_by:'admin'},{id:'v2',month:'2026-10',version:2,published_at:'2026-09-21',published_by:'admin'}]}}
 test('admin sees only draft rows and approved engineers',()=>{const state=fromSnapshot(fixture(),'admin');assert.equal(state.assignments['2026-10-01'].primary,'admin');assert.equal(state.months['2026-10'].status,'draft');assert.deepEqual(state.team.map(m=>m.id),['admin','engineer']);assert.equal(state.constraintNotes.engineer['2026-10-01'],'Vacation')});
@@ -14,6 +31,28 @@ test('role capabilities come from the role lookup',()=>{const raw=fixture();raw.
 test('combined weekend is a single stored duty row',()=>{const raw=fixture();raw.assignments=[row('2026-10-02','admin',null,{end_day:'2026-10-04'})];const state=fromSnapshot(raw,'admin');assert.equal(blocks('2026-10',state.specials,state.splitWeekends).find(b=>b.start==='2026-10-02').points,1);const payload=schedulePayload(state);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').end_day,'2026-10-04');assert.equal(payload.duties.some(r=>r.day==='2026-10-03'),false)});
 test('holiday points survive reassignment and split-weekend round trip',()=>{const raw=fixture();raw.assignments=[row('2026-10-02','admin',null,{title:'Holiday',extra_points:2,points:2.5}),row('2026-10-03','engineer',null,{points:0.5})];const state=fromSnapshot(raw,'admin');state.assignments['2026-10-02'].primary='engineer';const payload=schedulePayload(state);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').extra_points,2);assert.equal(payload.duties.find(r=>r.day==='2026-10-02').primary_id,'engineer');assert.equal(payload.duties.find(r=>r.day==='2026-10-03').extra_points,0);assert.equal(totals(state,blocks('2026-10',state.specials,state.splitWeekends)).engineer,3)});
 test('new workspace stays empty until generation is requested',()=>{const raw=fixture();raw.assignments=[];raw.publications=[];raw.months=[];const state=fromSnapshot(raw,'admin');assert.deepEqual(state.assignments,{});assert.deepEqual(schedulePayload(state).duties,[])});
+test('published manager view uses the publication without duplicate working rows',()=>{
+ const raw=fixture();raw.months[0].status='published';raw.assignments=raw.assignments.filter(r=>r.publication_id!==null);
+ const state=fromSnapshot(raw,'admin');assert.equal(state.assignments['2026-10-01'].primary,'engineer');
+ assert.equal(state.months['2026-10'].status,'published');
+ assert.deepEqual(schedulePayload(state).duties,[]);
+ assert.deepEqual(schedulePayload(state,'2026-10').duties,[],'Settings saves must not recreate assignments');
+});
+test('scoped draft save excludes other months and carried weekends',()=>{
+ const state=fromSnapshot(fixture(),'admin');state.months['2026-11']={deadline:'2026-10-24',status:'draft',generated:true};
+ state.assignments['2026-11-02']={primary:'engineer'};
+ const payload=schedulePayload(state,'2026-11');
+ assert.deepEqual(Object.keys(payload.months),['2026-11']);
+ assert(payload.duties.every(r=>r.day>='2026-11-01'));
+ assert.equal(schedulePayload(state,'2026-10').duties.some(r=>r.day==='2026-11-02'),false);
+});
+test('reopened draft and adjacent published month use separate schedule sources',()=>{
+ const raw=fixture();raw.months.push({month:'2026-11',status:'published',generated:true,current_publication_id:'nov'});
+ raw.publications.push({id:'nov',month:'2026-11'});raw.assignments.push(row('2026-11-02','engineer','nov'));
+ const state=fromSnapshot(raw,'admin');assert.equal(state.assignments['2026-10-01'].primary,'admin');
+ assert.equal(state.assignments['2026-11-02'].primary,'engineer');
+ assert.equal(schedulePayload(state).duties.some(r=>r.day==='2026-11-02'),false);
+});
 test('Friday owner publication wins across a month boundary',()=>{const raw=fixture();raw.months=[{month:'2026-07',deadline:'2026-06-24',status:'published',current_publication_id:'july'},{month:'2026-08',deadline:'2026-07-24',status:'published',current_publication_id:'august'}];raw.publications=[{id:'july',month:'2026-07'},{id:'august',month:'2026-08'}];raw.assignments=[row('2026-07-31','admin','august',{end_day:'2026-08-02'}),row('2026-07-31','engineer','july'),row('2026-08-01','admin','july')];const state=fromSnapshot(raw,'engineer');assert.equal(state.assignments['2026-07-31'].primary,'engineer');assert.equal(state.assignments['2026-08-01'].primary,'admin');assert.deepEqual(state.splitWeekends,['2026-07-31'])});
 
 test('snapshot validation accepts nullable revisions, optional swaps and extra database columns',()=>{

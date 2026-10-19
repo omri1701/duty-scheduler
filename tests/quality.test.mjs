@@ -7,6 +7,11 @@ import {verifyQualityEvidence} from '../scripts/quality-evidence.mjs';
 import {databaseSourceHash, verifyContractIdentity} from '../scripts/database-contract.mjs';
 import {verifyProductionActivation} from '../scripts/release.mjs';
 
+test('Quality executes the real lifecycle concurrency and conversion regressions',()=>{
+ const workflow=readFileSync('.github/workflows/quality.yml','utf8');
+ for(const file of ['lifecycle-races.mjs','lifecycle-upgrade.mjs'])assert(workflow.includes(`node supabase/tests/${file} supabase_db_duty-scheduler`));
+});
+
 function fixture(branch = 'master') {
   const sha = 'a'.repeat(40), repository = 'owner/duty', now = Date.parse('2026-10-13T12:00:00Z');
   const options = {repository, branch, sha, runId: '10', currentRunId: '20', now};

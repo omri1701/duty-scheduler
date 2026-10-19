@@ -13,6 +13,29 @@ import type { WorkspaceDraft } from '@/hooks/use-workspace-draft';
 import type { Language, Translate, FormatDate } from './workspace-types';
 type DialogCopy = { lang: Language; t: Translate };
 
+export function CancelDraftDialog({open,onOpenChange,saving,lang,t,monthLabel,onConfirm}: DialogCopy & {
+  open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; monthLabel: string; onConfirm: () => Promise<void>;
+}) {
+  return <Dialog open={open} onOpenChange={value => {if (!saving) onOpenChange(value)}}>
+    <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving} onCloseAutoFocus={event => {
+      event.preventDefault();
+      document.querySelector<HTMLButtonElement>('[data-draft-action]')?.focus();
+    }} onOpenAutoFocus={event => {
+      event.preventDefault();
+      document.getElementById('keep-draft')?.focus();
+    }}>
+      <DialogHeader>
+        <DialogTitle>{t('Cancel draft?', 'לבטל את הטיוטה?')}</DialogTitle>
+        <DialogDescription>{monthLabel} · {t('Discard all unpublished changes and restore the latest published schedule? Published history and other months will be preserved.', 'לבטל את כל השינויים שלא פורסמו ולשחזר את הלוח האחרון שפורסם? היסטוריית הפרסומים וחודשים אחרים יישמרו.')}</DialogDescription>
+      </DialogHeader>
+      <div className="editor-actions">
+        <Button id="keep-draft" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t('Keep draft', 'שמירת הטיוטה')}</Button>
+        <Button disabled={saving} onClick={onConfirm}>{t('Discard draft', 'ביטול הטיוטה')}</Button>
+      </div>
+    </DialogContent>
+  </Dialog>;
+}
+
 export function DraftSwapDialog({
   controller,
   state,
@@ -231,7 +254,10 @@ export function MonthSettingsDialog({
 }) {
   return (
     <Dialog open={settings} onOpenChange={setSettings}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} onCloseAutoFocus={event => {
+        const trigger = document.querySelector<HTMLButtonElement>('[data-month-tool="deadline"]');
+        if (trigger?.getClientRects().length) {event.preventDefault(); trigger.focus();}
+      }}>
         <DialogHeader>
           <DialogTitle>
             {t('Change month deadline', 'שינוי מועד אחרון לחודש')} · {monthLabel}

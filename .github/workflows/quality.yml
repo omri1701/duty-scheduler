@@ -151,12 +151,16 @@ jobs:
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
           node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
           node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
       - name: Incremental upgrade preserves existing data
         env:
           DATABASE_BASE: ${{ needs.scope.outputs.base }}
         run: node scripts/database-upgrade.mjs "$DATABASE_BASE" supabase_db_duty-scheduler
       - name: Isolated deployment ordering and failure verification
-        run: node scripts/release-local-test.mjs supabase_db_duty-scheduler --discard-container
+        run: |
+          node supabase/tests/lifecycle-release.mjs supabase_db_duty-scheduler
+          node scripts/release-local-test.mjs supabase_db_duty-scheduler --discard-container
       - name: Retain database contract for this exact commit
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
