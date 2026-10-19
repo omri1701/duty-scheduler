@@ -1,11 +1,12 @@
 import type {ReactNode,Ref,ComponentProps} from 'react';
 import type {Translate} from './workspace-types';
+import {calendarOwnerMonth} from '@/lib/rota/calendar-dates';
 
 export function CalendarDay({date,month,combined=false,weekend=false,special=false,className='',style,...props}:ComponentProps<'button'>&{
   date:string;month:string;combined?:boolean;weekend?:boolean;special?:boolean;
 }) {
   return <button {...props} data-date={date} style={{...style,...(combined?{gridColumn:'span 2'}:{})}}
-    className={['day-cell',!date.startsWith(month)?'outside':'',weekend?'weekend':'',combined?'combined-weekend':'',special?'special':'',className].join(' ')}/>;
+    className={['day-cell',calendarOwnerMonth(date)!==month?'outside':'',weekend?'weekend':'',combined?'combined-weekend':'',special?'special':'',className].join(' ')}/>;
 }
 
 export function CalendarAssignment({loading=false,className='',children,...props}:ComponentProps<'div'>&{loading?:boolean}) {

@@ -157,7 +157,7 @@ export function WorkspaceCalendar({
           const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
             mine = a?.primary === meId || a?.secondary === meId,
-            interactive = !!b && d.startsWith(month) && ownerMonth(b) === month;
+            interactive = !!b && ownerMonth(b) === month;
           return (
             <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
               disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id))}

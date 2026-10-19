@@ -61,7 +61,7 @@ export function useCalendarInteractions({
     } else startSwap(from, to);
   }
   function selectCalendarDuty(b: Duty) {
-    if(remote.readOnly || ownerMonth(b) !== month || !b.start.startsWith(month))return;
+    if(remote.readOnly || ownerMonth(b) !== month)return;
     if (!requesting) {
       openDuty(b);
       return;
@@ -92,7 +92,7 @@ export function useCalendarInteractions({
       setDragFrom(key);
     },
     onMove: (key) => {
-      const valid = duties.some(b => b.id === key && ownerMonth(b) === month && b.start.startsWith(month)) && !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
+      const valid = duties.some(b => b.id === key && ownerMonth(b) === month) && !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
       setDragOver(valid ? key : null);
       return valid;
     },
@@ -101,7 +101,7 @@ export function useCalendarInteractions({
       dragSource.current = null;
       setDragFrom(null);
       setDragOver(null);
-      if (source && key && duties.some(b => b.id === key && ownerMonth(b) === month && b.start.startsWith(month)) && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
+      if (source && key && duties.some(b => b.id === key && ownerMonth(b) === month) && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
     },
     onCancel: () => {
       dragSource.current = null;

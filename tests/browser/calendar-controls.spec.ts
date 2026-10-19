@@ -120,7 +120,7 @@ test('published manager drag uses the published split shape even when the draft 
 });
 
 for(const split of [false,true])for(const role of ['admin','a'] as const)for(const lang of ['en','he']) {
- test(`adjacent December/January is display-only ${split?'split':'combined'} ${role} ${lang}`,async({page,backend,openApp})=>{
+ test(`December owns the cross-year weekend and January omits it ${split?'split':'combined'} ${role} ${lang}`,async({page,backend,openApp},info)=>{
   if(role==='admin' && split && lang==='en')backend.runtimeOrigin='http://localhost:8787';
   backend.raw.assignments=[];backend.raw.publications=[];backend.raw.months=[];
   for(const month of ['2027-12','2028-01']) {
@@ -130,32 +130,39 @@ for(const split of [false,true])for(const role of ['admin','a'] as const)for(con
     for(const b of blocks(month,[],split?['2027-12-31']:[]).filter(b=>ownerMonth(b)===month)) {
       const row={day:b.start,end_day:b.end,secondary_id:null,manager_override:false,title:'',extra_points:0,points:b.points};
       backend.raw.assignments.push({...row,id:`${month}-${b.id}`,publication_id:publication,primary_id:ids.a},
-        {...row,id:`draft-${b.id}`,publication_id:null,primary_id:ids.b});
+        {...row,id:`draft-${b.id}`,publication_id:null,primary_id:b.id==='2027-12-30'?ids.c:ids.b});
     }
   }
   await openApp(role);
   for(let i=0;i<14;i++)await page.getByRole('button',{name:'Next month',exact:true}).click();
   if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
   const grid=page.locator('.calendar-grid');
-  await expect(grid.locator('[data-date="2027-12-26"]')).toContainText(role==='admin'?'Blair':'Alex');
+  await expect(grid.locator('[data-date]').first()).toHaveAttribute('data-date','2028-01-02');
   const boundary=grid.locator(`[data-date="${split?'2028-01-01':'2027-12-31'}"]`);
-  await expect(boundary).toContainText(role==='admin'?'Blair':'Alex');
-  await expect(boundary).toBeDisabled();
-  await expect(boundary).not.toHaveAttribute('data-gesture-key');
-  await boundary.dispatchEvent('click');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  if(!split)await expect(grid.locator('[data-date="2028-01-01"]')).toHaveCount(0);
+  await expect(boundary).toHaveCount(0);
+  await expect(grid.locator('[data-date="2027-12-31"],[data-date="2028-01-01"]')).toHaveCount(0);
   if(role==='admin') {
     await page.getByRole('button',{name:lang==='en'?'Published':'פורסם',exact:true}).click();
-    await expect(boundary).toContainText('Alex');
+    await expect(boundary).toHaveCount(0);
   }
   await page.getByRole('button',{name:lang==='en'?'Previous month':'חודש קודם',exact:true}).click();
   if(split) {
     const saturday=grid.locator('[data-date="2028-01-01"]');
-    await expect(saturday).toBeDisabled();
-    await expect(saturday).not.toHaveAttribute('data-gesture-key');
+    await expect(saturday).toBeEnabled();
+    await expect(saturday).not.toHaveClass(/outside|adjacent-duty/);
+    await expect(saturday).toHaveAttribute('data-gesture-key','2028-01-01');
     await expect(saturday).toContainText(role==='admin'?'Blair':'Alex');
+    if(role==='admin') {
+      await saturday.click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
     if(role==='admin' && lang==='en') {
+      for(const [from,to] of [['2028-01-01','2027-12-30'],['2027-12-30','2028-01-01']]) {
+        await drag(page,info.project.name==='mobile',from,to);
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await page.keyboard.press('Escape');
+      }
       const january=structuredClone(backend.raw.months.find(m=>m.month==='2028-01'));
       const independent=structuredClone(backend.raw.assignments.filter(d=>d.publication_id===null && d.day>='2028-01-02'));
       await page.getByRole('button',{name:'Special block',exact:true}).click();

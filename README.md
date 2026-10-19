@@ -138,9 +138,14 @@ Managers reopen a published month to edit a draft, with independent Draft / Publ
 and My duties controls. Special Block appears only in Draft. Cancel Draft requires
 confirmation and atomically deletes the working draft, returning to the current publication without creating a version or copying working rows.
 Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
-Adjacent dates retain their assignments in the complete Sunday–Saturday grid, with
-faded, display-only cells. Both halves of a weekend belong to Friday's month;
-editing or generating that month does not reopen the adjacent month.
+Schedule and Constraints share the same visible Sunday–Saturday rows. When the
+first is Saturday, both omit the entire first row and start on Sunday the 2nd.
+Both halves of a weekend belong to Friday's month, which includes the cross-month
+Saturday, editable as part of either a combined or split weekend. Constraints can
+select it individually or in a range and save its actual date; existing date-based
+publication/deadline checks still apply. All other adjacent-month dates retain
+their assignments in faded, read-only cells. Editing or generating the owning
+month does not reopen the adjacent month.
 Availability and duty editors use the same centered, scrollable Radix modal shell
 as Special Duty on phones and desktop. Outside clicks, Escape and Close
 discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.

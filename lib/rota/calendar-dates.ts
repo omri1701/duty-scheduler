@@ -1,6 +1,8 @@
 // Public date arithmetic: no scheduler, identity, storage or workspace imports.
 export const addDays = (s:string,n:number) => {const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
 export const dayOf = (s:string) => new Date(s+'T12:00:00Z').getUTCDay();
+// Saturday is displayed/edited with the month containing its Friday.
+export const calendarOwnerMonth = (date:string) => (dayOf(date)===6?addDays(date,-1):date).slice(0,7);
 export const monthNext = (m:string,n=1) => {const d=new Date(m+'-15T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,7)};
 export function dates(start:string,end:string){const result:string[]=[];for(let d=start;d<end;d=addDays(d,1))result.push(d);return result;}
 const israelDate = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jerusalem',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -20,7 +22,8 @@ export const initialCalendarMonth = () => monthNext(todayIsrael().slice(0,7));
 export const calendarMonthLabel = (month:string,lang:'en'|'he') => new Date(month+'-15T12:00:00Z').toLocaleDateString(lang==='en'?'en-GB':'he-IL',{month:'long',year:'numeric',timeZone:'Asia/Jerusalem'});
 
 export function calendarDates(month:string) {
-  return dates(addDays(month+'-01',-dayOf(month+'-01')),addDays(monthNext(month)+'-01',(7-dayOf(monthNext(month)+'-01'))%7));
+  const first=month+'-01',weekday=dayOf(first);
+  return dates(addDays(first,weekday===6?1:-weekday),addDays(monthNext(month)+'-01',(7-dayOf(monthNext(month)+'-01'))%7));
 }
 
 type Period = {start:string;end:string;kind:string};
