@@ -36,9 +36,8 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  if(weekend.previous){
   await page.getByRole('button',{name:lang==='en'?'Next month':'חודש הבא',exact:true}).click();
   const adjacent=duty(page,weekend.friday);
-  await expect(adjacent).toBeDisabled();
-  await expect(adjacent).not.toHaveAttribute('data-gesture-key');
-  await adjacent.dispatchEvent('click');
+  await expect(adjacent).toHaveCount(0);
+  await expect(page.locator('.calendar-grid [data-date]').first()).toHaveAttribute('data-date','2026-08-02');
   await expect(dialog).toHaveCount(0);
  }
 });
