@@ -3,7 +3,8 @@
 ## 1. Purpose, authority and scope
 
 This is the product and engineering contract for the future Duty Scheduler
-generation redesign. The implementation described here does not exist yet.
+generation redesign. The production implementation described here does not exist
+yet. The isolated compatibility spike in section 14.5.1 does not change Generate.
 
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
@@ -35,8 +36,9 @@ Structural invalidity or owner-month coverage having started does.
 An incomplete result is useful output, labeled **Partial / Requires Manager
 Resolution**, with all uncovered dates and unmet points retained.
 
-This PR changes only this specification. It does not implement the solver, UI,
-ledger, schema, tests, dependencies, configuration, deployments or notifications.
+The architecture-review PR changed only this specification. It did not implement
+the solver, UI, ledger, schema, tests, dependencies, configuration, deployments or
+notifications.
 Keep the pure scheduling/accounting core separate from React, browser execution,
 Supabase adapters and database authorization.
 
@@ -1254,6 +1256,135 @@ A custom branch-and-bound solver increases maintenance/proof burden; a new
 backend adds deployment/auth/data boundaries. Neither is justified merely
 because the existing heuristic is inadequate. A demonstrated technical need
 and manager approval are required for a new backend/paid service or AI inference.
+
+### 14.5.1 Isolated HiGHS compatibility spike (23 October 2026)
+
+Scope: `lib/solver-spike/`, its Node benchmark/tests and an opt-in production-build
+browser harness. Nothing imports this adapter from the existing Generate flow.
+There are no compensation, persistence, migration or product UI changes.
+
+**Assessment: suitable to continue evaluating for local feasibility and coverage
+optimization; not yet approved as the production scheduling solution.** Normal
+12-engineer coverage/point solves are fast on the measured desktop. The initial
+successor-arc spacing formulation substantially increases cost and does not
+prove the full gap ordering within a five-second search budget. Real iPhone
+Safari, production deployment and full domain integration remain gates.
+
+Package and compatibility evidence:
+
+- Exact dependency `highs@1.15.4`, zero runtime package dependencies. The loaded
+  binary reports HiGHS **1.15.1**, git hash `04024d7`; package and native patch
+  versions are recorded separately. Registry integrity is pinned in the lockfile.
+- TypeScript 5.9.3 and Next.js 16.3.4 production compilation pass. Directly
+  bundling the upstream ESM loader fails in Turbopack: it interprets the WASM's
+  native import module `a` as a JavaScript dependency. The bounded workaround
+  serves the unchanged package loader and WASM on the same origin, with explicit
+  asset URLs and file tracing. Next still compiles the adapter and Worker.
+- `/solver-spike` has no visible controls and returns 404 unless the server has
+  `DUTY_SOLVER_SPIKE=1`. The allowlisted asset route has the same gate, correct
+  JavaScript/WASM MIME types and `Cache-Control: no-store`. Production Generate
+  does not load these assets. Existing browser-test server launchers alone opt in.
+  Long-lived immutable caching is deliberately deferred until production adoption.
+- No CDN, solver provider, SharedArrayBuffer or cross-origin isolation is used.
+  Node and Chromium execute the same adapter. This wrapper is single-threaded;
+  its extended API explicitly rejects the `threads` option.
+- Native models are disposed in `finally`, including parser failures. A reusable
+  Worker supports sequential warm runs; its owner must explicitly terminate it.
+  Cancellation terminates the Worker, rejects pending work and rejects reuse;
+  a new Worker can solve again. Request IDs reject stale responses. A main-thread
+  watchdog also bounds failed initialization/unresponsive requests.
+
+The synthetic normalized model tests binary assignments, availability candidate
+edges, fixed locks, exact integer half-point ceilings, distinct weekend identities,
+nonconsecutive primaries and optional holes. Full coverage plus balanced totals
+implies each exact target. Independent assignment validation recomputes coverage,
+special coverage, units, deficits, caps and actual successive gaps without the LP.
+Tiny exhaustive enumeration checks the three coverage/point priorities and
+leximin gaps, including variable-length paths padded with infinity. Only native
+binary endpoint noise within `1e-8` is normalized; fractional values such as 0.5
+are rejected, then every domain rule is checked with exact integer assignments.
+
+Stages solve separately, fixing earlier objectives only after optimal status,
+zero MIP gap and an integer bound excluding any better integer value. Results
+separate completeness, proved prefix and termination/bound/node information.
+UNKNOWN/limited solves retain a verified incumbent, including the initial locked
+partial assignment; no lower stage runs after an unproved stage. The budget is
+shared across stages, with remaining wall time and node count passed onward.
+Model parsing/validation can add overhead beyond the nominal solver time limit;
+Worker termination is the hard cancellation mechanism.
+
+Reproduce from the repository root (Node 24.19.0, pinned pnpm):
+
+```sh
+node --test tests/highs-spike.test.mjs
+node scripts/benchmark-highs.mjs
+pnpm exec tsc --noEmit
+pnpm build
+pnpm test:e2e:ci solver-spike.spec.ts
+```
+
+Preliminary workstation measurements: Windows x64, Intel Core i9-10900KF
+3.70 GHz, Node 24.19.0; three runs per fixture in one WASM instance, seed 17,
+10,000 total nodes and five seconds per request. Times include model construction,
+LP parsing, all attempted stages and independent validation; initialization is
+separate. These synthetic cases are performance probes, not release budgets.
+
+| Fixture | Engineers / duties | Covered dates | Total milliseconds (three runs) | Proof / linear-memory high water |
+|---|---|---|---|---|
+| Ordinary combined weekends | 12 / 26 | 30 / 30 | 201, 69, 59 | All three stages; 20.25 MiB |
+| Tight availability, weighted specials, no candidates on one date | 12 / 26 | 28 / 30 | 58, 28, 29 | Optimal partial for three stages; 20.25 MiB |
+| Split weekends and two locks | 12 / 30 | 26 / 30 | 147, 119, 124 | Optimal partial for three stages; 20.25 MiB |
+| Weekend-cap shortage | 2 / 26 | 26 / 30 | 26, 27, 26 | Optimal partial for three stages; 20.25 MiB |
+| Larger team | 24 / 26 | 30 / 30 | 133, 135, 136 | All three stages; 20.25 MiB |
+| Successor-gap spacing | 12 / 26 | 30 / 30 | 5,067, 5,076, 5,041 | Coverage/points proved; spacing incomplete; 72.88 MiB |
+
+The ordinary model has 361 columns/446 base rows; spacing has 4,597 columns/
+1,094 base rows, before fixed-objective rows. WASM initialization in this Node
+sample is about 28 ms. Warm linear memory remains at its high-water allocation:
+`dispose()` frees native model ownership but does not shrink WASM memory.
+Three spacing requests reuse that high water with zero live adapter models after
+each request. This is bounded observed allocation, not proof that every native
+allocation is leak-free or that the browser immediately returns RAM to the OS.
+
+Desktop/mobile Chromium viewport checks run in the pinned Playwright container
+against the actual Next production build. They verify WASM bytes against the
+installed package, warm deterministic assignments, eight repeated memory samples,
+main-thread cancellation during a synchronous solve, rejection after termination
+and a fresh Worker restart. JSON timings are attached to the Playwright report.
+In the final focused run (two browser workers), ordinary cold/warm request times
+were 438/126 ms at the desktop viewport and 407/121 ms at the mobile viewport;
+WASM initialization was 150/140 ms respectively. All eight repeated ordinary
+memory samples remained 20.25 MiB. Constrained/split requests took 199–437 ms;
+spacing requests stopped at about 5.0–5.1 seconds with only a higher-objective
+proof prefix. These are desktop Chromium measurements at two viewport sizes.
+Viewport emulation does **not** establish iPhone Safari compatibility, background/
+resume behavior, device memory pressure or touch responsiveness.
+
+Known limits before adoption: synthetic caller-supplied chronological minute
+intervals/candidate edges, no Jerusalem calendar normalization, boundary anchors,
+secondary-identity adapter, scoped manager exceptions, seeded final tie objective,
+compensation or checked save integration. These are deliberately outside this
+spike. Identical completed runs reproduce assignments in the tested environment;
+wall-clock-limited incumbents are not promised reproducible. Benchmark boundary
+anchors and improve spacing formulation/stage reuse before setting a release UX
+budget. No production/mobile compatibility claim follows from these results.
+
+Artifact audit: the package's MIT license is retained and served alongside the
+assets. The [tagged build recipe](https://github.com/lovasoa/highs-js/blob/v1.15.4/build.sh)
+uses single-threaded Emscripten, growing memory, 32-bit HiGHS integers and disables
+zlib. The [1.15.4 release](https://github.com/lovasoa/highs-js/releases/tag/v1.15.4)
+fixes submitted MIP callback solutions; this spike does not use that callback.
+The [open issue list](https://github.com/lovasoa/highs-js/issues) was checked;
+the listed C API expansion request is not a blocker for this adapter. The npm
+release includes a provenance attestation, but this spike does not independently
+rebuild or verify that attestation; complete binary/third-party notice provenance
+review remains a production adoption gate. Exact installed SHA-256 identities:
+
+```text
+highs.mjs   f2bdfd071d19c3745756a087026589e9240f329e38315a86f626823ae78a4036
+highs.wasm  f13134e3e335e7bad984ff12abeb41e86e0eeeb1752ae8a85322cc6839df8acd
+LICENSE     9f8d8dcf27789ac59c0d7c732d6682f148804a5e99d83e9f207d6c1882b98bfa
+```
 
 ### 14.6 Responsiveness, cancellation and search limits
 
