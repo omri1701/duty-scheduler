@@ -1,1208 +1,1793 @@
-# Monthly Duty Generation Algorithm Specification
+# Monthly Generation and Compensation Specification
 
-## 1. Purpose and scope
+## 1. Purpose, authority and scope
 
-This is the product and engineering source of truth for the **future redesign**
-of monthly primary-duty generation. It records agreed requirements, distinguishes
-them from current behavior, and identifies requirements whose implementation
-depends on a further product or mathematical decision.
+This is the product and engineering contract for the future Duty Scheduler
+generation redesign. The implementation described here does not exist yet.
 
-**The manager decides workload allocation. The algorithm decides the best dates
-for that allocation.**
+**The manager determines exactly how many points each engineer receives.
+Generate determines which primary duties to assign against those numbers.**
 
-The system must be mathematically reliable, fair across engineers and months,
-strict about automatic scheduling constraints, transparent to managers, and
-efficient enough for interactive use. It must support approximately 12 engineers
-as the typical case, as well as smaller and larger teams, including two engineers.
-Supporting a team size means correctly solving or explaining that team's model;
-it does not guarantee feasibility under contradictory rules.
+Compensation affects the proposed allocation before confirmation. Once confirmed,
+targets are immutable solver inputs. Generate never changes targets, redistributes
+workload, removes locks, relaxes automatic constraints or rewrites another month.
 
-The manager may deliberately override the specifically permitted rules through
-manual locks. The solver must never silently change exact point targets, drop
-locks, violate hard constraints, or report incomplete coverage as success.
+The system supports the typical team of approximately 12 engineers, smaller and
+larger teams, and two-engineer teams. Support includes producing a verified,
+clearly labeled partial draft when full coverage is impossible. A small team
+does not receive an automatic exemption from weekend or consecutive-duty rules.
 
-### 1.1 Status of statements
+### 1.1 Requirements and engineering decisions
 
-| Label | Interpretation |
+- Product requirements in this document include exact target ceilings, explicit
+  locks, pairwise compensation, fresh generation and best-effort partial output.
+- Recommended engineering design selects exact integer units, a pure core,
+  deterministic normalization, an append-only ledger and lexicographic solving.
+  Package adoption and migrations require the future implementation review.
+- Current-behavior statements describe inspected source, not hosted verification.
+- Section 18.8 contains only the two concrete product decisions requiring
+  confirmation. Routine technical decisions are specified in the relevant section.
+
+This document supersedes the earlier complete-only design in PR #30. Confirmed
+infeasibility does **not** disable Generate. Structural invalidity does.
+An incomplete result is useful output, labeled **Partial / Requires Manager
+Resolution**, with all uncovered dates and unmet points retained.
+
+This PR changes only this specification. It does not implement the solver, UI,
+ledger, schema, tests, dependencies, configuration, deployments or notifications.
+Keep the pure scheduling/accounting core separate from React, browser execution,
+Supabase adapters and database authorization.
+
+### 1.2 Inspected sources
+
+Source baseline: `develop` commit
+`b29b4dcb157cb678429ff091d7f6f5c84e84f1d7`, reviewed on 23 October 2026.
+The existing PR branch was inspected before editing.
+
+| Area | Evidence |
 |---|---|
-| Required behavior | Agreed behavior for the redesign; mandatory unless an explicitly described manager override applies. |
-| Current behavior | Observation from the inspected repository; not a claim that a future feature exists today. |
-| Conceptual model / preferred direction | A possible engineering realization to assess before implementation; not a package or architecture approval. |
-| Not yet determined | The supplied requirements do not select one policy or formula. Implementation must not silently choose one. |
+| Duty blocks, points, weekends, generation and swaps | [Engine](../lib/rota/engine.ts): `blocks`, `ownerMonth`, `generate`, `totals`, `weekendCounts`, `swapDraft`; [engine regressions](../tests/engine.test.mjs). |
+| Calendar and month isolation | [Dates](../lib/rota/calendar-dates.ts), [workspace projections](../lib/rota/workspace-data.ts), [workspace tests](../tests/workspace-data.test.mjs), [calendar tests](../tests/calendar-layout.test.mjs). |
+| Draft generation and editors | [Draft workflow](../hooks/use-workspace-draft.ts), [duty editor](../components/rota/duty-editor.tsx), [dialogs](../components/rota/workspace-dialogs.tsx). |
+| Snapshot/version selection | [Snapshot conversion](../lib/supabase/snapshot.ts), [snapshot tests](../tests/snapshot.test.mjs). |
+| Integrity, publication and revision writes | [Assignment schema](../supabase/schemas/tables/duty_assignments.sql), [save/publication implementation](../supabase/schemas/functions/duty_private/save_schedule.sql), [revision check](../supabase/schemas/functions/duty_private/check_revision.sql). |
+| Published commitment changes | [Swap validation](../supabase/schemas/functions/duty_private/validate_swap.sql), [swap approval](../supabase/schemas/functions/duty_private/resolve_swap.sql), [swap tests](../tests/swaps.test.mjs), [SQL swap regressions](../supabase/tests/swaps.sql). |
+| Existing lifecycle and runtime contract | [Scheduling rules](../README.md#scheduling-rules-and-defaults), [Supabase setup](SUPABASE_SETUP.md), [package commands](../package.json). |
 
-This document does not implement scheduling, storage, UI, or database changes.
-It does not authorize a new dependency, service, paid API, AI inference,
-deployment, permission change, or historical schedule rewrite. It does not
-replace unrelated application, database, or release documentation.
+## 2. Current behavior versus the redesign
 
-### 1.2 Evidence and references
-
-Current-state observations were checked against `develop` commit
-`b29b4dcb157cb678429ff091d7f6f5c84e84f1d7` on 22 October 2026.
-They describe repository behavior, not an independently verified hosted deployment.
-
-| Area | Relevant evidence |
-|---|---|
-| Duties, ownership, points, generation, weekends and draft swaps | [Scheduling engine](../lib/rota/engine.ts), especially `blocks`, `ownerMonth`, `generate`, `totals`, `weekendCounts` and `swapDraft); [engine tests](../tests/engine.test.mjs). |
-| Calendar ownership and scoped updates | [Calendar dates](../lib/rota/calendar-dates.ts), [workspace projections](../lib/rota/workspace-data.ts), [workspace tests](../tests/workspace-data.test.mjs) and [calendar tests](../tests/calendar-layout.test.mjs). |
-| Generation, manual edits and Special Blocks in the current UI | [Draft workflow](../hooks/use-workspace-draft.ts), [duty editor](../components/rota/duty-editor.tsx) and [workspace dialogs](../components/rota/workspace-dialogs.tsx). |
-| Draft/publication selection and persistence payloads | [Snapshot conversion](../lib/supabase/snapshot.ts) and [snapshot tests](../tests/snapshot.test.mjs). |
-| Database duty invariants and checked writes | [Assignment schema](../supabase/schemas/tables/duty_assignments.sql), [schedule save/publication](../supabase/schemas/functions/duty_private/save_schedule.sql) and [revision check](../supabase/schemas/functions/duty_private/check_revision.sql). |
-| Published swaps and actual workload | [Swap validation](../supabase/schemas/functions/duty_private/validate_swap.sql), [swap resolution](../supabase/schemas/functions/duty_private/resolve_swap.sql), [swap tests](../tests/swaps.test.mjs) and [SQL swap regressions](../supabase/tests/swaps.sql). |
-| Existing product, runtime and security context | [README scheduling rules](../README.md#scheduling-rules-and-defaults), [Supabase setup](SUPABASE_SETUP.md) and [package commands](../package.json). |
-
-## 2. Current behavior versus required behavior
-
-The existing pure TypeScript engine is independent of UI and storage. Preserve
-that separation when designing the replacement.
-
-| Concern | Current behavior | Required redesign |
+| Concern | Current source behavior | Required redesign |
 |---|---|---|
-| Search | Exactly 90 seeded heuristic attempts, scored with soft penalties and rewards; selection among near-best candidates. | Constraint-based global feasibility followed by the agreed spacing objectives. |
-| Workload allocation | No pre-generation target table or exact per-engineer target constraints. Weighted load balancing happens while assigning dates. | Manager reviews and controls strict targets before date assignment. |
-| Seniority | Active team order runs senior to newest. Heuristic weights are `1 + 0.22 × i / max(1, n − 1)`, from 1.00 to 1.22, plus a soft preference for newer engineers receiving indivisible remainder. | Retain the slight preference toward newer engineers, with exact half-point/integer targets and historical compensation. The new formula is not approved here. |
-| History | Each month balances independently; past workloads and gaps do not affect generation. | Persistent temporary compensation and primary-duty boundary context. |
-| Unavailability | Automatic primaries respect every covered unavailable date. An impossible duty can remain empty with a warning. | Preserve automatic availability protection; establish complete feasibility and never label an incomplete schedule successfully generated. |
-| Consecutive duties | Allowed; short spacing is a soft penalty. | Forbidden for automatic assignments, including boundaries and split weekends. |
-| Locks | `Assignment` retains a legacy optional `locked` field, but generation ignores it; old migration logic removes obsolete locks. No current manager Lock/Unlock feature or persisted lock field in schedule payloads exists. | Explicit, durable manager locks preserved by Generate and Regenerate. |
-| Manual primaries | Regeneration replaces primaries in the selected owner's month, including manual edits. | Preserve locked primaries; treatment of manually edited but unlocked primaries remains to be decided. |
-| Emergency cover | Preserved, but contributes full duty points to current totals/load, spacing and weekend counts. Generation excludes that duty's secondary from primary candidates. | Preserved and excluded from primary workload, fairness, spacing, consecutiveness and regular weekend limits. Reconcile the existing same-person integrity rule before implementation. |
-| Weekends | Friday ownership; combined weekend worth 1; separate halves worth 0.5 each. Automatic primary selection obeys a distinct-weekend cap that also considers existing secondary coverage. | Preserve ownership and duty weights; apply the regular cap to primary duties only, with no unapproved exception. |
-| Special Blocks | Daily extra points; a special overlapping a weekend makes its Friday/Saturday separate blocks. Engine tests exercise ranges spanning months. Current UI creation restricts a range to the selected month's owned duties, up to 14 dates and 0–20 extra per date, and clears touched assignments. | Support cross-month Special Blocks, require 0.5 increments, preserve ownership and locks, and reconcile changed duty totals with strict targets. Cross-owner editing workflow is not specified here. |
-| Exact arithmetic | JavaScript numbers in the engine; SQL `numeric` points generated from duty dates and extra points. The database range check does not enforce 0.5 increments. | Exact half-point arithmetic throughout the allocation and solver model. |
-| Persistence | Checked, revision-protected writes; mutable draft rows separate from immutable publication versions. | Preserve these protections while adding allocation, fairness and lock information in a future reviewed design. |
+| Search | 90 seeded heuristic attempts with weighted penalties/rewards. | Globally constrained optimization with explicit objective priorities and honest proof status. |
+| Allocation | Points balanced during date assignment; no manager target table. | Confirmed point table precedes date generation; immutable target ceilings. |
+| Incomplete coverage | Unassigned duties and warnings are possible, but without the new target/partial-result model. | Best possible valid partial draft; uncovered dates, per-engineer shortfalls and optimization status. |
+| Seniority | Soft multipliers from 1.00 to 1.22 plus remainder preferences. | Approximately equal ordinary allocations; seniority only breaks equivalent choices in favor of newer engineers. |
+| History/compensation | Month-independent balance; no persistent compensation ledger. | Auditable linked obligations, normalization, oldest feasible repayment and projected opening balances. |
+| Consecutive duties | Allowed; short gaps penalized softly. | Automatic consecutive duties forbidden, including boundary conflicts and separate split halves. |
+| Locks | Legacy optional `locked` type remains; generation ignores it and payloads do not persist locks. | Explicit persistent manager locks with specific approved exception scope. |
+| Regeneration | Replaces selected-month primaries, including manual assignments. | Fresh arrangement each time; only explicit locks preserve particular primaries. Confirmed targets and other persistent inputs survive. |
+| Randomness | Fresh cryptographic seed in the UI; deterministic engine seeds available. | Fresh seed on every Generate; equivalent input/version/settings/seed reproducibility. Seed acts only after higher objectives. |
+| Emergency cover | Preserved, but currently earns full points and affects load, gaps and weekend counts. | Preserved; zero primary workload/compensation/spacing/weekend effect. Primary/secondary identity integrity still filters candidates. |
+| Weekend ownership | Friday owns both halves, even across month/year. | Preserve this canonical rule and explicit combined/split structure. |
+| Specials | Daily additions; weekends touched by specials split. Engine supports cross-month ranges; current UI restricts creation to selected owned duties, 1–14 days and 0–20 extra points. Adding a range clears touched assignments. | Half-point additions; ownership-aware cross-month workflow; no silent loss of locks/emergency cover or old-target reuse after a weight change. |
+| Arithmetic | JavaScript numbers; SQL `numeric`, without a half-step database invariant. | Exact half-point units in all core calculations and future persistence validation. |
+| Publication | Checked, revision-protected draft/publication separation and immutable versions. | Preserve it; commit ledger origins and repayment plans atomically with authoritative publication changes. |
 
-Existing tests deliberately assert several behaviors that this redesign changes:
-legacy locks are replaced; previous-month loads have no effect; emergency cover
-earns points; an impossible duty remains unassigned; and a two-engineer fixture
-leaves three of five weekends open. These are accurate descriptions of today's
-contract, not acceptance criteria for the replacement.
+Current regressions that intentionally change include ignored legacy locks,
+emergency points, month-independent gaps and the absence of compensation.
+Current coverage, identity, ownership, permission, consent, revision and version
+protections remain mandatory.
 
-Current publication/swaps already protect primary/secondary identities, active
-approved membership, availability, version history and revisions. Draft manager
-edits can explicitly approve availability or additional-weekend exceptions.
-Published swap approval has its own stricter weekend checks. The redesign must
-not infer a general permission to bypass those protections.
+No tests currently demonstrate the proposed ledger or a globally optimal
+schedule. Current published swap approval preserves duty weights, secondary
+coverage, working drafts and prior versions; it creates a new current publication.
+The redesign must integrate with that operation rather than count every copied
+historical version as new work.
 
-## 3. Terminology and duty model
+## 3. Canonical duties, ownership and time
+
+### 3.1 Terms
 
 | Term | Meaning |
 |---|---|
-| Primary duty / duty block | One required coverage interval with exactly one primary engineer in a complete schedule. |
-| Normal duty | One daily interval, normally 09:00 on its date through 09:00 the next day. |
-| Combined weekend | One Friday 09:00 through Sunday 09:00 primary-duty block, displayed as Friday–Saturday. |
-| Split weekend | Separate Friday 09:00–Saturday 09:00 and Saturday 09:00–Sunday 09:00 blocks, with a shared Friday weekend identity. |
-| Special Block | A configured range adding extra points to covered daily duties; not one indivisible multi-day assignment. |
-| Owner month | The month responsible for assigning and accounting for a duty. Friday owns both weekend halves. Other duties belong to their date's month. |
-| Displayed date | A calendar label; it does not replace the duty's actual covered interval or ownership. |
-| Emergency / secondary assignment | Optional extra coverage, possibly only for an hour, separate from primary-duty scheduling. |
-| Final target | Exact primary-duty points an engineer must receive in the selected month, including temporary and permanent adjustments. |
-| Locked assignment | A manager-fixed primary assignment that automatic generation cannot change. |
-| Manager override | Explicit authorization for a specifically permitted scheduling conflict on a manual lock; not a waiver of all rules. |
-| Feasible complete schedule | Every required primary block covered, every exact target met and every hard rule satisfied, including recognized manual exceptions. |
-| Fairness balance | Persistent outstanding compensation arising from temporary workload differences; separate from permanent decisions. |
+| Duty block | An indivisible primary coverage interval. At most one primary engineer; empty only in an unfinished/partial draft. |
+| Ordinary duty | Normally one date at 09:00 through the next date at 09:00. |
+| Combined weekend | Friday 09:00 through Sunday 09:00: one block covering Friday and Saturday. |
+| Split weekend | Separate Friday and Saturday daily blocks with the same Friday weekend identity. |
+| Special Block | Configured daily additions over a range, not one indivisible multi-day duty. |
+| Owner month | Friday's month for either weekend half; otherwise the duty date's month. |
+| Target | Final confirmed primary points. Exact in a complete result; a strict ceiling with visible shortfall in a partial result. |
+| Lock | Explicit manager-fixed primary assignment; persists until explicitly changed/unlocked. |
+| Obligation | A directed debtor-to-creditor claim for future workload, measured in exact points. |
+| Planned repayment | Reserved future duty-point capacity for an obligation; does not settle it yet. |
+| Actual settlement | Repayment earned by completed duty capacity, or an explicit audited manual settlement. |
+| Projection | A simulation of known published commitments finishing normally by a defined future cutoff. |
+| Ordinary baseline | The proposed normal allocation before compensation and current temporary/permanent adjustments; not a historical debt score. |
 
-Duty intervals are start-inclusive and end-exclusive. The existing model stores
-date boundaries; product descriptions use 09:00 handovers. Availability must be
-checked on every date covered by the duty, including Saturday in a combined
-weekend. Adjacency and spacing must use the actual interval, not just the first
-displayed date. Calendar/time conventions for a numerical spacing metric require
-review; the duty lengths and ownership themselves are not optional.
+Duty ranges are start-inclusive and end-exclusive. Date-based unavailability
+applies to every covered duty date, including Saturday in a combined weekend.
+A display label cannot truncate the true coverage range.
 
-### 3.1 Canonical weekends and calendar ownership
+Convert the established 09:00 handovers in `Asia/Jerusalem` into actual instants
+for completion and elapsed-time spacing. Use the actual local offset on each date,
+not a fixed UTC offset or an assumption that every local day is 24 hours.
+Represent gaps as integer elapsed minutes; no floating equality is needed.
 
-**Friday owns the weekend, including a Saturday in the next month or year.**
+The operational opening instant of a month is 09:00 on its first **owned** duty
+date. If the calendar month starts Saturday, that is Sunday the 2nd. This cutoff
+includes the prior owner's duty finishing at the same handover, without treating
+a duty as finished before its actual end.
 
-For Friday 31 December 2027 and Saturday 1 January 2028:
+### 3.2 Friday ownership and structure
 
-- Combined: one December-owned block from 31 December through 2 January.
-- Split: two blocks, both December-owned, sharing weekend identity 31 December.
-- January generation must preserve both forms as fixed context. It must not
-  generate a separate January-owned 1 January duty or count its points again.
+**Friday owns both weekend dates**, including Saturday in the following month
+or year. Friday 31 December 2027 and Saturday 1 January 2028 belong to December:
 
-The existing calendar omits the first Saturday's row when a month starts on
-Saturday; the owning month still exposes that Saturday for editing. Other
-adjacent-month dates appear as read-only context. Generation ownership must not
-be inferred from which calendar cells happen to be visible.
+- Combined: one block ending Sunday 2 January at 09:00.
+- Split: two blocks sharing weekend identity 31 December, both December-owned.
+- January treats that coverage as fixed context; it cannot generate or count
+  1 January again.
 
-Combining or splitting must not duplicate coverage, points or identities.
-Current normalization recombines identical primary/secondary weekend halves when
-no special prevents merging. A future design must also preserve lock and override
-meaning; it cannot discard a lock merely by changing the weekend representation.
-Whether generation may itself change the combined/split structure is not an
-approved product choice in these requirements.
+Count each canonical duty and each covered date once. The month total and coverage
+objectives use owned dates, including the owner's cross-month Saturday. Sunday at
+the exclusive end is not a third covered date.
 
-## 4. Points and monthly totals
+Generate preserves the explicit combined/split structure and Special Blocks.
+It cannot split, merge or reweight duties to improve its result. Representation
+normalization outside Generate is allowed only when it preserves primary and
+secondary coverage, points, owner, lock/exception meaning and accounting lineage.
+In particular, separate special daily duties cannot be merged to evade adjacency.
 
-### 4.1 Duty weights
+The existing calendar may omit a leading Saturday row and show other neighboring
+dates read-only. Visible cells are not the ownership or solver-input authority.
 
-| Duty | Base points | Special addition |
-|---|---:|---|
-| Ordinary weekday | 1 | Configured extra for that covered date, if special. |
-| Combined Friday–Saturday | 1 total | Existing special handling creates separate daily weekend blocks. Do not add the combined base again. |
-| Split Friday | 0.5 | Configured extra for Friday. |
-| Split Saturday | 0.5 | Configured extra for Saturday. |
-| Emergency/secondary coverage | 0 regular points | No primary-duty workload or fairness points. |
+### 3.3 Points
 
-For a special daily block `d`:
+| Duty | Primary points |
+|---|---:|
+| Ordinary weekday | 1 |
+| Combined Friday–Saturday | 1 total |
+| Split Friday | 0.5 |
+| Split Saturday | 0.5 |
+| Special daily duty | Its weekday/weekend base plus that date's configured extra |
+| Emergency/secondary cover | 0 |
 
-`points(d) = base(d) + extra(d)`
+Special extra points are per covered date and must be nonnegative multiples of
+0.5 within existing product limits. Reject 1.1; never silently round it.
+Two special weekend dates with +2 each weigh 2.5 + 2.5 = 5, sharing one weekend
+identity. A Special Block may cross month boundaries; resulting duties retain
+their owners.
 
-The extra is per covered duty/date, not once for the entire Special Block.
-A two-date special covering Friday and Saturday with +2 per date gives two
-2.5-point duties, 5 points total. They still share one weekend identity.
-Special Blocks may span calendar and owner-month boundaries; each resulting duty
-retains its established owner.
+Use integer half-point units throughout the pure core:
 
-All allowed special additions must be multiples of 0.5. Values such as 1.1 are
-invalid. Targets, edits, locks, totals and solver equalities must use exact
-arithmetic. A preferred conceptual representation is integer half-point units:
+`q[d] = 2 × points(d)`, `t[e] = 2 × Target(e)`.
 
-`units(p) = 2 × p`
+One point is 2 units; half a point is 1; 34.5 points is 69.
+Validate denominations and safe integer bounds at the input boundary. Integer
+units do not authorize splitting physical duties; an assigned block still goes
+to one primary engineer.
 
-One point is 2 units; half a point is 1 unit; 34.5 points is 69 units.
-Conversion must validate the input denomination, not round invalid values into
-valid ones. Integer units are a modeling choice, not an approved storage schema.
+## 4. Exact targets, structural validity and partial accounting
 
-### 4.2 Conservation of the month's workload
+Let `D(M)` be the unique required duties owned by month `M`. Define:
 
-Let `D(M)` be the unique primary-duty blocks owned by month `M`, including any
-Friday-owned Saturday outside its calendar month. Let `p[d]` be a block's full
-primary-duty point weight.
+`P = sum(q[d] for d in D(M))`
 
-`P[M] = sum(p[d] for d in D(M))`
+`sum(t[e]) = P`
 
-This includes all required duties, whether already assigned, locked or still
-empty. It includes normal duties, the chosen combined/split representation,
-special additions and owned cross-month weekend coverage. Exclude duties owned
-by other months and exclude emergency coverage.
+Include every required duty whether locked, assigned or empty. Exclude neighboring
+owners and emergency assignments. Locked points are already inside `P`, not added
+again.
 
-If `T[e]` is engineer `e`'s final target:
+For each engineer:
 
-`sum(T[e] for all participating engineers) = P[M]`
+`l[e] = sum(q[d] for their valid locked duties in D(M))`
 
-Manually locked primary points are part of this total, not extra workload added
-on top of it. For a 34.5-point month, targets must sum to exactly 34.5.
-No coverage points may disappear or be invented by redistribution.
+`r[e] = t[e] − l[e]`
 
-Let `L[e]` be that engineer's locked primary-duty points owned by `M`:
+`a[e] = sum(q[d] for their assigned primary duties in the result)`
 
-`R[e] = T[e] − L[e]`
+`m[e] = t[e] − a[e]`
 
-`R[e]` is the exact workload still to generate. Require `T[e] >= 0` and
-`R[e] >= 0`. If all locks are valid:
+Require `0 <= l[e] <= a[e] <= t[e]` and `m[e] >= 0`.
+Display values in points; solve and account in units.
 
-`sum(R[e]) = sum(p[d] for unlocked d in D(M))`
+| Meaning | Invariant |
+|---|---|
+| Remaining before generation | `r[e] = t[e] − l[e]`. |
+| Complete result | Every duty covered and every `m[e] = 0`. |
+| Partial result | Some duties empty, with per-engineer `m[e]` visible. |
+| Workload conservation | `sum(m[e]) = sum(q[d] for unassigned d)`. |
+| Calendar coverage | Count covered dates, separately from points. A combined weekend covers two. |
 
-Every final target is strict. Neither a close numerical result nor a better
-spacing score substitutes for equality. Half-point arithmetic alone does not
-guarantee a target is attainable from the available indivisible duty weights.
+With target totals equal to `P` and no engineer above target, full duty coverage
+implies exact targets. Conversely, a positive shortfall cannot disappear by
+changing the target sum after generation.
 
-### 4.3 Changed input
+### 4.1 Reject invalid inputs; allow unattainable ones
 
-Special-point edits, weekend structure changes, changed locks, availability,
-membership or neighboring assignments can invalidate a previous allocation or
-feasibility result. Any result must correspond to the actual inputs being saved;
-stale validation is not evidence that new inputs are feasible.
+**Structurally invalid:** wrong target sum, negative/off-denomination targets,
+missing required identities, ineligible locked primary, invalid canonical
+coverage, conflicting fixed locks without the specific required approval, or
+locked points above target. Disable Generate and explain the repair.
 
-In particular, the system cannot use old targets whose sum differs from a changed
-monthly total. How to recalculate targets, preserve manager edits, obtain review
-and handle a Special Block spanning independently managed months is not yet
-determined. No silent target rewrite is authorized.
+**Structurally valid but incomplete allocation:** weighted targets cannot all be
+attained, some engineers/dates unavailable, shared capacity insufficient,
+consecutive restrictions or weekend caps prevent full coverage. Keep Generate
+available; show the known limitation and produce valid partial output.
 
-## 5. Fairness baseline and seniority
+Target 3 / Locked 1 leaves 2 to generate. Target 3 / Locked 3 permits no more.
+Target 3 / Locked 4 is invalid. Target 3 with only a 4-point candidate is valid
+input for partial generation: that engineer receives no oversized duty and
+retains the unmet 3.
 
-Display eligible active engineers from most senior at the top to newest at the
-bottom. The existing saved seniority order is the source; a manager who is an
-eligible active engineer can also receive duties.
+### 4.2 Changes invalidate derived results
 
-The default allocation must slightly favor newer engineers, consistent with the
-existing intent. Its exact integer/half-point targets must account for:
+Targets and validation are versioned against the actual duties, weights, locks,
+constraints, neighboring context, membership, allocation/compensation snapshot
+and solver settings. Any relevant change invalidates a stale preview/result.
 
-- The selected owner's total primary-duty points.
-- The number of active eligible engineers.
-- Seniority.
-- Outstanding temporary fairness compensation.
-- Feasibility under actual duties, constraints and locks.
+A special/structure edit changing `P` does not silently rewrite confirmed targets.
+Mark allocation review required, preserve manager edits for display, recalculate
+the total, and reopen the existing allocation popup. Offer a fresh proposal as
+an explicit manager action. Generate remains disabled only while the totals or
+other structural invariants are invalid.
 
-Do not adopt the current heuristic's 1.00–1.22 weights as a newly approved exact
-allocation formula. The rounding/remainder policy, relationship between seniority
-and carried compensation, and method for accommodating feasible allocations
-require review. The manager must see any allocation that needs changing; the
-date solver cannot make its own target adjustments.
+A cross-owner Special Block is expanded into owner-scoped changes. Preview all
+affected months inline; use their existing authorized draft transitions and
+one atomic revision-checked operation for the explicitly reviewed scope.
+A published neighbor is not silently reopened. Until the manager explicitly
+opens/reviews each affected owner, reject that portion rather than mutate history.
+Generating one month still writes only that owner. An edit touching a lock
+requires explicit review of the changed locked duty/points, never automatic
+unlocking; preserve secondary coverage.
 
-For subsequent sections, `F[e]` means the default allocation offered for manager
-review after considering the baseline and carried compensation. `F[e]` does not
-define how that calculation works. Keep the ordinary fair baseline concept
-distinct from compensation already applied to this month's proposed allocation.
+## 5. Ordinary fairness and compensation-aware proposals
 
-## 6. Temporary and permanent adjustments
+### 5.1 Ordinary baseline
 
-Let `temp[e]` and `perm[e]` denote this month's signed changes to the offered
-allocation:
+Calculate a baseline `B[e]` in half-point units, summing to `P`, before adding
+compensation. Eligible active approved engineers participate, including an
+eligible manager. Seniority order is the saved team order.
 
-`T[e] = F[e] + temp[e] + perm[e]`
+Use approximately equal workload. The engineering formulation is to minimize
+`sum((n × B[e] − P)^2)`, where `n` is the number of participating engineers.
+This compares rational averages exactly through integer expressions. A linear
+one-hot representation of attainable per-engineer point totals can express the
+same discrete cost; quadratic-solver support is unnecessary.
 
-This identity defines the final target, not a fairness-ledger recurrence.
-Redistribution must preserve the exact monthly total and retain which changes
-were temporary and which were permanent, including both sides of a transfer.
+Retain equivalent minimum-cost baseline vectors until compensation feasibility
+has been evaluated; a seniority tie must not prematurely prevent repayment.
+Among otherwise equivalent compensation outcomes, prefer giving the indivisible
+remainder to newer engineers, proceeding newest to senior with stable identity
+as the final tie. Seniority never multiplies workload and cannot override
+compensation or feasibility. With no compensation and 8 ordinary points for
+three otherwise equivalent engineers, senior-first 2, 3, 3 is preferred to 3, 3, 2.
 
-| Adjustment | Manager control | Future compensation |
+Use canonical weights to select ordinary target combinations; a three-point
+block is not three interchangeable one-point slots. This baseline expresses
+ordinary responsibility, before personal temporary availability relief,
+compensation and deliberate manager changes. Assess the **offered allocation**
+against actual availability, identities, adjacency, weekend capacity and locks
+using the global model.
+
+When availability requires default relief, represent it as explicit pending
+temporary counterpart transfers from B, shown inline for manager confirmation;
+do not redefine that engineer's ordinary share as zero and lose the future
+compensation. Ordinary remainder choices still create no debt.
+Locks are final-target floors; do not redefine ordinary fair work as already
+locked workload and erase the ability to credit a locked repayment. If locks
+exceed the offered normal/compensation target, preserve them and require the
+manager to classify/approve the target increase.
+
+If no full schedule exists even with freely chosen targets, retain a balanced,
+nominal baseline and structurally valid offered totals summing to `P`; use known
+attainable totals where possible and explicitly flag unavoidable shortfalls.
+Do not derive the target total from only the coverable part of the month.
+A timeout leaves the proposal unproved, rather than establishing impossibility.
+
+Ordinary baseline differences and random date choices do not themselves create
+obligations. Only explicitly recorded/confirmed temporary transfers, authoritative
+published workload transfers and manual ledger operations do. The baseline is
+stored with the allocation so it is not recomputed later to manufacture history.
+
+### 5.2 Compensation has priority
+
+Read actual obligations, simulate published work through the selected month's
+operational opening, normalize the resulting graph and propose repayment of the
+oldest feasible units. There is no fixed monthly repayment cap.
+
+For an ordinary normalized obligation `debtor D -> creditor C`, proposed
+repayment `s` increases D's target by `s` and decreases C's by `s`.
+The transfer preserves the monthly total. Targets cannot fall below locked
+points or zero. Repayment must be achievable using actual duty-weight
+combinations; a fraction of a block cannot be assigned independently.
+
+After choosing among equivalent ordinary-fair baseline vectors for maximal
+oldest-feasible repayment, hold the selected baseline fixed. Do not choose a
+less-fair inflated creditor baseline merely to subtract it again and claim
+more repayment. Compensation
+feasibility is assessed globally before ordinary balance and seniority tie-breaks.
+If a full schedule is achievable, a default compensation proposal must preserve
+that ability. If full coverage is inherently impossible, use the attainable
+coverage model and clearly identify unproved/unfunded proposed work.
+
+Maximize feasible repayment of the oldest obligation's units, then the next,
+with partial amounts permitted. An older infeasible obligation remains open;
+another feasible obligation can progress. Feasibility is not inferred solely
+from the debtor's available-date count.
+
+Both debtor capacity and creditor relief matter. A creditor with a 2-point
+baseline and no reducible additional allocation cannot receive 4 points of
+relief without a negative target. This is a real allocation restriction, not
+an arbitrary repayment cap.
+
+### 5.3 Final authority
+
+Let `F[e]` be the baseline plus planned compensation, before current
+temporary/permanent transfers. Availability-driven relief belongs to
+`temporary[e]`; the popup shows the final value after all components:
+
+`Target[e] = F[e] + temporary[e] + permanent[e]`
+
+This is a UI allocation identity, **not** a formula that independently creates
+ledger entries. Store linked counterpart transfers and purpose, not just scalar
+monthly differences.
+
+The manager may defer repayment by lowering a Target temporarily. Recompute
+the proposed repayment plan against the resulting targets; keep unperformed
+obligations outstanding. Generate receives the confirmed table and never
+repays extra points by exceeding a lowered target.
+
+Use consistent direction: an engineer who **owes** 3 points may be offered
+normal 2 + repayment 3 = 5. An engineer who **is owed** points receives less work
+when a debtor repays. The earlier Daniel example's word “owed” is interpreted
+as “owes” to preserve the explicit pairwise model.
+
+## 6. Temporary and permanent allocation adjustments
+
+The manager sees one final Target, a signed Permanent adjustment, Locked and
+Generate. Keep internal provenance without exposing several fairness counters.
+Temporary Target edits and Permanent edits can coexist.
+
+| Kind | Meaning | Ledger effect |
 |---|---|---|
-| Temporary | Main Target column. Used for vacation, limited availability or other temporary scheduling difficulties. | Record both reduced workload and the extra workload carried by others. Attempt compensation in following months. |
-| Permanent | Permanent column, using a neutral name. Used for volunteering, deliberate extra/reduced workload, a disciplinary decision or another intentional manager decision. | Never creates debt or credit for either side of that deliberate redistribution. |
+| Temporary | Vacation, unusually limited availability, requested relief or spreading work over future months. | A new ordinary burden carried for someone creates a linked obligation on publication. Deferring an existing repayment leaves that obligation outstanding; it is not a second copy of the debt. |
+| Permanent | Volunteering, a disciplinary allocation or another intentional non-compensated workload transfer. | Both sides are exempt from new compensation. It does not forgive an existing obligation or settle one without completed repayment/manual settlement. |
 
-The Target column shows one clear **final target**, including permanent changes.
-Editing Permanent changes that final target; its value must not be added a second
-time when interpreting the table. Internal accounting may retain components,
-without exposing several competing fairness counters.
+### 6.1 Redistribution mechanics
 
-### 6.1 Temporary redistribution
+Use deterministic half-point transfer units internally, even when a button edit
+requests one full point. Try the whole requested amount first; if that cannot
+be placed, distribute 0.5-point units in preference order, checking the resulting
+global model. The requested total change and every counterpart are shown inline.
 
-When reducing an engineer's temporary target, redistribute the released points
-to the next eligible engineer in seniority order. If that engineer cannot accept
-the points, continue through eligible engineers. If no valid redistribution
-exists, explain the conflict and prevent Generate until resolved.
+- Temporary decrease: scan forward from the engineer in seniority order, wrap
+  once after the newest, exclude the source, and skip ineligible recipients.
+  Continue until the requested amount is placed or the candidate set is exhausted.
+- Temporary increase needing a donor: select an eligible highest-current-target
+  donor, most senior first on a tie; repeat as needed.
+- Permanent increase: use the agreed highest-current-target donor preference,
+  most senior among eligible ties. Re-evaluate ranking after each transfer.
+- Permanent decrease: distribute to eligible lowest-current-target recipients,
+  newest first on a tie, preserving approximate balance.
 
-Eligibility means more than an available-date count. Consider locked points,
-exact attainable weighted totals, shared capacity, consecutiveness, boundary
-assignments and weekend limits. A change that passes individual checks but makes
-the whole schedule impossible is not a valid redistribution.
+For the permanent operations, every counterpart transfer is also permanent.
+Never reduce a target below its locked points. Never mix the classifications
+of the two sides of one transfer.
 
-The requirements do not specify whether traversal wraps after the newest member,
-how transfers are split among recipients, how reverse/increasing Target edits
-choose donors, or how a 1-point UI edit is handled when only half-point transfers
-are globally feasible. These mechanics require review. A timeout must not be
-reported as proof that a proposed recipient cannot accept points.
+An automatically selected recipient must be able to accept the increment under
+global duties/weights/availability constraints. Prefer a full-feasible
+redistribution when one exists; when the month is already inherently partial,
+require evidence that the recipient can actually carry the proposed increment
+without degrading the already attainable higher coverage priorities.
+UNKNOWN is not proof of a recipient's infeasibility.
 
-### 6.2 Permanent redistribution
+### 6.2 No hidden edit rejection or silent limit increase
 
-When the manager increases one engineer's Permanent allocation, automatically
-subtract the corresponding points from another eligible engineer. Apply the
-agreed preference: **choose the most senior eligible engineer among those with
-the highest current allocation**.
+If automatic redistribution cannot finish, retain the manager's requested limit
+as a pending table edit and show the unbalanced monthly total inline. The manager
+can place the remaining nominal points explicitly with other Target controls,
+even where that final allocation knowingly requires partial output.
+Unallocated units retain their source and temporary/permanent classification.
+Subsequent edits consume that pending transfer before initiating another donor
+search. Generate is disabled until the table is structurally balanced.
 
-Do not subtract from an engineer if the resulting target or their locked duties
-make the change impossible. Validate the resulting allocation globally and
-preserve its total. If no eligible redistribution is possible, explain the
-problem instead of accepting an invalid change.
+This separates two facts: automatic redistribution must not pretend an
+unavailable recipient can carry work, while a manager may confirm a balanced,
+infeasible table and obtain a partial schedule. No automatic fallback can raise
+the original engineer's reduced target.
 
-Both the increase and the offsetting decrease are permanent. Neither creates
-future fairness compensation. Behavior for a Permanent decrease, a transfer that
-needs several donors, and the exact interpretation of allocation during donor
-ranking are not fully specified; do not invent complementary rules.
+### 6.3 Compensation deferral is not a new copy of an old debt
 
-### 6.3 Both types in the same month
+Compile the final targets into a repayment/transfer plan after all edits.
+Allocate the available repayment budget oldest first; defer the rest.
+Track ordinary temporary burden separately from units that merely replace a
+deferred repayment. Preserve the approved counterpart trail through the debt
+network rather than posting every button press as an independent new debt.
 
-For an illustrative offered allocation of 2 points:
+For example, after a debtor's target is reduced by 1, another engineer might
+carry that point while the original creditor keeps the planned relief.
+That re-routes the remaining obligation through the recorded counterpart chain;
+it must not leave the original full shortfall **and** create another full debt
+for the same missing repayment unit. See the numerical example in section 16.
 
-`2 offered + 1 temporary + 1 permanent = 4 final points`
+Permanent adjustments create no new claim, including when they reduce capacity
+previously proposed for repayment. Re-plan/defer that repayment; do not treat
+the permanent edit itself as a settlement or debt forgiveness.
+No duty-point unit may be earmarked twice to fund these purposes.
 
-The manager sees final Target 4. The system retains the two distinct causes.
-Counterpart transfers elsewhere must keep the month's sum unchanged. Only the
-temporary differences participate in future compensation.
+## 7. Linked compensation ledger
 
-## 7. Compensation across months
+### 7.1 Direction and conserved net positions
 
-### 7.1 Required behavior
+`D -> C : q` means **D owes C q units**: D should carry future extra workload
+that would otherwise fall to C, subject to confirmed targets and hard constraints.
+It is a workload claim, not money, availability permission or an assignment lock.
 
-Temporary differences create persistent fairness balances. Try to compensate in
-the following month. If vacation, constraints, point combinations or other hard
-rules prevent settlement, carry the unfulfilled balance forward until it can be
-compensated. Balances do not expire after one month.
+For engineer `e`:
 
-Account for engineers who temporarily receive fewer points and engineers who
-temporarily carry additional workload. Never use unavailable, consecutive or
-otherwise invalid automatic assignments to settle a balance. Permanent manager
-decisions do not create compensation.
+`net[e] = incoming outstanding units − outgoing outstanding units`
 
-Historical information may inform the current allocation. It must not cause
-generation to modify a previous or next month's assignments or rewrite a
-previously published schedule.
+Positive means owed workload relief; negative means owing future workload.
+Display points: `+2` means owed 2; `−1` means owes 1.
+Across the entire ledger, including inactive engineers, `sum(net[e]) = 0`.
+Do not normalize each engineer independently and lose counterpart links.
 
-### 7.2 Conceptual accounting model
+Every active obligation has distinct valid debtor/creditor identities,
+nonnegative integer units, origin, creation/effective timestamps, original
+amount, subsequent adjustments, source/reason and settlement provenance.
+Zero outstanding amount means closed/netted/settled, not erased history.
 
-The future model must distinguish the following concepts, even if the UI exposes
-only a final Target and concise explanations:
+### 7.2 Minimal persistence and event contract
 
-| Concept | Required role |
+Recommend **one append-only compensation event table**, plus versioned allocation/
+repayment metadata on existing month/publication records and lock fields on
+existing duty rows. Avoid separate tables for each obligation, projection,
+balance, daily job and settlement counter. This is a migration design
+recommendation, not DDL or an implemented schema.
+
+An event contains a stable ID, a unique source/idempotency key, transaction/order
+sequence, recorded and effective time, actor/source, mandatory reason where
+manual, and validated integer-unit lines referencing engineer IDs and original
+lots. Event kinds cover obligation creation, manual increase/reduction,
+actual settlement, and explicit correction/reversal.
+Participation freeze/unfreeze markers can use the same event stream; no
+separate membership-history service is needed. Source creation times come
+from checked authoritative operations, not arbitrary client backdating.
+
+Replay committed events by immutable transaction/line sequence. Effective duty
+times determine earning eligibility and source age, not permission to reorder
+already committed netting/freezes. A late historical correction appends a
+referenced adjustment at the current sequence, preserving the original source
+age where appropriate; it does not insert a new event into old business order.
+
+Use a typed, validated payload for multi-line provenance when necessary.
+Database constraints/checked operations validate referenced members and totals;
+an unvalidated client JSON blob is not an accounting authority. Foreign keys
+must not cascade away compensation when a publication/version is deleted.
+Keep a stable source operation/slot snapshot independent of physical version
+row IDs, which change when publications are copied.
+
+Replay produces raw outstanding source lots, normalized obligations, net
+indicators and auditable settlement history. Materialized balances are not
+needed initially. An optional later cache must be a disposable projection,
+never a second authoritative ledger.
+
+Publication and automatic obligation creation commit in the same existing
+revision-locked transaction. Retrying one source operation cannot append its
+amount twice. Corrections append compensating events referencing the original;
+they do not overwrite/delete original events or rewrite later schedules.
+
+### 7.3 Origins: published commitments and explicit manual operations
+
+| Source | Effect |
 |---|---|
-| Ordinary baseline | What fair workload would mean for that month before intentional permanent changes and temporary departures. Its exact calculation is pending. |
-| Opening temporary balance | Compensation still outstanding from earlier months. |
-| Compensation applied to the offered allocation | The part of the current proposal intended to settle that opening balance, when feasible. |
-| Permanent adjustments | Deliberate workload changes, including offsetting transfers, excluded from compensation. |
-| Temporary adjustments | Temporary departures and the workload redistributed to others. |
-| Actual published primary points | Workload from the authoritative current publication for the owner month, including approved swaps. |
-| Remaining temporary balance | Unsettled compensation that must continue into later months. |
+| Ordinary published replacement: Daniel's 2-point duty goes to Noam | Daniel owes Noam 2. Retain old/new duty facts and source publication transition. |
+| Published weighted swap: Daniel 1, Noam 3 become Daniel 3, Noam 1 | Noam owes Daniel 2. Record the net transfer once, not both a 3-point and 1-point independent charge plus another reconciliation. |
+| Equal-weight published swap | No new obligation. |
+| Confirmed ordinary temporary transfer | Pending intent while draft; on first authoritative publication, create the linked claim for the accepted transferred workload. |
+| Permanent transfer | No claim for either side; preserve its explicit exemption with that publication. |
+| Normal initial allocation or a different random arrangement | No claim merely for ordinary point differences, dates or seniority remainder. |
+| Manual compensation operation | Explicit audited event with selected counterpart and reason. |
+| Draft replacement, swap, regeneration, reopen or cancelled draft | No obligation and no actual settlement. |
 
-For an authoritative publication `V(M)`, the actual workload is determined:
+Compare one authoritative publication transition with its predecessor by stable
+owner/slot identity, dates and weights. Do not sum versions or regenerate a
+monthly “fairness delta” as a second source of debt. First publication applies
+its explicit temporary intents once; it does not infer obligations from every
+difference from an ideal average.
 
-`A[e,M] = sum(p[d] for d owned by M in V(M) where primary(d) = e)`
+Reopening a published month preserves its committed transfer history. Repeated
+publishing carries unchanged intents/slot lineage forward instead of creating
+them again. Changed ordinary responsibilities produce only their new delta.
+Weight-only changes or additional required work have no invented debtor;
+review allocation/intent explicitly rather than fabricating a zero-sum transfer.
 
-Exclude emergency coverage, non-current historical versions, unpublished drafts,
-and duplicated carried weekend rows. Use the application's current authoritative
-publication, not merely the numerically largest version or the original
-pre-publication plan.
+Permanent exemptions belong to their original approved transfer; they do not
+make a duty immune from future ordinary compensation if its primary changes.
 
-An approved swap can exchange differently weighted duties. The destination duty
-keeps its own points; actual workload changes accordingly. Reconcile fairness
-using those actual published points. Reopening or editing an unpublished draft
-does not make that draft the authoritative fairness history.
+For comparison only, expand a combined weekend into two owned date atoms of
+0.5 base points each; keep real duty blocks indivisible for assignment and
+completion. This makes combined-to-split transitions conserve the same point
+capacity. If only Saturday moves from A to B, its ordinary transfer is A -> B
+0.5, not another full weekend point. With simultaneous weight changes, only
+shared old/new committed capacity transfers automatically; newly added/removed
+units require reviewed allocation intent, not an invented debtor. Actual
+repayment timing always follows the final real duty block's end.
 
-The requirements do **not** uniquely determine a formula for closing balances.
-In particular, they do not determine how to combine an ordinary baseline,
-repayment already applied, current temporary changes, permanent changes and
-post-publication swaps without double-counting compensation. No ledger recurrence,
-sign convention, rounding rule or repayment priority is approved by this document.
+**Repayment-bearing published replacement:** section 18.8 records the narrow
+remaining question about a replacement of work already earmarked to settle an
+old obligation. Preserve all relevant lineage and do not silently select a
+double-charge policy. Ordinary replacement examples above have no such earmark.
 
-Permanent intent must remain distinguishable when actual published workload
-changes. Whether permanent intent follows an engineer, a duty or another reviewed
-accounting reference after a swap is not yet determined. Also unresolved are
-opening balances for membership changes and how later publication replacement or
-deletion propagates through balances already used for subsequent allocations.
-These choices must preserve the requirements above and must not rewrite schedules.
+### 7.4 Deterministic network normalization
 
-The future persistence design must retain enough information to explain and
-reconcile the chosen accounting model against authoritative publications.
-Re-reading the same publication or applying its update more than once must not
-invent additional debt or credit. No schema is selected here.
+Normalize outstanding **active-participant** claim segments as a pure derived
+view during committed-transaction event replay. Retain edges frozen at membership
+transitions separately. Original source lots remain audit provenance; do not
+reconstruct a different freeze from only today's membership and all raw history.
+Use integer amounts; never rely on database row order.
 
-## 8. Pre-generation allocation popup and UX
+1. Sort source lots by original effective creation time, immutable source
+   sequence and lot ID. Stable engineer IDs break otherwise identical choices.
+2. Cancel opposing directed amounts using the minimum available units.
+3. Find directed cycles deterministically using sorted vertices/edges; subtract
+   the minimum amount on the selected cycle. Repeat until acyclic.
+4. In a stable topological order, bypass a vertex that has both incoming and
+   outgoing flow: `X -> Y : a`, `Y -> Z : b` become
+   `X -> Z : min(a,b)`, with residual legs preserved. Match source segments
+   FIFO. Continue until no active vertex is both an intermediary debtor and
+   creditor.
+5. Coalesce equal endpoint pairs for display, keeping their separately aged
+   provenance segments for repayment.
 
-A **single allocation popup/modal is required before dates are generated**.
-Keep essential allocation information, warnings, validation status and conflict
-details inside that popup or its existing inline area.
+Each cancellation/bypass records its contributing source segments in the
+derived explanation. Bypass amounts inherit the oldest contributing source
+priority; residual portions retain their original ages. A path's later legs
+remain in the audit trail. Never reset an old claim's age by normalizing,
+reactivating, republishing or re-projecting it. An increased amount is a new
+dated segment, not newly added work falsely backdated to an old lot.
 
-### 8.1 Main table
+Cycles are eliminated before bypassing, so shortening follows an acyclic graph
+and terminates. Normalizing an already normalized view returns the same view.
+The chosen stable algorithm need not minimize the number of transfers globally;
+it must preserve every engineer's net position, avoid self-debts and produce
+identical amounts/provenance from identical inputs.
 
-| Column | Required presentation |
+Required examples, in points:
+
+- X -> Y 2 and Y -> X 1: X -> Y 1.
+- X -> Y 1 and Y -> Z 1: X -> Z 1.
+- X -> Y 2 and Y -> Z 1: X -> Y 1 plus X -> Z 1.
+- X -> Y 1, Y -> Z 1, Z -> X 1: zero active obligation.
+
+Netting is not an invented completed duty. Show it as netted/cancelled by
+normalization while preserving the underlying events. Display and future
+allocation use normalized claims, not gross unnetted totals.
+
+### 7.5 Repayment, age and point capacity
+
+Repay the oldest feasible normalized segments first, allowing 0.5-point partial
+amounts. No arbitrary monthly limit or expiry applies. Feasibility is constrained
+by both parties, the fixed baseline/locks, available weighted combinations and
+the complete global assignment model.
+
+A repayment of `q` changes the debtor's net position by `+q` and the creditor's
+by `−q`. A normalized transitive repayment references and reduces the same
+quantity on every contributing raw path leg. This reduces each endpoint's claim
+once and leaves intermediaries' net positions unchanged; it is not several
+independent repayments of the same work.
+
+A normalized segment retains origin priority through partial settlement. A
+blocked oldest segment can be skipped for this proposal without losing its
+priority next time. Stable source order resolves equal-age feasibility ties.
+
+Attach a published repayment plan to specific debtor duty-point units.
+For each primary duty, the sum of repayment/transfer attribution cannot exceed
+its weight; a unit cannot settle two claims or create a duplicate claim.
+An accounting slice may be 0.5 of a larger duty; the primary assignment remains
+indivisible. Allocate reserved units to chronological duties, then source age
+and stable IDs, and retain that attribution through unchanged publication copies.
+
+An obligation of 0.5 cannot be rounded to 1. If only whole-point target
+combinations exist, defer it unless another explicitly reviewed adjustment
+makes the half-point repayment realizable without overpayment.
+
+### 7.6 Actual and projected settlement
+
+An obligation created by an authoritative published workload transfer is a
+confirmed claim immediately; its source duty may still be future. “Actual
+balance” means confirmed claims less earned/manual settlements, not a claim
+that all future source duties have already been performed. Projection adds
+assumed future repayment effects without marking them actual.
+
+An automatic repayment becomes actual only when its attributed primary duty
+has ended: `duty.endInstant <= authoritative now`. Normally this is 09:00
+on the exclusive end date. Publishing reserves a repayment; it does not settle
+it. A two-day combined weekend never settles halfway through on Saturday.
+
+An explicit manual settlement/correction is a separately authorized exception,
+with reason and event history; it does not pretend a duty was completed.
+
+For early generation of month M:
+
+1. Reconcile completed authoritative duty facts through server time.
+2. Copy the actual ledger state into a projection.
+3. Apply valid, already published and not-yet-completed repayment plans whose
+   duties end by M's operational opening. Assume those commitments finish normally.
+4. Normalize and propose M's allocation from that projected state.
+
+Never project settlements from an unpublished draft, obsolete historical version
+or duty ending after the cutoff. Store actual state, projection cutoff and
+source fingerprints separately. Projection is not an append of settlement events.
+Users indicators show actual balance; a next-month estimate is explicitly labeled
+when displayed. The allocation popup can concisely explain that known published
+work before the month is included.
+
+### 7.7 Lazy, idempotent reconciliation and later changes
+
+Reconcile on Generate, Users access and relevant checked publication/manual
+operations. No daily background job is needed.
+
+Under the existing workspace lock, use one server time and canonical current
+publication facts; replay committed events in transaction/line order. Process
+newly due plan contributions in actual end-time and stable source order before
+the next discretionary mutation. Append each missing settlement once using
+a unique contribution/source key. Concurrent tabs or repeated reads must not
+settle it twice. A read without authorized mutation access may obtain a derived
+view; it cannot grant itself ledger write permissions.
+
+If an uncompleted published duty changes, cancel/rebind its projected repayment
+attribution according to the authoritative transition. Projection is recomputed,
+not “undone” by adding compensating actual debt for a settlement that never
+happened. The Q1 replacement classification is isolated in section 18.8.
+
+A lazy update affects the next allocation proposal, not an already confirmed
+target table or published future month. If October changes after November was
+published, November stays intact. Correct the underlying facts/projection and
+consider the revised obligation at the next Generate.
+
+Completed facts and ledger origins must survive ordinary publication copying,
+history-preview access and version deletion. If an exceptional authorized
+historical correction changes a previously recorded fact, append a reasoned
+correction/reversal with stable lineage, replay affected settlement dependencies
+and append the required differences exactly once. Preserve previous events
+and all later published schedules. Do not infer that deletion alone forgives
+earned obligations or build a general retroactive rota editor.
+
+### 7.8 Inactive and new engineers
+
+Do not delete or reassign inactive engineers' claims. At deactivation, freeze
+currently outstanding normalized segments whose debtor/creditor is that person:
+no automatic repayment and no new transitive routing through that endpoint.
+New source claims involving an already inactive endpoint enter the frozen pool.
+This specific freeze rule takes precedence over general active simplification.
+Keep frozen edges in counterpart details and global net positions.
+
+Do not undo valid earlier netting merely because an inactive person occurs in
+its historical provenance. If X -> Y -> Z already became X -> Z while all were
+active, Y's later deactivation does not freeze X -> Z: Y is no longer a required
+participant. Replay the source/normalization/freeze sequence deterministically,
+retaining its proof, rather than rebuilding from current raw endpoint flags.
+
+An inactive intermediary may display net 0 while retaining two frozen
+relationships; show that fact in its details. Unrelated active obligations
+continue. Reactivation restores participation and original ages/history.
+New engineers start with no invented historical claims. Exceptional admin
+resolution requires a reasoned manual event; no replacement debtor is invented.
+
+Reconcile earned work under the same lock **before** deactivation freezes
+participation. Never undo an already earned settlement merely because someone
+is now inactive. A pending repayment requiring inactive participation is held
+out of automatic projection/settlement; completions during that freeze need
+explicit reviewed resolution, rather than automatic retrospective payment on
+reactivation. Record freeze intervals so lazy access time cannot change this
+outcome.
+
+### 7.9 Users tab and manual operations
+
+Show a simple signed compensation indicator per engineer in the existing Users/
+Team view, plus compact expandable counterpart details. Positive means owed
+relief; negative means owes. This is not a financial management screen.
+
+Use + / − controls with a selected other engineer. Explain direction inline:
+increasing A's positive indicator creates/increases **B owes A**; decreasing it
+reduces that selected claim or explicitly creates the reverse relationship.
+Do not silently cross through zero and invent a reverse obligation. Show the
+proposed direction/amount before applying the existing inline operation.
+
+Reuse exact 1-point/default and 0.5-point step controls. Approved active members
+may inspect team net indicators and linked counterpart amounts. Restrict the
+full discretionary correction/reason audit to managers; availability notes never
+enter compensation payloads. Manual mutation requires checked manager authority.
+
+Support creation, increase, decrease, full/partial settlement and correction.
+Require a reason for manual corrections or settlements; use a required concise
+reason field for other manual ledger events as well to keep the audit coherent.
+Preserve original events. All manual obligations normalize, freeze, project and
+repay exactly like automatic ones.
+
+### 7.10 Accounting invariants
+
+- Every obligation/adjustment has two valid distinct endpoints and exact units.
+- `sum(net[e]) = 0`, including inactive endpoints.
+- Normalization preserves each net position and original event history.
+- No negative outstanding lot, over-settlement or duplicated source is allowed.
+- Draft-only changes create neither obligations nor completed repayments.
+- Future published repayments affect projections, not actual settlements.
+- Permanent intent produces no new compensating debt/credit.
+- A published transfer is accounted once: explicit event/intent **or** its
+  recognized delta, never an additional monthly score reconciliation.
+- Actual settlement consumes real completed, attributed capacity at most once.
+- A plan, projection, publication copy or source-row ID change is not new work.
+- A stale client cannot overwrite new ledger state, targets or schedule facts.
+- No correction automatically rewrites another month's published assignments.
+
+## 8. Allocation popup and manager experience
+
+Use one compact, mobile-first popup before solving. Sort engineers most senior
+first. Preserve English LTR, Hebrew RTL, keyboard access, labels and modal focus
+behavior.
+
+| Column | Meaning |
 |---|---|
-| Engineer | Name, most senior first and newest last. |
-| Target | Main editable control, representing the clearly identified final point target, including temporary and permanent effects. |
-| Permanent | Intentional signed adjustment; concise indication that it never creates future compensation. |
-| Locked | Current locked primary-duty points owned by the selected month. |
-| Generate | Exact remaining primary points: Final Target minus Locked. |
+| Engineer | Name in saved seniority order. |
+| Target | Editable final monthly primary points, including all adjustments. |
+| Permanent | Signed intentional non-compensated change; already included in Target. |
+| Locked | Full points of fixed primary assignments owned by this month. |
+| Generate | Target minus Locked; remaining requested points, not a promise they are attainable. |
 
-The final target must be visually unambiguous. Show a clear monthly total and its
-required total so the manager can see whether the allocation balances.
-Do not make the manager infer the final result from several counters.
+Use + / − buttons, defaulting to 1 point every time the popup opens, with a
+small 0.5-point step toggle. Show configured total versus required month total.
+Keep temporary/permanent and counterpart effects concise and inline.
+Do not add another popup just to explain adjustments, validation or conflicts.
 
-Example: Target 3, Locked 1, Generate 2. If Target and Locked are both 3,
-Generate is 0 for that engineer. If Locked is 4 and Target is 3, the allocation
-is invalid; never display or accept a valid negative remaining workload.
+After generation show actual assigned points and unmet points alongside the
+retained targets, with uncovered dates listed inline. Never replace Target with
+the achieved amount or hide unfulfilled work.
 
-### 8.2 Editing
+### 8.1 Validation and actions
 
-- Use simple + and − controls.
-- Default to **1 point per adjustment** whenever the popup opens.
-- Offer a small toggle for **0.5-point adjustments**.
-- Make temporary versus permanent effects clear through concise inline text.
-- Explain automatic counterpart redistribution inline.
-- Keep the popup compact, scrollable as needed, intuitive and usable on mobile.
-- Preserve English LTR, Hebrew RTL, accessible control names, keyboard operation
-  and appropriate modal focus behavior.
+- Structural invalidity disables Generate with a specific repair message.
+- Complete-feasibility checks can run in the background while editing.
+- Known complete infeasibility displays “A partial schedule can be generated”
+  and enables the main action as **Generate partial**.
+- Pending/UNKNOWN validation does not disable the action solely for lack of a
+  proof. The main action starts/continues the global optimization for those inputs.
+- During an active generation/save, prevent duplicate submissions; offer Cancel
+  while solving. Editing inputs cancels/invalidates the old request.
+- Timeout with a verified incumbent can produce a draft labeled with its actual
+  coverage and “Best found; search limit reached.” Never claim proven optimality.
+- No verified result, a runtime failure, cancellation or a stale source leaves
+  the accepted draft unchanged and provides a clear retry message.
 
-Do not introduce adjustment-explanation popups or a second conflict-details
-dialog. Do not require the manager to understand optimization mathematics.
-Avoid clutter from multiple fairness counters.
+Partial output is prominently **Partial / Requires Manager Resolution**.
+A complete result can say “All duties covered”; “Optimal” is only appropriate
+for objective stages with proof. Low-level bounds and solver terms belong in
+diagnostics, not primary manager copy.
 
-### 8.3 Validation presentation
+The manager can change temporary/permanent targets, explicitly select/lock a
+duty including a permitted override, unlock/change a lock, and Generate again.
+An uncovered duty is a visible action item, not a silent availability exception.
 
-Show obvious errors immediately and global validation state clearly. Disable
-Generate for structural invalidity or confirmed infeasibility. The manager can
-resolve conflicts by editing targets or explicitly changing/locking assignments.
-Do not silently turn a positive target into zero because availability is limited.
+Q2 in section 18.8 gates fresh generation when the selected owner's coverage
+has already started. Do not silently make completed published work an unlocked
+decision variable or disguise immutable history as a manual lock.
 
-Pending, cancelled and unknown validation must not be described as mathematical
-failure. Present them inline and keep the interface responsive. Whether Generate
-is disabled while checking, whether it can launch further solving after an
-UNKNOWN result, and the detailed retry/cancel interaction remain decisions for
-review. In every case, successful generation requires a verified complete
-assignment satisfying the confirmed targets.
+## 9. Locks and scoped manager overrides
 
-The governing UX principle is **simple manager experience, sophisticated
-algorithm underneath**. Manager-facing explanations use names, dates, duties,
-points and constraints. Solver terms such as “MILP infeasibility certificate”
-must not be the primary message.
+### 9.1 Persistent primary locks
 
-## 9. Manual locks and explicit overrides
+Lock/Unlock is an explicit manager control. A lock fixes the primary, canonical
+block and full points until explicitly changed. Save/reload, Generate and
+Regenerate preserve it. Its points consume the engineer's target first.
 
-### 9.1 Lock / Unlock
+Ordinary unlocked manual edits and draft swaps do not become locks.
+An intentional assignment on an unavailable covered date must record the
+manager override and **lock that specific assignment**, retaining the engineer's
+unavailability. Solver-created assignments cannot acquire override permission.
 
-Provide manager-controlled Lock / Unlock for primary assignments. A manager may
-select an engineer manually and lock that duty. Once locked:
+Persist locks/exceptions with draft rows and copy them with publication/restore
+metadata. Cancel Draft still discards that draft as an explicitly requested
+lifecycle operation; it does not delete immutable published history or ledger
+events. Regeneration is not Cancel Draft and cannot discard locks.
 
-- Generate and Regenerate preserve the primary engineer and duty.
-- The duty's full primary points count toward that engineer's exact target.
-- Those points reduce what the solver still has to assign.
-- The lock remains until the manager explicitly unlocks or changes it.
-- The assignment is clearly distinguishable from an automatic assignment.
+### 9.2 Explicit exception scope
 
-Lock state and its meaning must survive saving and reloading a draft. Current
-legacy optional fields are not evidence that this feature already exists.
-No lock persistence schema or publication/restore metadata design is selected.
-
-### 9.2 Override boundaries
-
-| Situation | Required treatment |
+| Rule | Allowed manager exception |
 |---|---|
-| Locked duty on an unavailable date | An intentional manager availability override is permitted. Preserve the availability constraint; the engineer need not remove it. |
-| Deliberately locked consecutive duties | May remain under an explicit manager-override model. The solver must not create the violation itself. |
-| Automatic duty consecutive with another automatic duty or a fixed assignment | Forbidden. A nearby lock is not blanket permission to add a new conflicting automatic duty. |
-| Locked duty conflicting with an existing adjacent-month assignment | Do not edit the adjacent month. How the explicit exception is authorized and recognized across the boundary requires review. |
-| Additional weekend on a locked assignment | Only an explicitly agreed manager weekend exception may apply. Do not assume every lock overrides the weekend cap. |
-| Missing/inactive identity, duplicate primary/secondary, invalid coverage or stale revision | Preserve structural, integrity and permission protections. A scheduling override is not a general bypass. |
+| Availability | Only the specifically assigned/locked duty and recorded unavailable dates. |
+| Consecutive duties | Only the explicitly reviewed conflicting fixed pair involving a manager lock. Both duties must remain fixed; no automatic new adjacent assignment is authorized. |
+| Adjacent-month consecutive conflict | The selected-month manager lock may explicitly acknowledge the identified fixed neighboring duty. Do not edit or mark the neighbor overridden. |
+| Additional weekend | Only the reviewed locked weekend assignment(s); no general relaxation of the engineer's cap. |
+| Target ceiling, eligibility, primary/secondary identity, canonical non-overlap, authorization/revision/history | No automatic or generic scheduling override. |
 
-The explicit approval and scope of a consecutive override must be clear. A
-generic existing `manager_override` boolean, currently used for other exceptions,
-does not by itself define the new lock policy.
+For an engineer with approved locks on two distinct weekends, retain those
+specific weekends; do not allow the solver to add a third. Without a locked
+weekend, the normal one-weekend allowance applies. An availability-only lock
+cannot approve a second weekend or a consecutive pair.
 
-### 9.3 Lock validation
+Store rule-specific approval scope and reason through the existing checked
+manager workflow. A legacy generic `manager_override` flag alone cannot express
+all new permissions. Approval is not a new solver variable.
+If a duty/identity/range changes, revalidate the exception's exact scope.
 
-Validate locked points, identity, ownership, duty representation and all remaining
-capacity. A lock can make a different engineer's target impossible by consuming
-their only viable duty. Global validation must account for that consequence.
+### 9.3 Fixed-input checks
 
-Target 3 with Locked 4 disables Generate. Target 3 with Locked 3 forbids assigning
-more primary points to that engineer. Intentional overrides do not exempt locks
-from point accounting. An impossible remainder is still impossible even if the
-locked points do not exceed the target.
+Reject locked points above target, inactive/missing primary identities, invalid
+or overlapping canonical blocks, invalid same-person secondary identity and a
+fixed conflict lacking its required specific approval. Partial generation can
+leave unlocked duties empty; it cannot repair contradictory mandatory locks by
+dropping one.
 
-## 10. Hard scheduling constraints
+A lock may consume another engineer's only feasible opportunity. That is a
+complete-feasibility restriction, not a reason to alter the lock: produce the
+best valid remainder and show its consequence.
 
-For a complete generated schedule, enforce all of the following simultaneously:
+## 10. Hard automatic constraints and neighboring context
 
-| ID | Hard requirement |
+Every generated assignment, complete or partial, satisfies:
+
+| ID | Invariant |
 |---|---|
-| H1 | Every required primary-duty block owned by the selected month is covered exactly once. |
-| H2 | Every engineer receives exactly their final allocated primary-duty points. |
-| H3 | Every automatic assignment respects unavailability on all dates covered by its interval. |
-| H4 | Every locked primary assignment remains fixed. |
-| H5 | The solver creates no consecutive primary duties for an engineer, including conflicts with fixed boundary assignments. |
-| H6 | An engineer covers at most one distinct primary weekend owned by the month, unless an explicitly agreed manager exception applies. |
-| H7 | Combined/split weekend identity, coverage and Friday ownership are preserved without duplication. |
-| H8 | Interval rules use actual duty start/end ranges, including full combined-weekend lengths. |
-| H9 | Assignments owned by neighboring months remain unchanged. |
-| H10 | Assignment identities and active approved team eligibility are valid. |
-| H11 | Authorization, checked writes, revision protection, publication integrity, private-data protections and previously agreed integrity rules are preserved. |
+| H1 | Each canonical owned block is assigned to at most one primary; unassigned blocks are explicit. A complete result covers all. |
+| H2 | Assigned primary points never exceed the confirmed target; complete coverage implies every target is exact. |
+| H3 | Automatic primaries are active approved eligible members and available on all covered duty dates. |
+| H4 | Explicit primary locks and narrowly scoped approved fixed exceptions are preserved. |
+| H5 | No automatic consecutive primary duties, including conflicts with fixed context. |
+| H6 | At most one distinct primary weekend per engineer per owner month, except the explicitly approved locked weekends. |
+| H7 | Canonical combined/split structure, weights, actual intervals and Friday ownership remain unchanged. |
+| H8 | Other months' assignments, locks, drafts, publication pointers and history remain unchanged. |
+| H9 | Primary and secondary identities differ; valid foreign keys and other database integrity rules remain enforced. |
+| H10 | Authorization, revision checks, private notes, consent and publication protections remain enforced. |
 
-Manual exceptions are limited to the contexts described in section 9. They do
-not allow the solver to relax constraints, repair totals by changing targets,
-or remove coverage. A hard rule must not become a soft penalty.
+Hard rules never become weighted penalties. A partial result relaxes coverage
+and target *fulfillment*, not availability, target ceilings or other invariants.
 
-### 10.1 Consecutive duties
+### 10.1 Consecutive blocks
 
-The same engineer must not automatically receive either block in a consecutive
-pair that the solver creates. Forbidden examples include:
+For the same engineer, intervals that meet at a handover are consecutive.
+Forbidden automatic sequences include Monday → Tuesday, Thursday → combined
+Friday–Saturday, combined weekend → Sunday, and adjoining last/first duties
+across an owner-month boundary.
 
-- Monday daily duty followed by Tuesday daily duty.
-- Thursday daily duty followed by a combined Friday–Saturday duty.
-- A combined Friday–Saturday duty followed by Sunday daily duty.
-- Last duty of one month followed immediately by the first duty of the next.
-- Separate split-Friday and split-Saturday blocks for the same engineer.
+A combined weekend is one block; Friday → Saturday inside that block is not
+two assignments. Split Friday and Saturday are separate blocks and cannot both
+be assigned automatically to the same engineer. Special weekend daily blocks
+follow the same rule. Explicit fixed-pair manager approval is the only permitted
+consecutive exception.
 
-A combined Friday–Saturday duty is one block; its internal Friday-to-Saturday
-continuity is not a pair of consecutive assignments. Split halves are separate
-blocks and must obey the same no-consecutive principle unless explicitly
-overridden by manager locks. Special weekend dates remain separate daily blocks.
-Do not silently merge an intentional split or special duty to evade the rule.
+### 10.2 Weekend capacity and small teams
 
-### 10.2 Weekend limit and small teams
+Count distinct Friday weekend identities among primary assignments owned by the
+month. Either half consumes that weekend; emergency assignments consume none.
+The cap is not a count of daily weekend rows.
 
-Count distinct Friday weekend identities in the owner month. Either half consumes
-the engineer's allowance for that weekend; both halves share one identity.
-Emergency coverage consumes none of the regular primary allowance.
+With two engineers and five ordinary combined weekends, at most two distinct
+weekends can be automatically covered; the other three remain open unless
+explicit manager intervention resolves them. Weekday alternation/spacing still
+applies. The solver does not split or waive the cap to achieve full coverage.
 
-The one-weekend limit can prevent a complete schedule for a small team regardless
-of weekday spacing. A two-engineer algorithm should alternate duties as far as
-feasible, but must report impossibility when the weekend cap or another hard rule
-prevents coverage. There is no automatic small-team exemption.
+### 10.3 Fixed neighboring assignments
 
-### 10.3 Neighboring months
+Read the previous owner's assignments and any existing next owner's assignments,
+including actual intervals extending across a calendar boundary.
+Current live publications bind. Relevant existing working assignments also
+bind while that neighboring draft exists.
 
-Inspect existing previous-month assignments and next-month assignments if they
-already exist. Use their actual intervals, owners and scheduling status.
-Relevant published and working assignments are fixed context, not targets that
-the current solver can move.
+Engineering policy: use the union of current published and working primary
+commitments as conservative boundary guards, deduplicated by owner, interval
+and primary identity. Do not let the ordinary manager snapshot projection hide
+the live publication merely because its neighbor has been reopened. Historical
+non-current versions do not bind.
 
-Prevent an automatic assignment next to an engineer's fixed duty immediately
-before or after the selected month's owned coverage. This includes a December
-weekend ending on 2 January: adjacency is tested at its actual end, not at the
-calendar month's midnight boundary.
+For adjacency, protect against each binding interval. For spacing, each
+engineer's nearest preceding and nearest following binding interval are enough;
+retain source labels so a draft-only restriction can be explained. A manager
+may deliberately change/cancel the neighbor's draft through its normal workflow;
+current generation cannot do so.
 
-Current manager snapshot conversion uses working rows for open draft months and
-the current publication for published months; a publication view uses current
-publications. A reopened neighboring month can therefore have both a live
-publication and a different working draft. Which source or combination must
-constrain generation in that case is not fully specified. The redesign must
-define that status policy before implementation, without editing either source
-or treating arbitrary old versions as current assignments.
+This policy can produce a partial schedule when a reopened draft conflicts with
+its live version. Show that source conflict rather than pretend both are one
+new definitive assignment. No neighboring working draft is projected as actual
+compensation repayment; only published commitments are.
 
-### 10.4 Emergency coverage
+### 10.4 Emergency assignments
 
-Preserve all existing emergency/secondary assignments on their duties through
-Generate and Regenerate. Emergency assignments:
+Preserve all emergency/secondary assignments on their duties. They earn zero
+regular points, create no primary compensation, do not enter spacing or
+consecutiveness and consume no primary weekend allowance.
 
-- Earn zero regular primary-duty points.
-- Do not affect targets or temporary compensation.
-- Do not affect spacing or consecutiveness.
-- Do not count against the primary weekend limit.
-- Are not allocated by the main scheduling algorithm.
+Preserving identity integrity is a separate candidate check:
+`automatic primary(d) != existing secondary(d)`.
+This resolves the old specification's apparent contradiction. Exclusion from
+primary workload calculations does not exempt a secondary's identity from the
+database's same-person prohibition.
 
-The existing database requires a duty's primary and secondary to differ, and
-current publication checks also validate secondary membership and availability.
-These integrity/permission protections remain in force. Fully excluding
-emergency duties from generation decisions conflicts with using secondary
-identity to rule out a primary candidate. The approved resolution of that
-conflict is not specified. Do not remove emergency coverage, weaken the identity
-check, or invent a new primary-candidate policy to resolve it silently.
+Existing secondary membership/availability checks at publication remain.
+If preserved emergency coverage prevents publication, show it for separate
+manager resolution; the solver must not remove it or use it as another primary
+workload assignment.
 
-## 11. Spacing optimization
+## 11. Objective hierarchy: complete and partial results
 
-### 11.1 Ordered objectives
+Use one optional-coverage model with a lexicographic objective vector.
+At no stage can a lower-priority objective degrade a proved higher objective.
+No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 
-| Priority | Objective |
-|---:|---|
-| 1 | Establish hard feasibility: complete coverage, exact targets, fixed locks and all hard rules. |
-| 2 | **Maximize the smallest gap between any two primary duties assigned to the same engineer.** |
-| 3 | After maximizing that minimum, optimize overall spacing and distribute duties as evenly as reasonably possible. |
-| 4 | Select a high-quality alternative arrangement where possible. |
+| Priority | Objective | Exact meaning |
+|---:|---|---|
+| 1 | Maximum calendar-day coverage | Maximize the number of owned covered dates. Combined weekends count 2; single daily blocks count 1. |
+| 2 | Special/holiday coverage | At the same date coverage, maximize covered dates explicitly marked special/holiday. |
+| 3 | Minimum missing target points | At the same first two values, minimize total unmet primary points. Never exceed an individual's target. |
+| 4a | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
+| 4b | Overall gap distribution | Improve the remaining smallest gaps in order, preventing a fixed close pair from making all spacing decisions irrelevant. |
+| 5 | Ordinary secondary ties and seed | Prefer available “preferred” dates among equal higher outcomes; then seeded alternatives. |
 
-Do not replace the minimum-gap objective with average spacing or a sum that can
-hide one very close pair. Do not trade exact targets or hard rules for prettier
-spacing or a different arrangement. Point fairness is primarily settled at the
-allocation stage.
+Required special/holiday input comes from configured Special Blocks/explicit
+existing calendar markers. Do not infer importance from extra-point magnitude
+or introduce a paid/new holiday service. All marked dates have equal priority
+at this stage unless a later product decision introduces explicit ranks.
 
-### 11.2 Required spacing context
+Priority 3 equals maximizing covered point weight **only after** priorities 1
+and 2: `sum(missing units) = P − assigned units`.
+Thus a two-date ordinary combined weekend can beat a one-date high-point
+special when both cannot be covered. This is an intended consequence of maximum
+operational coverage, not a bug to “correct” by maximizing points first.
 
-Consider primary-duty intervals within the month, the final previous-month duty,
-existing next-month duties, actual duty lengths and fixed locks. Emergency
-assignments do not enter the objective. Small teams should achieve the maximum
-spacing their feasible allocation permits, including alternating where possible.
+When all dates are covered, priorities 1–3 force exact targets and the hierarchy
+reduces to max-min spacing, overall spacing and high-quality alternatives.
+When the result is partial, target shortfall distribution can be unequal.
+Do not silently add an extra per-engineer deficit-balancing policy ahead of the
+confirmed priorities; always display every person's actual shortfall.
 
-Conceptually, for feasible schedule `S`, engineer `e` and applicable duty pairs
-`Q[e,S]`, the primary objective has the form:
+### 11.1 Spacing metric and pair set
 
-`maximize min(gap(a,b) for e and (a,b) in Q[e,S])`
+Sort each engineer's selected-month primary intervals, including locks.
+Include the nearest binding interval before and after the owned coverage range
+when present. Measure the elapsed minutes from one duty's actual end to the
+next duty's actual start. Touching duties have zero free minutes.
 
-This expresses the agreed max-min priority. It does not select the final gap
-metric or solver encoding. The metric must account for actual intervals rather
-than assume equal-length duties or measure only displayed start dates.
+Score successive pairs with at least one selected-month duty. Ignore a pair
+entirely outside the month. An engineer with fewer than two applicable
+intervals contributes no gap; no gap is created for an unassigned duty.
 
-Not yet determined are the exact numerical time/calendar metric, the
-secondary evenness objective, boundary horizon, and conventions when an engineer
-has fewer than two applicable duties. Locked or neighboring fixed pairs can
-determine the minimum regardless of automatic choices. Do not silently exclude
-such pairs or redefine the primary objective to overcome that effect; the
-precise treatment requires review.
+The primary gap objective is the minimum of these values, not their average.
+Locked fixed-pair exceptions remain in the measured list. A zero gap fixed by
+manager choice cannot be improved, but it must not be erased to claim a higher
+global minimum.
 
-Existing preferred-date input is distinct from unavailability. The current
-engine rewards it softly. These requirements do not assign it a new priority
-relative to max-min spacing, overall evenness or alternative selection.
+For the secondary objective, lexicographically maximize the sorted ascending
+gap vector; this improves the next-worst gap after an unavoidable fixed minimum.
+Compare variable-length vectors padded with positive infinity for missing
+pairs; an empty pair set has a vacuous infinite minimum. Higher coverage and
+point objectives are fixed first, so this convention cannot reward leaving an
+otherwise coverable duty empty.
 
-## 12. Feasibility validation
+Use a chronological successor-arc model or an equivalent verified method for
+successive-pair gaps. Finite precomputed gap thresholds/counts can implement
+leximin through repeated linear solves. Do not use a single average/sum that
+allows one very close pair to hide behind distant duties.
 
-Use two levels of validation in the allocation popup. Per-engineer counts are
-necessary in some cases but never sufficient to prove global feasibility.
+### 11.2 Reproducible alternatives
 
-### 12.1 Immediate checks
+Generate draws a fresh cryptographic seed for each confirmed run. Stable input
+ordering plus the recorded seed, core/model version, solver version/settings
+and source snapshot support reproducibility under an equivalent environment.
+Time-limited searches may also need deterministic work/node budgets for exact
+replay; a wall-clock timeout alone is not reproducible.
 
-Detect cheap contradictions as early as possible:
+At the final equal-quality stage, use seeded tie-break ordering or a seeded
+last-stage objective. A no-good constraint may exclude the previous arrangement
+only after retaining all proved higher objective values; if no equal-quality
+alternative exists, retain a valid arrangement. Previous unlocked assignments
+are not fixed, favored or imported as mandatory constraints.
 
-- Targets do not sum exactly to the month total.
-- A target is invalid, uses an invalid denomination or is negative.
-- Locked points exceed target or remaining workload is negative.
-- A required duty has no eligible automatic candidates and no valid manual lock.
-- A positive target has no feasible remaining opportunities.
-- Required identities or eligibility are missing.
-- Available weighted capacity is clearly below required workload.
-- Available duty weights cannot sum to an exact remainder.
-- Obvious weekend-cap, lock, coverage or boundary contradictions exist.
+Never promise a different answer for a unique result or sacrifice higher
+coverage, special coverage, fulfilled points or spacing merely for variety.
+Randomness does not mutate compensation or targets.
 
-Capacity estimates must reflect duty weights and cannot assume a person can
-accept all individually available dates simultaneously. A successful fast check
-means “no obvious contradiction found,” not “feasible.”
+## 12. Validation, result states and proof
 
-### 12.2 Complete global check
+### 12.1 Fast checks
 
-Use an exact constraint solver to evaluate all engineers and required duties
-together. It must model exact weighted totals, shared availability, consecutive
-restrictions, weekend caps, boundary context, locks, special weights, and combined
-or split weekends. A heuristic failure or an individual capacity estimate does
-not prove mathematical impossibility.
+Check exact totals, valid denominations, nonnegative targets, lock floors,
+canonical ownership/coverage and essential identities immediately.
+These structural failures block a run.
 
-Use the same confirmed inputs and hard rules for validation and generation.
-A solver-produced complete valid assignment is evidence of feasibility. A claim
-of infeasibility requires a conclusive result, not exhausted heuristic attempts.
+Also compute cheap warnings for missing candidates, a fully unavailable engineer,
+insufficient weighted/shared capacity, unreachable target combinations,
+consecutive-only opportunities and weekend shortages. These warn about possible
+or proved **complete** infeasibility; they do not disable partial generation.
+A low availability count is not itself an error.
 
-### 12.3 Result states and interaction
+### 12.2 Global optimization
 
-| State | Meaning | Required handling |
-|---|---|---|
-| Structurally invalid | The allocation/input itself violates a directly checkable invariant. | Explain inline and disable Generate. |
-| Pending | Validation has not finished for current inputs. | Show checking state; do not claim feasibility or infeasibility. Exact Generate/cancel interaction requires review. |
-| FEASIBLE | At least one complete assignment satisfying all hard rules exists. | The date solver can pursue the spacing objectives. This is not proof of spacing optimality. |
-| INFEASIBLE | The complete rules/targets are mathematically contradictory. | Explain grounded conflicts inline and disable Generate until inputs change. |
-| UNKNOWN / TIMEOUT | Search has not established feasibility or infeasibility within its limit. | Explain that validation did not finish; do not call the allocation impossible. Retry/continue policy requires review. |
-| Cancelled or stale | Search was cancelled or its inputs changed. | Do not apply its result to the current allocation. |
+Evaluate all engineers together against shared duties, exact weights, locks,
+availability, identity exclusions, consecutive conflicts, weekend caps and both
+boundaries. Individual feasibility does not imply global feasibility.
 
-A feasibility witness and a proven optimum are different facts. If optimization
-times out after finding a feasible incumbent, the product policy for accepting
-that schedule without a proven optimal minimum gap is not yet determined.
-Never present an unproved optimum as proved or a partial assignment as feasible.
+The coverage solve can establish complete feasibility or prove its absence.
+Once all structural checks pass, “all unlocked duties unassigned, locks retained”
+is a valid partial incumbent. If the optional-coverage model reports infeasible
+even then, investigate inconsistent mandatory inputs/model construction; do not
+mislabel ordinary target infeasibility as a reason no partial model exists.
 
-### 12.4 Diagnostics
+### 12.3 State model
 
-Give actionable explanations based on demonstrated facts: affected engineers,
-dates, required points, shared capacity, relevant locks, boundary conflicts or
-weekend restrictions. A complex infeasible model may have several interacting
-causes. Do not promise a guaranteed minimal explanation or invent a single
-root cause. When only part of a conflict is understood, describe that limit.
+Keep result completeness, search status and objective proof separate internally:
 
-All warnings and details stay in the allocation popup's inline area. The manager
-can adjust temporary targets, make intentional permanent adjustments, manually
-assign and lock duties, unlock/change locks, and rerun validation.
-
-## 13. Conflict cases and manager explanations
-
-These cases are required diagnostic and acceptance scenarios. Suggested wording
-illustrates the facts to communicate; final localized copy is not fixed here.
-
-| Case | Required detection and outcome |
+| State/fact | Meaning and action |
 |---|---|
-| A. Entire month unavailable | A positive target with no feasible duties is a pre-generation conflict. Explain the engineer and unmet target. The manager may temporarily reduce/redistribute it or explicitly assign and lock an otherwise unavailable duty. A legitimate zero target can be valid if the whole allocation remains feasible. |
-| B. Nobody available for a duty | Identify the uncovered primary duty and its dates. Never automatically violate availability. The manager may deliberately lock somebody. Do not report a completed valid schedule while the duty is empty. |
-| C. Limited but sufficient opportunities | Two newer engineers may each have only three feasible one-point opportunities and need three points each. Limited availability alone is not an error if the global model is feasible. The solver must account for scarce opportunities when finding a complete solution, rather than consume them casually and fail later. All other hard rules still apply. |
-| D. Shared capacity shortage | Detect groups that individually look feasible but compete for insufficient shared duty capacity. Explain the engineers, combined need and demonstrated shared capacity. |
-| E. Consecutive-only opportunities | Available-date counts may be enough while no nonconsecutive combination exists, including conflicts with neighboring assignments. Detect this restriction. |
-| F. Weekend limit | Enough available dates/points can still require too many distinct weekends. Detect and explain the cap conflict instead of relaxing it. |
-| G. Weight incompatible with target | A three-point target with only a four-point duty available is impossible. Do not assign four points or split a duty's weight arbitrarily. |
-| H. Locked conflicts | Check locked points above target, incompatible locks, scarce duties consumed for others, boundary conflicts and the exact remaining achievable workload. Recognized intentional exceptions apply only in the authorized contexts. |
+| Structurally invalid | No run/save until repaired; specific inline explanation. |
+| Checking / running | Current input being validated/optimized; responsive UI, Cancel available. |
+| Complete feasible | Verified full coverage and exact targets; spacing may still be unproved optimal. |
+| Complete infeasible, proved | No full assignment exists under these inputs; allow partial generation. |
+| Verified partial | Valid assignments, preserved locks, no target exceeded; shortfalls/uncovered dates shown. It need not be the optimal partial result. |
+| Proven optimal partial | A verified partial result with all required higher quality/spacing stages proved. If only a prefix is proved, report that narrower fact, e.g. “Maximum coverage proved; spacing search limited,” rather than claiming the whole result optimal. |
+| Timeout / UNKNOWN with incumbent | Save/present the independently verified best found result, complete or partial, with no false optimality claim. |
+| UNKNOWN without a verified incumbent / runtime failure | No replacement of the accepted draft; explain/retry. It is not proof of impossibility. |
+| Cancelled / stale | Discard result; keep accepted data. Never apply to changed inputs. |
 
-### 13.1 Shared-availability example
+Store the objective vector, proved prefix and termination reason. If stage 1
+times out, retain its best incumbent and do not optimize a later objective at the
+expense of searching for better calendar coverage. Only fix a stage's value for
+lower-stage optimization once its optimum is established.
 
-Daniel and Noa each need 3 points. Each is available only on 5, 12 and 19 November.
-Assume those are the same three ordinary one-point primary-duty slots and neither
-has other usable coverage or locks.
+After solving, use a pure independent integer validator to recompute assignments,
+coverage, all target deficits and every hard rule. MILP tolerances never
+authorize a wrong half-point result. Structural validation and this result
+validator must also be enforced at the future checked save boundary.
 
-`combined required points = 3 + 3 = 6`
+### 12.4 Grounded explanations
 
-`shared available primary-duty capacity = 1 + 1 + 1 = 3`
+Explain demonstrated constraints using people, dates, points, locks and source
+months. Do not promise a unique minimal root cause for every infeasible model.
+Timeout is “not established within the search limit,” never “impossible.”
+Distinguish a proven shortage from a plausible contributing restriction.
 
-Each passes a naive individual three-date count. Together they cannot receive
-6 points from 3 points of coverage.
+All allocation warnings and details stay inline. The calendar marks uncovered
+dates, while the retained table shows requested, assigned and missing points.
+Saving a partial draft is supported; publishing it remains blocked by the
+existing full-coverage and integrity checks until the manager resolves it.
 
-An understandable explanation is:
+## 13. Conflict cases and expected manager explanations
 
-> Daniel and Noa need 6 points together, but their available dates contain only
-> 3 points of duty capacity.
-
-The manager can adjust temporary targets and redistribute the difference, or
-manually lock additional duties after consulting the affected engineers.
-Use this exact capacity explanation only when the model supports it. If weights,
-consecutiveness, caps or several overlapping groups are the actual restriction,
-explain those facts instead of claiming this simple arithmetic is a complete cause.
-
-### 13.2 Full failure versus an unfinished draft
-
-The current engine may save uncovered duties for manual resolution. The future
-success contract requires a full feasible schedule. An individual duty may still
-be visibly unassigned while the manager resolves an unfinished draft; that view
-must not imply successful generation.
-
-Whether an unsuccessful future search may save a newly computed partial draft,
-and how that differs from retaining the existing working draft, is not determined.
-Neither behavior may discard locks, alter emergency assignments or neighboring
-months, or be presented as a successful complete result.
-
-## 14. Mathematical model and solver architecture
-
-This section describes a **conceptual engineering direction**. Product rules in
-earlier sections are authoritative; the specific formulation, integration package
-and execution architecture must be evaluated before implementation.
-
-### 14.1 Preferred direction and technology assessment
-
-Use a real constraint-based approach instead of relying on approximately
-90 heuristic attempts to find feasibility. MILP is the discussed direction;
-the open-source HiGHS solver is a leading candidate. JavaScript/TypeScript
-integration, WebAssembly where suitable and a Web Worker are preferred avenues
-for assessment to keep the interface responsive.
-
-This is not approval to install an unverified HiGHS wrapper or any other package.
-Before selection, assess actual TypeScript and Next.js App Router compatibility,
-browser support, maintenance, license, deployment/bundling constraints,
-WebAssembly loading and iPhone Safari behavior/performance. No claim of validated
-compatibility or performance is made here.
-
-No new backend service, paid API or AI inference should be required. Such a
-dependency would need a demonstrated technical need and manager approval.
-Keep scheduling mathematics independent of React, browser UI and storage.
-
-### 14.2 Inputs and exact units
-
-A model instance needs:
-
-- Canonical selected-month duty IDs, actual intervals, point weights and owners.
-- Combined/split structure, shared weekend IDs and special-date additions.
-- Active eligible primary engineers and seniority order for allocation context.
-- The manager-confirmed exact final targets.
-- Availability for all covered dates.
-- Locked primary assignments and the precise explicitly permitted exceptions.
-- Fixed relevant neighboring assignments and their authoritative status.
-- Emergency assignments as preserved data, with the unresolved identity
-  interaction addressed before claiming the final model is complete.
-- The source revision and reproducibility settings for the problem being solved.
-
-Use an exact unit domain such as `q[d] = 2 × p[d]` and `t[e] = 2 × T[e]`.
-Duties are indivisible assignment blocks; integer half-point units do not
-authorize splitting a block among engineers.
-
-### 14.3 Binary assignment model
-
-For an allowed engineer/duty combination:
-
-`x[e,d] ∈ {0,1}`
-
-One means engineer `e` receives primary duty `d`. Automatic combinations must
-satisfy availability and eligibility. An explicitly authorized locked
-availability override is fixed input and cannot be filtered out merely because
-the automatic combination would be forbidden.
-
-Core constraints include:
-
-| Requirement | Conceptual constraint |
+| Case | Detection and required outcome |
 |---|---|
-| Complete primary coverage | For each owned duty `d`, `sum(x[e,d] over engineers) = 1`. |
-| Exact target | For each engineer `e`, `sum(q[d] × x[e,d] over D(M)) = t[e]`. |
-| Fixed lock | For a valid lock assigning `d` to `e`, `x[e,d] = 1`. |
-| Unavailable/invalid automatic pair | Exclude that automatic pair or fix its variable to zero. |
-| Non-overridden consecutive pair | For engineer `e` and conflicting duties `a,b`, `x[e,a] + x[e,b] <= 1`. |
-| Fixed boundary conflict | Treat the neighboring assignment as a constant and prohibit the conflicting automatic selected-month variable. |
-| Weekend cap | Model whether an engineer uses each distinct Friday weekend identity; at most one, absent an explicitly approved exception. |
-| Month isolation | Out-of-owner assignments are fixed context, never free decision variables or part of current-month targets. |
+| Entire month unavailable, positive target | Show the engineer's unmet target. Produce valid work for others; never exceed or silently zero that target. |
+| Nobody available on one duty | Mark its covered date(s) unassigned. Manager can deliberately assign/lock an override. |
+| Two engineers each have three distinct usable opportunities for three points | Scarcity alone is not failure. Preserve their opportunities in the global search. |
+| Two engineers need six points from the same three one-point duties | Explain the proven shared-capacity shortage and produce the best partial result. |
+| Available dates are all consecutive | Respect adjacency, leave necessary holes and show unmet points. |
+| Availability allows enough points but only through extra weekends | Enforce the cap, identify the blocked weekends and leave them uncovered. |
+| Only a four-point duty is usable for a three-point target | Do not assign it; retain unmet points and consider other engineers without changing any target. |
+| A lock consumes another engineer's only slot | Keep the lock and show the resulting shortfall; a valid lock is not removed to improve coverage. |
+| Lock exceeds target or has an unauthorized fixed conflict | Structural error; repair the allocation/approval before running. |
+| Previous or next assignment blocks an adjacent duty | Name the engineer, dates and owning published/draft source; do not edit it. |
+| Preserved emergency identity excludes the only primary candidate | Explain the identity restriction; no duplicate role or automatic secondary deletion. |
 
-An alternative equivalent formulation can remove locked duties from free
-variables and require the unlocked weighted sum to equal `2 × R[e]`. Never
-count locked points both in the target equality and again as additional workload.
+Shared-capacity example:
 
-Weekend indicators must represent distinct weekend identities, not a simple
-count of Friday/Saturday rows. An approved locked conflict must be represented
-explicitly; blanket adjacency constraints would wrongly reject it, while blanket
-removal of adjacency restrictions would permit new automatic violations.
-Cross-month and weekend override scope still needs the decisions identified above.
+> Daniel and Noam need 6 points together, but their available dates contain only
+> 3 points of duty capacity. Generate can create a partial schedule.
 
-This table is not a complete approved MILP. The full model must also preserve
-identity/integrity requirements, actual interval coverage and the unresolved
-policies without filling them in implicitly.
+Assume 5, 12 and 19 November are the same three ordinary one-point duties and
+both need 3. At most 3 points can be assigned between them. This simple capacity
+message is appropriate only when supported by those actual facts. More complex
+overlapping sets, weekend or adjacency restrictions may need several contributing
+facts rather than a fabricated single cause.
 
-### 14.4 Feasibility, optimization and alternatives
+Manager resolutions remain inside the existing workflow: adjust targets,
+deliberately classify a permanent transfer, change/lock/unlock a duty, or run again.
+An infeasibility explanation is not an automatic authorization to violate it.
 
-First establish a complete feasible assignment. Then optimize minimum spacing,
-then overall spacing, then alternative arrangement quality in the agreed order.
-Multi-stage/lexicographic optimization is an appropriate direction to assess.
-Do not mix exact targets or hard constraints into arbitrary weighted penalties
-that allow them to be traded away.
+## 14. Mathematical formulation and implementation architecture
 
-Distinguish feasibility status, spacing optimality and alternative diversity.
-Reproducibility may require recording the exact input problem, solver version,
-settings and any seed or deterministic tie-break configuration. A seed alone
-does not establish identical results across different solver versions or inputs.
+### 14.1 One optional-coverage model
 
-Solver output must be checked against the exact duty/target invariants before
-it becomes a saved successful result. Numerical solver tolerances must not
-permit a wrong half-point total or invalid assignment through the product boundary.
-This is a verification requirement, not permission to round targets or silently
-repair invalid solver output.
+Let `E` be active approved eligible engineers and `D` the selected owner's
+canonical duties. Parameters are integer units `q[d]`, confirmed `t[e]`,
+covered-date counts `c[d]`, marked special-date counts `h[d]`, actual intervals,
+weekend IDs, locks, scoped exceptions and fixed neighboring context.
 
-### 14.5 Performance, cancellation and time limits
+The fresh-whole-month formulation applies to not-yet-started coverage. Q2 must
+be resolved before extending it to a month containing started/completed work.
 
-Benchmark the typical 12-engineer month and harder models:
+Use binary variables:
 
-- Very constrained and heavily shared availability.
-- Many split or special weekends.
-- Difficult special-weight combinations and half-point targets.
-- Small and large teams.
-- Multiple locks and authorized overrides.
-- Existing previous/next-month assignments.
+`x[e,d] = 1` if engineer e is primary on duty d.
 
-Measure model construction, global feasibility, spacing stages, repeated
-allocation edits and alternative generation. Validate memory use and browser
-responsiveness, including iPhone Safari; do not invent benchmark thresholds.
-Define acceptable performance and search limits from that assessment.
+`u[d] = 1` if duty d remains unassigned.
 
-Support cancellation and clear pending/timeout feedback without freezing the UI.
-An input change or cancellation must not let an obsolete result overwrite newer
-work or validate a different allocation. Whether global validation can complete
-quickly enough for each intended interaction is an engineering risk to measure,
-not an assumption that UNKNOWN means impossible.
+Exclude automatic combinations that fail eligibility, availability,
+primary/secondary identity or a fixed boundary restriction. A valid manager
+availability lock is fixed authorized input, not an excluded automatic edge.
 
-### 14.6 Persistence and security boundaries
+| Rule | Constraint |
+|---|---|
+| One primary or explicit hole | `sum_e(x[e,d]) + u[d] = 1` for each d. |
+| Target ceiling | `a[e] = sum_d(q[d] × x[e,d]) <= t[e]`. |
+| Visible shortfall | Integer `m[e] = t[e] − a[e] >= 0`. |
+| Valid lock e on d | `x[e,d] = 1`, hence `u[d] = 0`. |
+| Forbidden consecutive pair a,b | `x[e,a] + x[e,b] <= 1`, except the specifically approved fixed pair. |
+| Fixed neighboring conflict | Exclude/fix to zero the conflicting automatic variable. |
+| Weekend usage | Binary `y[e,w]` is the OR of primary assignments with Friday identity w. |
+| Ordinary weekend limit | `sum_w(y[e,w]) <= 1`. With additional approved locked weekends, constrain usage to those specific fixed weekend identities. |
+| Month isolation | Neighbor assignments are constants, not writable variables or selected-month point totals. |
 
-Preserve the existing separation between working drafts and current publications.
-NULL-publication assignment rows currently represent open drafts; publication
-creates immutable version rows and removes that month's working rows. Reopen or
-historical restore copies only the owner's duties into a draft. Cancel Draft
-deletes that owner's working rows without changing the current publication or
-history. Generation must respect those lifecycle operations.
+An exact OR can use `y[e,w] >= x[e,d]` for each relevant d and
+`y[e,w] <= sum_d_in_w(x[e,d])`.
+Do not count split rows as separate weekends.
 
-Continue checked, authorized, revision-protected writes. An old solver result
-must not bypass a changed workspace revision. Preserve active/approved member
-checks, primary/secondary identity restrictions, foreign keys, interval integrity,
-private availability notes, consent/admin approval and publication history.
-UI controls or client solver claims do not replace database authorization.
+Structural validation precedes the model. In particular, an approved fixed
+consecutive pair is not wrongly rejected by a blanket pair constraint, and an
+unapproved pair is not silently allowed just because both assignments are locks.
 
-Future schema/RPC work for targets, adjustment provenance, locks or balances is
-outside this document's implementation scope and must follow
-[Supabase setup](SUPABASE_SETUP.md) and the existing database review workflow.
-Future release work follows [deployment rules](DEPLOYMENT.md), including
-database-first ordering and required approval. No permission weakening or hosted
-change is authorized by the solver direction.
+An equivalent implementation can remove locked duties from free variables and
+use remaining capacity `t[e] − l[e]`; do not count locks twice.
+The all-unlocked-unassigned solution is the safe initial partial incumbent.
 
-## 15. Generate and Regenerate lifecycle
+### 14.2 Lexicographic solve
 
-### 15.1 Generate
+In order, maximize/minimize:
 
-| Step | Required behavior |
-|---:|---|
-| 1 | Read the selected month's canonical owned duties and current scheduling data, including locks, emergency coverage, relevant neighboring assignments and revision. |
-| 2 | Calculate the exact total primary-duty points, with special additions and Friday-owned cross-month weekends. |
-| 3 | Calculate the fair baseline/default allocation and consider carried temporary balances using the reviewed accounting policy. |
-| 4 | Open the single allocation popup with seniority ordering, final targets, permanent changes, locked points and remaining points. Reset edit step to 1. |
-| 5 | Let the manager make temporary and permanent adjustments with + / − controls and the optional 0.5 step. |
-| 6 | Apply the agreed redistribution rules and immediate validation while maintaining the exact monthly total. |
-| 7 | Account for all manually locked primaries in the confirmed targets and remaining workload; retain their explicit override meaning. |
-| 8 | Verify complete global feasibility for the current inputs. Distinguish invalidity, infeasibility and unknown/pending outcomes. |
-| 9 | Solve the date assignment using the agreed spacing hierarchy. Never revise targets inside this stage. |
-| 10 | Save the verified result as a draft through the authorized revision-protected path, preserving locks, emergency assignments, adjacent months and publication history. |
-| 11 | Present the generated schedule for manager review. Generation does not publish it. |
+1. `C = sum_d(c[d] × (1 − u[d]))`.
+2. `H = sum_d(h[d] × (1 − u[d]))`, fixing optimal C.
+3. `U = sum_e(m[e])`, fixing optimal C and H.
+4. The max-min/leximin spacing objectives from section 11, fixing C, H and U.
+5. Preferred-date and seeded tie-break objectives, fixing all higher quality.
 
-Locks must already be visible when the popup opens; step 7 reasserts their effect
-on the final confirmed allocation, rather than discovering them only afterward.
-No solver result can be treated as current if its allocation, duty structure or
-source revision has changed.
+All coverage/point objectives have exact integer values. Use repeated solves
+with constraints fixing the proved previous objective values. Set integrality
+and optimality tolerances so an “optimal” status cannot knowingly leave an
+integer objective value improvable. Independently verify objective values and
+the solver's termination/bound evidence; a relative gap setting alone is not
+permission to claim exact lexicographic optimality.
 
-### 15.2 Regenerate
+With `C = sum_d(c[d])`, all `u[d] = 0`; then
+`sum_e(a[e]) = P = sum_e(t[e])` and `a[e] <= t[e]` prove every
+`a[e] = t[e]`. This is why the partial upper-bound formulation also correctly
+implements exact complete targets without contradictory soft equalities.
 
-Regenerate uses the same exact targets and hard rules and seeks another
-high-quality arrangement where possible. It must preserve:
+### 14.3 Spacing encoding
 
-- Every locked primary assignment and its explicit exception meaning.
-- Existing emergency coverage on its duties.
-- Exact primary targets and month totals.
-- Availability, consecutive-duty and weekend rules for automatic assignments.
-- Fixed context and assignments owned by other months.
-- Current publications, historical versions and unrelated draft data.
+Precompute compatible interval gaps. For each engineer, a directed chronological
+path through their selected duties and real nearest boundary anchors can
+identify successor pairs. Arc variables have incoming/outgoing flow equal to
+the selected-duty variable; one source-to-sink unit and acyclic order prevent
+disconnected paths or skipped selected nodes. A sentinel-to-sentinel arc with
+no selected duty contributes no measured gap.
 
-Avoid an identical arrangement when meaningful alternatives exist, if practical
-without sacrificing the agreed quality hierarchy. Never promise a different
-schedule when the feasible arrangement is unique. Do not introduce invalid
-assignments or silently accept worse higher-priority objectives for variety.
-The definition of meaningful difference and detailed alternative-selection
-mechanism remain engineering/product choices for review.
+The assigned successor arcs select the actual consecutive gaps, rather than all
+pair distances. Use finite gap thresholds to maximize the minimum, then minimize
+counts at successively worse small-gap levels with previous results fixed.
+This implements the sorted-gap comparison without huge mixed-priority weights.
+Mandatory locked-gap constants are retained; later gap levels can still improve.
 
-Use reproducible settings/seeds where appropriate while supporting alternative
-valid schedules. Regeneration is not permission to reset the manager's allocation
-to a newly computed default. Treatment of existing automatic assignments and
-manually edited **unlocked** draft primaries, including any preference to retain
-them, is not fully specified. Only explicit locks have the required preservation
-guarantee.
+This is an engineering formulation recommendation. Equivalent encodings are
+acceptable only if tests against enumerable small instances show the same
+business objective ordering, including variable duty counts and fixed exceptions.
 
-### 15.3 Manual resolution
+### 14.4 Layer boundaries
 
-When a full valid schedule cannot be established, show what is known and which
-manager interventions could address it. The manager can:
+| Layer | Responsibility |
+|---|---|
+| Pure domain core | Canonical owned duties, exact units, locks, validation, baseline, typed transfer intents, deterministic normalization/replay and result verification. No React, network, storage, wall-clock reads or random source calls inside pure functions. |
+| Solver adapter | Build/solve the declared model, return incumbent, objective vector, proof prefix and termination data. No target edits or ledger writes. |
+| Browser Worker | Isolate computation, consume serializable frozen inputs/settings/seed, return progress/results associated with a request ID. |
+| React/UI | Allocation controls, explicit confirmation, actual/projected explanatory copy, progress/cancel, partial calendar and unmet points. |
+| Supabase adapter | Read authoritative snapshots, reconcile through checked operations, save owner-scoped drafts/publication metadata under revision control. |
+| Database | Validate permissions, identities, source keys, exact ledger effects, integrity, locking and atomic publication/ledger transitions. |
 
-- Change temporary targets and redistribute workload.
-- Apply deliberate permanent adjustments.
-- Manually assign and lock duties, including authorized availability overrides.
-- Unlock or change previous locks.
-- Rerun feasibility validation.
+Use explicit input `now` and seed values in domain APIs for deterministic tests.
+One generation context combines current publication and relevant working
+boundary facts; do not overload the existing role-specific display snapshot to
+silently choose a different accounting source.
 
-No failure path may quietly remove locks, exceed targets or violate constraints.
-Unknown search status requires an honest status explanation, not a fabricated
-conflict. Unfinished-draft persistence and pending/unknown interactions require
-the explicit decisions recorded in sections 12 and 13.
+### 14.5 Solver assessment and recommendation
+
+Recommend a MILP adapter with local single-threaded WebAssembly in a dedicated
+Worker as the first implementation spike. The current TypeScript model is small
+enough to assess this direction before considering a new service. This is not
+approval to install a dependency or a claim of measured performance.
+
+[HiGHS upstream](https://github.com/ERGO-Code/HiGHS) supports MIP and documents
+its build/licensing distinctions. The
+[lovasoa/highs-js wrapper](https://github.com/lovasoa/highs-js) documents browser
+WebAssembly, TypeScript declarations, persistent models and synchronous,
+single-threaded solves. These primary sources were reviewed on 23 October 2026;
+they establish a plausible candidate, not validated Next.js/iPhone compatibility.
+
+| Assessment | Required implementation gate |
+|---|---|
+| TypeScript/Next.js App Router | Verify actual pinned wrapper exports/types, production bundling and client-only loading. No solver import/initialization during server rendering. |
+| Assets/deployment | Self-host pinned WASM with correct URL/MIME/cache behavior and repository deployment policy; avoid an external CDN dependency. |
+| Browser/iPhone Safari | Test actual supported phones, memory growth, Worker/WASM initialization, repeated solves, cancellation and background/resume behavior. |
+| Maintenance | Inspect the selected release, issues, upstream solver version and reproducible artifact provenance; documentation alone is insufficient. |
+| License | Verify the exact wrapper and embedded build/third-party notices. Do not assume every optional HiGHS build has identical licensing. |
+| Correctness | Preserve integrality and status/bound information. Do not accidentally run an LP relaxation instead of MIP. |
+| Resources | Dispose persistent native/WASM models; benchmark cold/warm load and repeated allocation checks. |
+| Configuration | Pin settings/version; record seed mapping, tolerances and deterministic work limits for replay. |
+
+HiGHS documents time, random-seed and MIP-gap options in its
+[official option reference](https://ergo-code.github.io/HiGHS/dev/options/definitions/).
+Use the selected adapter's verified supported controls rather than guessing API
+names. Sequential objective solves avoid reliance on unverified wrapper support
+for native multiobjective features.
+
+Tradeoff: browser WASM avoids service operation and sends no scheduling data to
+a solver provider, but startup/memory and interruption need device validation.
+A custom branch-and-bound solver increases maintenance/proof burden; a new
+backend adds deployment/auth/data boundaries. Neither is justified merely
+because the existing heuristic is inadequate. A demonstrated technical need
+and manager approval are required for a new backend/paid service or AI inference.
+
+### 14.6 Responsiveness, cancellation and search limits
+
+Expose progress at useful stage changes/incumbents without rendering the entire
+workspace for every solver callback. Keep the best verified incumbent on the
+UI side where the wrapper permits progress delivery.
+
+A synchronous WASM solve inside a Worker cannot process an ordinary cancel
+message until it yields. Use Worker termination for reliable user cancellation;
+use verified solver time/work limits for bounded completion. Do not require
+SharedArrayBuffer or cross-origin isolation just to cancel. If interruption
+terminates the Worker, recreate it for a later run and do not apply its result.
+
+Budget total work across lexicographic stages. Stop honestly at the current
+stage on timeout; do not claim lower-stage optimality. Debounced preview checks
+can reuse immutable inputs/model structure, but no stale feasibility result may
+enable saving a different allocation.
+
+Benchmark actual workloads rather than invent latency numbers: normal
+12-engineer months, two-engineer cap shortages, larger teams, tight/shared
+availability, weighted special combinations, many split weekends/locks,
+boundary drafts/publications and repeated edits.
+Set measured UX/search budgets before release. Performance validation and
+package selection are engineering gates, not new unresolved business questions.
+
+### 14.7 Persistence, revision and security
+
+Keep the existing draft/publication lifecycle: NULL-publication working rows
+belong to open drafts; Publish validates full coverage and creates an immutable
+version; Reopen/restore copies owned rows without replacing the live publication;
+Cancel Draft deletes only that owner's working state. A partial generated draft
+does not weaken the publication gate.
+
+Store allocation provenance/confirmed targets and tentative repayment intent
+with that draft; publication freezes the reviewed plan and source keys. Later
+approved published swaps are explicit new commitments: their actual weighted
+allocation can differ from the original generation targets and is accounted from
+the approved change, not rejected merely for exceeding an old month's target.
+Show changed workloads in the existing approval review.
+
+Use the existing workspace revision lock for lazy reconciliation, publication,
+manual ledger writes and generation saves. Recheck identity/manager authority
+after obtaining the lock. Source keys make retries idempotent. A save checks
+the captured allocation/problem fingerprint as well as revision; UTC time and
+newly due settlements must be reconciled before accepting a stale repayment plan.
+Return a refresh/review requirement instead of overwriting or altering targets.
+
+Only the checked server operation computes authoritative ledger effects.
+Client solver output, member IDs, roles, exemption flags or supplied balance
+totals are untrusted. Preserve private availability notes and existing approval,
+last-admin, foreign-key, span, primary/secondary and consent protections.
+Use the filtered approved-team/manager views from section 7.9; reasons/private
+notes are not copied into public calendar content. A member-accessible lazy
+reconciliation operation can persist only server-derived earned contributions,
+never caller-supplied discretionary adjustments. It must perform the same
+membership/revision/source checks. Direct client ledger mutation remains denied.
+
+Future migrations follow [Supabase setup](SUPABASE_SETUP.md), preserving
+canonical SQL, reviewed incremental migrations and fresh/upgrade security tests.
+Release work follows [deployment rules](DEPLOYMENT.md), database-first ordering
+and required approvals. No live change is authorized by this specification.
+
+## 15. Generate, fresh Regenerate and publication lifecycle
+
+### 15.1 One generation transaction
+
+1. Read the selected owner's canonical blocks, membership, constraints, locks,
+   emergency coverage, publication/working boundary context and accepted revision.
+2. Lazily reconcile actual compensation at server time and build a separate
+   projection through the selected month's operational opening.
+3. Calculate `P`, the ordinary fair baseline and normalized oldest-feasible
+   compensation proposal; preserve explicit transfer provenance.
+4. Open the single allocation popup, showing actual/projected context, targets,
+   Permanent, Locked, Generate and monthly totals. Reset the edit step to 1.
+5. Apply manager edits and counterpart redistribution; classify temporary,
+   permanent and deferred repayment units without posting draft ledger events.
+6. Validate structural invariants. Present global full/partial/unknown findings
+   inline; known full infeasibility does not block a run.
+7. Confirm targets and freeze the problem snapshot. Draw and record a fresh seed.
+8. Build a fresh arrangement: discard all unlocked selected-month primaries
+   from solver constraints, including ordinary manual edits and draft swaps.
+9. Optimize the optional-coverage model lexicographically; retain only valid
+   incumbents and honest proof status.
+10. Independently validate the output and its deficits/objectives.
+11. Save the owner-scoped complete or partial draft under checked revision/
+    fingerprint control, preserving locks, emergency assignments and history.
+12. Present the calendar and target/assigned/missing points. Only the separate
+    Publish workflow can commit a complete schedule and ledger intentions.
+
+Existing accepted working rows remain until a valid new result is committed;
+cancellation, runtime failure or stale saves do not first erase the old draft.
+This does not turn old unlocked primaries into solver constraints.
+
+### 15.2 Every Generate is fresh
+
+Regenerate is the same fresh generation process with a new seed.
+Preserve the manager-confirmed target table unless the manager explicitly edits
+or accepts a refreshed proposal. Preserve availability, locks, weekend structure,
+special duties, emergency coverage, neighboring assignments and actual ledger.
+
+Do not preserve or prefer old draft swaps/unlocked manual primary choices.
+Only explicit locks preserve those assignments. Rebuild tentative duty-to-
+repayment attribution for the fresh arrangement without changing obligations.
+
+If reconciliation/input edits invalidate the old allocation's compensation plan,
+show the refreshed proposal for manager confirmation. Retain old numbers as
+reviewable input, never silently apply changed targets. If the manager keeps
+them, revalidate and explicitly classify any changed transfer intent; do not
+settle an already closed obligation again.
+
+### 15.3 Save partial; publish complete
+
+A partial draft retains its original confirmed totals. Each hole and each
+unmet engineer target stays visible. Managers can manually resolve it with
+explicit locks/overrides or revise targets and run again.
+
+Before publication, all required primary duties must be covered and the current
+reviewed target/lock/integrity rules satisfied. A manual change that alters the
+draft's point allocation requires allocation review rather than an implicit
+solver target change. Publication applies pending ordinary temporary intents
+once and freezes any future repayment reservations; no future duty is yet settled.
+
+Draft swaps create no debt until they are part of an authoritative transition.
+Publishing an unchanged copied allocation does not replay old temporary charges.
+Published replacements/swaps then produce their correctly classified source
+effects once through the existing checked approval/publication path.
+
+The manager primarily manages current/future work. Historical previews are
+read-only for compensation. Exceptional corrections use explicit audited
+operations and never automatically rewrite later published months.
 
 ## 16. Worked examples
 
-These examples illustrate required accounting and outcomes. Offered allocations
-are hypothetical, not a new seniority or compensation formula. Redistribution
-examples assume the stated recipient/donor change is globally feasible.
+Amounts in this section are points. Illustrative baselines are assumed reviewed
+for the stated duty weights; they do not introduce seniority multipliers.
 
-### 16.1 Exact monthly total and locked remainder
+### 16.1 Exact arithmetic is necessary, not sufficient
 
-A month contains 34.5 primary-duty points, or 69 half-point units. One possible
-target sum for 12 engineers is:
+A 34.5-point month contains 69 half-point units.
+`3 × 2.5 + 9 × 3 = 34.5` is a balanced target total for 12 engineers.
+It is attainable only if the actual duties permit those individual totals.
+If only one block has an odd number of half-point units and all other blocks
+have even units, three separate odd-unit targets cannot all be met. The sum
+alone is not a feasibility proof.
 
-`3 engineers × 2.5 + 9 engineers × 3 = 34.5 points`
+Target 3, Locked 1 means Generate requests 2 more. Locked 3 means no more.
+Locked 4 is structurally invalid; a target with an unattainable remainder is
+instead eligible for clearly labeled partial generation.
 
-This is an arithmetic example, not the prescribed default distribution.
-All 69 units must be assigned once to primaries. Emergency coverage adds none.
-For an engineer with Target 3 and one locked ordinary duty:
+### 16.2 Ordinary published replacement
 
-| Final Target | Locked | Remaining Generate |
-|---:|---:|---:|
-| 3 | 1 | 2 |
-| 3 | 3 | 0 |
-| 3 | 4 | Invalid; Generate disabled. |
+Daniel has a published 2-point ordinary responsibility. Noam replaces him.
+Create Daniel -> Noam 2 exactly once for that authoritative transition.
+Daniel's net indicator changes by −2 and Noam's by +2.
+A draft-only replacement creates no event.
+This example has no prior repayment attribution; Q1 covers that separate case.
 
-### 16.2 Temporary reduction and carry-forward
+### 16.3 Weighted published swap
 
-Engineer A's offered target is 3, but vacation leaves only 2 feasible points.
-The manager temporarily reduces the target to 2. The released point is
-redistributed through the agreed seniority-order process to an eligible engineer.
-The month's total stays unchanged.
+Daniel's 1-point duty and Noam's 3-point duty exchange primaries.
+Daniel carries 2 more; Noam carries 2 less. Create Noam -> Daniel 2.
+An equal-weight swap creates no new claim. Secondary cover and point weights
+remain attached to their dates. Do not additionally charge a monthly fairness
+difference for this same transaction.
 
-Retain both A's temporary shortfall and the other engineer's extra workload for
-future compensation. Try to compensate in the following month. If A remains on
-vacation for two more months, do not erase the unresolved balance or force an
-invalid assignment. The exact amount applied in each later month depends on the
-accounting and allocation policies still to be reviewed.
+### 16.4 Temporary plus permanent
 
-### 16.3 Permanent redistribution preference
+Offered targets are E 2, A 2, B 2. The manager gives E Temporary +1 funded by
+A −1, and E Permanent +1 funded by B −1:
 
-Assume this current allocation and seniority order:
+| Engineer | Final Target | Temporary | Permanent |
+|---|---:|---:|---:|
+| E | 4 | +1 | +1 |
+| A | 1 | −1 | 0 |
+| B | 1 | 0 | −1 |
 
-| Seniority | Engineer | Current final allocation |
-|---:|---|---:|
-| 1, most senior | A | 4 |
-| 2 | B | 4 |
-| 3 | C | 3 |
-| 4, newest | D | 3 |
+Total remains 6. After publication, A owes E 1 for the ordinary temporary burden.
+B's deliberate permanent transfer creates no claim. If E has 1 locked point,
+Generate requests 3 additional points and may never exceed final Target 4.
 
-Increasing D's Permanent by 1 requires an offsetting Permanent reduction.
-If A and B are both eligible donors, choose A: the highest allocation is 4 and A
-is the most senior among that group. The new targets are A 3, B 4, C 3, D 4,
-still 14 points. Neither side of this permanent transfer creates compensation.
+For a permanent increase with eligible donors A 4 and B 4, both above locks,
+choose the more senior donor. If A already has 4 locked, A cannot donate a point;
+choose the next eligible donor or leave the table edit pending.
 
-If A already has 4 locked points, A cannot be reduced to 3. Consider another
-eligible donor under the agreed preference; if none can make the transfer
-feasible, explain the conflict instead of changing totals or locks.
+### 16.5 Deferring existing compensation without doubling it
 
-### 16.4 Temporary and permanent changes together
+Use a hypothetical reviewed baseline Daniel 2, Creditor 4, Recipient 2 and
+existing Daniel -> Creditor 3. Proposed targets are 5, 1, 2.
+Daniel asks for a temporary limit of 4; Recipient is the selected eligible
+counterpart and receives 3. Creditor stays at 1. Total stays 8.
 
-An engineer offered 2 receives Temporary +1 and Permanent +1, giving final Target
-4. If 1 point is locked, Generate must supply exactly 3 more.
-Retain both adjustment types internally. Other engineers' corresponding changes
-must preserve the month's total. The permanent point never becomes a temporary
-fairness balance merely because the final Target combines both effects.
+Daniel can now perform only 2 extra points relative to his baseline.
+Creditor still receives 3 of relief; Recipient carries the remaining 1.
+The coherent plan is:
 
-### 16.5 Cross-year weekend
+- Reserve 2 of Daniel's future duty points to repay Creditor.
+- Record the remaining temporary ordinary burden as Creditor -> Recipient 1.
+- Normalize Daniel -> Creditor 3 plus Creditor -> Recipient 1 into
+  Daniel -> Creditor 2 and Daniel -> Recipient 1.
+- Once Daniel's attributed 2 points finish, only Daniel -> Recipient 1 remains.
+  Its provenance retains the old claim's age.
 
-For 31 December 2027–1 January 2028:
+Do not retain Daniel -> Creditor 1 **and** independently add Daniel -> Recipient
+1 after claiming the same deferred point twice. Final outstanding amount for
+Daniel is 1, not 2. The selected counterpart chain explains who carried it.
+No event occurs while the edited allocation remains an unpublished draft.
 
-| Representation | December-owned primary points | January-owned points from this weekend |
-|---|---:|---:|
-| Combined, no special | 1 | 0 |
-| Split, no special | 0.5 + 0.5 | 0 |
-| Separate special days, +2 each | 2.5 + 2.5 | 0 |
+### 16.6 Oldest feasible and partial repayment
 
-January must preserve the existing weekend and use its actual end on Sunday
-2 January as boundary context. The solver must not give that same engineer an
-automatic consecutive Sunday duty merely because the weekend is December-owned.
+Debtor owes B 2 from January and C 1 from February.
+Only 1.5 can feasibly be allocated for repayment this month.
+Reserve 1.5 for January; after the attributed work completes, B is still owed
+0.5 and C 1. Do not round January up, erase its remainder, or favor February.
 
-### 16.6 Unattainable weights and exhausted locks
+If January cannot receive any feasible repayment in this proposal but February
+can receive 1, reserve that 1 for February and keep January's full 2 with its
+original priority. No arbitrary “one point per month” rule applies.
 
-An engineer needs 3 points and their only candidate block weighs 4. Even with
-ample chronological spacing, no exact three-point assignment exists.
+### 16.7 Netting, provenance and inactive intermediaries
 
-Similarly, Target 3 with Locked 2.5 leaves 0.5. If every feasible unlocked block
-for that engineer weighs 1 or more, nonnegative remaining points alone do not
-establish feasibility. The manager must change the situation; the solver cannot
-invent a half-duty or silently assign a full point.
-
-### 16.7 Minimum spacing versus a widely spread last duty
-
-Assume an engineer needs three ordinary one-day duties and both alternatives
-below satisfy all hard rules, with no binding fixed boundary gap:
-
-| Alternative | November duty dates | Free days between successive duty intervals |
-|---|---|---|
-| A | 1, 8, 29 | 6 and 20 |
-| B | 1, 15, 29 | 13 and 13 |
-
-Under this illustrative end-to-start free-day metric, B has the larger smallest
-gap. A distant third duty does not compensate for the close first pair in A.
-This example demonstrates the required objective priority; it does not approve
-the final numerical gap metric or secondary objective.
-
-### 16.8 Published swap changes actual points
-
-Before an approved swap, A has an ordinary 1-point duty and B has a special
-4-point duty. After approval, A holds the 4-point duty and B holds the 1-point
-duty. The duty dates and weights remain attached to their slots, emergency
-coverage stays on its slots, and the new current publication is authoritative.
-
-Fairness history must reflect those actual points rather than the original
-allocation. How to classify the resulting difference when permanent adjustments
-also exist is a pending accounting decision, not permission to ignore the swap
-or automatically reinterpret permanent intent.
-
-## 17. Edge cases and expected outcomes
-
-| Situation | Expected outcome |
+| Source obligations | Normalized active obligations |
 |---|---|
-| No active eligible team and positive required coverage | Cannot produce a complete schedule; explain missing eligibility. Do not allocate to inactive or unapproved identities. |
-| Engineer has a legitimate zero target | No additional primary assignments. Valid only if locks and the global model allow it. |
-| Target equals locked points | No additional primary points for that engineer. |
-| Positive target, whole month unavailable | Pre-generation conflict unless authorized locks or an adjusted allocation resolve it. |
-| Everyone unavailable for a duty | Identify the duty for manager resolution; no automatic availability violation. |
-| Few opportunities, but globally sufficient | Feasible; do not reject merely for scarce availability. |
-| Shared opportunities below combined demand | Confirmed global conflict when proven; explain demonstrated capacity. |
-| Sufficient dates but forbidden consecutive combinations | Infeasible unless the manager changes allocation/locks under the approved override model. |
-| Thursday / combined weekend / Sunday | No automatic adjacent pair for the same engineer; a combined weekend remains one block. |
-| Split Friday and Saturday | Separate blocks obey no-consecutive rules and share a weekend identity/cap. |
-| Two-engineer team | Seek the best feasible alternation; report any conflict with the retained weekend cap or other hard rules. |
-| Different Special Block weights | Meet exact totals using whole blocks; reject unreachable target combinations. |
-| Friday–Saturday crosses month or year | Friday owns both halves, including points, locks and weekend count. |
-| Month begins Saturday | That Saturday remains prior-Friday-owned, despite its actual calendar date. |
-| Leap day or varying month lengths | Exactly one coverage of each owned date; monthly total derives from canonical duties rather than assumed month length. |
-| Locked availability/consecutive exception | Preserve the deliberate recognized exception; never infer permission for extra automatic violations. |
-| Locked duty consumes another person's only opportunity | Validate all remaining targets together; show the resulting global conflict when established. |
-| Selected lock conflicts with a neighboring assignment | Keep neighboring assignments fixed; explicit exception scope must be reviewed. |
-| Neighbor has both current publication and reopened draft | Apply the reviewed status/source policy; no policy is silently selected here. |
-| Existing emergency coverage | Preserve it and exclude it from primary optimization; preserve integrity checks pending reconciliation of the identity conflict. |
-| Special points/structure change after allocation | Old totals or feasibility may be invalid. Recalculation/review interaction is still to be specified. |
-| Unlocked manually edited primary in a draft | Preservation/replacement policy requires review; do not portray it as a lock. |
-| Approved swap changes weighted workload | Use current published primary points in fairness reconciliation; preserve permanent provenance. |
-| Balance cannot settle next month | Carry it forward without expiry or invalid assignments. |
-| Search times out or is cancelled | No false infeasibility or successful partial result; apply the reviewed pending/retry policy. |
-| Unique feasible or uniquely best arrangement | Regenerate cannot promise a different equal-quality schedule. |
-| Stale source revision | Preserve existing checked-write rejection and refresh/revalidation behavior; no stale overwrite. |
+| X -> Y 2; Y -> X 1 | X -> Y 1 |
+| X -> Y 2; Y -> Z 1 | X -> Y 1; X -> Z 1 |
+| X -> Y 1; Y -> Z 1; Z -> X 1 | None |
+| X -> Y 2; Y -> Z 1; Z -> X 0.5 | X -> Y 1; X -> Z 0.5 |
 
-## 18. Future implementation and test acceptance criteria
+In the second row, paying 0.5 of X -> Z reduces the contributing X -> Y and
+Y -> Z raw legs by 0.5 each. X's net improves by 0.5; Z's falls by 0.5;
+Y's is unchanged. There is one 0.5-point repayment.
 
-The following matrix defines **future** regression requirements. No
-implementation, test code, migration, dependency or configuration change is
-part of creating this specification.
+If Y was already inactive when those relationships arose, retain X -> Y 2 and
+Y -> Z 1 as frozen relationships; do not bypass Y to activate repayment with Z.
+If the claims had already normalized to X -> Z while Y was active, its later
+deactivation does not reverse that valid result or require Y to participate.
+Unrelated active edges continue. Source events survive normalization/reactivation.
 
-Existing tests that encode intentionally changed behavior must be revised during
-implementation with replacement protection for the new rules. Preserve unrelated
-coverage and existing calendar, authorization, revision and history invariants.
-Do not weaken a regression merely to make the new solver pass.
+### 16.8 Calendar coverage beats total point weight
+
+Consider two unlocked remaining blocks: an ordinary combined weekend worth 1
+covering 2 dates, and a nonadjacent special weekday worth 5 covering 1 date.
+Remaining targets are A 5 and B 1, matching the 6 required points.
+A can cover either but not both; B is unavailable for both.
+
+| Choice | Dates covered | Assigned points | Total unmet points |
+|---|---:|---:|---:|
+| Combined weekend to A | 2 | 1 | 5 |
+| Special weekday to A | 1 | 5 | 1 |
+
+Choose the combined weekend: priority 1 is calendar-day coverage.
+The special remains visible and A has 4 unmet, B 1. Do not exceed A's target
+by assigning both or use priority 3 to reverse priority 1.
+Other already fixed duties/context are identical between these alternatives.
+
+### 16.9 Special priority precedes missing points
+
+The remaining alternatives are an ordinary weekday worth 1 and a separate
+special Friday worth 0.5, each covering one date. The rest of the canonical
+weekend/month is fixed consistently. Remaining targets are A 1 and B 0.5;
+only A is available for these two blocks and cannot take both.
+
+Both choices cover one date. Choose the marked special Friday even though
+it leaves 1 total point unmet, compared with 0.5 if the ordinary weekday were
+covered. Priority 2 precedes missing-point minimization. Extra-point magnitude
+does not define importance.
+
+### 16.10 Cross-year weekend and spacing
+
+Friday 31 December 2027 and Saturday 1 January 2028 are December-owned:
+
+| Structure | December points | January points from that weekend |
+|---|---:|---:|
+| Combined ordinary | 1 | 0 |
+| Split ordinary | 0.5 + 0.5 | 0 |
+| Special daily +2 each | 2.5 + 2.5 | 0 |
+
+Combined coverage ends on Sunday 2 January at 09:00. Its engineer cannot receive
+an automatic consecutive Sunday duty in January. An owner-scoped January save
+cannot modify either December weekend half.
+
+For three one-day November duties without offset changes/binding boundaries,
+dates 1, 8, 29 give free gaps 6 and 20 days; dates 1, 15, 29 give 13 and 13.
+The second arrangement has the better minimum elapsed gap. With a mandatory
+locked zero gap elsewhere, the secondary gap vector still improves the
+remaining shortest gaps rather than treating all arrangements as equally good.
+
+### 16.11 Early generation and a late projection change
+
+On 25 October, Daniel actually owes Creditor 2. Published October work reserves
+1 point for repayment on Friday 30 October, ending Saturday 31 October at 09:00.
+Generating November uses projected opening debt 1, while actual debt remains 2
+until that duty finishes.
+
+Suppose the Friday is a split special half worth 1 (0.5 base + 0.5 extra).
+An explicit reviewed October change removes the extra before completion, keeps
+the primary and split structure, updates October allocation and reduces usable
+repayment capacity to 0.5. There is no new debtor for the removed point weight.
+The revised projected November-opening debt is 1.5; actual debt is still 2
+until completion, then 1.5.
+
+If November was already published using the earlier projection, it stays
+unchanged. The next Generate considers the corrected balance. A second Users
+access or reconciliation cannot settle the same 0.5 again.
+
+### 16.12 Indivisible duties and a half-point claim
+
+Debtor owes Creditor 0.5. If their otherwise fixed baseline/targets can only
+change in whole-point combinations under the current duties, no exact 0.5
+repayment is available. Carry 0.5 forward. Do not round it to 1, split an
+ordinary primary duty into two people, or add a permanent transfer without
+explicit manager action just to make the numbers fit.
+
+## 17. Edge cases and operational outcomes
+
+| Situation | Outcome |
+|---|---|
+| No active eligible engineers | No valid positive target distribution; explain membership setup before generating. Do not invent identities. |
+| Engineer target zero | Assign no primary work; nonzero locks make it invalid. |
+| Entirely unavailable engineer with a positive valid target | Retain the target as a ceiling and report its unmet points in a partial result. |
+| Shared or weighted feasibility failure | Produce the best valid partial schedule; never “fix” targets in the date solver. |
+| Approved lock conflicts with an available candidate's only slot | Preserve lock, optimize remaining coverage and show scarcity. |
+| Unapproved conflicting locks | Structural error; no solver policy can choose which mandatory lock to discard. |
+| Two engineers and many weekends | Preserve the cap and return uncovered weekends; alternate feasible weekdays. |
+| Five split weekends | Separate-day consecutiveness and distinct-weekend cap may require more participants than combined weekends; do not merge them automatically. |
+| First-of-month Saturday / year boundary / leap day | Canonical coverage/ownership remains exact; no date is duplicated or lost. |
+| Neighbor publication differs from its draft | Both bind as labeled context; neither is rewritten; only published work enters repayment projection. |
+| Preserved inactive/unavailable secondary | No primary points or spacing effect; keep publication integrity warning for separate manager review. |
+| Special/lock/point total changes after confirmation | Invalidate old result, retain numbers for review and require explicit allocation confirmation. |
+| Replacement/weighted swap after publication | One authoritative transfer event, preserving exemptions and repayment provenance; Q1 governs the earmarked-repayment exception. |
+| Repeated publication with new physical duty IDs | Stable lineage prevents new duplicate work, debt or settlement. |
+| Partial unpublished draft | No compensation from unmet nominal targets or draft edits; Publish requires resolution. |
+| Inactive debtor/creditor | Preserve/freeze incident claims; active unrelated obligations progress. |
+| Inactive intermediary with zero net | Show frozen counterpart details; do not silently bypass the freeze. |
+| Repayment not feasible for several months | No expiry or arbitrary cap; preserve age and try feasible units next proposal. |
+| Projection changes after a future month was published | Correct underlying ledger/projection; no automatic schedule rewrite. |
+| Manual compensation crosses zero | Require explicit selected reverse direction; never create a hidden reverse claim. |
+| Cancellation/runtime failure | Keep the accepted draft; no stale application or synthetic infeasibility claim. |
+| Timeout with verified partial incumbent | Present/save as partial best found, with unproved stages stated. |
+| Unique valid/equal-quality arrangement | New seed may reproduce it; invalid or lower-quality variety is not acceptable. |
+
+## 18. Future acceptance matrix and readiness
+
+These are future implementation tests, not new test code in this PR.
+The original 57 IDs M1–M12, B1–B12, F1–F9, D1–D8, U1–U8 and I1–I8
+are retained with corrected outcomes. Additional IDs cover the new decisions.
+Replace intentionally obsolete expectations while preserving unrelated
+regressions. Use synthetic data; do not validate permissions on live members.
 
 ### 18.1 Mathematical solver tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| M1 | Normal feasible weighted month | Every required primary block covered once; all exact targets satisfied. |
-| M2 | Integer and half-point targets | Exact unit conservation; no floating-point tolerance accepts an incorrect target. |
-| M3 | Special duty larger than target / incompatible subset weights | Proven impossible model is rejected, even if raw available points exceed demand. |
-| M4 | Two engineers share three one-point slots but need six points | Detect global infeasibility despite individually sufficient counts. |
-| M5 | Feasible but very constrained engineers | Find a complete solution without consuming scarce opportunities incorrectly or rejecting limited availability by count alone. |
-| M6 | Consecutive-only opportunities, including Thursday → combined weekend → Sunday | Automatic assignments never create a consecutive pair. |
-| M7 | Previous and existing next-month boundaries | Fixed intervals constrain automatic decisions; Friday-owned carried coverage is modeled once. |
-| M8 | Weekend caps, small teams and many split weekends | Count distinct primary weekend identities and prove/report capacity contradictions without relaxing caps. |
-| M9 | Multiple locks and authorized exceptions | Preserve fixed assignments; forbid new automatic violations; account exactly for remaining points. |
-| M10 | Small instances with independently enumerable spacing outcomes | Verify the maximum minimum gap, then secondary spacing under the approved metric and objective. |
-| M11 | No feasible schedule, timeout/unknown and feasible incumbent without optimality proof | Distinct statuses; no false infeasibility, false optimum or incomplete success. |
-| M12 | Deterministic reproducibility, alternatives and unique arrangements | Same recorded inputs/settings reproduce as specified; valid variety respects higher priorities; uniqueness is handled honestly. |
+| M1 | Fully feasible ordinary month | Each block has one primary, assigned units equal every target and all deficits are zero. |
+| M2 | Half-point targets/weights | Exact unit sums; 1.1 input rejected rather than rounded; no fractional primary assignments. |
+| M3 | Target 3 with only a 4-point candidate | Candidate remains unassigned to that engineer, unmet 3 shown; other valid work generated. |
+| M4 | Two engineers target 3 each, same three separated one-point slots only | At most 3 of 6 points assigned between them; shared shortage proved when search completes; partial generation allowed. |
+| M5 | Two constrained engineers with disjoint three-slot opportunities | Preserve their scarce slots and achieve each exact 3 when the rest of the model permits full coverage. |
+| M6 | Same engineer is the only candidate for two consecutive days | At most one day assigned; no target increase or consecutive exception invented. |
+| M7 | Fixed previous/next primary touches selected boundary duty | That engineer cannot receive the conflicting automatic duty, including Friday-owned cross-month ranges. |
+| M8 | Two engineers, five combined weekends, no exceptions | At most two weekend blocks/four weekend dates assigned automatically; remaining weekends visible. |
+| M9 | Valid locks plus scarce remaining opportunities | Every locked variable is retained; no extra work beyond target, even if keeping a lock reduces coverage. |
+| M10 | Enumerable spacing alternatives 6/20 versus 13/13 days | With identical higher objectives and context, choose 13/13; a distant duty cannot hide the close pair. |
+| M11 | Complete proof, verified partial, optimal partial and timed-out incumbent | Distinct completeness/proof/termination fields; no timeout reported as mathematical infeasibility or optimum. |
+| M12 | Identical input/version/settings/seed/work budget | Reproduce the specified result; new seeds vary only equivalent valid alternatives and uniqueness is permitted. |
+| M13 | Section 16.8 weekend 1 versus special weekday 5, targets 5/1 | Choose two-date weekend, assigned 1 and total missing 5; do not maximize point weight first. |
+| M14 | Section 16.9 special Friday 0.5 versus ordinary weekday 1 | At equal one-date coverage, choose special Friday despite larger point deficit. |
+| M15 | Arbitrary valid partial result | Sum of engineer deficits equals unassigned duty units; configured targets still sum to all required units. |
+| M16 | Locked zero gap plus two movable gap patterns | Minimum remains zero; secondary gap ordering chooses the better remaining small gaps. |
+| M17 | Structurally valid locks and no usable automatic edges | Locks plus all other u=1 form a valid partial incumbent; optional model is not reported infeasible. |
+| M18 | Variable number of assigned blocks at equal higher objectives | Successor gaps/padded comparison follow section 11; no off-month-only or unassigned-duty gap is scored. |
 
 ### 18.2 Business-rule tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| B1 | Normal fair month and seniority ordering | Reviewed default-allocation rule, active participation, exact sum and senior-first display. |
-| B2 | Combined/split weekends | 1 total or 0.5 per half before additions; correct identity and primary-only cap. |
-| B3 | Friday/Saturday crosses month or year; month starts Saturday; leap day | Correct ownership, coverage and monthly point totals without duplication. |
-| B4 | Special Blocks, including cross-month ranges | Daily additions in 0.5 increments, correct weekend split/ownership, exact accounting and reviewed edit behavior. |
-| B5 | Manual locks, unlocks, locked availability and consecutive overrides | Locks persist; availability stays recorded; only explicitly permitted exceptions survive. |
-| B6 | Locked points below/equal/above target | Exact remaining workload; none added at equality; invalidity above target. |
-| B7 | Entirely unavailable engineer, uncovered duty and legitimate zero target | Early actionable conflict or valid zero allocation; no silent target change. |
-| B8 | Temporary redistribution | Reviewed seniority traversal, eligibility skips, exact half-point transfers and global feasibility; failure remains actionable. |
-| B9 | Permanent redistribution | Most senior eligible donor among those with highest current allocation; locked floor respected; total conserved. |
-| B10 | Emergency assignments | Preserved; zero regular points, no debt/spacing/consecutive/weekend effect; integrity policy also respected. |
-| B11 | Changed specials, locks, membership, constraints or boundaries after allocation | Old validation is not reused for changed inputs; no silent target repair. |
-| B12 | Generated/manual but unlocked draft primaries | Behavior matches the policy approved before implementation, with explicit locks always preserved. |
+| B1 | Eight ordinary points, three otherwise equivalent eligible engineers | Ordinary proposal senior-first 2/3/3; compensation outranks this remainder tie; no seniority multiplier. |
+| B2 | Ordinary combined/split weekend | Combined 1 or separate 0.5/0.5; one shared Friday identity; primary-only distinct-weekend counting. |
+| B3 | 31 December 2027 / 1 January 2028, leading Saturday and leap day | Weekend entirely December-owned; no independent January Saturday; leap date covered exactly once. |
+| B4 | Two special weekend dates, +2 each, cross-owner range | Two 2.5 duties, no combined extra base; owner-scoped dates/points preserved. |
+| B5 | Availability/consecutive manager exceptions | Specific reviewed fixed assignment/pair retained; automatic neighboring violations remain prohibited. |
+| B6 | Target 3 with locks 1, 3 or 4 | Remaining 2, 0, or structural invalidity respectively; equal locks receive no extra primary points. |
+| B7 | Engineer unavailable all month; everyone unavailable on a duty | Valid targets remain unchanged; corresponding deficits and uncovered dates shown in partial output. |
+| B8 | Temporary decrease, next recipient blocked, newest reached | Skip globally blocked recipient, wrap once, preserve source/counterpart provenance and exact half units. |
+| B9 | Permanent increase; eligible donors both target 4 | Choose most senior highest-target donor; a donor locked at 4 cannot donate below 4; no new IOU. |
+| B10 | Secondary e1 retained on duty, e1 otherwise best primary | e1 excluded only by identity integrity; secondary earns no primary points, cap, spacing or compensation. |
+| B11 | Special, constraint, lock, member or boundary changes during validation | Old fingerprint rejected; no silent target total or lock repair. |
+| B12 | Draft swap/manual primary edit followed by Generate | Unlocked primaries discarded from constraints; explicit locks/targets/secondary structure retained. |
+| B13 | Redistribution lacks an automatic feasible recipient | Requested reduction remains pending; total warning shown. Explicitly balanced infeasible final table permits partial generation. |
+| B14 | A duty acquired through a permanent transfer is later ordinarily replaced | Original exemption persists; the separate new ordinary transfer is classified once, not permanently exempted by duty identity. |
+| B15 | Debtor offered 5, manager temporarily confirms 4 | Assigned points never exceed 4; unperformed repayment carries forward; solver cannot restore 5. |
+| B16 | 0.5 claim, only whole-point realizable target changes | Do not round/overpay; leave 0.5 outstanding unless reviewed adjustments make it feasible. |
+| B17 | Valid locks on two explicitly approved weekends | Those weekends retained; no third automatic weekend or blanket consecutive exception. |
 
-### 18.3 Fairness-accounting tests
+### 18.3 Compensation-accounting tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| F1 | Temporary reduction and extra workload taken by recipients | Both sides reflected under the approved accounting formula. |
-| F2 | Permanent extra/reduced allocation | Neither side creates future compensation from the deliberate transfer. |
-| F3 | Temporary and permanent adjustments together | One correct final target; provenance remains separate. |
-| F4 | Vacation or infeasible repayment across several months | Unsettled balance persists until compensated; no expiry or hard-rule violation. |
-| F5 | Compensation competes with seniority and half-point remainder | Behavior follows reviewed priority/rounding policy and conserves the monthly total. |
-| F6 | Approved swaps of differently weighted published duties | Actual current publication drives workload; permanent adjustments are treated under the reviewed provenance policy. |
-| F7 | Repeated reconciliation, republish, restore, deletion and late historical updates | No double-counted balances; current authoritative history and reviewed propagation policy are applied. |
-| F8 | New/inactive/reactivated engineers | Opening/carrying balance behavior follows the reviewed membership policy; no invented historical workload. |
-| F9 | Draft generation, reopening and month independence | Unpublished plans do not replace actual fairness history; previous/next assignments are not rewritten. |
+| F1 | Ordinary temporary A −1, B +1 | No draft event; first authoritative publication creates A owes B 1 once. |
+| F2 | Permanent A −1, B +1 | Neither side gains debt/credit for this transfer. |
+| F3 | Section 16.4 temporary + permanent to E | Final targets 4/1/1; only A owes E 1; B's permanent transfer creates no claim. |
+| F4 | Vacation blocks repayment over three months | Same outstanding units and original age persist, with no expiry or invalid assignments. |
+| F5 | Four points can feasibly be repaid in one month | Propose all 4 before ordinary fairness ties; no arbitrary monthly cap. |
+| F6 | Published Daniel 1 / Noam 3 weighted swap | Noam owes Daniel 2; unchanged permanent provenance preserved; equal-weight swap adds no claim. |
+| F7 | Repeated replay/publication/source retry | Same source/idempotency key yields one effect; unchanged copied intent is not charged again. |
+| F8 | New, inactive and reactivated members | New has no imported debt; inactive incident edges frozen; reactivation retains units/age and history. |
+| F9 | Draft replacements, swaps, regeneration, reopen/cancel | No new ledger origins/settlements from those draft changes; independently due published work may still reconcile. |
+| F10 | X owes Y 2; reserve 1 repayment | Proposed X +1/Y −1; Users net X −2/Y +2 until actual completion, then −1/+1. |
+| F11 | X -> Y 2 and Y -> X 1 | Normalized X -> Y 1; underlying two events retained. |
+| F12 | X -> Y 2 and Y -> Z 1 | X -> Y 1 plus X -> Z 1; each engineer's net conserved. |
+| F13 | X -> Y 2, Y -> Z 1, Z -> X 0.5 | X -> Y 1 and X -> Z 0.5 after deterministic netting. |
+| F14 | Equal cycle, longer cycle, shuffled raw row order | Cyclic amount cancels, net positions unchanged; identical normalized endpoints/provenance regardless of input order. |
+| F15 | January claim 2, February 1; repayment capacity 1.5 | January receives 1.5 after completed work; residual January 0.5 and February 1. |
+| F16 | Old claim infeasible, later claim can receive 1 | Later claim progresses by 1; old claim stays whole and keeps priority for the next proposal. |
+| F17 | Normalize, increase an old obligation, normalize again | Residual old units retain age; added units carry new source time; derived normalization idempotent. |
+| F18 | Manual + on A, counterpart B, amount 0.5 | Explicitly create B -> A 0.5 with reason/history; it enters ordinary future repayment. |
+| F19 | Manual decrease larger than selected outstanding amount | Do not silently cross zero; require an explicitly reviewed reverse obligation/correction. |
+| F20 | Manual partial/full settlement or correction | Append reasoned event, preserve original, change both endpoints consistently and reject negative outstanding amounts. |
+| F21 | Ordinary published Daniel duty 2 replaced by Noam | Daniel -> Noam 2 once; no claim from merely editing the draft. |
+| F22 | Future published repayment; before/at/after actual end | No settlement before end; once at end<=now, one settlement; repeated later access changes nothing. |
+| F23 | October actual debt 2, published pending repayment 1 before November opening | Actual 2, projected November opening 1; unpublished drafts/historical copies excluded. |
+| F24 | Section 16.11 pending duty weight drops usable repayment from 1 to 0.5 | Projection becomes 1.5; actual remains 2 until end, then 1.5; published November unchanged. |
+| F25 | Two tabs reconcile the same completed contribution | One earned settlement under lock/unique key; no duplicate balance reduction. |
+| F26 | Repay normalized X -> Z 0.5 through Y | Both raw path legs reduced by 0.5; endpoints change by 0.5 each, Y net unchanged, one repayment. |
+| F27 | Ordinary baseline remainder/new random arrangement | No new compensation merely for baseline workload/date differences. |
+| F28 | Section 16.5 debtor target lowered by 1 and recipient carries it | After planned 2 actually complete, debtor owes Recipient 1, not two duplicated residual points. |
+| F29 | Extra required point weight added/removed with same primary | No fabricated counterparty debt; allocation/repayment capacity explicitly reviewed. |
+| F30 | Replacement of an uncompleted repayment-bearing duty | Q1 gate: recommended residual 2, not 4, in the precise scenario in 18.8; final expected result requires that product confirmation. |
+| F31 | Deactivation after work end but before next lazy access | Checked deactivation reconciles earned work first; freeze cannot erase earned settlement. |
+| F32 | Duty ends during inactive participation freeze | No automatic projected/actual settlement on reactivation; explicit recorded resolution required for that held work. |
+| F33 | Stored ordinary baseline 2, debt 3, final Target 5, Locked 3 | Locked duties count inside the 5 and can fund the planned 3; do not inflate the ordinary baseline to 3 and erase repayment capacity. |
+| F34 | Whole-point ordinary baseline tie 1/2 or 2/1, newer A owes B 2 | If all 3 points can be assigned to A, choose ordinary A 1/B 2 then repay 2; do not first favor newer A 2/B 1 and unnecessarily limit repayment to 1. |
+| F35 | Ordinary combined A weekend becomes Friday A / Saturday B | Compare 0.5-point date atoms, create A -> B 0.5 once; no extra combined-weekend charge and no emergency points. |
+| F36 | Ordinary share A 2; absence-driven proposal A 0, B carries those 2 | Record an explicit pending temporary A -> B transfer; no draft debt, A owes B 2 on publication; do not silently reset A's ordinary baseline to zero. |
+| F37 | Y becomes inactive before versus after active X -> Y -> Z normalization | Before: new incident claims frozen, no bypass. After: existing X -> Z remains active, Y is provenance only; replay order stable and no normalized claim silently reassigned. |
+| F38 | Late correction refers to a source before a committed freeze/netting event | Append a current-sequence adjustment with original provenance; do not reorder committed business events or reconstruct different historical counterpart/freeze decisions from current row order. |
 
 ### 18.4 Database integrity and security tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| D1 | Authorized/unauthorized generation save and lock/allocation updates | Checked manager permissions, active/approved membership and database-enforced access remain effective. |
-| D2 | Concurrent save or identity/permission change while solving | Stale revisions/authorization fail atomically; no obsolete result is applied. |
-| D3 | Lock and adjustment metadata save/reload and publication lifecycle | Future reviewed persistence retains the intended meaning without rewriting immutable history. |
-| D4 | Primary/secondary identities, foreign keys and duty intervals | Integrity rules remain enforced; manual overrides cannot waive structural identity or span checks. |
-| D5 | Exact weights and point provenance | Valid denominations round-trip; points stay with duties; no duplicate/missing owned coverage. |
-| D6 | Draft/publication saves, rollback and cross-month isolation | Neighboring drafts/publications, unrelated data and history remain intact; failure causes no partial unauthorized write. |
-| D7 | Availability and private notes | Access restrictions preserved; diagnostic/solver persistence does not expose private notes to unauthorized users. |
-| D8 | Published swaps and current publication changes | Consent/admin checks preserved; emergency/date weights and drafts remain intact; fairness reads the authoritative result. |
+| D1 | Anonymous/pending/inactive/engineer attempts manual ledger mutation | Denied; only checked manager authority can create/correct discretionary obligations. |
+| D2 | Demotion, identity change or revision race while solving/saving | Stale/unauthorized operation fails atomically; no old result or ledger change applied. |
+| D3 | Lock/allocation/repayment metadata save, publish, reopen/restore | Reviewed metadata and lineage round-trip; immutable publication and ledger history retained. |
+| D4 | Duplicate primary/secondary, missing FK or invalid duty span | Database/checking rejects it even with manager scheduling override flags. |
+| D5 | Half-unit persistence and reassignment | Exact weights survive; points remain on duty slots; off-denomination values rejected. |
+| D6 | Save partial draft; attempt Publish; injected transactional failure | Draft save succeeds if valid; incomplete Publish rejected; rollback leaves all owners/ledger intact. |
+| D7 | Engineer or unauthorized viewer requests private notes/reason data | Existing note privacy maintained; no availability note copied into ledger/public calendar; role-scoped audit view enforced. |
+| D8 | Published swap and repeated callback/approval retry | Existing consent/admin checks preserved; one commitment transition, no duplicate ledger amount or history rewrite. |
+| D9 | Publication row IDs change or an old version is deleted | Stable source keys prevent replay; deleting a version does not cascade away ledger events/earned effects. |
+| D10 | Client forges time, balance, permanent flag or settlement amount | Checked server recomputes trusted source effects and end-time eligibility; forged client values do not authorize writes. |
+| D11 | Concurrent lazy access and manual correction | One revision-locked order, exact replay and source uniqueness; global sum(net)=0. |
+| D12 | Correction of a previously reconciled source | Append one referenced adjustment/reversal, no deletion or duplicate settlement, later publications unchanged. |
 
 ### 18.5 UI interaction tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| U1 | Desktop/mobile, English LTR and Hebrew RTL | One usable allocation popup, senior-first names and required columns; keyboard/focus access preserved. |
-| U2 | Target/Permanent + / − controls | Default 1 on each opening; 0.5 toggle works; final target and counterpart changes are clear. |
-| U3 | Target/Locked/Generate values | Remaining equals final target minus locked points; monthly totals and invalidity are visible. |
-| U4 | Invalid/confirmed infeasible allocation | Generate disabled; concise actionable inline explanations; no second conflict popup. |
-| U5 | Pending, timeout/unknown, cancellation and stale validation | Honest state under the reviewed interaction policy; no false impossibility or outdated enabling. |
-| U6 | Manual Lock/Unlock and overrides | Deliberate manager intent and automatic assignments are distinguishable; no engineer constraint removal required. |
-| U7 | Generate/Regenerate/manual resolution | Exact targets and locks preserved, alternatives described honestly, and incomplete coverage never presented as completed success. |
-| U8 | Temporary/permanent explanation | One clear final target; future-compensation distinction understandable without multiple fairness counters or solver jargon. |
+| U1 | Phone/desktop and English/Hebrew | One usable popup with required columns, senior-first order, RTL/LTR and keyboard/focus access. |
+| U2 | Open/reopen, + / − and step toggle | Step resets to 1 on each opening; 0.5 edits exact; counterpart/final target clear. |
+| U3 | Target 3, Locked 1, Assigned 2.5 | Generate request initially 2; final Target stays 3, assigned 2.5 and missing 0.5 shown. |
+| U4 | Wrong sum/lock floor versus proved complete infeasibility | Invalid inputs disable Generate; balanced infeasible input enables Generate partial with inline explanation. |
+| U5 | Pending/UNKNOWN, timeout incumbent, Cancel or stale result | Honest status; no false impossibility/optimum; cancelled/stale result not applied. |
+| U6 | Explicit unavailable-date lock and scoped exception | Unavailability retained; manager approval/lock visible; ordinary unlocked edits remain distinct. |
+| U7 | Partial output with uncovered combined weekend | Both uncovered dates marked, full block points and per-person deficits retained, Partial/Requires Manager Resolution visible. |
+| U8 | Complex shared-capacity explanation | Names/dates/points and known limits inline; no extra conflict modal or primary solver jargon. |
+| U9 | Users indicators and counterpart details | +2 means owed, −1 means owing; linked normalized and frozen details inspectable. |
+| U10 | Manual compensation create/increase/decrease/settle/correct | Counterpart/direction/reason required as specified; no hidden reverse claim or deleted history. |
+| U11 | Auto redistribution cannot balance an edit | Requested limit retained; monthly imbalance inline; consuming pending points preserves source/type. |
+| U12 | Compensation projection changes before next Generate | Refreshed proposal reviewed explicitly; confirmed targets never silently rewritten. |
 
 ### 18.6 Integration and performance tests
 
-| ID | Scenario | Required assertion |
+| ID | Scenario | Required observable result |
 |---|---|---|
-| I1 | Typical 12-engineer month | Measured practical interactive performance; complete end-to-end draft flow. |
-| I2 | Very constrained, small/large teams, split weekends, high special weights and many locks | Record feasibility/optimization behavior, memory and time limits without invented benchmark guarantees. |
-| I3 | Repeated allocation edits and long solving | Responsive UI, cancellation and correct result/input association; no stale save. |
-| I4 | Next.js deployment, browser/WebAssembly/Worker support and iPhone Safari | Actual selected integration and device behavior validated before acceptance; emulation alone is not proof of real-device performance. |
-| I5 | Previous/next published and working assignments, including reopened drafts | Approved context-source policy applied without modifying neighboring months. |
-| I6 | Swap, publication or availability/revision update while solving | Revalidation or checked-write rejection preserves correctness; fairness and targets reflect authoritative inputs. |
-| I7 | Combined/split normalization, locks and emergency coverage through save/reload | No lost lock/override meaning, emergency change, duplicated duty or point drift. |
-| I8 | Cross-owner Special Blocks and post-allocation weight changes | Reviewed workflow preserves each month's ownership, locked assignments and publication history. |
+| I1 | Typical 12-engineer month, cold and warm solves | Record model/solve/save times and memory against measured release budgets; full and partial flows complete. |
+| I2 | Small/large teams, tight availability, special weights, many splits/locks | Every incumbent satisfies hard rules; stopped stages/proofs accurate; no lower-tier trade of coverage. |
+| I3 | Cancel synchronous WASM solve; change identity/input; retry | Worker terminates responsively; no stale save; new run has a fresh request/seed and clean resources. |
+| I4 | Actual supported iPhone Safari and pinned Next.js production build | WASM assets load, repeated solves/cancel work within measured budgets; emulation alone not accepted as device proof. |
+| I5 | Neighbor current publication A differs from open working B | Both labeled boundary guards enforced; neither owner changed; only publication enters compensation projection. |
+| I6 | Duty completion becomes due while an allocation/save is in progress | Checked reconciliation/fingerprint prevents outdated plan application; manager review required rather than target mutation. |
+| I7 | Multiple fresh Generate actions after draft swaps | New seeds; unlocked choices not constraints; locks/targets/secondary/structure/ledger preserved. |
+| I8 | Cross-owner Special Block edit with a published neighbor | No silent reopen/change; only explicitly reviewed owner drafts updated atomically; generation remains owner-scoped. |
+| I9 | Users/Generate access repeatedly, no timer job | Lazy actual/projected view correct; earned settlements idempotent; no daily background dependency. |
+| I10 | Publish/swap copies current month to new physical rows | One logical commitment/attribution history; identical copied duties not counted twice. |
+| I11 | Late October change after November publication | November assignments/pointer unchanged; next proposal uses corrected October projection/actual facts. |
+| I12 | Deadline stops after coverage proof but before spacing proof | Present the valid best result with coverage proof only; no overall optimality claim. |
+| I13 | Adapter accidentally returns LP fractional x values | Independent validator rejects them; no fractional/rounded duty or misleading complete draft saved. |
+| I14 | Future migration fresh replay and upgrade from existing schedules | Existing publications/notes/revisions preserved; only explicitly reviewed opening obligations imported, no invented historical fairness debt. |
+| I15 | Generate selected month already contains started published work | Q2 gate: under the recommended first scope reject fresh generation while retaining existing checked swaps; if remainder generation is approved, preserve started facts and explicitly update remaining-point accounting before implementation. |
 
-### 18.7 Acceptance gates
+### 18.7 Implementation gates
 
-Before replacing the current algorithm:
+Before implementation delivery:
 
-1. Resolve product choices required to construct a complete, unambiguous model.
-2. Approve the baseline, compensation and redistribution accounting policies.
-3. Validate the selected solver/package and execution architecture against the
-   actual TypeScript/Next.js/browser/device environment.
-4. Demonstrate exact point conservation, complete coverage and hard constraints
-   with the relevant matrix above.
-5. Demonstrate persistence, security, publication and adjacent-month preservation.
-6. Establish and validate measured performance, cancellation and timeout policies.
-7. Keep manager-facing controls and explanations simple in English and Hebrew.
+1. Obtain Q1 and Q2 below and update their affected regressions/scope rules.
+2. Implement pure integer/model/ledger validators and source-key invariants
+   alongside the affected behavior, preserving the existing engine/storage split.
+3. Verify the solver adapter/package/license/Next.js/Worker/device gates before
+   adopting a dependency; measure limits rather than invent latency promises.
+4. Test complete and partial coverage objectives against small independently
+   enumerable instances, then constrained realistic months.
+5. Test ledger replay, normalization, inactive freezes, projections and retries
+   using the precise amounts above.
+6. Enforce persistence/auth/revision/publication behavior with disposable database
+   and upgrade regressions; client-only tests are insufficient.
+7. Review existing real opening obligations explicitly if they need importing.
+   Never reconstruct debts from old heuristic inequality or every historical
+   publication copy. Import verified linked amounts with source/reason.
 
-Successful local solver tests do not establish database authorization or actual
-iPhone performance. Future database work and releases retain their existing
-review and approval gates.
+No implementation is authorized by this documentation change. Once Q1 and Q2
+are resolved, the remaining integration/device/migration work is ordinary
+implementation validation, not a new product questionnaire.
 
-### 18.8 Unresolved decision register
+### 18.8 Remaining product decisions
 
-This register records missing decisions, not recommended answers or permission
-to weaken an agreed requirement.
+#### Q1: Repayment-bearing replacement
 
-| Ref | Decision still needed | Relevant sections |
-|---|---|---|
-| R1 | Exact baseline/seniority allocation, half-point remainder and priority of historical compensation. | 5, 7 |
-| R2 | Full fairness recurrence, sign/repayment conventions, permanent intent after weighted swaps, membership and retroactive publication changes. | 7 |
-| R3 | Temporary traversal/wrap, recipient splitting and reverse edits; reverse/multi-donor permanent edits; fractional redistribution. | 6 |
-| R4 | Precise lock exception authorization, additional-weekend scope, adjacent-month lock conflicts and lock meaning through normalization/publication/restore. | 3, 9, 10, 14 |
-| R5 | Emergency exclusion from generation versus existing primary/secondary identity and publication integrity rules. | 10, 14 |
-| R6 | Neighboring source/status policy when working assignments and a current publication coexist. | 10 |
-| R7 | Exact spacing metric, fixed-pair treatment, boundary horizon, secondary objective and role of preferred dates. | 11 |
-| R8 | Cross-owner Special Block editing, target recalculation after point/structure changes and preservation of manager edits/locks. | 4, 14, 17 |
-| R9 | Regeneration treatment of unlocked manual/automatic assignments and permitted meaningful alternative selection. | 15 |
-| R10 | Pending/UNKNOWN Generate behavior, search limits, retry/cancel interaction and acceptance of feasible but unproved-optimal incumbents. | 8, 12, 14 |
-| R11 | Failed-generation persistence and distinction between an existing unfinished draft and a newly produced partial result. | 13, 15 |
-| R12 | Whether generation may change weekend combined/split structure; any desired small-team weekend exception requires separate agreement. | 3, 10 |
+**Q1 — Is a replacement of already planned repayment a new additional debt?**
+
+Concrete scenario:
+
+1. A owes B 2 from previous work.
+2. A future published 2-point duty is explicitly earmarked to repay all 2.
+3. Before it ends, B replaces A. No actual repayment has occurred.
+
+Two readings of the confirmed requirements compete:
+
+- The full-value published-replacement rule creates another A -> B 2, while
+  the unperformed old repayment remains: A owes 4.
+- The replacement merely cancels the pending repayment/relief: A still owes
+  the original 2. No second charge for that same missed repayment.
+
+**Recommended answer: retain 2**, cancelling the repayment reservation; create
+additional compensation only for any genuinely new ordinary burden beyond the
+already outstanding repayment. This is consistent with temporary deferral and
+avoids duplicating one historical workload shortfall.
+
+The ordinary replacement and weighted-swap cases are otherwise settled.
+The choice here affects source classification, repayment tags, projection
+corrections and F30. It cannot be hidden inside a general monthly fairness
+formula. Keep this narrow classification gated until confirmed; do not implement
+either interpretation silently.
+
+#### Q2: Fresh generation of an already-started month
+
+An owner month may already contain completed or in-progress published duties,
+none marked as manual locks. “Discard every unlocked primary” would let fresh
+Generate reassign that work; doing so can change compensation for work that has
+already happened. Freezing it instead introduces automatically fixed history
+points that the specified `Generate = Target − Locked` table does not currently
+distinguish.
+
+Two valid product scopes exist:
+
+- Limit fresh Generate to owner-month coverage that has not started. Continue
+  the existing checked current-month published replacements/swaps for current
+  operational changes; keep historical corrections exceptional.
+- Generate only the current month's remaining unstarted work, preserving
+  started/completed authoritative duties as immutable facts. Explicitly account
+  for their points in target floors and remaining-work presentation, alongside
+  manual locks, without calling them implicit manager locks.
+
+**Recommended first scope: Generate only not-yet-started owner-month coverage.**
+It preserves the agreed fresh-generation/Target-minus-Locked model and avoids
+building a retroactive scheduling workflow. If current-month remainder generation
+is required, approve the second scope and update the fixed-history accounting/
+table before implementing it. This decision does not disable or alter the
+existing approved today-or-future published swap workflow.
