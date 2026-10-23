@@ -20,16 +20,18 @@ does not receive an automatic exemption from weekend or consecutive-duty rules.
 ### 1.1 Requirements and engineering decisions
 
 - Product requirements in this document include exact target ceilings, explicit
-  locks, pairwise compensation, fresh generation and best-effort partial output.
+  locks, pairwise compensation, fresh generation before owner-month coverage
+  starts and best-effort partial output.
 - Recommended engineering design selects exact integer units, a pure core,
   deterministic normalization, an append-only ledger and lexicographic solving.
   Package adoption and migrations require the future implementation review.
 - Current-behavior statements describe inspected source, not hosted verification.
-- Section 18.8 contains only the two concrete product decisions requiring
-  confirmation. Routine technical decisions are specified in the relevant section.
+- All blocking product decisions are resolved. Section 18.8 records V1 scope and
+  readiness; routine technical decisions are specified in the relevant section.
 
-This document supersedes the earlier complete-only design in PR #30. Confirmed
-infeasibility does **not** disable Generate. Structural invalidity does.
+This document supersedes the earlier complete-only design in PR #30. Within the
+V1 generation window, confirmed infeasibility does **not** disable Generate.
+Structural invalidity or owner-month coverage having started does.
 An incomplete result is useful output, labeled **Partial / Requires Manager
 Resolution**, with all uncovered dates and unmet points retained.
 
@@ -65,7 +67,7 @@ The existing PR branch was inspected before editing.
 | History/compensation | Month-independent balance; no persistent compensation ledger. | Auditable linked obligations, normalization, oldest feasible repayment and projected opening balances. |
 | Consecutive duties | Allowed; short gaps penalized softly. | Automatic consecutive duties forbidden, including boundary conflicts and separate split halves. |
 | Locks | Legacy optional `locked` type remains; generation ignores it and payloads do not persist locks. | Explicit persistent manager locks with specific approved exception scope. |
-| Regeneration | Replaces selected-month primaries, including manual assignments. | Fresh arrangement each time; only explicit locks preserve particular primaries. Confirmed targets and other persistent inputs survive. |
+| Regeneration | Replaces selected-month primaries, including manual assignments. | Before owner-month coverage starts, fresh arrangement each time; only explicit locks preserve particular primaries. Confirmed targets and other persistent inputs survive. Generate/Regenerate disabled once coverage starts; manual changes/swaps remain available. |
 | Randomness | Fresh cryptographic seed in the UI; deterministic engine seeds available. | Fresh seed on every Generate; equivalent input/version/settings/seed reproducibility. Seed acts only after higher objectives. |
 | Emergency cover | Preserved, but currently earns full points and affects load, gaps and weekend counts. | Preserved; zero primary workload/compensation/spacing/weekend effect. Primary/secondary identity integrity still filters candidates. |
 | Weekend ownership | Friday owns both halves, even across month/year. | Preserve this canonical rule and explicit combined/split structure. |
@@ -113,10 +115,18 @@ for completion and elapsed-time spacing. Use the actual local offset on each dat
 not a fixed UTC offset or an assumption that every local day is 24 hours.
 Represent gaps as integer elapsed minutes; no floating equality is needed.
 
-The operational opening instant of a month is 09:00 on its first **owned** duty
-date. If the calendar month starts Saturday, that is Sunday the 2nd. This cutoff
+The operational opening instant of a month is the earliest start of its required
+canonical **owned** duty blocks: `coverageStart(M) = min(startInstant[d])` for
+all blocks owned by M. Normally this is 09:00 on the first owned duty date. If
+the calendar month starts Saturday, that is Sunday the 2nd. Derive it from the
+required calendar coverage, regardless of assignments, locks, publication or
+draft status; removing assignments cannot move this instant.
+
+This is both the opening cutoff for compensation projection and the V1
+Generate/Regenerate cutoff: generation is allowed only while authoritative
+`now < coverageStart(M)`. At equality coverage has started. The projection
 includes the prior owner's duty finishing at the same handover, without treating
-a duty as finished before its actual end.
+a duty as finished before its actual end. Section 15.4 defines enforcement.
 
 ### 3.2 Friday ownership and structure
 
@@ -484,6 +494,7 @@ they do not overwrite/delete original events or rewrite later schedules.
 | Source | Effect |
 |---|---|
 | Ordinary published replacement: Daniel's 2-point duty goes to Noam | Daniel owes Noam 2. Retain old/new duty facts and source publication transition. |
+| Noam replaces Daniel on an uncompleted 2-point duty reserved to repay Daniel's existing 2-point debt to Noam | Cancel that repayment reservation; Daniel still owes Noam exactly 2. No new obligation for those units. |
 | Published weighted swap: Daniel 1, Noam 3 become Daniel 3, Noam 1 | Noam owes Daniel 2. Record the net transfer once, not both a 3-point and 1-point independent charge plus another reconciliation. |
 | Equal-weight published swap | No new obligation. |
 | Confirmed ordinary temporary transfer | Pending intent while draft; on first authoritative publication, create the linked claim for the accepted transferred workload. |
@@ -516,10 +527,20 @@ shared old/new committed capacity transfers automatically; newly added/removed
 units require reviewed allocation intent, not an invented debtor. Actual
 repayment timing always follows the final real duty block's end.
 
-**Repayment-bearing published replacement:** section 18.8 records the narrow
-remaining question about a replacement of work already earmarked to settle an
-old obligation. Preserve all relevant lineage and do not silently select a
-double-charge policy. Ordinary replacement examples above have no such earmark.
+**Cancelled repayment:** when the creditor replaces the debtor on an uncompleted
+published duty earmarked to repay that same obligation, cancel the affected
+repayment reservation. Keep the original outstanding obligation unchanged; the
+attempted repayment is neither earned work nor a new transfer charge. Record the
+authoritative cancellation and attribution lineage for audit, without deleting
+the original claim or reversing an actual settlement that never happened.
+
+Classify the cancelled repayment units before calculating the ordinary
+replacement/weighted-swap transfer. Do not charge them again through gross duty
+value, monthly reconciliation or repeated publication copies. Any separate
+ordinary workload transferred beyond the cancelled repayment component remains
+subject to the ordinary transfer rules, as illustrated in section 16.13.
+Completed/earned settlements are not pending reservations; exceptional
+corrections to them retain the separate audited correction rules.
 
 ### 7.4 Deterministic network normalization
 
@@ -641,7 +662,10 @@ view; it cannot grant itself ledger write permissions.
 If an uncompleted published duty changes, cancel/rebind its projected repayment
 attribution according to the authoritative transition. Projection is recomputed,
 not “undone” by adding compensating actual debt for a settlement that never
-happened. The Q1 replacement classification is isolated in section 18.8.
+happened. If the creditor replaces the debtor on the repayment-bearing units,
+apply section 7.3: the original debt remains, with no new obligation for those
+units. Those cancelled units no longer reduce the projected balance or earn a
+later settlement, including after the replacement duty ends.
 
 A lazy update affects the next allocation proposal, not an already confirmed
 target table or published future month. If October changes after November was
@@ -749,10 +773,14 @@ the achieved amount or hide unfulfilled work.
 
 ### 8.1 Validation and actions
 
+- In V1, disable Generate and Regenerate once owner-month coverage starts, with
+  concise inline text directing the manager to manual changes or swaps. This is
+  a time/scope restriction, separate from mathematical feasibility. Other actions
+  retain their existing authorization and integrity checks.
 - Structural invalidity disables Generate with a specific repair message.
 - Complete-feasibility checks can run in the background while editing.
-- Known complete infeasibility displays “A partial schedule can be generated”
-  and enables the main action as **Generate partial**.
+- Within the open generation window, known complete infeasibility displays
+  “A partial schedule can be generated” and enables **Generate partial**.
 - Pending/UNKNOWN validation does not disable the action solely for lack of a
   proof. The main action starts/continues the global optimization for those inputs.
 - During an active generation/save, prevent duplicate submissions; offer Cancel
@@ -767,13 +795,14 @@ A complete result can say “All duties covered”; “Optimal” is only approp
 for objective stages with proof. Low-level bounds and solver terms belong in
 diagnostics, not primary manager copy.
 
-The manager can change temporary/permanent targets, explicitly select/lock a
-duty including a permitted override, unlock/change a lock, and Generate again.
+Within the V1 generation window, the manager can change temporary/permanent
+targets, explicitly select/lock a duty including a permitted override,
+unlock/change a lock, and Generate again.
 An uncovered duty is a visible action item, not a silent availability exception.
 
-Q2 in section 18.8 gates fresh generation when the selected owner's coverage
-has already started. Do not silently make completed published work an unlocked
-decision variable or disguise immutable history as a manual lock.
+After that window closes, manual resolution and swaps remain available through
+their existing checked workflows; no full-month or remainder-only generation is
+available in V1. Do not disguise immutable history as a manual lock.
 
 ## 9. Locks and scoped manager overrides
 
@@ -1020,6 +1049,7 @@ Keep result completeness, search status and objective proof separate internally:
 
 | State/fact | Meaning and action |
 |---|---|
+| V1 generation window closed | Coverage has started; disable/reject Generate/Regenerate and discard any late result. Keep accepted data and manual-change/swap workflows; this is not a solver infeasibility result. |
 | Structurally invalid | No run/save until repaired; specific inline explanation. |
 | Checking / running | Current input being validated/optimized; responsive UI, Cancel available. |
 | Complete feasible | Verified full coverage and exact targets; spacing may still be unproved optimal. |
@@ -1092,8 +1122,9 @@ canonical duties. Parameters are integer units `q[d]`, confirmed `t[e]`,
 covered-date counts `c[d]`, marked special-date counts `h[d]`, actual intervals,
 weekend IDs, locks, scoped exceptions and fixed neighboring context.
 
-The fresh-whole-month formulation applies to not-yet-started coverage. Q2 must
-be resolved before extending it to a month containing started/completed work.
+The V1 fresh-whole-month formulation applies only before owner-month coverage
+starts. The time gate in section 15.4 is checked outside the solver; started or
+completed selected-month duties never become its decision variables.
 
 Use binary variables:
 
@@ -1269,6 +1300,11 @@ after obtaining the lock. Source keys make retries idempotent. A save checks
 the captured allocation/problem fingerprint as well as revision; UTC time and
 newly due settlements must be reconciled before accepting a stale repayment plan.
 Return a refresh/review requirement instead of overwriting or altering targets.
+The checked generation-result save must also reject a closed V1 generation
+window using authoritative server time, even if revision/fingerprint are unchanged.
+Sample that time after acquiring the workspace lock, immediately before accepting
+the result; do not reuse a client/pre-lock time that could predate a lock wait.
+Do not extend that rejection to otherwise permitted manual changes or swaps.
 
 Only the checked server operation computes authoritative ledger effects.
 Client solver output, member IDs, roles, exemption flags or supplied balance
@@ -1289,8 +1325,10 @@ and required approvals. No live change is authorized by this specification.
 
 ### 15.1 One generation transaction
 
-1. Read the selected owner's canonical blocks, membership, constraints, locks,
-   emergency coverage, publication/working boundary context and accepted revision.
+1. Read the selected owner's canonical blocks and authoritative server time.
+   Reject Generate/Regenerate if coverage has started; otherwise read membership,
+   constraints, locks, emergency coverage, publication/working boundary context
+   and accepted revision.
 2. Lazily reconcile actual compensation at server time and build a separate
    projection through the selected month's operational opening.
 3. Calculate `P`, the ordinary fair baseline and normalized oldest-feasible
@@ -1301,14 +1339,16 @@ and required approvals. No live change is authorized by this specification.
    permanent and deferred repayment units without posting draft ledger events.
 6. Validate structural invariants. Present global full/partial/unknown findings
    inline; known full infeasibility does not block a run.
-7. Confirm targets and freeze the problem snapshot. Draw and record a fresh seed.
+7. Recheck the V1 generation window, confirm targets and freeze the problem
+   snapshot. Draw and record a fresh seed.
 8. Build a fresh arrangement: discard all unlocked selected-month primaries
    from solver constraints, including ordinary manual edits and draft swaps.
 9. Optimize the optional-coverage model lexicographically; retain only valid
    incumbents and honest proof status.
 10. Independently validate the output and its deficits/objectives.
 11. Save the owner-scoped complete or partial draft under checked revision/
-    fingerprint control, preserving locks, emergency assignments and history.
+    fingerprint/time-window control, preserving locks, emergency assignments and
+    history. A window that closed during solving rejects the result.
 12. Present the calendar and target/assigned/missing points. Only the separate
     Publish workflow can commit a complete schedule and ledger intentions.
 
@@ -1318,7 +1358,8 @@ This does not turn old unlocked primaries into solver constraints.
 
 ### 15.2 Every Generate is fresh
 
-Regenerate is the same fresh generation process with a new seed.
+Regenerate is the same fresh generation process with a new seed and the same
+V1 cutoff; it is unavailable once owner-month coverage starts.
 Preserve the manager-confirmed target table unless the manager explicitly edits
 or accepts a refreshed proposal. Preserve availability, locks, weekend structure,
 special duties, emergency coverage, neighboring assignments and actual ledger.
@@ -1337,7 +1378,9 @@ settle an already closed obligation again.
 
 A partial draft retains its original confirmed totals. Each hole and each
 unmet engineer target stays visible. Managers can manually resolve it with
-explicit locks/overrides or revise targets and run again.
+explicit locks/overrides, or revise targets and run again while the V1 generation
+window remains open. After coverage starts, resolution uses manual changes and
+swaps; a partial draft does not extend or reopen the window.
 
 Before publication, all required primary duties must be covered and the current
 reviewed target/lock/integrity rules satisfied. A manual change that alters the
@@ -1353,6 +1396,31 @@ effects once through the existing checked approval/publication path.
 The manager primarily manages current/future work. Historical previews are
 read-only for compensation. Exceptional corrections use explicit audited
 operations and never automatically rewrite later published months.
+
+### 15.4 V1 generation window and future remainder-only generation
+
+**Disable Generate and Regenerate at or after `coverageStart(M)`**, defined in
+section 3.1. This applies even if the month has no publication, a partial/unassigned
+draft or only unlocked assignments. Locking, unlocking, reopening, cancelling a
+draft or replacing a publication does not reset the canonical start instant.
+
+The UI mirrors the cutoff and explains it inline. Recheck authoritative time
+when preparing the request, before starting a solve and in the checked save
+transaction. If the cutoff passes with the popup open, disable its action. If a
+solve is running, cancel/invalidate it; a result arriving after the cutoff is
+discarded even if its inputs and revision still match. Never erase the accepted
+draft or post compensation merely because a late solve is rejected.
+
+Manual assignment changes, locks/unlocks and swaps remain available under their
+existing permissions, date eligibility, consent, revision and publication rules.
+The generation cutoff does not authorize historical edits or weaken any such
+rule. Future owner months remain eligible before their own opening instant.
+
+**Future enhancement, explicitly out of scope for V1:** remainder-only generation
+could preserve started/completed authoritative duties and optimize only unstarted
+work. It would need explicit fixed-history point accounting and remaining-target
+presentation alongside manual locks. V1 neither implements that mode nor converts
+past work into implicit locks to approximate it.
 
 ## 16. Worked examples
 
@@ -1378,7 +1446,8 @@ Daniel has a published 2-point ordinary responsibility. Noam replaces him.
 Create Daniel -> Noam 2 exactly once for that authoritative transition.
 Daniel's net indicator changes by −2 and Noam's by +2.
 A draft-only replacement creates no event.
-This example has no prior repayment attribution; Q1 covers that separate case.
+This example has no prior repayment attribution; section 16.13 covers a
+cancelled repayment instead.
 
 ### 16.3 Weighted published swap
 
@@ -1535,6 +1604,38 @@ repayment is available. Carry 0.5 forward. Do not round it to 1, split an
 ordinary primary duty into two people, or add a permanent transfer without
 explicit manager action just to make the numbers fit.
 
+### 16.13 Cancelled repayment and a separate ordinary component
+
+Daniel owes Noam 2. A future published 2-point duty assigned to Daniel is
+reserved to repay exactly those 2. Before its end, Noam replaces Daniel through
+an authoritative published change.
+
+- Cancel the 2-point repayment reservation and retain its audit history.
+- Daniel's actual outstanding debt remains exactly 2; create no new obligation
+  for that attempted repayment and record no earned settlement/reversal.
+- If the projection previously assumed this duty completed before its cutoff,
+  its projected debt changes from 0 back to 2. Noam's completing the replacement
+  duty does not settle Daniel's debt.
+- Repeated reconciliation or unchanged publication copies leave the debt at 2,
+  never 4. Any already published future schedule stays unchanged.
+
+If instead Daniel's replaced duty is worth 3, with 2 earmarked for that repayment
+and 1 ordinary point, cancel the reserved 2 without a new charge. The independent
+ordinary point creates Daniel -> Noam 1 once; total outstanding debt becomes 3,
+not 5. Keep the two source meanings distinct.
+
+### 16.14 Owner-month opening and an in-flight result
+
+January 2028 starts on Saturday. Friday 31 December and Saturday 1 January
+are December-owned; January's first owned duty starts Sunday 2 January at 09:00
+in `Asia/Jerusalem`. January Generate/Regenerate is available before that instant
+and disabled at or after it, regardless of publication/draft status. December's
+ongoing weekend on 1 January does not close January's window early.
+
+A January solve started at 08:59 but saved at 09:00 or later on 2 January must
+be rejected without changing the accepted draft, locks, secondary coverage or
+ledger. Manual changes and swaps remain available under their existing rules.
+
 ## 17. Edge cases and operational outcomes
 
 | Situation | Outcome |
@@ -1551,7 +1652,7 @@ explicit manager action just to make the numbers fit.
 | Neighbor publication differs from its draft | Both bind as labeled context; neither is rewritten; only published work enters repayment projection. |
 | Preserved inactive/unavailable secondary | No primary points or spacing effect; keep publication integrity warning for separate manager review. |
 | Special/lock/point total changes after confirmation | Invalidate old result, retain numbers for review and require explicit allocation confirmation. |
-| Replacement/weighted swap after publication | One authoritative transfer event, preserving exemptions and repayment provenance; Q1 governs the earmarked-repayment exception. |
+| Replacement/weighted swap after publication | One classified authoritative transition, preserving exemptions and repayment provenance; cancelled repayment units create no duplicate obligation. |
 | Repeated publication with new physical duty IDs | Stable lineage prevents new duplicate work, debt or settlement. |
 | Partial unpublished draft | No compensation from unmet nominal targets or draft edits; Publish requires resolution. |
 | Inactive debtor/creditor | Preserve/freeze incident claims; active unrelated obligations progress. |
@@ -1562,6 +1663,8 @@ explicit manager action just to make the numbers fit.
 | Cancellation/runtime failure | Keep the accepted draft; no stale application or synthetic infeasibility claim. |
 | Timeout with verified partial incumbent | Present/save as partial best found, with unproved stages stated. |
 | Unique valid/equal-quality arrangement | New seed may reproduce it; invalid or lower-quality variety is not acceptable. |
+| Owner-month coverage has started, even with no publication or incomplete draft | Disable/reject Generate and Regenerate; retain manual changes/swaps under existing rules. Remainder-only generation is out of scope for V1. |
+| Coverage starts during allocation/solving/saving | Invalidate/cancel the request and reject a late result using server time; accepted draft and ledger remain unchanged. |
 
 ## 18. Future acceptance matrix and readiness
 
@@ -1570,6 +1673,9 @@ The original 57 IDs M1–M12, B1–B12, F1–F9, D1–D8, U1–U8 and I1–I8
 are retained with corrected outcomes. Additional IDs cover the new decisions.
 Replace intentionally obsolete expectations while preserving unrelated
 regressions. Use synthetic data; do not validate permissions on live members.
+Unless a scenario exercises the cutoff, generation workflow fixtures use an
+owner month whose coverage has not started. Pure solver tests remain independent
+of the UI/server time gate.
 
 ### 18.1 Mathematical solver tests
 
@@ -1649,7 +1755,7 @@ regressions. Use synthetic data; do not validate permissions on live members.
 | F27 | Ordinary baseline remainder/new random arrangement | No new compensation merely for baseline workload/date differences. |
 | F28 | Section 16.5 debtor target lowered by 1 and recipient carries it | After planned 2 actually complete, debtor owes Recipient 1, not two duplicated residual points. |
 | F29 | Extra required point weight added/removed with same primary | No fabricated counterparty debt; allocation/repayment capacity explicitly reviewed. |
-| F30 | Replacement of an uncompleted repayment-bearing duty | Q1 gate: recommended residual 2, not 4, in the precise scenario in 18.8; final expected result requires that product confirmation. |
+| F30 | Daniel owes Noam 2; Noam replaces him on an uncompleted duty reserved to repay those 2 | Cancel the reservation; actual debt remains exactly 2, projected debt returns from 0 to 2 if previously included. No new debt/settlement/reversal; Noam completing it or repeated access/publication copies never changes it to 0 or 4. |
 | F31 | Deactivation after work end but before next lazy access | Checked deactivation reconciles earned work first; freeze cannot erase earned settlement. |
 | F32 | Duty ends during inactive participation freeze | No automatic projected/actual settlement on reactivation; explicit recorded resolution required for that held work. |
 | F33 | Stored ordinary baseline 2, debt 3, final Target 5, Locked 3 | Locked duties count inside the 5 and can fund the planned 3; do not inflate the ordinary baseline to 3 and erase repayment capacity. |
@@ -1658,6 +1764,7 @@ regressions. Use synthetic data; do not validate permissions on live members.
 | F36 | Ordinary share A 2; absence-driven proposal A 0, B carries those 2 | Record an explicit pending temporary A -> B transfer; no draft debt, A owes B 2 on publication; do not silently reset A's ordinary baseline to zero. |
 | F37 | Y becomes inactive before versus after active X -> Y -> Z normalization | Before: new incident claims frozen, no bypass. After: existing X -> Z remains active, Y is provenance only; replay order stable and no normalized claim silently reassigned. |
 | F38 | Late correction refers to a source before a committed freeze/netting event | Append a current-sequence adjustment with original provenance; do not reorder committed business events or reconstruct different historical counterpart/freeze decisions from current row order. |
+| F39 | Section 16.13 replacement of 3 points: 2 repayment, 1 ordinary | Cancel the 2-point reservation; create only Daniel -> Noam 1 for the separate ordinary transfer; total debt 3, not 5. |
 
 ### 18.4 Database integrity and security tests
 
@@ -1675,6 +1782,7 @@ regressions. Use synthetic data; do not validate permissions on live members.
 | D10 | Client forges time, balance, permanent flag or settlement amount | Checked server recomputes trusted source effects and end-time eligibility; forged client values do not authorize writes. |
 | D11 | Concurrent lazy access and manual correction | One revision-locked order, exact replay and source uniqueness; global sum(net)=0. |
 | D12 | Correction of a previously reconciled source | Append one referenced adjustment/reversal, no deletion or duplicate settlement, later publications unchanged. |
+| D13 | Generation save at/after owner opening despite unchanged revision or forged client time | Checked save rejects it using authoritative server time; accepted draft/ledger unchanged. Permitted manual writes/swaps remain governed by their own existing checks. |
 
 ### 18.5 UI interaction tests
 
@@ -1692,6 +1800,7 @@ regressions. Use synthetic data; do not validate permissions on live members.
 | U10 | Manual compensation create/increase/decrease/settle/correct | Counterpart/direction/reason required as specified; no hidden reverse claim or deleted history. |
 | U11 | Auto redistribution cannot balance an edit | Requested limit retained; monthly imbalance inline; consuming pending points preserves source/type. |
 | U12 | Compensation projection changes before next Generate | Refreshed proposal reviewed explicitly; confirmed targets never silently rewritten. |
+| U13 | Owner coverage starts while the allocation popup is open | Disable both Generate/Regenerate with an inline manual-change/swap explanation; retain accepted data and no second modal. |
 
 ### 18.6 Integration and performance tests
 
@@ -1711,83 +1820,39 @@ regressions. Use synthetic data; do not validate permissions on live members.
 | I12 | Deadline stops after coverage proof but before spacing proof | Present the valid best result with coverage proof only; no overall optimality claim. |
 | I13 | Adapter accidentally returns LP fractional x values | Independent validator rejects them; no fractional/rounded duty or misleading complete draft saved. |
 | I14 | Future migration fresh replay and upgrade from existing schedules | Existing publications/notes/revisions preserved; only explicitly reviewed opening obligations imported, no invented historical fairness debt. |
-| I15 | Generate selected month already contains started published work | Q2 gate: under the recommended first scope reject fresh generation while retaining existing checked swaps; if remainder generation is approved, preserve started facts and explicitly update remaining-point accounting before implementation. |
+| I15 | Selected owner's canonical coverage has started, with published work or an unpublished incomplete draft | Generate/Regenerate disabled and requests rejected; no remainder-only mode. Manual changes/swaps retain existing permissions and date eligibility; reopening/unlocking cannot reset the cutoff. |
+| I16 | January 2028 starts Saturday; compare just before and at Sunday 2 January 09:00 Jerusalem | January remains eligible during December-owned 1 January; eligible before its Sunday opening, disabled at equality/after. December's cutoff remains its own opening, with no double-owned Saturday. |
+| I17 | Solve begins before owner opening but completion/save reaches the cutoff | Cancel/invalidate/discard the late result even if revision matches; no draft/lock/secondary/ledger change, and later months retain their own generation windows. |
 
 ### 18.7 Implementation gates
 
 Before implementation delivery:
 
-1. Obtain Q1 and Q2 below and update their affected regressions/scope rules.
-2. Implement pure integer/model/ledger validators and source-key invariants
+1. Implement pure integer/model/ledger validators and source-key invariants
    alongside the affected behavior, preserving the existing engine/storage split.
-3. Verify the solver adapter/package/license/Next.js/Worker/device gates before
+2. Verify the solver adapter/package/license/Next.js/Worker/device gates before
    adopting a dependency; measure limits rather than invent latency promises.
-4. Test complete and partial coverage objectives against small independently
+3. Test complete and partial coverage objectives against small independently
    enumerable instances, then constrained realistic months.
-5. Test ledger replay, normalization, inactive freezes, projections and retries
-   using the precise amounts above.
-6. Enforce persistence/auth/revision/publication behavior with disposable database
-   and upgrade regressions; client-only tests are insufficient.
-7. Review existing real opening obligations explicitly if they need importing.
+4. Test ledger replay, normalization, inactive freezes, projections, cancelled
+   repayment and retries using the precise amounts above.
+5. Enforce persistence/auth/revision/publication behavior and the V1 generation
+   cutoff with disposable database and upgrade regressions; client-only tests
+   are insufficient.
+6. Review existing real opening obligations explicitly if they need importing.
    Never reconstruct debts from old heuristic inequality or every historical
    publication copy. Import verified linked amounts with source/reason.
 
-No implementation is authorized by this documentation change. Once Q1 and Q2
-are resolved, the remaining integration/device/migration work is ordinary
-implementation validation, not a new product questionnaire.
+### 18.8 V1 scope and implementation readiness
 
-### 18.8 Remaining product decisions
+**The specification is implementation-ready; no blocking product decisions
+remain.** Cancelled repayment preserves the original debt without a duplicate
+obligation (sections 7.3 and 16.13). Generate/Regenerate is limited to owner-month
+coverage that has not started, with manual changes and swaps preserved under
+existing rules (sections 3.1, 15.4 and 16.14).
 
-#### Q1: Repayment-bearing replacement
-
-**Q1 — Is a replacement of already planned repayment a new additional debt?**
-
-Concrete scenario:
-
-1. A owes B 2 from previous work.
-2. A future published 2-point duty is explicitly earmarked to repay all 2.
-3. Before it ends, B replaces A. No actual repayment has occurred.
-
-Two readings of the confirmed requirements compete:
-
-- The full-value published-replacement rule creates another A -> B 2, while
-  the unperformed old repayment remains: A owes 4.
-- The replacement merely cancels the pending repayment/relief: A still owes
-  the original 2. No second charge for that same missed repayment.
-
-**Recommended answer: retain 2**, cancelling the repayment reservation; create
-additional compensation only for any genuinely new ordinary burden beyond the
-already outstanding repayment. This is consistent with temporary deferral and
-avoids duplicating one historical workload shortfall.
-
-The ordinary replacement and weighted-swap cases are otherwise settled.
-The choice here affects source classification, repayment tags, projection
-corrections and F30. It cannot be hidden inside a general monthly fairness
-formula. Keep this narrow classification gated until confirmed; do not implement
-either interpretation silently.
-
-#### Q2: Fresh generation of an already-started month
-
-An owner month may already contain completed or in-progress published duties,
-none marked as manual locks. “Discard every unlocked primary” would let fresh
-Generate reassign that work; doing so can change compensation for work that has
-already happened. Freezing it instead introduces automatically fixed history
-points that the specified `Generate = Target − Locked` table does not currently
-distinguish.
-
-Two valid product scopes exist:
-
-- Limit fresh Generate to owner-month coverage that has not started. Continue
-  the existing checked current-month published replacements/swaps for current
-  operational changes; keep historical corrections exceptional.
-- Generate only the current month's remaining unstarted work, preserving
-  started/completed authoritative duties as immutable facts. Explicitly account
-  for their points in target floors and remaining-work presentation, alongside
-  manual locks, without calling them implicit manager locks.
-
-**Recommended first scope: Generate only not-yet-started owner-month coverage.**
-It preserves the agreed fresh-generation/Target-minus-Locked model and avoids
-building a retroactive scheduling workflow. If current-month remainder generation
-is required, approve the second scope and update the fixed-history accounting/
-table before implementing it. This decision does not disable or alter the
-existing approved today-or-future published swap workflow.
+Remainder-only generation is a future enhancement explicitly outside V1. The
+remaining solver/package/device/migration gates are normal implementation and
+release validation, not unresolved product policy. This documentation update
+does not authorize implementation, dependency installation, migration, merge or
+deployment; implementation requires its separately authorized task.
