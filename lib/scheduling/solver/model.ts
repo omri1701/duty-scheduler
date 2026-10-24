@@ -12,8 +12,11 @@ const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : 
   name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : m.gaps.filter(g => g === Number(name.slice(4))).length;
 
 /** Assignment/coverage model only. No successor columns or path constraints. */
-export function buildModel(p: Problem) {
+export function buildModel(p: Problem, freeTargets = false) {
   checkProblem(p);
+  // Allocation planning supplies its own variable target ceilings. Validate the
+  // balanced source first; retain exactly the same assignment constraints.
+  if (freeTargets) p = {...p, targets: p.targets.map(() => p.targets.reduce((a, b) => a + b, 0))};
   const columns: Column[] = [{name: 'dummy', binary: true, upper: 0}], rows: Row[] = [], gaps = new Set<number>();
   const coverage: Term[] = [], special: Term[] = [], units: Term[] = [];
   const ids = p.targets.map(() => [] as number[]);
