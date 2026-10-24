@@ -5,9 +5,10 @@
 This is the product and engineering contract for the Duty Scheduler generation
 redesign. The isolated TypeScript engine in `lib/scheduling` implements canonical
 duties, confirmed-target generation, independent validation and solver execution.
-See [engine API, tests and benchmarks](GENERATION_ENGINE.md). The allocation UI,
-compensation ledger and persistence workflow described here are still future
-work. Application Generate retains its existing behavior until that workflow is
+See [engine API, tests and benchmarks](GENERATION_ENGINE.md) and the isolated
+[compensation core API and tests](COMPENSATION_CORE.md). Allocation UI and
+compensation persistence/integration remain future work. Application Generate
+retains its existing behavior until that workflow is
 ready; neither the engine nor the spikes in section 14.5 change it.
 
 **The manager determines exactly how many points each engineer receives.
