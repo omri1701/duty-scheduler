@@ -121,6 +121,7 @@ distinct callbacks and separate clients; keep localhost confined to Development.
 | `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
 | `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
 | `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent, resolution and override audit reason. |
+| `duty_compensation_events` | Append-only manager-visible accounting events; exact half-point units, immutable source snapshots and participation history. No stored balances or historical debt import. |
 | `duty_roles` | Engineer/admin definitions and the admin capability. |
 | `duty_member_statuses` | Pending, approved and declined definitions. |
 | `duty_month_statuses` | Draft and published definitions. |
@@ -200,6 +201,14 @@ and refusal/rollback for ambiguous rows. `lifecycle-races.mjs` uses separate rea
 PostgreSQL sessions, including a held-lock demotion with a predicted new revision.
 
 ## Permissions and validation
+
+Compensation persistence adds a checked manager-only `duty_compensation` RPC and
+optional reviewed publication metadata to the existing schedule RPC. See the
+[accounting contract and local SQL checks](COMPENSATION_CORE.md#publication-and-persistence-boundary).
+The migration preserves users and unrelated data, initializes zero compensation
+and records current publication facts without historical backfill. It rejects
+off-half-point published weights atomically for review. This feature does not
+authorize hosted migration or deployment; use the normal reviewed release.
 
 The [browser regression baseline](../README.md#browser-and-visual-regression-baseline)
 uses intercepted synthetic auth/RPC responses and blocks external browser requests.

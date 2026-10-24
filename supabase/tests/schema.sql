@@ -2,12 +2,12 @@
 DO $schema$
 DECLARE t record; f record;
 BEGIN
-  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 11 THEN
-    RAISE EXCEPTION 'Expected exactly 11 application tables';
+  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 12 THEN
+    RAISE EXCEPTION 'Expected exactly 12 application tables';
   END IF;
   IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 32 THEN
-    RAISE EXCEPTION 'Expected exactly 32 application functions';
+      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 56 THEN
+    RAISE EXCEPTION 'Expected exactly 56 application functions';
   END IF;
   IF (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
       WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 21
@@ -51,7 +51,8 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.duty_members) OR EXISTS (SELECT 1 FROM public.duty_assignments)
     OR EXISTS (SELECT 1 FROM public.duty_constraints) OR EXISTS (SELECT 1 FROM public.duty_months)
-    OR EXISTS (SELECT 1 FROM public.duty_publications) OR EXISTS (SELECT 1 FROM public.duty_swap_requests) THEN
+    OR EXISTS (SELECT 1 FROM public.duty_publications) OR EXISTS (SELECT 1 FROM public.duty_swap_requests)
+    OR EXISTS (SELECT 1 FROM public.duty_compensation_events) THEN
     RAISE EXCEPTION 'Operational data must be empty';
   END IF;
 END

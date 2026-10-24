@@ -8,11 +8,11 @@ not recreate them. The application exposes only checked RPCs and RLS-filtered re
 ```text
 supabase/
   schemas/
-    tables/                 # 11 tables: columns, constraints, FKs, indexes and RLS
-    functions/duty_private/ # 20 checked implementations and internal helpers
-    functions/public/       # 12 API-compatible, invoker RPC wrappers
+    tables/                 # Tables, constraints, FKs, indexes and RLS
+    functions/duty_private/ # Checked implementations and internal helpers
+    functions/public/       # API-compatible, invoker RPC wrappers
     constraints/            # Deferred month/publication cyclic FK
-    triggers/               # Publication-pointer swap reconciliation
+    triggers/               # Publication swaps/accounting, participation, audit immutability
     policies/               # One select policy per table
     grants/                 # Explicit table and function privileges
     shared.sql              # Application-private schema only
@@ -58,7 +58,7 @@ Auth/application state before any write. Google provider settings are configured
 separately; passwords, keys and OAuth secrets are not migration data.
 
 `tests/schema.sql` asserts zero users/identities and operational rows, exact required
-rows, 11 RLS-protected tables, 21 valid FKs, 30 functions, restricted grants and
+rows, 12 RLS-protected tables, 21 valid FKs, 56 functions, restricted grants and
 safe search paths. `tests/fingerprint.sql` compares all application columns,
 constraints, indexes, triggers, policies, function definitions and effective client
 permissions with the local installation. Neither reads private operational data.

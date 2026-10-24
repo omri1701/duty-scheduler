@@ -2,8 +2,9 @@
 
 `lib/compensation/index.ts` implements the accounting part of
 [the authoritative specification](GENERATE_ALGORITHM.md), independently of UI,
-allocation solving, storage and authorization. Application Generate, publication
-and swaps do not import it. There are no migrations or RPC changes.
+allocation solving, storage and authorization. Database persistence uses the
+same event contract and checked SQL replay; `lib/supabase/compensation.ts` uses
+this core to read committed events. Application Generate remains independent.
 
 ## Contracts and use
 
@@ -98,13 +99,51 @@ end-time/source order. `project(history, now, cutoff)` returns actual/reconciled
 history separately from simulated claims/net; speculative events are never
 returned as committed history. No timer job or wall-clock read exists in the core.
 
-Future database integration must validate authority, canonical full coverage,
-eligibility, consent and reviewed intent; sample time after the workspace lock;
-check revision/fingerprint; and atomically persist only the missing event suffix
-with source uniqueness and publication metadata. One append-only event table is
-sufficient; caches are disposable. Event snapshots must survive publication-row
-deletion, and private notes must stay outside compensation payloads. Manager-only
-audit reasons and member-visible summaries require separate adapter projections.
+Database integration validates authority, canonical full coverage, eligibility,
+consent and reviewed intent. It samples time after the workspace lock, checks
+revision/fingerprint and atomically appends the missing event suffix. The single
+`duty_compensation_events` table stores sequence, source key, server milliseconds,
+actor, reason and operation. It has no balance columns or publication FKs.
+Audit events/reasons are manager-only; private availability notes never enter
+accounting snapshots. Member-visible summaries and UI are future work.
+
+`duty_compensation(p_operation, p_source_key, p_reason, p_revision,
+p_fingerprint?, p_cutoff?)` accepts the five manual operations above or
+`{kind: 'reconcile'}`. It requires an active approved manager before and after
+the workspace lock. A manual key is namespaced by the authenticated actor.
+Identical retries may use the original revision; changed content conflicts.
+Manual source keys, reservation IDs and intent IDs use 1–160 ASCII letters,
+digits or `_./:-` (the first character must be a letter or digit).
+The caller cannot supply event sequence, actor, time, earned work or balances.
+The response separates `actual`, optional `projected`, `actualAtMs`, `revision`
+and an opaque database `fingerprint`. That fingerprint is for stale-plan checks,
+distinct from the core's canonical `ledgerFingerprint`; neither grants access.
+
+The existing schedule RPC optionally accepts `p_state.compensation` on Publish:
+`{fingerprint, reservations, intents}`. The database derives publication ID,
+owner, full primary snapshots and completion times. The reviewed fingerprint
+must still match after due reconciliation. Ordinary publications/swaps carry
+unchanged contribution IDs and intents; invalidated reservations cancel before
+ordinary transfer accounting. Resizing a reservation requires an explicit new
+ID and reviewed slice. No draft accounting metadata, allocation planning, duty
+locks, new UI or Generate integration is introduced here.
+
+The pointer hook records Publish, approved swaps and live-version deletion in
+their existing transactions. Reopen/restore and Cancel Draft keep the live
+commitment. Existing historical rota edits remain permitted: accounting retains
+already completed facts rather than rewriting earned history. Explicit audited
+corrections handle their compensation. Deleting a version retains all event
+snapshots and terminal contributions. Participation changes reconcile under the
+old active state before recording the new state; retrying onboarding cannot
+freeze an existing participant.
+
+The incremental migration starts every member at **zero compensation**, records
+only initial participation/current publication facts, and advances a nonempty
+workspace revision once. It does not import past imbalance, replay historical
+versions, delete assignments, reset users or modify notes/requests. Invalid
+off-half-point published weights fail the whole migration for explicit review;
+no automatic cleanup runs. Hosted release still needs separate authorization
+and the database-first release gates.
 
 ## Focused validation
 
@@ -112,6 +151,16 @@ audit reasons and member-visible summaries require separate adapter projections.
 transitive partial settlement, corrections/freezes, cross-month reservations,
 completion/projection, copied/deleted publications, weighted swaps, cancelled and
 permanent repayment replacements, deferral, weight changes and immutable history.
-TypeScript and affected-file ESLint cover the public contracts. These checks do
-not establish database authorization, concurrent transaction safety or allocation
-solver feasibility; those integrations remain future work.
+TypeScript and affected-file ESLint cover the public contracts. On an empty
+disposable local database, run `compensation.sql`, `compensation-settlement.sql`,
+and the `compensation-{parity,upgrade,races}.mjs <local-container>` scripts in
+`supabase/tests/`. They cover the real permission/transaction boundary, complete
+migration rollback and data preservation, exact-end earning, actual/projection
+separation, frozen work, duplicate prevention and separate-session lock races.
+SQL/core differential checks compare complete histories and graph provenance.
+Quality runs these alongside existing publication/swap tests and canonical
+fresh/upgrade gates. They do not establish allocation-solver feasibility.
+
+Replay is intentionally uncached and proportional to ledger history; unusually
+large ledgers should be measured before adding disposable projections. SQL and
+TypeScript accounting must evolve together, retaining differential coverage.
