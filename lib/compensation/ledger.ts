@@ -132,7 +132,7 @@ export function project(events: readonly CompensationEvent[], now: number, cutof
   for (const c of due(s, cutoffMs)) if (c.status === 'pending') apply(s, internal(s, cutoffMs, c), false);
   const projected = view(s);
   return {actual, actualAtMs: now, cutoffMs, sourceFingerprint,
-    projected: {claims: projected.claims, net: projected.net}};
+    projected: {claims: projected.claims, net: projected.net, candidates: structuredClone(available(s))}};
 }
 /** Build an explicit partial reference without rounding or changing its original priority. */
 export {sliceClaim};

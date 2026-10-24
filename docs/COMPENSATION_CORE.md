@@ -60,7 +60,7 @@ duty capacity stays consumed and cannot earn again.
 A reservation binds source slices to a primary's date-atom capacity. Reservations
 are exclusive across all months, including those after a projection cutoff.
 `repaymentCandidates` returns unreserved active slices in original priority order.
-The future allocation planner must choose oldest-feasible amounts using global
+The [allocation planner](ALLOCATION_PLANNER.md) chooses oldest-feasible amounts using global
 weighted feasibility, creditor relief and confirmed targets. This core does not
 claim that a candidate list is a feasibility proof or choose monthly targets.
 
@@ -93,6 +93,10 @@ Ordinary publication commands reject changes to completed facts. `mode: 'delete'
 may select a previously recorded immutable version, or drop the live pointer; it
 preserves completed effects and never resurrects terminal contributions. Historical
 corrections use explicit accounting operations, not a retroactive rota editor.
+
+`projected.candidates` additionally exposes the simulated unreserved active slices,
+including the exclusion of reservations after the cutoff. It reuses the same
+availability calculation as `repaymentCandidates`, after simulated completion.
 
 `reconcile` returns the full history with missing earned/hold events appended in
 end-time/source order. `project(history, now, cutoff)` returns actual/reconciled
