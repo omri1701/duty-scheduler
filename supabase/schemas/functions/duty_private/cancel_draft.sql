@@ -10,6 +10,7 @@ begin
  select * into m from public.duty_months where month=p_month;
  if m.current_publication_id is null or m.status<>'draft' then raise exception 'A reopened published month is required'; end if;
  delete from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=p_month;
+ delete from public.duty_allocations where month=p_month and publication_id is null;
  update public.duty_months set status='published',generated=true where month=p_month;
  update public.duty_workspace set revision=revision+1 where id;
 end $$;

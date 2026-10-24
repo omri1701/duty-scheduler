@@ -16,6 +16,8 @@ begin
   insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
   select day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments
   where publication_id=v.id and duty_private.duty_owner(day)=v.month;
+  insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation)
+  select month,null,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,p_publication,generation from public.duty_allocations where publication_id=p_publication;
  end if;
  update public.duty_months set current_publication_id=replacement,status=case when replacement is null then 'draft' else status end where current_publication_id=v.id;
  delete from public.duty_publications where id=v.id;

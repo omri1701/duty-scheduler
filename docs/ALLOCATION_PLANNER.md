@@ -139,12 +139,12 @@ publication history also requires lineage review: the API does not synthesize
 new allocation origins over already published work. Invalid assignments/stale
 drafts retain the scheduling/allocation validator's errors.
 
-**The routed intent contract is TypeScript-only. Do not submit it to the current
-SQL/RPC adapter**, which has not been extended for routes. Future integration must
-persist the reviewed allocation snapshot, support/review this contract in SQL
-with parity tests, preserve IDs through publication copies and replacements, and
-use the existing revision/fingerprint-checked publication API. Allocation UI,
-confirmation, cancellable Worker execution and Generate activation remain future work.
+The [database integration](ALLOCATION_DATABASE.md) now persists reviewed snapshots,
+independently validates baseline/source budgets and scheduling, and supports routed
+intents through the checked publication boundary. Use its typed context/confirmation/
+save adapters; the database constructs authoritative accounting metadata itself.
+The pure binder still requires lineage review for existing publication histories.
+Allocation UI, Worker integration and application Generate activation remain future work.
 
 ## Focused verification
 

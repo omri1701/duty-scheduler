@@ -56,6 +56,14 @@ for(let seed=1;seed<=30;seed++) {
  keep(h);
 }
 const graphs=[];
+// Routed legs share one actual carrier budget, including permanent bridges.
+for(const kinds of [['temporary','permanent'],['permanent','temporary'],['temporary','temporary'],['permanent','permanent']]) {
+ h=setup();
+ const route=[{fromId:'a',toId:'b',kind:kinds[0],transferIds:['ab'],counterparts:[{id:'ab',fromId:'a',toId:'b',kind:kinds[0],units:2}]},
+  {fromId:'b',toId:'c',kind:kinds[1],transferIds:['bc'],counterparts:[{id:'bc',fromId:'b',toId:'c',kind:kinds[1],units:2}]}];
+ h=keep(publish(h,publication('route-v1',[duty('2026-11-02','c')],[],[{id:'route',kind:kinds[0],fromId:'a',toId:'c',capacity:[{date:'2026-11-02',offset:0,units:2}],route}])));
+ keep(publish(h,{...replay(h).publications[0],id:'route-copy'},'route-v1'));
+}
 for(let seed=1;seed<=20;seed++) {
  let random=seed;const rand=()=>random=(Math.imul(random,1664525)+1013904223)>>>0;
  const edges=Array.from({length:9},(_,i)=>{const a=rand()%4,b=(a+1+rand()%3)%4;return {debtorId:String(a),creditorId:String(b),path:[{lotId:'s'+i,offset:0,units:1+rand()%5}],priority:{at:1,sequence:i+1,lotId:'s'+i}}});

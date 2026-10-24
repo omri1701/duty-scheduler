@@ -15,8 +15,8 @@ export type PublishedDuty = {startDate: string; endDate: string; primaryId: stri
 export type TransferIntent = {
   id: string; kind: 'temporary' | 'permanent'; fromId: string; toId: string;
   capacity: readonly CapacitySlice[];
-  /** Pure binding contract: ordered accounting legs funded once by final toId.
-   * Persistence adapters must explicitly support this before accepting routes. */
+  /** Ordered accounting legs funded once by final toId. The checked database
+   * boundary independently validates their source and counterpart budgets. */
   route?: readonly {fromId: string; toId: string; kind: 'temporary' | 'permanent';
     transferIds: readonly string[]; deferredClaim?: ClaimRef;
     counterparts: readonly {id: string; fromId: string; toId: string; units: Units;

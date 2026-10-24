@@ -15,9 +15,10 @@ ready; neither the engine nor the spikes in section 14.5 change it.
 The pure allocation-to-publication binder validates actual draft assignments and
 previews exclusive real duty capacity through the compensation core. Routed
 temporary/permanent intent retains original counterpart relationships even when
-an intermediary does no final work. Its TypeScript contract still requires SQL
-parity, publication-lineage integration and the existing checked write boundary
-before activation; it changes no UI, RPC or application Generate behavior.
+an intermediary does no final work. The [database integration](ALLOCATION_DATABASE.md)
+adds authoritative context, reviewed allocation persistence, checked generation
+saves and SQL accounting parity. Application UI and Generate activation remain
+separate work.
 
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
