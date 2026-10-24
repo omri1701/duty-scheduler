@@ -20,3 +20,21 @@ export function monthFixture(kind: 'normal' | 'constrained' | 'split' | 'spacing
   if (kind === 'split') {duties[0].lock = 0; duties[8].lock = 1;}
   return {targets, duties, spacing: kind === 'spacing'};
 }
+
+/** Reuse the original fixtures unchanged; harder cases deliberately enable spacing. */
+export function benchmarkFixture(name: string): Problem {
+  if (['normal', 'constrained', 'split', 'spacing', 'two', 'large'].includes(name)) return monthFixture(name as Parameters<typeof monthFixture>[0]);
+  const p = monthFixture(name === 'partial-spacing' ? 'constrained' : name === 'split-spacing' ? 'split' : 'spacing');
+  p.spacing = true;
+  if (name === 'boundary-spacing') {
+    p.boundaries = p.targets.flatMap((_, e) => [
+      {id: `live-${e}`, engineer: e, start: (-15 + e) * 1440, end: (-14 + e) * 1440, source: 'published'},
+      {id: `draft-${e}`, engineer: e, start: (-13 + e) * 1440, end: (-12 + e) * 1440, source: 'draft'},
+      {id: `next-${e}`, engineer: e, start: (30 + e) * 1440, end: (31 + e) * 1440, source: 'published'},
+    ]);
+  } else if (name === 'locked-zero') {
+    p.duties[0].lock = 0; p.duties[1].lock = 0;
+    p.exceptions = {consecutive: [[0, 1]]};
+  } else if (name !== 'partial-spacing' && name !== 'split-spacing') throw Error(`Unknown fixture ${name}`);
+  return p;
+}

@@ -4,7 +4,7 @@
 
 This is the product and engineering contract for the future Duty Scheduler
 generation redesign. The production implementation described here does not exist
-yet. The isolated compatibility spike in section 14.5.1 does not change Generate.
+yet. The isolated spikes in section 14.5 do not change Generate.
 
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
@@ -1186,18 +1186,57 @@ implements exact complete targets without contradictory soft equalities.
 
 ### 14.3 Spacing encoding
 
-Precompute compatible interval gaps. For each engineer, a directed chronological
-path through their selected duties and real nearest boundary anchors can
-identify successor pairs. Arc variables have incoming/outgoing flow equal to
-the selected-duty variable; one source-to-sink unit and acyclic order prevent
-disconnected paths or skipped selected nodes. A sentinel-to-sentinel arc with
-no selected duty contributes no measured gap.
+Optimize coverage/points with assignment variables alone. Once their optima are
+proved, binary-search the finite attainable end-to-start gaps, plus infinity.
+For threshold g, forbid a same-engineer pair i,j when `start[j] - end[i] < g`:
+`x[e,i] + x[e,j] <= 1`. A fixed boundary reduces this to an exclusion of x.
+All-pair conflicts implement the minimum exactly: a non-successor gap cannot
+be shorter than every successor it spans. Never compare two external anchors.
+A verified witness proves feasibility; only an infeasible termination proves
+infeasibility. UNKNOWN retains an interval and stops lower-priority refinement.
+Implement the pair restrictions with maximal cliques of expanded intervals
+`[start, end + g)`, plus boundary exclusions. For chronological nonoverlapping
+duties, a sliding window produces at most O(ED) clique rows with O(ED²)
+nonzeros. Their LP relaxation is stronger than separate pair inequalities.
+Fixed intervals give an upper bound because inserting duties cannot increase
+their minimum gap. In particular an approved locked zero needs no threshold
+search, but remains part of the measured objective.
 
-The assigned successor arcs select the actual consecutive gaps, rather than all
-pair distances. Use finite gap thresholds to maximize the minimum, then minimize
-counts at successively worse small-gap levels with previous results fixed.
-This implements the sorted-gap comparison without huge mixed-priority weights.
-Mandatory locked-gap constants are retained; later gap levels can still improve.
+After proving the minimum, add pruned chronological successor paths, with arcs
+below that minimum removed. Remove arcs jumping a mandatory lock or exceeding
+target capacity with the other locks. Incoming/outgoing flow equals x; one
+source-to-sink unit and acyclic order prevent disconnected paths or skipped
+selected nodes. These flow variables are **continuous in [0,1]**: binary x
+requires every selected node to carry the full unit, forcing the unique path
+through all selected nodes in chronological order. Weekend OR variables also
+need no independent integrality. An empty path contributes no measured gap.
+
+Minimize successor-gap counts at ascending finite gap values, fixing each proved
+optimum. A verified zero count is optimal by nonnegativity and its arcs can be
+fixed to zero without another solve. This is exactly the sorted-gap comparison,
+including infinity padding for partial/empty paths. All-pair distance penalties
+would change that objective. Mandatory locked gaps are retained; later counts
+still improve after an unavoidable zero. Reuse one native model per request,
+change costs/rows/bounds, and resubmit only independently verified assignments
+compatible with the current constraints. Do not assume MIP tree reuse.
+
+An optional weighted-interval dynamic program supplies valid per-engineer point
+capacity cuts with and without a weekend. If those maxima are A and B, add
+`assignedUnits <= A + (B - A) * sum(weekendUsage)`, using the ordinary one-weekend
+cap. Impossible modes are excluded explicitly. The DP includes locks, boundary
+anchors, hard adjacency, the trial minimum gap and exact point ceilings. This
+captures half-weekend/whole-point incompatibilities that otherwise cause costly
+fractional relaxations. It selects no assignments and changes no priorities.
+The spike omits this optional cut for targets above 4,096 units and approved
+multi-weekend exceptions; the original constraints still enforce correctness.
+For bounded target Q and W weekend identities the DP takes at most O(D² W Q)
+state transitions per engineer and O(D W Q) stored states.
+
+For E engineers, D duties and T distinct gap values, the assignment model has
+O(ED) binary variables. Minimum-gap search takes O(log T) feasibility calls with
+O(ED) clique rows and up to O(ED²) nonzeros. Refinement adds at most O(ED²) continuous columns and
+O(ED) path rows, with at most O(T) count stages (many require no solve). These
+are size/call bounds, not a polynomial runtime or five-second guarantee.
 
 This is an engineering formulation recommendation. Equivalent encodings are
 acceptable only if tests against enumerable small instances show the same
@@ -1259,6 +1298,9 @@ and manager approval are required for a new backend/paid service or AI inference
 
 ### 14.5.1 Isolated HiGHS compatibility spike (23 October 2026)
 
+Historical baseline at `22f6d0e3a5595b76538fbe9348cc3126822e4f1b`.
+Section 14.5.2 records the revised implementation and current assessment.
+
 Scope: `lib/solver-spike/`, its Node benchmark/tests and an opt-in production-build
 browser harness. Nothing imports this adapter from the existing Generate flow.
 There are no compensation, persistence, migration or product UI changes.
@@ -1313,7 +1355,8 @@ shared across stages, with remaining wall time and node count passed onward.
 Model parsing/validation can add overhead beyond the nominal solver time limit;
 Worker termination is the hard cancellation mechanism.
 
-Reproduce from the repository root (Node 24.19.0, pinned pnpm):
+Historical reproduction at the baseline commit, from the repository root
+(Node 24.19.0, pinned pnpm). Current comparison commands are in section 14.5.2:
 
 ```sh
 node --test tests/highs-spike.test.mjs
@@ -1385,6 +1428,150 @@ highs.mjs   f2bdfd071d19c3745756a087026589e9240f329e38315a86f626823ae78a4036
 highs.wasm  f13134e3e335e7bad984ff12abeb41e86e0eeeb1752ae8a85322cc6839df8acd
 LICENSE     9f8d8dcf27789ac59c0d7c732d6682f148804a5e99d83e9f207d6c1882b98bfa
 ```
+
+### 14.5.2 Threshold search and continuous-flow follow-up (24 October 2026)
+
+**Assessment: ready to begin controlled Generate implementation using this
+adapter, subject to the remaining domain/integration and real-device gates.
+This isolated spike is not approval to ship the redesigned Generate.**
+
+The follow-up implements section 14.3: coverage/points without successor
+variables; exact discrete minimum-gap feasibility search; pruned continuous
+successor flows for full leximin; and one native model per request. It uses
+maximal interval cliques and optional exact per-engineer capacity cuts. The
+capacity cuts matter for partial split weekends: an odd half-weekend allocation
+cannot fill an even ordinary target. Smaller models alone were insufficient.
+The intermediate clique-only split case still exhausted 30 seconds and grew to
+217.81 MiB; the final capacity cuts reduced its high-water to 87.50 MiB and
+allowed full proof. These diagnostic runs motivated the retained formulation.
+
+Native rows, costs and bounds are changed through the pinned wrapper API.
+Only independently verified assignment binaries are resubmitted as sparse MIP
+starts; HiGHS completes continuous variables. No invalid start is submitted to
+a stricter threshold. Native clocks are reset for each run and the remaining
+request time/node budget is shared across stages. Native models are disposed
+in `finally`. Reuse does not imply retention of the branch-and-bound tree.
+Full coverage makes the special/point stages algebraic identities. Verified
+zero gap-count stages likewise need no native solve. Proof records distinguish
+these identities from native status/bound evidence. UNKNOWN never establishes
+infeasibility; an unfinished threshold search reports its feasible lower bound
+and first excluded upper threshold (null denotes infinity), without claiming
+minimum-gap or leximin optimality.
+
+The normalized input now accepts all binding boundary commitments, source labels
+and exact fixed-pair/boundary/weekend exception scopes. Hard conflicts check
+every boundary; spacing uses the nearest preceding end and following start.
+An empty path creates no anchor-to-anchor gap. Locks, including approved zero
+gaps, remain measured and mandatory. An approved extra-weekend list must match
+the engineer's locked weekend identities; it cannot authorize another weekend.
+Boundary points never enter selected-month targets. Caller-supplied elapsed
+minutes support DST and Friday-owned cross-year intervals; construction of
+those inputs from the actual calendar/database remains future integration.
+
+The independent test oracle enumerates tiny schedules without calling the
+model or domain validator. Cases include weighted partial schedules, different
+gap-vector lengths, empty paths, published/draft boundary unions, exact-minute
+DST intervals, Friday-owned cross-year coverage, fixed zero gaps, scoped
+exceptions, lock/capacity arc pruning and omission of optional cuts for large
+targets. Twenty-four additional small varied instances check objective ordering.
+Focused tests also cover UNKNOWN/timeout incumbents, model disposal, verified
+starts and progress snapshots. Generate and its storage/UI paths are unchanged.
+
+Local validation passed: 12 focused solver tests, TypeScript, affected-file
+ESLint, the Next production build/CSS check, and four Docker Chromium Worker
+checks across desktop/mobile viewports. Browser checks include serialized
+boundary/exception inputs, progress, repeated memory, cancellation during a
+synchronous solve, termination and restart. There were no changed visual
+references. These checks establish neither real iPhone behavior nor CI success.
+
+Measurements below use the same workstation as section 14.5.1: Windows x64,
+i9-10900KF, Node 24.19.0, wrapper 1.15.4/native 1.15.1, seed 17, **1,000,000 total
+nodes** and either 5 or 30 seconds per request. Each engine/fixture/budget uses
+a fresh sequential child process/WASM instance with three warm-capable repeats;
+initialization is excluded from request times. No build or browser check ran
+concurrently with the final timing runs. The old implementation is loaded
+unchanged from the baseline commit. Common inputs have matching SHA-256 hashes;
+the original cannot correctly represent boundaries or scoped exceptions, so
+those rows deliberately have no old comparison. See the
+[60 recorded runs](benchmarks/highs-spacing-2026-10-24.jsonl) for exact gaps,
+deficits, proof prefixes, sizes, memory and settings.
+
+Seconds below are medians, with the three-run range in parentheses. "Full proof"
+means every requested spacing stage, except the explicitly coverage-only row.
+
+| Fixture / request budget | Old seconds | New seconds | Proof and spacing result |
+|---|---:|---:|---|
+| Coverage/points only / 5 s | 0.066 (0.062–0.230) | 0.040 (0.026–0.117) | Both prove coverage/points; 30/30 dates. |
+| Ordinary spacing / 5 s | 5.045 (5.038–5.072) | 1.681 (1.629–1.984) | Old minimum 2 days, unproved; new full proof, minimum 11 days. |
+| Ordinary spacing / 30 s | 20.361 (19.513–21.086) | 1.788 (1.775–2.237) | Both prove the same full gap vector; about 11.4× faster. |
+| Weighted partial spacing / 5 s | 2.409 (2.384–2.913) | 0.241 (0.228–0.455) | Both prove the same vector; 28/30 dates, minimum 8 days. |
+| Weighted partial spacing / 30 s | 2.502 (2.464–2.855) | 0.263 (0.240–0.456) | Both prove the same vector; about 9.5× faster. |
+| Split weekends + locks / 5 s | 5.104 (5.103–5.118) | 5.013 (5.010–5.019) | Both cover 26/30; old assigns 47 units, new 48 with coverage/points and 9-day minimum proved. New leximin remains unproved. |
+| Split weekends + locks / 30 s | 30.057 (30.056–30.070) | 28.656 (27.597–28.958) | Old leximin remains unproved; new full proof in all three runs. |
+| Boundary union / 5 s | Unsupported | 2.066 (1.972–2.353) | Full proof; 30/30 dates, minimum 8 days. |
+| Boundary union / 30 s | Unsupported | 2.062 (2.036–2.380) | Same proved optimum. |
+| Locked zero / 5 s | Unsupported | 3.164 (3.137–3.579) | Full proof; mandatory zero retained, next-smallest gaps improve to 11 days. |
+| Locked zero / 30 s | Unsupported | 3.110 (3.039–3.499) | Same proved optimum. |
+
+| Spacing fixture | Old total / binary columns | New base / total / binary columns | Old / new WASM MiB at 30 s |
+|---|---:|---:|---:|
+| Ordinary | 4,597 / 4,597 | 361 / 2,533 / 313 | 87.50 / 60.69 |
+| Weighted partial | 795 / 795 | 124 / 533 / 110 | 50.56 / 20.25 |
+| Split weekends + locks | 6,013 / 6,013 | 409 / 3,095 / 361 | 105.00 / 87.50 |
+| Boundary union | Unsupported | 361 / 2,972 / 313 | Unsupported / 60.69 |
+| Locked zero | Unsupported | 361 / 3,733 / 313 | Unsupported / 42.13 |
+
+Binary totals include one fixed diagnostic binary. Ordinary spacing falls from
+31 native model creations to one; the revised request submits verified starts
+and skips constant objectives. Repeated WASM memory samples for each final
+fixture/budget stayed at the stated high-water with zero live models after
+each request. These measurements exclude JavaScript/process overhead and do
+not establish iPhone memory safety. At 5 seconds the old ordinary model used
+72.88 MiB, versus the new 60.69 MiB; extra old search raised it to 87.50 MiB.
+
+The extra split-case search materially improves the ascending free-gap vector:
+at 5 seconds it is `[9,10,10,10,11,12,12,13,14,14,15,16,20,21]` days; at full
+proof it is `[9,10,13,13,13,13,13,15,15,15,16,16,16,16]`. This is the agreed
+leximin priority, rather than an average-gap gain. At equal higher objectives,
+incumbents are retained by the whole objective vector so a later solve cannot
+replace them with an equivalent current-stage result having worse later gaps.
+
+Reproduce current/old comparisons from the repository root:
+
+```sh
+node --test tests/highs-spike.test.mjs
+node scripts/benchmark-highs.mjs --seconds=5,30 --repeat=3 --nodes=1000000
+pnpm exec tsc --noEmit
+pnpm build
+pnpm test:e2e:ci solver-spike.spec.ts
+```
+
+`--engines=old` or `--engines=new` measures one implementation; `--fixtures=`
+selects the documented comma-separated names. The driver isolates native memory,
+verifies every returned assignment, records fixture hashes, and removes only its
+own temporary baseline source directory. Node 24 native TypeScript support is
+needed for these commands. Longer budgets remain configurable; stopping early
+after full proof avoids spending the unused time.
+
+Practical starting budgets: assignment-only previews should stay separate from
+spacing. Use **30 seconds / 1,000,000 nodes** as the cancellable generation default,
+returning early on proof. A 5-second quick search is useful when explicitly
+requested, but cannot promise the excellent remaining gaps of the split case.
+An explicit 60-second or longer search can be offered when proof/quality is
+still improving on the actual device; never continue after full proof. These
+are workstation-informed starting settings, not an iPhone latency promise.
+Progress posts independently verified incumbents and proof prefixes between
+stages; synchronous WASM remains inside the Worker, with main-thread termination
+for cancellation and request IDs rejecting stale responses.
+
+Remaining gates: real supported iPhone Safari timing/memory/cancellation and
+background/resume; actual Jerusalem/canonical owner normalization; authoritative
+published/draft boundary reads and approval provenance; secondary identity and
+eligibility adapters; final preferred-date/seed tie objectives; compensation;
+revision-checked saves and the Generate opening-time gate. The normalized spike
+does not authorize locks or read/write the database. Fixed settings reproduce
+completed runs in the tested environment; wall-clock-limited results need not
+reproduce. No production deployment or merge is performed by this follow-up.
 
 ### 14.6 Responsiveness, cancellation and search limits
 
