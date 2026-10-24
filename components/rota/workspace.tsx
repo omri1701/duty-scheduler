@@ -29,6 +29,10 @@ import {
 } from './workspace-dialogs';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
+import {useAllocationWorkflow} from '@/hooks/use-allocation-workflow';
+import {AllocationDialog} from './allocation-dialog';
+import {AllocationOutcome} from './allocation-outcome';
+import {allocationTotals} from '@/lib/allocation/review';
 import {useIsraelToday} from '@/hooks/use-israel-today';
 import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
 import { fromSnapshot } from '@/lib/supabase/snapshot';
@@ -113,7 +117,11 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const nickname = (id?: string) => personName(id).split(' ')[0];
   const dateCells = calendarDates(month);
   const draft = useWorkspaceDraft({ remote, state, month, monthDetails, t });
-  const { update, runGenerate, busy } = draft;
+  const { update } = draft;
+  const allocation = useAllocationWorkflow(remote, month, t);
+  const generationClosed = allocation.closed;
+  const confirmedTotals = allocation.captured?.allocation ? allocationTotals(allocation.captured.input, allocation.captured.allocation, allocation.captured.assignments) : null;
+  const allocationMismatch = !!confirmedTotals?.rows.some(r => r.assigned !== r.target);
   const { selected, setSelected } = draft.editor;
   const interactions = useCalendarInteractions({
     remote,
@@ -285,12 +293,14 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               monthDetails={monthDetails}
               isManager={isManager}
               readOnly={remote.readOnly}
-              busy={busy}
+              busy={allocation.busy}
+              generationClosed={generationClosed}
+              allocationMismatch={allocationMismatch}
               metrics={metrics}
               blockCount={metrics.owned.length}
               t={t}
               changeMonth={changeMonth}
-              runGenerate={runGenerate}
+              runGenerate={allocation.show}
               onHistory={() => setHistoryOpen(true)}
               onSettings={() => setSettings(true)}
               reopened={reopened}
@@ -306,6 +316,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               forceMount
               style={{ display: tab === 'schedule' ? undefined : 'none' }}
             >
+              {isManager && generationClosed && monthDetails.status === 'draft' && <p className="generation-cutoff-note">{t('Coverage has started. Use manual assignments or swaps; generation is closed.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות; השיבוץ האוטומטי נסגר.')}</p>}
+              {isManager && viewingDraft && <AllocationOutcome flow={allocation} state={state} lang={lang} t={t}/>}
               <div className="workspace-grid">
                 <WorkspaceCalendar
                   state={state}
@@ -392,6 +404,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         <WorkspaceFooter t={t} onExport={exportBackup}/>
       </main>
       <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} />
+      {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} monthLabel={monthLabel} lang={lang} t={t}/>}
       {isManager && (
         <PublicationHistory
           key={month}

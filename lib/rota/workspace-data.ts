@@ -28,7 +28,7 @@ export function workspaceMetrics(state: State, month: string, duties: Duty[]) {
   const gaps = active.flatMap((p) => {
     const mine = owned.filter(
       (b) =>
-        state.assignments[b.id]?.primary === p.id || state.assignments[b.id]?.secondary === p.id,
+        state.assignments[b.id]?.primary === p.id,
     );
     return mine
       .filter(

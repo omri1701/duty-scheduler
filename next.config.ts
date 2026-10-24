@@ -7,6 +7,7 @@ const devOrigin = configuredDevOrigin(process.env);
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/solver-spike/asset/*': ['./node_modules/highs/build/highs.mjs', './node_modules/highs/build/highs.wasm', './node_modules/highs/LICENSE'],
+    '/api/scheduling/asset/*': ['./node_modules/highs/build/highs.mjs', './node_modules/highs/build/highs.wasm', './node_modules/highs/LICENSE'],
   },
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   // Vercel restored pre-PR #22 CSS despite receiving the updated source.

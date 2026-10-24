@@ -203,7 +203,7 @@ PostgreSQL sessions, including a held-lock demotion with a predicted new revisio
 ## Permissions and validation
 
 Allocation/generation persistence adds manager-only context, confirmation and
-generation-save RPCs, without changing the application Generate workflow. See the
+generation-save RPCs, used by the allocation popup and Worker generation workflow. See the
 [database contract and disposable tests](ALLOCATION_DATABASE.md). Its additive
 migration preserves existing identities, notes, schedules and publication history;
 it does not infer old allocations or backfill compensation.

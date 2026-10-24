@@ -7,7 +7,6 @@ import { prepareWorkspaceUpdate } from '@/lib/rota/workspace-data';
 import {
   addDays,
   dates,
-  generate,
   allKnownBlocks,
   overlap,
   ownerMonth,
@@ -37,8 +36,7 @@ export function useWorkspaceDraft({
   const [specialTitle, setSpecialTitle] = useState(''),
     [specialStart, setSpecialStart] = useState(month + '-01'),
     [specialEnd, setSpecialEnd] = useState(month + '-02'),
-    [extra, setExtra] = useState('1'),
-    [busy, setBusy] = useState(false);
+    [extra, setExtra] = useState('1');
   const [swap, setSwap] = useState<{ from: string; to: string } | null>(null),
     [swapOverride, setSwapOverride] = useState(false);
   const [swapSaving, setSwapSaving] = useState(false);
@@ -61,34 +59,6 @@ export function useWorkspaceDraft({
       toast.error((e as Error).message);
       return false;
     }
-  }
-  function runGenerate() {
-    if (!isManager) return;
-    setBusy(true);
-    setTimeout(async () => {
-      try {
-        const r = generate(state, month, crypto.getRandomValues(new Uint32Array(1))[0]);
-        const saved = await update((s) => ({
-          ...s,
-          assignments: r.assignments,
-          months: { ...s.months, [month]: { ...monthDetails, generated: true, status: 'draft' } },
-        }));
-        if (saved)
-          toast.success(
-            r.warnings.length
-              ? t(
-                  `${r.warnings.length} duties need your decision.`,
-                  'יש תורנויות שממתינות להחלטה שלך.',
-                )
-              : t(
-                  'Draft ready. Review, adjust, then publish.',
-                  'הטיוטה מוכנה לבדיקה, עריכה ופרסום.',
-                ),
-          );
-      } finally {
-        setBusy(false);
-      }
-    }, 40);
   }
   function openDuty(b: Duty) {
     if (isManager && monthDetails.status === 'draft' && ownerMonth(b) === month) setSelected(b);
@@ -118,7 +88,7 @@ export function useWorkspaceDraft({
       dates(x.start, end).length > 14 ||
       !Number.isFinite(x.extra) ||
       x.extra < 0 ||
-      x.extra > 20
+      x.extra > 20 || !Number.isInteger(x.extra * 2)
     ) {
       toast.error(
         t(
@@ -142,6 +112,10 @@ export function useWorkspaceDraft({
       return;
     }
     const touched = allKnownBlocks(state).filter((b) => overlap(b, x));
+    if (touched.some(b => state.assignments[b.id]?.secondary)) {
+      toast.error(t('Review emergency cover on these dates before changing duty structure.', 'יש לבדוק את כיסוי החירום בתאריכים אלה לפני שינוי המבנה.'));
+      return;
+    }
     if (touched.some((b) => ownerMonth(b) !== month && state.assignments[b.id]?.primary)) {
       toast.error(
         t(
@@ -241,8 +215,6 @@ export function useWorkspaceDraft({
   }
   return {
     update,
-    runGenerate,
-    busy,
     resetSpecialDates,
     editor: { selected, setSelected, openDuty, save: saveDuty, removeSpecial },
     special: {

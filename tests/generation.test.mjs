@@ -10,6 +10,20 @@ const solver = await createHighsAdapter(loadHighs);
 const run = (input, extra = {}) => solveGeneration(solver, createGenerationRequest(input,
   {now: coverageStart(input.month, input.calendar) - 1, seed: 17, seconds: 3, ...extra}));
 const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g)];
+
+test('seeded ties with preserved emergency coverage retain exact integer objective verification', () => {
+  const ids = Array.from({length: 6}, (_, i) => `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
+  const input = {month: '2026-11', sourceRevision: 'captured-2', calendar: {},
+    members: ids.map(id => ({id, active: true, approved: true, eligible: true})),
+    targets: Object.fromEntries(ids.map((id, i) => [id, i < 4 ? 4 : 5])),
+    constraints: {[ids[1]]: {'2026-11-04': 'no'}}, secondary: {'2026-11-02': ids[1]}};
+  const result = run(input, {seed: 1701, seconds: 15});
+  assert.equal(result.complete, true);
+  assert.equal(result.assignments['2026-11-02'].secondary, ids[1]);
+  assert.notEqual(result.assignments['2026-11-02'].primary, ids[1]);
+  assert.ok(result.search.stages.some(s => s.name === 'seed' && s.proved));
+  assert.deepEqual(validateGeneration(input, result.assignments), result.metrics);
+});
 const compare = (a, b) => {
   for (let k = 0; k < Math.max(a.length, b.length); k++) {
     if ((a[k] ?? -Infinity) !== (b[k] ?? -Infinity)) return (a[k] ?? -Infinity) < (b[k] ?? -Infinity) ? -1 : 1;

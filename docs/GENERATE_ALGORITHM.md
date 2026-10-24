@@ -7,18 +7,18 @@ redesign. The isolated TypeScript engine in `lib/scheduling` implements canonica
 duties, confirmed-target generation, independent validation and solver execution.
 See [engine API, tests and benchmarks](GENERATION_ENGINE.md), the isolated
 [compensation core API and tests](COMPENSATION_CORE.md), and the pure
-[allocation planner API and tests](ALLOCATION_PLANNER.md). Allocation UI and
-application Generate integration remain future work. Application Generate
-retains its existing behavior until that workflow is
-ready; neither the engine nor the spikes in section 14.5 change it.
+[allocation planner API and tests](ALLOCATION_PLANNER.md). Application Generate
+now opens the allocation popup, confirms targets through the checked database
+boundary and executes the scheduling engine in a cancellable Worker. The spikes
+in section 14.5 remain diagnostic entry points.
 
 The pure allocation-to-publication binder validates actual draft assignments and
 previews exclusive real duty capacity through the compensation core. Routed
 temporary/permanent intent retains original counterpart relationships even when
 an intermediary does no final work. The [database integration](ALLOCATION_DATABASE.md)
 adds authoritative context, reviewed allocation persistence, checked generation
-saves and SQL accounting parity. Application UI and Generate activation remain
-separate work.
+saves and SQL accounting parity. The application UI activates that boundary
+without changing its database contracts.
 
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
@@ -2001,8 +2001,9 @@ ledger. Manual changes and swaps remain available under their existing rules.
 ## 18. Future acceptance matrix and readiness
 
 This is the acceptance matrix for the full redesign. The isolated engine's
-implemented checks are documented in [GENERATION_ENGINE.md](GENERATION_ENGINE.md);
-allocation, compensation, database and UI integration remain future work.
+implemented checks are documented in [GENERATION_ENGINE.md](GENERATION_ENGINE.md),
+[ALLOCATION_PLANNER.md](ALLOCATION_PLANNER.md) and [ALLOCATION_DATABASE.md](ALLOCATION_DATABASE.md).
+Application coverage is exercised by the allocation and workspace browser suites.
 The original 57 IDs M1–M12, B1–B12, F1–F9, D1–D8, U1–U8 and I1–I8
 are retained with corrected outcomes. Additional IDs cover the new decisions.
 Replace intentionally obsolete expectations while preserving unrelated

@@ -1,0 +1,190 @@
+{
+  "layout": [
+    {
+      "title": "allocation visual review at 1440px in en",
+      "project": "desktop",
+      "width": 818,
+      "scroll": 818,
+      "rows": [
+        {
+          "width": 745,
+          "scroll": 745
+        },
+        {
+          "width": 745,
+          "scroll": 745
+        },
+        {
+          "width": 745,
+          "scroll": 745
+        },
+        {
+          "width": 745,
+          "scroll": 745
+        },
+        {
+          "width": 745,
+          "scroll": 745
+        },
+        {
+          "width": 745,
+          "scroll": 745
+        }
+      ],
+      "footer": {
+        "x": 311,
+        "y": 872,
+        "width": 818,
+        "height": 77,
+        "top": 872,
+        "right": 1129,
+        "bottom": 949,
+        "left": 311
+      },
+      "bounds": {
+        "x": 310,
+        "y": 50,
+        "width": 820,
+        "height": 900,
+        "top": 50,
+        "right": 1130,
+        "bottom": 950,
+        "left": 310
+      }
+    },
+    {
+      "title": "allocation visual review at 320px in he",
+      "project": "mobile",
+      "width": 294,
+      "scroll": 294,
+      "rows": [
+        {
+          "width": 260,
+          "scroll": 260
+        },
+        {
+          "width": 260,
+          "scroll": 260
+        },
+        {
+          "width": 260,
+          "scroll": 260
+        },
+        {
+          "width": 260,
+          "scroll": 260
+        },
+        {
+          "width": 260,
+          "scroll": 260
+        },
+        {
+          "width": 260,
+          "scroll": 260
+        }
+      ],
+      "footer": {
+        "x": 13,
+        "y": 708.6328125,
+        "width": 294,
+        "height": 78,
+        "top": 708.6328125,
+        "right": 307,
+        "bottom": 786.6328125,
+        "left": 13
+      },
+      "bounds": {
+        "x": 12,
+        "y": 24.3671875,
+        "width": 296,
+        "height": 763.265625,
+        "top": 24.3671875,
+        "right": 308,
+        "bottom": 787.6328125,
+        "left": 12
+      }
+    },
+    {
+      "title": "allocation visual review at 375px in en",
+      "project": "mobile",
+      "width": 349,
+      "scroll": 349,
+      "rows": [
+        {
+          "width": 315,
+          "scroll": 315
+        },
+        {
+          "width": 315,
+          "scroll": 315
+        },
+        {
+          "width": 315,
+          "scroll": 315
+        },
+        {
+          "width": 315,
+          "scroll": 315
+        },
+        {
+          "width": 315,
+          "scroll": 315
+        },
+        {
+          "width": 315,
+          "scroll": 315
+        }
+      ],
+      "footer": {
+        "x": 13,
+        "y": 708.6328125,
+        "width": 349,
+        "height": 78,
+        "top": 708.6328125,
+        "right": 362,
+        "bottom": 786.6328125,
+        "left": 13
+      },
+      "bounds": {
+        "x": 12,
+        "y": 24.3671875,
+        "width": 351,
+        "height": 763.265625,
+        "top": 24.3671875,
+        "right": 363,
+        "bottom": 787.6328125,
+        "left": 12
+      }
+    }
+  ],
+  "timing": [
+    {
+      "count": 12,
+      "project": "desktop",
+      "proposalMs": 1599.0371000000014,
+      "generationMs": 3234.4867000000013,
+      "includes": "Worker initialization, domain work, intercepted checked RPCs and UI feedback"
+    },
+    {
+      "count": 24,
+      "project": "desktop",
+      "proposalMs": 5716.892099999997,
+      "generationMs": 1720.4049999999988,
+      "includes": "Worker initialization, domain work, intercepted checked RPCs and UI feedback"
+    },
+    {
+      "count": 12,
+      "project": "mobile",
+      "proposalMs": 1471.714,
+      "generationMs": 2630.5302999999985,
+      "includes": "Worker initialization, domain work, intercepted checked RPCs and UI feedback"
+    },
+    {
+      "count": 24,
+      "project": "mobile",
+      "proposalMs": 5134.605600000003,
+      "generationMs": 1759.3382999999958,
+      "includes": "Worker initialization, domain work, intercepted checked RPCs and UI feedback"
+    }
+  ]
+}
