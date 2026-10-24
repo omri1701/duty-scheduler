@@ -103,6 +103,22 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
     const prior = s.intents.get(intent.id);
     if (prior) {if (fingerprint(prior) !== fingerprint(intent)) fail('intent-lineage-changed'); continue;}
     endpoints(s, intent.fromId, intent.toId);
+    const route = intent.route;
+    if (route) {
+      if (!route.length || route[0].fromId !== intent.fromId || route.at(-1)!.toId !== intent.toId ||
+        route[0].kind !== intent.kind) fail('invalid-intent-route');
+      for (const [i, leg] of route.entries()) {
+        endpoints(s, leg.fromId, leg.toId);
+        if (!['temporary', 'permanent'].includes(leg.kind) || (i && route[i - 1].toId !== leg.fromId) ||
+          !leg.transferIds.length || leg.transferIds.some(id => !id.trim())) fail('invalid-intent-route');
+        const trail = leg.counterparts;
+        if (trail.length !== leg.transferIds.length || trail[0]?.fromId !== (leg.deferredClaim?.debtorId ?? leg.fromId) ||
+          trail.at(-1)?.toId !== leg.toId || (leg.deferredClaim && leg.deferredClaim.creditorId !== leg.fromId) ||
+          trail.some((t, j) => t.id !== leg.transferIds[j] || t.kind !== leg.kind ||
+            (j > 0 && trail[j - 1].toId !== t.fromId))) fail('invalid-intent-route');
+        for (const t of trail) {endpoints(s, t.fromId, t.toId); units(t.units, true);}
+      }
+    }
     if (!intent.capacity.length) fail('unfunded-intent');
     let amount = 0;
     for (const slice of intent.capacity) {
@@ -114,7 +130,11 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
       exclude(slice); amount += slice.units; units(amount, true);
     }
     s.intents.set(intent.id, structuredClone(intent));
-    if (intent.kind === 'temporary') appliedIntents.push({id: intent.id, fromId: intent.fromId, toId: intent.toId, units: amount});
+    if (route) {
+      if (route.some(leg => leg.counterparts.some(t => t.units < amount))) fail('unfunded-intent-route');
+      for (const [i, leg] of route.entries()) if (leg.kind === 'temporary') appliedIntents.push({
+        id: `${intent.id}/route/${i}`, fromId: leg.fromId, toId: leg.toId, units: amount});
+    } else if (intent.kind === 'temporary') appliedIntents.push({id: intent.id, fromId: intent.fromId, toId: intent.toId, units: amount});
   }
   for (const [date, a] of old) {
     if (a.endInstantMs <= event.at) continue;

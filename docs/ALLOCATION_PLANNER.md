@@ -12,14 +12,18 @@ Seniority is an explicit saved order, senior first, containing exactly the activ
 approved, eligible participants (including an eligible manager).
 
 ```ts
-import {proposeAllocation, editAllocation, compileAllocation} from '../lib/allocation/index.ts';
+import {proposeAllocation, editAllocation, compileAllocation, bindAllocation} from '../lib/allocation/index.ts';
 
 const input = {schedule, seniority, events, now}; // schedule omits confirmed targets
 const proposal = proposeAllocation(highsAdapter, input, {seconds: 10, seed: 17});
 const edited = editAllocation(highsAdapter, input, proposal.draft, {
   id: 'reviewed-edit-1', engineer: seniority[0], deltaUnits: -2, kind: 'temporary',
 });
-const final = compileAllocation(highsAdapter, input, edited.draft);
+// Actual generated/manually reviewed assignments, including null primary holes.
+const final = compileAllocation(input, edited.draft, actualDraftAssignments);
+const binding = await bindAllocation(input, edited.draft, actualDraftAssignments, {
+  publicationId: 'reviewed-november', sourceKey: 'publish/reviewed-november', actor: 'manager',
+});
 ```
 
 ## Proposal priorities and proof
@@ -75,8 +79,12 @@ redistribute anything. Source, weight, membership, constraint, ledger or saved
 seniority changes invalidate an old draft. Save the selected ordinary baseline
 and counterpart provenance with the future allocation snapshot.
 
-`compileAllocation` validates component conservation and source-slice exclusivity,
-then tracks ordinary and repayment responsibility through counterpart transfers.
+`compileAllocation(input, draft, assignments)` independently validates the supplied
+actual assignments against the confirmed targets and all scheduling rules. It
+never calls a solver or substitutes a feasibility witness. Use `assessAllocation`
+separately when feasibility advice is needed. Compilation validates component
+conservation and source-slice exclusivity, then tracks ordinary and repayment
+responsibility through counterpart transfers.
 Lowered debtor targets defer newest repayment first; remaining capacity funds
 oldest repayment first. Temporary chains collapse to their approved endpoint
 trail. Third-party deferral creates creditor-to-carrier intent, preserving the
@@ -90,31 +98,67 @@ slices are selected. This matters because a chain bypass consumes the oldest
 prefix of an existing source. Reservations use surviving unreserved slices of
 the same obligation, never the old consumed prefix. `deferred` explains outstanding
 opening-source slices, including those referenced by a rerouted intent; it is not
-another posting or an executable settlement command. Both repayment and deferral
-intent references follow the normalized slices. Ambiguous compound routes remain
-unbound and require explicit review before confirmation. `unfundedUnits`
-retains all target shortfalls, and unperformed burden creates no new claim.
-For partial tables, compilation preserves coverage priorities and then optimizes
-oldest repayment funding before choosing its witness; it does not defer feasible
-compensation because of an arbitrary equally covered assignment.
+another posting or an executable settlement command. Each deferral
+intent retains its original `deferredClaim`; `normalizedDeferredClaims` separately
+explains the FIFO slices consumed by normalization. Original counterparts and
+transfer IDs remain available rather than being rewritten to the final worker.
+Ambiguous compound routes remain unbound and require explicit review before
+confirmation. `unfundedUnits` retains all target shortfalls, and unassigned burden
+creates no new claim.
+Partial compilation uses exactly the assigned units, funding ordinary work before
+oldest repayment and temporary burden. It does not optimize or fill missing work.
 
-These are point plans, **not publication payloads**. Future integration must bind
-funded intent and repayment to exclusive real duty/date-atom capacity with stable
-IDs, preview the authoritative publication transition, and use the existing
-revision/fingerprint-checked publication API. Draft compilation never creates
-events or earns settlement. Review/confirmation, execution in a cancellable Worker,
-publication binding and persistence are subsequent integration work.
+## Pure publication binding
+
+`bindAllocation` returns the compiled plan, a pure `publication` snapshot, and a
+`preview` from the existing compensation `record` transition. It never writes
+events or earns settlement. `bindable` means the actual funded work passed the
+accounting preview; `publishable` additionally requires complete actual coverage.
+A partial snapshot is for review only; it cannot be sent to live Publish.
+
+Each compiled `funding` route has one final carrier and one exclusive capacity
+budget. For A→B temporary, B→C permanent, C's actual duty funds the route once:
+A owes B, C receives no compensating claim, and B need not perform a duty.
+Publication `route` legs retain their classifications, original counterpart
+records, transfer IDs and original deferral source slices. Temporary chains may
+collapse accounting endpoints while retaining every approved counterpart.
+
+Binding uses chronological canonical date atoms, exact weighted half-point units,
+and the real duty end for settlement. Combined weekends have two one-unit atoms
+that both complete at Sunday handover. Transfer and repayment capacity never
+overlap. Repayment sources must survive the actual publication preview, remain
+unreserved across all months, and match the original path and aligned offsets.
+SHA-256 identities derive from the explicit publication/source scope, allocation
+source and bound capacity/content. Key ordering and retries preserve identities;
+changed capacity or provenance creates new identities. No clock or randomness is read.
+
+Ambiguous normalized deferrals, compound reverse obligations, unavailable reverse
+sources, or changes that would hold another publication's repayment require
+explicit review and return no executable publication. Binding a month with any
+publication history also requires lineage review: the API does not synthesize
+new allocation origins over already published work. Invalid assignments/stale
+drafts retain the scheduling/allocation validator's errors.
+
+**The routed intent contract is TypeScript-only. Do not submit it to the current
+SQL/RPC adapter**, which has not been extended for routes. Future integration must
+persist the reviewed allocation snapshot, support/review this contract in SQL
+with parity tests, preserve IDs through publication copies and replacements, and
+use the existing revision/fingerprint-checked publication API. Allocation UI,
+confirmation, cancellable Worker execution and Generate activation remain future work.
 
 ## Focused verification
 
 ```sh
-node --test tests/allocation.test.mjs tests/generation.test.mjs tests/highs-spike.test.mjs tests/compensation.test.mjs tests/engine.test.mjs tests/snapshot.test.mjs
+node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/compensation.test.mjs
 pnpm exec tsc --noEmit
-pnpm exec eslint lib/allocation lib/scheduling/solver/model.ts lib/compensation/ledger.ts tests/allocation.test.mjs
+pnpm exec eslint lib/allocation lib/compensation/publication.ts lib/compensation/types.ts tests/allocation.test.mjs tests/allocation-binding.test.mjs
 ```
 
 The tests cover canonical fairness, compensation-before-seniority, partial/blocked
 oldest repayment, whole/half duties, availability relief, both adjustment kinds,
 pending edits, deferral/netting, projected and future-reserved slices, locks,
 partial months, weighted cross-year duties, boundaries, stale inputs and UNKNOWN.
+Binding regressions additionally cover mixed routes with a nonperforming
+intermediary, changed assignments, partial coverage, stable identities, original
+versus normalized deferral slices, reverse obligations and overlapping/future reservations.
 Real database/browser/mobile performance is outside these domain checks.

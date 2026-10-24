@@ -12,6 +12,13 @@ application Generate integration remain future work. Application Generate
 retains its existing behavior until that workflow is
 ready; neither the engine nor the spikes in section 14.5 change it.
 
+The pure allocation-to-publication binder validates actual draft assignments and
+previews exclusive real duty capacity through the compensation core. Routed
+temporary/permanent intent retains original counterpart relationships even when
+an intermediary does no final work. Its TypeScript contract still requires SQL
+parity, publication-lineage integration and the existing checked write boundary
+before activation; it changes no UI, RPC or application Generate behavior.
+
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
 

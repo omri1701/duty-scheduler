@@ -16,7 +16,8 @@ export function validateDraft(c: Context, draft: AllocationDraft) {
     units(r.units);
     const candidate = c.candidates.find(c => c.debtorId === r.claim.debtorId && c.creditorId === r.claim.creditorId &&
       c.path.length === r.claim.path.length && c.path.every((s, i) => s.lotId === r.claim.path[i].lotId &&
-        r.claim.path[i].offset >= s.offset && r.claim.path[i].offset + r.units <= s.offset + s.units));
+        r.claim.path[i].offset >= s.offset && r.claim.path[i].offset + r.units <= s.offset + s.units &&
+        r.claim.path[i].offset - s.offset === r.claim.path[0].offset - c.path[0].offset));
     if (!r.units || !candidate || r.claim.units !== r.units || r.claim.path.some(s => s.units !== r.units) ||
       r.claim.frozen || r.claim.priority.at !== candidate.priority.at || r.claim.priority.sequence !== candidate.priority.sequence ||
       r.claim.priority.lotId !== candidate.priority.lotId) throw Error('invalid-repayment-source');

@@ -81,6 +81,17 @@ no debtor. Explicit funded temporary/permanent intents have stable IDs and are
 applied once. Do not add a second temporary intent for a transfer already derived
 from a replacement. Permanent intent can exempt newly reviewed replacement units.
 
+The pure TypeScript [allocation binder](ALLOCATION_PLANNER.md#pure-publication-binding)
+also previews routed intents: one real final-primary capacity budget funds ordered
+temporary/permanent legs, retaining original counterparts and source references.
+An intermediate temporary creditor need not perform the final duty. Only temporary
+legs create claims; permanent legs create none. Capacity is excluded once for the
+whole route. Existing simple intents and their replay behavior are unchanged.
+This is a **TypeScript-only contract extension**: SQL/RPC route support, differential
+validation and reviewed publication-lineage integration remain required before
+live use. The binder returns partial previews for review and rejects existing
+publication histories requiring lineage decisions; it does not activate Publish.
+
 Repayment cancellation is classified before ordinary replacement/swap effects.
 Creditor substitution retains the original debt; third-party substitution routes
 through that creditor. Separate ordinary capacity still transfers. A new intent
