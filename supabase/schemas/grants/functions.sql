@@ -125,3 +125,45 @@ REVOKE ALL ON FUNCTION duty_private.compensation_view(jsonb) FROM PUBLIC, anon, 
 REVOKE ALL ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) TO service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_bind(f jsonb, draft jsonb, s jsonb, allocation_id uuid, publication jsonb, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_part(t jsonb, amount bigint, off bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_take(atoms jsonb, engineer text, amount bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.compensation_candidates(s jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.generation_context(p_month text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.generation_context(p_month text, p_revision bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.generation_duties(p_month text) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.generation_facts(p_month text) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.generation_validate(f jsonb, targets jsonb, assignments jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_generation_context(p_month text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_generation_context(p_month text, p_revision bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_baseline(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_better_baseline(weights integer[], bins integer[], ceiling_cost bigint, quantum integer, total integer) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_partition(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_rebind(s jsonb, publication jsonb, source_publication uuid, allocation_id uuid, instant bigint) FROM PUBLIC, anon, authenticated, service_role;

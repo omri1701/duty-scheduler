@@ -46,6 +46,16 @@ function exclusivity(publication) {
     used.set(slice.date, [...ranges, slice]);
   }
 }
+
+test('separate routes cannot reuse one approved counterpart budget on different duties', () => {
+ const members=['a','b'].map(id=>({id,active:true}));
+ const events=send([],{kind:'members',members},'members');
+ const counterpart={id:'one-transfer',fromId:'a',toId:'b',kind:'temporary',units:2};
+ const intents=['2026-11-02','2026-11-04'].map((date,i)=>({id:'route-'+i,fromId:'a',toId:'b',kind:'temporary',capacity:[{date,offset:0,units:2}],
+  route:[{fromId:'a',toId:'b',kind:'temporary',transferIds:['one-transfer'],counterparts:[counterpart]}]}));
+ assert.throws(()=>send(events,{kind:'publication',month:'2026-11',beforeId:null,after:{id:'bad',month:'2026-11',intents,reservations:[],
+  duties:['2026-11-02','2026-11-04'].map(startDate=>({startDate,endDate:startDate==='2026-11-02'?'2026-11-03':'2026-11-05',primaryId:'b',units:2}))}},'bad'),/unfunded-intent-route/);
+});
 const publishCommand = (input, publication, identity = envelope) => ({sourceKey: identity.sourceKey,
   actor: identity.actor, at: input.now, operation: {kind: 'publication', month: input.schedule.month, beforeId: null, after: publication}});
 

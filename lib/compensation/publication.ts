@@ -1,7 +1,7 @@
 import {addDays, dayOf} from '../rota/calendar-dates.ts';
 import {handover, requireDate} from '../scheduling/calendar.ts';
 import {compareId, normalize, segment, units} from './normalize.ts';
-import {addLot, endpoints, fail, fingerprint, reserve, type State} from './state.ts';
+import {addLot, endpoints, fail, fingerprint, locate, reserve, type State} from './state.ts';
 import type {CapacitySlice, CompensationEvent, Publication, Reservation} from './types.ts';
 
 type Atom = {date: string; units: number; primaryId: string; endInstantMs: number};
@@ -97,6 +97,7 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
   }
   const appliedIntents: {id: string; fromId: string; toId: string; units: number}[] = [];
   const intentIds = new Set<string>();
+  const routeBudgets = new Map<string, {transfer: unknown; used: number}>();
   for (const intent of [...(after?.intents ?? [])].sort((a, b) => compareId(a.id, b.id))) {
     if (!intent.id || intentIds.has(intent.id) || !['temporary', 'permanent'].includes(intent.kind)) fail('invalid-intent');
     intentIds.add(intent.id);
@@ -110,7 +111,13 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
       for (const [i, leg] of route.entries()) {
         endpoints(s, leg.fromId, leg.toId);
         if (!['temporary', 'permanent'].includes(leg.kind) || (i && route[i - 1].toId !== leg.fromId) ||
-          !leg.transferIds.length || leg.transferIds.some(id => !id.trim())) fail('invalid-intent-route');
+          !leg.transferIds.length || leg.transferIds.some(id => typeof id !== 'string' || !id.trim())) fail('invalid-intent-route');
+        if (Object.hasOwn(leg, 'deferredClaim')) {
+          const c = leg.deferredClaim;
+          if (!c || typeof c.debtorId !== 'string' || typeof c.creditorId !== 'string') fail('invalid-intent-route');
+          segment(c, {at: 0, sequence: 0, lotId: 'reference'});
+          if (!locate(s, c)) fail('invalid-deferred-source');
+        }
         const trail = leg.counterparts;
         if (trail.length !== leg.transferIds.length || trail[0]?.fromId !== (leg.deferredClaim?.debtorId ?? leg.fromId) ||
           trail.at(-1)?.toId !== leg.toId || (leg.deferredClaim && leg.deferredClaim.creditorId !== leg.fromId) ||
@@ -132,8 +139,17 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
     s.intents.set(intent.id, structuredClone(intent));
     if (route) {
       if (route.some(leg => leg.counterparts.some(t => t.units < amount))) fail('unfunded-intent-route');
-      for (const [i, leg] of route.entries()) if (leg.kind === 'temporary') appliedIntents.push({
-        id: `${intent.id}/route/${i}`, fromId: leg.fromId, toId: leg.toId, units: amount});
+      for (const [i, leg] of route.entries()) {
+        for (const t of leg.counterparts) {
+          const budget = routeBudgets.get(t.id);
+          if (budget && fingerprint(budget.transfer) !== fingerprint(t)) fail('intent-counterpart-lineage-changed');
+          const used = (budget?.used ?? 0) + amount;
+          if (used > t.units) fail('unfunded-intent-route');
+          routeBudgets.set(t.id, {transfer: t, used});
+        }
+        if (leg.kind === 'temporary') appliedIntents.push({
+          id: `${intent.id}/route/${i}`, fromId: leg.fromId, toId: leg.toId, units: amount});
+      }
     } else if (intent.kind === 'temporary') appliedIntents.push({id: intent.id, fromId: intent.fromId, toId: intent.toId, units: amount});
   }
   for (const [date, a] of old) {

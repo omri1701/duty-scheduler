@@ -4,6 +4,7 @@ CREATE FUNCTION duty_private.compensation_transition(s jsonb, e jsonb) RETURNS j
 declare op jsonb:=e->'operation'; before_pub jsonb:=s->'publications'->(op->>'month'); after_pub jsonb:=nullif(op->'after','null');
  old_atoms jsonb; new_atoms jsonb; a jsonb; b jsonb; known jsonb; proposed jsonb:='{}'::jsonb; excluded jsonb:='{}'::jsonb;
  r jsonb; c jsonb; intent jsonb; cap jsonb; previous jsonb; temporary jsonb:='[]'::jsonb; applied jsonb:='[]'::jsonb; effects jsonb:='[]'::jsonb;
+ route jsonb; leg jsonb; trail jsonb; t jsonb; route_index integer; leg_index integer; budget jsonb; route_budgets jsonb:='{}';
  key text; day text; amount bigint; shared bigint; off bigint; cell bigint; idx integer:=0; unchanged boolean; exempt boolean;
 begin
  if (before_pub->>'id') is distinct from (op->>'beforeId') or (after_pub is not null and after_pub->>'month'<>op->>'month') then raise exception 'stale-publication'; end if;
@@ -50,7 +51,7 @@ begin
  end loop;
  for intent in select value from jsonb_array_elements(coalesce(after_pub->'intents','[]')) order by value->>'id' COLLATE "C" loop
   key:=intent->>'id';
-  if jsonb_typeof(intent) IS DISTINCT FROM 'object' or intent-array['id','kind','fromId','toId','capacity']<>'{}'
+  if jsonb_typeof(intent) IS DISTINCT FROM 'object' or intent-array['id','kind','fromId','toId','capacity','route']<>'{}'
    or jsonb_typeof(intent->'id') IS DISTINCT FROM 'string' or key !~ '^[A-Za-z0-9][A-Za-z0-9_./:-]{0,159}$'
    or jsonb_typeof(intent->'fromId') IS DISTINCT FROM 'string' or jsonb_typeof(intent->'toId') IS DISTINCT FROM 'string'
    or jsonb_typeof(intent->'capacity') IS DISTINCT FROM 'array' then raise exception 'invalid-intent'; end if;
@@ -59,6 +60,38 @@ begin
   previous:=s->'intents'->key;
   if previous is not null then if previous<>intent then raise exception 'intent-lineage-changed'; end if; continue; end if;
   if not coalesce(s->'members' ? (intent->>'fromId'),false) or not coalesce(s->'members' ? (intent->>'toId'),false) or intent->>'fromId'=intent->>'toId' then raise exception 'invalid-endpoints'; end if;
+  route:=intent->'route';
+  if route is not null then
+   if jsonb_typeof(route) IS DISTINCT FROM 'array' or jsonb_array_length(route)=0 or route->0->>'fromId'<>intent->>'fromId'
+    or route->-1->>'toId'<>intent->>'toId' or route->0->>'kind'<>intent->>'kind' then raise exception 'invalid-intent-route'; end if;
+   for leg,route_index in select value,ordinality::int-1 from jsonb_array_elements(route) with ordinality loop
+    trail:=leg->'counterparts';
+    if jsonb_typeof(leg) IS DISTINCT FROM 'object' or leg-array['fromId','toId','kind','transferIds','deferredClaim','counterparts']<>'{}'
+     or jsonb_typeof(leg->'fromId') IS DISTINCT FROM 'string' or jsonb_typeof(leg->'toId') IS DISTINCT FROM 'string'
+     or coalesce(leg->>'kind','') not in ('temporary','permanent') or not coalesce(s->'members' ? (leg->>'fromId'),false)
+     or not coalesce(s->'members' ? (leg->>'toId'),false) or leg->>'fromId'=leg->>'toId'
+     or (route_index>0 and route->(route_index-1)->>'toId'<>leg->>'fromId')
+     or jsonb_typeof(leg->'transferIds') IS DISTINCT FROM 'array' or jsonb_array_length(leg->'transferIds')=0
+     or jsonb_typeof(trail) IS DISTINCT FROM 'array' or jsonb_array_length(trail)<>jsonb_array_length(leg->'transferIds')
+     or (trail->0->>'fromId') IS DISTINCT FROM coalesce(leg->'deferredClaim'->>'debtorId',leg->>'fromId')
+     or (trail->-1->>'toId') IS DISTINCT FROM (leg->>'toId') or (leg ? 'deferredClaim' and (leg->'deferredClaim'->>'creditorId') IS DISTINCT FROM (leg->>'fromId')) then raise exception 'invalid-intent-route'; end if;
+    if leg ? 'deferredClaim' then
+     if jsonb_typeof(leg->'deferredClaim') IS DISTINCT FROM 'object' or (leg->'deferredClaim')-array['debtorId','creditorId','path']<>'{}'
+      or jsonb_typeof(leg->'deferredClaim'->'debtorId') IS DISTINCT FROM 'string' or jsonb_typeof(leg->'deferredClaim'->'creditorId') IS DISTINCT FROM 'string' then raise exception 'invalid-intent-route'; end if;
+     perform duty_private.compensation_segment(leg->'deferredClaim','{"at":0,"sequence":0,"lotId":"reference"}');
+     if duty_private.compensation_locate(s,leg->'deferredClaim') is null then raise exception 'invalid-deferred-source'; end if;
+    end if;
+    for t,leg_index in select value,ordinality::int-1 from jsonb_array_elements(trail) with ordinality loop
+     if jsonb_typeof(t) IS DISTINCT FROM 'object' or t-array['id','fromId','toId','units','kind']<>'{}'
+      or jsonb_typeof(t->'id') IS DISTINCT FROM 'string' or jsonb_typeof(leg->'transferIds'->leg_index) IS DISTINCT FROM 'string'
+      or jsonb_typeof(t->'fromId') IS DISTINCT FROM 'string' or jsonb_typeof(t->'toId') IS DISTINCT FROM 'string'
+      or coalesce(btrim(t->>'id'),'')='' or (t->>'id') IS DISTINCT FROM (leg->'transferIds'->>leg_index) or (t->>'kind') IS DISTINCT FROM (leg->>'kind')
+      or (leg_index>0 and trail->(leg_index-1)->>'toId'<>t->>'fromId')
+      or not coalesce(s->'members' ? (t->>'fromId'),false) or not coalesce(s->'members' ? (t->>'toId'),false) or t->>'fromId'=t->>'toId' then raise exception 'invalid-intent-route'; end if;
+     perform duty_private.compensation_units(t->'units',true);
+    end loop;
+   end loop;
+  end if;
   if jsonb_array_length(intent->'capacity')=0 then raise exception 'unfunded-intent'; end if;
   amount:=0;
   for cap in select value from jsonb_array_elements(intent->'capacity') loop
@@ -71,7 +104,19 @@ begin
    excluded:=duty_private.compensation_exclude(excluded,cap); amount:=amount+(cap->>'units')::bigint;
   end loop;
   s:=jsonb_set(s,array['intents',key],intent);
-  if intent->>'kind'='temporary' then applied:=applied||jsonb_build_array(intent||jsonb_build_object('units',amount)); end if;
+  if route is not null then
+   for leg,route_index in select value,ordinality::int-1 from jsonb_array_elements(route) with ordinality loop
+    for t in select value from jsonb_array_elements(leg->'counterparts') loop
+     if (t->>'units')::bigint<amount then raise exception 'unfunded-intent-route'; end if;
+     budget:=route_budgets->(t->>'id');
+     if budget is not null and budget->'transfer'<>t then raise exception 'intent-counterpart-lineage-changed'; end if;
+     if coalesce((budget->>'used')::bigint,0)+amount>(t->>'units')::bigint then raise exception 'unfunded-intent-route'; end if;
+     route_budgets:=jsonb_set(route_budgets,array[t->>'id'],jsonb_build_object('transfer',t,'used',coalesce((budget->>'used')::bigint,0)+amount));
+    end loop;
+    if leg->>'kind'='temporary' then applied:=applied||jsonb_build_array(jsonb_build_object('id',key||'/route/'||route_index,
+     'fromId',leg->'fromId','toId',leg->'toId','units',amount)); end if;
+   end loop;
+  elsif intent->>'kind'='temporary' then applied:=applied||jsonb_build_array(intent||jsonb_build_object('units',amount)); end if;
  end loop;
  for day,a in select * from jsonb_each(old_atoms) order by key loop
   b:=new_atoms->day;

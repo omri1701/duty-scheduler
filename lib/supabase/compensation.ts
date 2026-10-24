@@ -2,7 +2,7 @@ import {project, replay} from '../compensation/index.ts';
 import type {CompensationEvent, ManualOperation, Reservation, TransferIntent} from '../compensation/types.ts';
 import type {DutyClient} from './rpc.ts';
 
-/** Reviewed accounting metadata only; allocation planning and draft storage are separate. */
+/** Legacy reviewed metadata. Confirmed allocation months compile it on the server. */
 export type CompensationPublicationMetadata = {
   fingerprint: string;
   reservations: readonly Reservation[];

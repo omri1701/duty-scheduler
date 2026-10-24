@@ -1,0 +1,3 @@
+# PostgreSQL retains line endings inside function bodies. Keep migration replay
+# identical to the canonical LF bundle on Windows and Linux.
+supabase/migrations/*.sql text eol=lf

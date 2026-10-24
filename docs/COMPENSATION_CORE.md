@@ -87,9 +87,9 @@ temporary/permanent legs, retaining original counterparts and source references.
 An intermediate temporary creditor need not perform the final duty. Only temporary
 legs create claims; permanent legs create none. Capacity is excluded once for the
 whole route. Existing simple intents and their replay behavior are unchanged.
-This is a **TypeScript-only contract extension**: SQL/RPC route support, differential
-validation and reviewed publication-lineage integration remain required before
-live use. The binder returns partial previews for review and rejects existing
+The [database integration](ALLOCATION_DATABASE.md) supports this contract in SQL,
+with differential validation, authoritative source budgets and publication lineage.
+The binder returns partial previews for review and rejects existing
 publication histories requiring lineage decisions; it does not activate Publish.
 
 Repayment cancellation is classified before ordinary replacement/swap effects.
@@ -140,8 +140,10 @@ owner, full primary snapshots and completion times. The reviewed fingerprint
 must still match after due reconciliation. Ordinary publications/swaps carry
 unchanged contribution IDs and intents; invalidated reservations cancel before
 ordinary transfer accounting. Resizing a reservation requires an explicit new
-ID and reviewed slice. No draft accounting metadata, allocation planning, duty
-locks, new UI or Generate integration is introduced here.
+ID and reviewed slice. Confirmed allocation months use server-compiled accounting
+instead of client metadata. Draft persistence and scoped locks are described in
+the [allocation database contract](ALLOCATION_DATABASE.md); UI and application
+Generate integration remain future work.
 
 The pointer hook records Publish, approved swaps and live-version deletion in
 their existing transactions. Reopen/restore and Cancel Draft keep the live

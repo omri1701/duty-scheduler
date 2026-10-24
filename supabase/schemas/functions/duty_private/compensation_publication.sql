@@ -1,7 +1,7 @@
 CREATE FUNCTION duty_private.compensation_publication(month text, publication uuid, metadata jsonb DEFAULT NULL, deleting boolean DEFAULT false) RETURNS void
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb;
+declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb;
 begin
  perform 1 from public.duty_workspace where id for update;
  s:=duty_private.compensation_state(); before_pub:=s->'publications'->month;
@@ -44,6 +44,18 @@ begin
       and day::date>=(old->>'startDate')::date and day::date<(old->>'endDate')::date)
    ) a),'[]'));
   end if;
+  select * into allocation from public.duty_allocations where publication_id=publication and duty_allocations.month=month;
+  if allocation.month is not null then
+   if metadata is not null then raise exception 'Allocation accounting is server-owned'; end if;
+   if allocation.source_publication_id is null then
+    if allocation.accounting_fingerprint<>md5((s->'events')::text) then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+    if before_pub is not null and allocation.allocation->'transfers'<>'[]' then raise exception 'Review published transfer lineage before changing allocation'; end if;
+    facts:=duty_private.generation_facts(month);
+    metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);
+   elsif allocation.origin<>'swap' then
+    metadata:=duty_private.allocation_rebind(s,after_pub,allocation.source_publication_id,allocation.allocation_id,instant);
+   end if;
+  end if;
   if metadata is not null then
    if jsonb_typeof(metadata) IS DISTINCT FROM 'object' or metadata - array['fingerprint','reservations','intents']<>'{}' then raise exception 'Invalid compensation metadata'; end if;
    if metadata->>'fingerprint' is distinct from md5((s->'events')::text) then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
@@ -54,5 +66,5 @@ begin
  -- Unknown pre-cutover versions preserve completed facts below the ordinary
  -- transition rules. Known deletion uses the core's terminal handling.
  if deleting and (after_pub is null or known is not null) and before_pub is not null then op:=op||'{"mode":"delete"}'; end if;
- perform duty_private.compensation_append(s,op,'publication/'||gen_random_uuid(),instant,coalesce(auth.uid()::text,'system'));
+ perform duty_private.compensation_append(s,op,'publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1),instant,coalesce(auth.uid()::text,'system'));
 end $$;

@@ -50,6 +50,13 @@ begin
     and c.member_id in (case when d.id=a.id then r.other_id else r.requester_id end,d.secondary_id)
    ) else d.manager_override end,d.title,d.extra_points
   from public.duty_assignments d where d.publication_id=current_publication;
+  insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)
+  select month,publication,allocation_id,allocation,
+   (select coalesce(jsonb_agg(case when l->>'dutyId'=a.day::text then jsonb_set(l,'{engineer}',to_jsonb(r.other_id::text)) when l->>'dutyId'=b.day::text then jsonb_set(l,'{engineer}',to_jsonb(r.requester_id::text)) else l end),'[]') from jsonb_array_elements(locks) l),
+   (select coalesce(jsonb_agg(v),'[]') from jsonb_array_elements(approvals) v where
+    not (v->>'rule' in ('availability','boundary') and v->>'dutyId' in (a.day::text,b.day::text))
+    and not (v->>'rule'='consecutive' and ((v->'duties') ? a.day::text or (v->'duties') ? b.day::text))
+    and not (v->>'rule'='weekends' and v->>'engineer' in (r.requester_id::text,r.other_id::text))),accounting_fingerprint,calendar_fingerprint,current_publication,generation,'swap' from public.duty_allocations where publication_id=current_publication;
  end if;
  -- Finalize before the publication trigger revalidates all other pending requests.
  update public.duty_swap_requests set
