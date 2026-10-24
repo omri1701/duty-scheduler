@@ -1,10 +1,10 @@
 import {normalize, sliceClaim} from '../compensation/index.ts';
 import {compareClaims, segment} from '../compensation/normalize.ts';
 import type {ClaimRef, ClaimSegment} from '../compensation/types.ts';
-import type {Settings, SolverAdapter} from '../scheduling/solver/highs-adapter.ts';
-import {budget, checkTargets, context, sum, validTargets} from './model.ts';
+import {validateGeneration, type PrimaryAssignments} from '../scheduling/validate.ts';
+import {context, sum, validTargets} from './model.ts';
 import {validateDraft} from './edits.ts';
-import type {AllocationInput, AllocationDraft, CompiledPlan, Intent} from './types.ts';
+import type {AllocationInput, AllocationDraft, CompiledPlan, Intent, Check} from './types.ts';
 
 type Token = {carrier: string; origin: string; units: number; claim?: ClaimSegment;
   trail: string[]; prior: Intent[]};
@@ -15,17 +15,23 @@ const part = (token: Token, amount: number, offset = 0): Token => ({...structure
 });
 const ref = (c: ClaimRef): ClaimRef => ({debtorId: c.debtorId, creditorId: c.creditorId, path: structuredClone(c.path)});
 
-/** Compile accounting intent only after editing. No events, reservations, dates or
- * settlements are written here. Future publication must bind each funded unit
- * to exclusive real duty capacity through the existing compensation API. */
-export function compileAllocation(adapter: SolverAdapter, input: AllocationInput, draft: AllocationDraft,
-  settings: Partial<Settings> = {}) {
-  const work = budget(settings), c = context(input); validateDraft(c, draft);
-  if (draft.pending.length || !validTargets(c, draft.targetsUnits)) {
-    const check = checkTargets(adapter, c, draft.targetsUnits, work);
-    return {check, plan: null, confirmable: false, diagnostics: [...check.diagnostics,
-      {code: 'finish-pending-allocation-edits', certainty: 'fact' as const}]};
-  }
+/** Compile ONLY the supplied actual draft. Feasibility/optimization belongs to
+ * assessAllocation; it cannot substitute a different schedule's capacity here. */
+export function compileAllocation(input: AllocationInput, draft: AllocationDraft, assignments: PrimaryAssignments) {
+  const c = context(input); validateDraft(c, draft);
+  if (draft.pending.length || !validTargets(c, draft.targetsUnits)) return {check: null, plan: null,
+    confirmable: false, diagnostics: [{code: 'finish-pending-allocation-edits', certainty: 'fact' as const}]};
+  const actual = structuredClone(assignments);
+  const metrics = validateGeneration({...input.schedule,
+    targets: Object.fromEntries(c.ids.map(id => [id, draft.targetsUnits[id] / 2]))}, actual);
+  const check: Check = {feasibility: metrics.deficits.every(n => n === 0) ? 'complete' : 'partial',
+    assignments: actual, coverage: metrics.coverage, special: metrics.special, assignedUnits: metrics.units,
+    actualUnits: Object.fromEntries(c.ids.map((id, i) => [id, draft.targetsUnits[id] - metrics.deficits[i]])),
+    stages: [], diagnostics: []};
+  for (const id of c.ids) if (check.actualUnits[id] < draft.targetsUnits[id]) check.diagnostics.push({
+    code: 'unfunded-target', certainty: 'fact', engineer: id, units: draft.targetsUnits[id] - check.actualUnits[id]});
+  for (const duty of c.prepared.duties) if (actual[duty.id].primary === null) check.diagnostics.push({
+    code: 'uncovered-duty', certainty: 'fact', dutyId: duty.id, dates: duty.dates, units: duty.units});
   const tokens: Token[] = c.ids.map(id => ({carrier: id, origin: id, units: draft.baselineUnits[id], trail: [], prior: []}));
   for (const r of draft.repayments) {
     let remaining = r.units;
@@ -64,28 +70,7 @@ export function compileAllocation(adapter: SolverAdapter, input: AllocationInput
   const reverseClaim = (t: Token) => !t.claim && t.trail.length ? c.candidates.find(claim =>
     claim.debtorId === t.carrier && claim.creditorId === t.origin) : undefined;
   const priority = (t: Token) => isRepayment(t) || reverseClaim(t) ? 1 : t.trail.length && t.origin !== t.carrier ? 2 : 0;
-  const ordinary = Object.fromEntries(c.ids.map(id => [id, sum(tokens.filter(t =>
-    t.carrier === id && priority(t) === 0).map(t => t.units))]));
-  const reverseBudget = new Map<string, number>();
-  const pair = (debtor: string, creditor: string) => JSON.stringify([debtor, creditor]);
-  for (const t of tokens.filter(t => reverseClaim(t))) {
-    const key = pair(t.carrier, t.origin); reverseBudget.set(key, (reverseBudget.get(key) ?? 0) + t.units);
-  }
-  const funding = c.candidates.flatMap(claim => {
-    const selected = sum(tokens.filter(t => isRepayment(t) && t.claim!.debtorId === claim.debtorId &&
-      t.claim!.creditorId === claim.creditorId && t.claim!.path[0].lotId === claim.path[0].lotId).map(t =>
-      Math.max(0, Math.min(t.claim!.path[0].offset + t.units, claim.path[0].offset + claim.units) -
-        Math.max(t.claim!.path[0].offset, claim.path[0].offset))));
-    const key = pair(claim.debtorId, claim.creditorId), extra = Math.min(claim.units - selected, reverseBudget.get(key) ?? 0);
-    reverseBudget.set(key, (reverseBudget.get(key) ?? 0) - extra);
-    const possible = selected + extra;
-    return possible ? [{engineer: claim.debtorId, units: possible, ordinaryUnits: ordinary[claim.debtorId]}] : [];
-  });
-  // Preserve coverage first, then favor witnesses that can fund the oldest final
-  // repayment budgets. An arbitrary equally covered partial schedule must not
-  // accidentally defer feasible compensation after manager edits.
-  const check = checkTargets(adapter, c, draft.targetsUnits, work, {}, funding);
-  const plan: CompiledPlan = {repayments: [], deferred: [], intents: [], unfundedUnits: {}};
+  const plan: CompiledPlan = {repayments: [], deferred: [], intents: [], funding: [], unfundedUnits: {}};
   const reserved: {claim: ClaimRef; units: number}[] = [];
   for (const id of c.ids) {
     let capacity = check.actualUnits[id] ?? 0;
@@ -98,26 +83,51 @@ export function compileAllocation(adapter: SolverAdapter, input: AllocationInput
       if (!funded) continue;
       const paid = part(t, funded);
       if (isRepayment(paid)) reserved.push({claim: ref(paid.claim!), units: funded});
-      plan.intents.push(...paid.prior);
-      if (!isRepayment(paid) && paid.trail.length && paid.origin !== paid.carrier) plan.intents.push({fromId: paid.origin, toId: paid.carrier,
+      const route = [...paid.prior];
+      if (!isRepayment(paid) && paid.trail.length && paid.origin !== paid.carrier) route.push({fromId: paid.origin, toId: paid.carrier,
         units: funded, kind: 'temporary', transferIds: paid.trail,
         ...(paid.claim ? {deferredClaim: ref(paid.claim)} : {})});
+      if (route.length) plan.funding.push({carrierId: id, units: funded, route});
     }
   }
   // A new temporary C->D burden can fund D's existing debt to C. Reserve that
   // debt oldest first instead of posting an opposing claim that would cancel it
   // immediately on publication, before any of the repayment work has completed.
-  for (const intent of plan.intents.filter(t => t.kind === 'temporary' && !t.deferredClaim)) {
+  let provenanceReview = false;
+  for (const funding of plan.funding) {
+    const reverse = funding.route.filter(t => t.kind === 'temporary' && !t.deferredClaim &&
+      c.projection.projected.claims.some(c => c.debtorId === t.toId && c.creditorId === t.fromId));
+    if (reverse.length && (funding.route.length !== 1 || reverse[0].toId !== funding.carrierId)) {
+      provenanceReview = true;
+      check.diagnostics.push({code: 'review-compound-reverse-obligation', certainty: 'fact', units: funding.units});
+      continue;
+    }
+    const intent = reverse[0]; if (!intent) continue;
     for (const source of c.candidates) {
       if (!intent.units || source.debtorId !== intent.toId || source.creditorId !== intent.fromId) continue;
-      const already = sum(reserved.filter(r => r.claim.debtorId === source.debtorId && r.claim.creditorId === source.creditorId &&
-        r.claim.path.length === source.path.length && r.claim.path.every((s, i) => s.lotId === source.path[i].lotId &&
-          s.offset >= source.path[i].offset && s.offset + s.units <= source.path[i].offset + source.units)).map(r => r.units));
-      const amount = Math.min(intent.units, source.units - already);
-      if (amount) {reserved.push({claim: sliceClaim(source, amount), units: amount}); intent.units -= amount;}
+      // Subtract exact selected source intervals, not just amounts. Several
+      // transfers must never reserve the same oldest prefix twice.
+      let ranges: [number, number][] = [[0, source.units]];
+      for (const r of reserved) {
+        if (r.claim.debtorId !== source.debtorId || r.claim.creditorId !== source.creditorId ||
+          r.claim.path.length !== source.path.length || r.claim.path.some((s, i) => s.lotId !== source.path[i].lotId)) continue;
+        const lo = r.claim.path[0].offset - source.path[0].offset, hi = lo + r.units;
+        ranges = ranges.flatMap(([a, b]) => hi <= a || lo >= b ? [[a, b]] :
+          [...(a < lo ? [[a, lo] as [number, number]] : []), ...(hi < b ? [[hi, b] as [number, number]] : [])]);
+      }
+      for (const [lo, hi] of ranges) {
+        const amount = Math.min(intent.units, hi - lo); if (!amount) continue;
+        reserved.push({claim: sliceClaim(source, amount, lo), units: amount});
+        intent.units -= amount; funding.units -= amount;
+      }
+    }
+    if (intent.units) {
+      provenanceReview = true;
+      check.diagnostics.push({code: 'review-unavailable-reverse-obligation', certainty: 'fact', units: intent.units});
     }
   }
-  plan.intents = plan.intents.filter(t => t.units);
+  plan.funding = plan.funding.filter(f => f.units);
+  plan.intents = plan.funding.flatMap(f => f.route);
   // New ordinary intent can normalize the graph BEFORE a publication reserves
   // repayments. In particular C->R bypasses the oldest prefix of D->C. Rebind
   // within the same unreserved original candidate, never reserve the old prefix
@@ -132,9 +142,8 @@ export function compileAllocation(adapter: SolverAdapter, input: AllocationInput
   });
   const normalized = normalize([...c.projection.projected.claims, ...additions],
     new Set(c.projection.actual.members.filter(m => m.active).map(m => m.id))).claims;
-  let provenanceReview = false;
-  plan.intents = plan.intents.flatMap(intent => {
-    if (!intent.deferredClaim) return [intent];
+  for (const intent of plan.intents) {
+    if (!intent.deferredClaim) continue;
     const addition = additions[temporaryIntents.indexOf(intent)], id = addition.path[0].lotId;
     const rebound: typeof plan.intents = [];
     for (const claim of normalized) {
@@ -148,14 +157,15 @@ export function compileAllocation(adapter: SolverAdapter, input: AllocationInput
         deferredClaim: {debtorId: original.debtorId, creditorId: original.creditorId,
           path: structuredClone(claim.path.slice(0, index))}});
     }
-    if (sum(rebound.map(t => t.units)) === intent.units) return rebound;
+    if (sum(rebound.map(t => t.units)) === intent.units) {
+      intent.normalizedDeferredClaims = rebound.map(t => t.deferredClaim!); continue;
+    }
     // Multiple chained edits can net the intended route through a different
     // obligation. Keep its approved trail for review, never return a stale
     // source reference that overlaps a rebound repayment.
     provenanceReview = true;
     check.diagnostics.push({code: 'review-normalized-deferral-route', certainty: 'fact', units: intent.units});
-    const {deferredClaim: omitted, ...unbound} = intent; void omitted; return [unbound];
-  });
+  }
   const samePath = (a: ClaimRef, b: ClaimRef) => a.debtorId === b.debtorId && a.creditorId === b.creditorId &&
     a.path.length === b.path.length && a.path.every((s, i) => s.lotId === b.path[i].lotId);
   const pool = c.candidates.flatMap(source => normalized.filter(claim => samePath(source, claim)).flatMap(claim => {

@@ -114,9 +114,8 @@ export function validTargets(c: Context, targets: Record<string, number>) {
   return Object.keys(targets).length === c.ids.length && c.ids.every(id =>
     Number.isSafeInteger(targets[id]) && targets[id] >= c.locked[id]) && sum(Object.values(targets)) === c.total;
 }
-export type Funding = {engineer: string; units: number; ordinaryUnits: number};
 export function checkTargets(adapter: SolverAdapter, c: Context, targets: Record<string, number>, work: Budget,
-  floors: Record<string, number> = {}, funding: Funding[] = []): Check {
+  floors: Record<string, number> = {}): Check {
   const diagnostics = [...c.prepared.diagnostics.filter(d => !['insufficient-individual-capacity',
     'unreachable-target-combination', 'shared-capacity-shortage'].includes(d.code))];
   if (!validTargets(c, targets)) return {feasibility: 'invalid', assignments: null, coverage: 0, special: 0, assignedUnits: 0,
@@ -126,23 +125,13 @@ export function checkTargets(adapter: SolverAdapter, c: Context, targets: Record
     m.addColumns(base.columns); m.addRows(base.rows);
     for (const [id, floor] of Object.entries(floors)) m.addRows([{terms: p.duties.flatMap((d, i) =>
       d.eligible.includes(c.ids.indexOf(id)) ? [[d.units, `x_${c.ids.indexOf(id)}_${i}`] as Term] : []), lower: floor}]);
-    const funded = funding.map((f, i) => m.integer(`funded_${i}`, Math.min(f.units, c.total)));
-    for (const [e, id] of c.ids.entries()) {
-      const requests = funding.flatMap((f, i) => f.engineer === id ? [i] : []);
-      if (!requests.length) continue;
-      const active = `funding-active_${e}`, t = requests.flatMap(i => funded[i]); m.addColumns([{name: active}]);
-      m.addRows([{terms: [...t, [-c.total, active]], upper: 0},
-        {terms: [...p.duties.flatMap((d, i) => d.eligible.includes(e) ? [[d.units, `x_${e}_${i}`] as Term] : []),
-          ...scale(t, -1), [-c.total, active]], lower: funding[requests[0]].ordinaryUnits - c.total}]);
-    }
-    for (const stage of [...base.stages, ...funded.map((t, i) => ({name: `funding:${i}`, terms: scale(t, -1)}))]) {
+    for (const stage of base.stages) {
       if (!m.optimize(stage.name, stage.terms)) break;
     }
     if (!m.values) return {feasibility: 'unknown', assignments: null, coverage: 0, special: 0, assignedUnits: 0,
       actualUnits: {}, stages: m.stages, diagnostics: [...diagnostics, {code: 'allocation-feasibility-unproved', certainty: 'unproved'}]};
     const a = assignments(c, m.values, targets), full = a.metrics.coverage === sum(p.duties.map(d => d.days));
     const proved = base.stages.every(s => m.stages.some(stage => stage.name === s.name && stage.proved));
-    if (funding.length && !m.stages.every(s => s.proved)) diagnostics.push({code: 'repayment-optimum-unproved', certainty: 'unproved'});
     for (const id of c.ids) if (a.actual[id] < targets[id]) diagnostics.push({code: 'unfunded-target',
       certainty: 'fact', engineer: id, units: targets[id] - a.actual[id]});
     for (const d of c.prepared.duties) if (a.result[d.id].primary === null) diagnostics.push({code: 'uncovered-duty',

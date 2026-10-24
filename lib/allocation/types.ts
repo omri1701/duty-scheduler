@@ -33,10 +33,14 @@ export type Check = {
 export type Intent = {
   fromId: string; toId: string; units: number; kind: Kind;
   transferIds: string[]; deferredClaim?: ClaimRef;
+  /** Original approved reference above stays immutable through normalization. */
+  normalizedDeferredClaims?: ClaimRef[];
 };
 export type CompiledPlan = {
   repayments: {claim: ClaimRef; units: number}[];
   deferred: {claim: ClaimRef; units: number}[];
   intents: Intent[];
+  /** Each route shares ONE unit budget on its final carrier, including permanent legs. */
+  funding: {carrierId: string; units: number; route: Intent[]}[];
   unfundedUnits: Record<string, number>;
 };

@@ -22,7 +22,8 @@ const owe = (i, debtorId, creditorId, units, id) => {
 const proposal = i => proposeAllocation(solver, i, {seconds: 10});
 const edit = (i, d, engineer, deltaUnits, kind = 'temporary', id = 'edit') =>
   editAllocation(solver, i, d, {id, engineer, deltaUnits, kind}, {seconds: 4});
-const compiled = (i, d) => compileAllocation(solver, i, d, {seconds: 4});
+const compiled = (i, d, assignments = assessAllocation(solver, i, d, {seconds: 4}).assignments) =>
+  compileAllocation(i, d, assignments);
 function invariant(i, r) {
   const duties = canonicalDuties(i.schedule.month, i.schedule.calendar);
   assert.equal(total(Object.values(r.draft.baselineUnits)), total(duties.map(d => d.units)));
@@ -144,7 +145,7 @@ test('manual deferral reroutes through the creditor once, preserves source age a
   assert.deepEqual(p.intents.map(t => [t.fromId, t.toId, t.units, t.kind]), [['e11', 'e01', 2, 'temporary']]);
   assert.equal(p.intents[0].deferredClaim.path[0].lotId, 'old');
   for (const repayment of p.repayments) for (const a of repayment.claim.path) {
-    for (const intent of p.intents) for (const b of intent.deferredClaim?.path ?? []) {
+    for (const intent of p.intents) for (const claim of intent.normalizedDeferredClaims ?? []) for (const b of claim.path) {
       assert.ok(a.lotId !== b.lotId || a.offset + a.units <= b.offset || b.offset + b.units <= a.offset,
         'rerouted source slices cannot also fund repayment');
     }
@@ -217,14 +218,15 @@ test('partial months retain all required nominal points and independently valid 
   }
 });
 
-test('partial compilation chooses an equally covered witness that funds feasible repayment', () => {
+test('partial compilation accounts only against the supplied feasibility witness', () => {
   const i = scenario();
   i.schedule.members = i.schedule.members.slice(0, 3); i.seniority = i.seniority.slice(0, 3);
   owe(i, 'e00', 'e02', 2, 'old');
-  const r = proposal(i), p = compiled(i, r.draft); invariant(i, r);
+  const r = proposal(i), p = compiled(i, r.draft, r.check.assignments); invariant(i, r);
   assert.equal(p.check.feasibility, 'partial');
-  assert.equal(total(p.plan.repayments.map(r => r.units)), 2);
-  assert.ok(p.check.stages.some(s => s.name.startsWith('funding:') && s.proved));
+  assert.deepEqual(p.check.assignments, r.check.assignments);
+  assert.deepEqual(p.check.stages, []);
+  assert.ok(total(p.plan.repayments.map(r => r.units)) <= r.check.actualUnits.e00);
 });
 
 test('zero budget stays UNKNOWN; confirmed targets remain verbatim; source changes invalidate drafts', () => {
