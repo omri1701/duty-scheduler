@@ -29,3 +29,27 @@ test('actual browser zoom adapts the served toolbar and menu in every manager st
   }
  } finally {await context.close();}
 });
+
+test('browser zoom waits for rendering after the extension acknowledges the change',async({openApp},info)=>{
+ test.skip(info.project.name!=='desktop','One isolated zoom synchronization regression.');
+ const context=await zoomContext();
+ let applied:Promise<unknown>|undefined;
+ try {
+  const page=await context.newPage();await openApp('admin',page);
+  await setBrowserZoom(context,page,2);
+  await expect.poll(()=>page.evaluate(()=>devicePixelRatio)).toBe(2);
+  const worker=context.serviceWorkers()[0];
+  // Model Chromium acknowledging zoom before its renderer has applied it. The
+  // delayed operation still changes real tab zoom through the real extension.
+  const delayedContext={serviceWorkers:()=>[{
+   evaluate:async(operation:(args:{url:string;factor:number})=>Promise<number>,args:{url:string;factor:number})=>{
+    applied=new Promise((resolve,reject)=>setTimeout(()=>worker.evaluate(operation,args).then(resolve,reject),200));
+    return args.factor;
+   },
+  }]};
+  expect(await setBrowserZoom(delayedContext,page,1)).toBe(1);
+  expect(await page.evaluate(()=>devicePixelRatio)).toBe(1);
+  const toolbar=await assertToolbar(page);
+  expect(toolbar.containerWidth).toBeGreaterThanOrEqual(960);
+ }finally{await applied;await context.close();}
+});

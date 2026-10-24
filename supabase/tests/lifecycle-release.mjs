@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {exportContract,historyQuery,verifyHistory} from '../../scripts/database-contract.mjs';
 import {releaseDatabaseFirst} from '../../scripts/release.mjs';
-import {manager,seed,snapshot} from './lifecycle-fixture.mjs';
+import {manager,engineer,seed,snapshot} from './lifecycle-fixture.mjs';
 
 const container=process.argv[2];
 assert.match(container??'',/^supabase_db_[\w-]+$/);
@@ -39,9 +39,26 @@ try {
  query(`begin;${seed}commit;`);
  const before=JSON.parse(query(snapshot));
  const oldRPCs=JSON.parse(query(`select jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object('args',p.proargnames,'result',pg_get_function_result(p.oid))) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'duty_%'`));
- const expected={...before,duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)),revision:before.revision+1};
+ // Lifecycle conversion and compensation cutover each invalidate old snapshots.
+ // Their individual +1 deltas are checked by lifecycle/compensation-upgrade.mjs;
+ // this release applies both migrations, so the combined delta must be exactly 2.
+ const expected={...before,duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)),revision:before.revision+2};
+ const ledgerQuery='select duty_private.compensation_view(duty_private.compensation_state())';
+ let committedLedger;
  // Friday 31 December owns split Saturday 1 January, independently of row span.
- const assertData=()=>assert.deepEqual(JSON.parse(query(snapshot)),expected,'Only redundant published working rows and revision may change');
+ const assertData=()=>{
+  const actual=JSON.parse(query(snapshot));
+  assert.equal(actual.revision,expected.revision,'Each data cutover must invalidate the workspace once');
+  assert.deepEqual(actual,expected,'Only redundant published working rows and revision may change');
+  const ledger=JSON.parse(query(ledgerQuery));
+  assert.deepEqual(ledger.net,{[manager]:0,[engineer]:0},'Cutover starts every engineer at zero');
+  for(const key of ['lots','claims','settlements','contributions'])assert.deepEqual(ledger[key],[],'Cutover must not backfill compensation');
+  assert.equal(ledger.members.length,2);
+  assert.equal(ledger.publications.length,2,'Only live publications become opening facts');
+  assert.equal(ledger.events.length,3,'One participation event and two live publication snapshots');
+  if(committedLedger)assert.deepEqual(ledger,committedLedger,'Release verification/repair must not rewrite or append audit history');
+  else committedLedger=ledger;
+ };
  let pushes=0,deployments=0;
  const push=dryRun=>{
   pushes++;
@@ -59,7 +76,7 @@ try {
  for(const [signature,definition] of Object.entries(oldRPCs)){
   assert.deepEqual(JSON.parse(query(`select jsonb_build_object('args',proargnames,'result',pg_get_function_result(oid)) from pg_proc where oid='${signature}'::regprocedure`)),definition,'Existing public RPC signature changed');
  }
- console.log('PASS: pending Production simulation applies the exact three versions once, before the application; populated upgrade equals fresh schema/RLS/grants and preserves drafts, publications, requests and Friday-owned boundaries');
+ console.log('PASS: pending Production simulation applies every pending version before the application, advances revision once per cutover, initializes zero compensation and preserves drafts, publications, requests and Friday-owned boundaries');
 
  // Same path used when develop encounters migrations already installed on DEV.
  const afterHistory=query(historyQuery);
@@ -67,7 +84,7 @@ try {
  await releaseDatabaseFirst({query,push:noPush,contract,fingerprintSQL,deployApplication:()=>{assertData();deployments++;}});
  assert.equal(query(historyQuery),afterHistory);
  assert.equal(deployments,2);
- console.log('PASS: already-applied Development simulation skips all three migrations and verifies the same contract without changing data/history');
+ console.log('PASS: already-applied Development simulation skips every migration and preserves revision, operational data and compensation audit history');
  await assert.rejects(releaseDatabaseFirst({query,push:noPush,contract:{...contract,fingerprint:'wrong'},fingerprintSQL,deployApplication:()=>assert.fail('Contract failure deployed application')}),/contract mismatch/);
 
  // Reproduce the deployed client's old status-toggle Reopen against the new RPC.
