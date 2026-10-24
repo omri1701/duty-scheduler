@@ -13,7 +13,7 @@ process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 try {
   if (!external) {
-    server = spawn(process.execPath, ['./node_modules/next/dist/bin/next', 'start', '--hostname', '0.0.0.0', '--port', '8787'], {cwd: root, stdio: 'inherit', env: process.env});
+    server = spawn(process.execPath, ['./node_modules/next/dist/bin/next', 'start', '--hostname', '0.0.0.0', '--port', '8787'], {cwd: root, stdio: 'inherit', env: {...process.env, DUTY_SOLVER_SPIKE: '1'}});
     server.on('error', error => {serverError = error;});
     let ready = false;
     for (let attempt = 0; attempt < 120; attempt++) {
