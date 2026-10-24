@@ -378,6 +378,11 @@ them. CI must compare committed images, never regenerate them automatically.
 
 ## Scheduling rules and defaults
 
+These rules describe application Generate. The separate
+[domain generation engine](docs/GENERATION_ENGINE.md) implements the confirmed-target
+redesign behind a reusable TypeScript API; it is not connected to the current UI
+or persistence workflow.
+
 - Every calendar date is covered, including holidays. Standard duty runs 09:00 to next-day 09:00 in Asia/Jerusalem. Dates are local calendar dates; a future calendar integration will apply timezone/DST conversion.
 - A full weekend is Friday 09:00 through Sunday 09:00, worth one point. A split weekend is two independent 09:00–09:00 duties worth half a point each. Either half counts as that engineer’s one weekend for the month; covering both halves is still one weekend. Emergency cover also counts toward the cap.
 - Generation never assigns a primary engineer to more than one weekend in a month. If availability or team capacity prevents coverage, it leaves the duty open for a manager decision. Manual edits can explicitly approve a second-weekend exception. Existing emergency assignments are retained for manager review.

@@ -2,9 +2,13 @@
 
 ## 1. Purpose, authority and scope
 
-This is the product and engineering contract for the future Duty Scheduler
-generation redesign. The production implementation described here does not exist
-yet. The isolated spikes in section 14.5 do not change Generate.
+This is the product and engineering contract for the Duty Scheduler generation
+redesign. The isolated TypeScript engine in `lib/scheduling` implements canonical
+duties, confirmed-target generation, independent validation and solver execution.
+See [engine API, tests and benchmarks](GENERATION_ENGINE.md). The allocation UI,
+compensation ledger and persistence workflow described here are still future
+work. Application Generate retains its existing behavior until that workflow is
+ready; neither the engine nor the spikes in section 14.5 change it.
 
 **The manager determines exactly how many points each engineer receives.
 Generate determines which primary duties to assign against those numbers.**
@@ -1986,7 +1990,9 @@ ledger. Manual changes and swaps remain available under their existing rules.
 
 ## 18. Future acceptance matrix and readiness
 
-These are future implementation tests, not new test code in this PR.
+This is the acceptance matrix for the full redesign. The isolated engine's
+implemented checks are documented in [GENERATION_ENGINE.md](GENERATION_ENGINE.md);
+allocation, compensation, database and UI integration remain future work.
 The original 57 IDs M1–M12, B1–B12, F1–F9, D1–D8, U1–U8 and I1–I8
 are retained with corrected outcomes. Additional IDs cover the new decisions.
 Replace intentionally obsolete expectations while preserving unrelated
