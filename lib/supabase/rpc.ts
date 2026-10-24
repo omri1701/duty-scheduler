@@ -1,5 +1,7 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import type {schedulePayload} from './snapshot.ts';
+import type {CompensationPublicationMetadata} from './compensation.ts';
+import type {ManualOperation} from '../compensation/types.ts';
 
 type Revision = {p_revision: number};
 type Operation<Args, Returns = null> = {Args: Args; Returns: Returns};
@@ -8,7 +10,8 @@ type Operation<Args, Returns = null> = {Args: Args; Returns: Returns};
 export type Functions = {
   duty_load: Operation<Record<string, never>, unknown>;
   duty_join: Operation<{p_name: string}>;
-  duty_save_schedule: Operation<Revision & {p_state: ReturnType<typeof schedulePayload>; p_publish: string | null}>;
+  duty_save_schedule: Operation<Revision & {p_state: ReturnType<typeof schedulePayload> & {compensation?: CompensationPublicationMetadata}; p_publish: string | null}>;
+  duty_compensation: Operation<Revision & {p_operation: ManualOperation | {kind: 'reconcile'}; p_source_key: string | null; p_reason: string | null; p_fingerprint: string | null; p_cutoff: number | null}, unknown>;
   duty_set_constraints: Operation<Revision & {p_member: string; p_days: string[]; p_kind: string; p_note: string}>;
   duty_rename_self: Operation<Revision & {p_name: string}>;
   duty_set_role: Operation<Revision & {p_member: string; p_role: string}>;

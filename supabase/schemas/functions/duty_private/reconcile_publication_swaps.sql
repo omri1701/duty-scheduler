@@ -4,6 +4,9 @@ CREATE FUNCTION duty_private.reconcile_publication_swaps() RETURNS trigger
     AS $$
 begin
  perform 1 from public.duty_workspace where id for update;
+ perform duty_private.compensation_publication(new.month,new.current_publication_id,NULL,
+  old.current_publication_id is not null and (new.current_publication_id is null or
+   (select version from public.duty_publications where id=new.current_publication_id)<(select version from public.duty_publications where id=old.current_publication_id)));
  perform duty_private.reconcile_swaps(new.month);
  return new;
 end $$;

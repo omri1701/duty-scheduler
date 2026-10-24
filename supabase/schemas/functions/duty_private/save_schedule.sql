@@ -51,6 +51,7 @@ begin
   insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
   select publication,day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=p_publish;
   delete from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=p_publish;
+  perform duty_private.compensation_publication(p_publish,publication,p_state->'compensation');
   update public.duty_months set current_publication_id=publication,status='published',generated=true where month=p_publish;
  end if;
  update public.duty_workspace set revision=revision+1 where id;
