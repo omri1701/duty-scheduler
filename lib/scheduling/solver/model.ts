@@ -180,7 +180,10 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   const preference: Stage = {name: 'preferred', terms: (p.preferences ?? []).map(v => [-v.weight, x(v.engineer, v.duty)])};
   const seeded: Stage = {name: 'seed', terms: p.seededTies ? p.duties.flatMap((d, i) => d.eligible.map(e => {
     random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
-    return [random % 1000000, x(e, i)] as Term;
+    // This last-stage score only breaks equivalent outcomes. Keep coefficients
+    // small so native objective accumulation agrees with exact integer replay;
+    // million-scale costs produced >1e-7 drift on ordinary six-engineer months.
+    return [random % 1000, x(e, i)] as Term;
   })) : []};
   const secondary = [preference, seeded];
   const objective = (name: string, m: Metrics, a: (number | null)[]) => {

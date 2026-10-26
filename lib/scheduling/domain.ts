@@ -4,7 +4,7 @@ import {checkProblem, type Problem} from './solver/problem.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export const CORE_VERSION = 'duty-generation-v1';
-export const MODEL_VERSION = 'highs-leximin-v1';
+export const MODEL_VERSION = 'highs-leximin-v2';
 /** Exact canonical serialization, not a lossy hash. Input arrays are sets of facts. */
 function canonicalKey(value: unknown, sets: boolean): string {
   if (Array.isArray(value)) {

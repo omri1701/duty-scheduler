@@ -9,6 +9,38 @@ const result = data => ({data, error: null});
 const deferred = () => {let resolve, reject; const promise = new Promise((yes, no) => {resolve = yes; reject = no;}); return {promise, resolve, reject};};
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('captured generation writes refuse newer revisions and share the workspace save lock', async () => {
+  const f = fixture(); await f.workspace.connect(f.client, user('admin'));
+  let calls = 0;
+  await assert.rejects(f.workspace.captured(0, async () => {calls++;}), /changed/);
+  const gate = deferred();
+  const first = f.workspace.captured(1, async () => {calls++; await gate.promise; return 'verified';});
+  await assert.rejects(f.workspace.mutate('duty_rename_self', {p_name: 'Competing'}), /current save/);
+  await assert.rejects(f.workspace.captured(1, async () => {calls++;}), /current save/);
+  f.setRaw(snapshot(2)); gate.resolve();
+  assert.equal(await first, 'verified'); assert.equal(calls, 1);
+  assert.equal(f.snapshots.at(-1).revision, 2);
+});
+
+test('captured completion cannot restore generation data after a session change', async () => {
+  const f = fixture(); await f.workspace.connect(f.client, user('admin'));
+  const gate = deferred();
+  const first = f.workspace.captured(1, () => gate.promise);
+  const rejected = assert.rejects(first, /session changed/);
+  f.workspace.clear(); gate.resolve({private: true}); await rejected;
+  assert.equal(f.snapshots.at(-1), null);
+});
+
+test('authoritative context avoids a duplicate calendar load unless reconciliation advances its revision', async () => {
+  const f = fixture(); await f.workspace.connect(f.client, user('admin'));
+  const loads = () => f.calls.filter(c => c.name === 'duty_load').length;
+  await f.workspace.captured(1, async () => ({revision: 1}), r => r.revision);
+  assert.equal(loads(), 1);
+  f.setRaw(snapshot(2));
+  await f.workspace.captured(1, async () => ({revision: 2}), r => r.revision);
+  assert.equal(loads(), 2); assert.equal(f.snapshots.at(-1).revision, 2);
+});
+
 function fixture() {
   let raw = snapshot(1);
   const calls = [], snapshots = [], errors = [], saving = [], headers = [], responses = new Map();

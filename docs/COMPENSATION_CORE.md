@@ -4,7 +4,8 @@
 [the authoritative specification](GENERATE_ALGORITHM.md), independently of UI,
 allocation solving, storage and authorization. Database persistence uses the
 same event contract and checked SQL replay; `lib/supabase/compensation.ts` uses
-this core to read committed events. Application Generate remains independent.
+this core to read committed events. Application Generate projects this accounting
+into the reviewed allocation and binds transfers to actual generated primary work.
 
 ## Contracts and use
 

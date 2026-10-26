@@ -49,7 +49,7 @@ export function setWeekendAssignments(s:State,friday:string,fri:Assignment,sat:A
 }
 export function weekendCounts(s:State,month:string){
  const bs=blocks(month,s.specials,s.splitWeekends).filter(b=>ownerMonth(b)===month&&b.weekendId);
- return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id||s.assignments[b.id]?.secondary===p.id).map(b=>b.weekendId)).size]));
+ return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id).map(b=>b.weekendId)).size]));
 }
 export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9'];
 export function ink(color:string){const rgb=color.slice(1).match(/../g)?.map(v=>{const n=parseInt(v,16)/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4})??[0,0,0];return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>0.179?'#101827':'#fff'}
@@ -65,7 +65,7 @@ export function migrate(s:State):State{
 export const unavailable=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).filter(d=>c[id]?.[d]==='no');
 export const preferred=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).some(d=>c[id]?.[d]==='prefer');
 export function allKnownBlocks(s:State):Duty[]{const map=new Map<string,Duty>();for(const m of Object.keys(s.months))for(const b of blocks(m,s.specials,s.splitWeekends))map.set(b.id,b);return [...map.values()].sort((a,b)=>a.start.localeCompare(b.start));}
-export function totals(s:State,bs:Duty[]){return Object.fromEntries(s.team.map(p=>[p.id,bs.reduce((v,b)=>{const a=s.assignments[b.id];return v+(a?.primary===p.id||a?.secondary===p.id?b.points:0)},0)]));}
+export function totals(s:State,bs:Duty[]){return Object.fromEntries(s.team.map(p=>[p.id,bs.reduce((v,b)=>v+(s.assignments[b.id]?.primary===p.id?b.points:0),0)]));}
 const distance=(a:string,b:string)=>Math.abs((Date.parse(a)-Date.parse(b))/86400000);
 export function generate(s:State,month:string,seed=1):{assignments:State['assignments'];warnings:string[]}{
  const team=s.team.filter(p=>p.active);if(!team.length)return{assignments:s.assignments,warnings:['no-team']};

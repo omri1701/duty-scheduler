@@ -164,6 +164,23 @@ for (const failure of ['network','revision conflict','external success'] as cons
  }finally{held.release();}
 });
 
+for(const moveFocus of [false,true])test(`keyboard reorder survives delayed allocation refresh; moved focus ${moveFocus}`,async({page,openApp,backend})=>{
+ await openApp();await page.getByRole('tab').nth(2).click();
+ const handle=page.locator(`[data-gesture-key="${ids.admin}"] .team-grip`);
+ const other=page.getByRole('button',{name:'Switch to Hebrew',exact:true});
+ const held=gate();
+ await page.route('**/rest/v1/rpc/duty_generation_context',async route=>{await held.wait;await route.fallback()});
+ const refreshing=page.waitForRequest('**/rest/v1/rpc/duty_generation_context');
+ try {
+  await handle.focus();await page.keyboard.press('ArrowDown');await refreshing;
+  await expect(handle).toBeDisabled();
+  if(moveFocus)await other.focus();
+ }finally{held.release()}
+ await expect(page.locator('.team-list')).toHaveAttribute('aria-busy','false');
+ await expect(moveFocus?other:handle).toBeFocused();
+ expect(backend.calls.filter(c=>c.name==='duty_save_schedule')).toHaveLength(1);
+});
+
 test('failed keyboard reorder retains focus and respects reduced motion',async({page,openApp,backend})=>{
  await openApp();await page.getByRole('tab').nth(2).click();
  const initial=await order(page),handle=rows(page).first().locator('.team-grip');

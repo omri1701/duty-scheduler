@@ -31,7 +31,9 @@ export function context(input: AllocationInput) {
   // A balanced seed for source validation only; it is never an ordinary baseline.
   const seed = {...locked}; seed[ids[0]] += total - sum(Object.values(seed));
   const prepared = prepareGeneration({...schedule, targets: Object.fromEntries(ids.map(id => [id, seed[id] / 2]))});
-  const projection = project(input.events, input.now, coverageStart(schedule.month, schedule.calendar));
+  // Manual allocation/lock review remains available after opening. Do not project
+  // actual accounting backwards; Generate enforces its separate time window.
+  const projection = project(input.events, input.now, Math.max(input.now, coverageStart(schedule.month, schedule.calendar)));
   return {prepared, ids, total, locked, projection,
     candidates: projection.projected.candidates.filter(c => ids.includes(c.debtorId) && ids.includes(c.creditorId)),
     key: inputKey({schedule, seniority: snapshotKey(input.seniority), ledger: projection.sourceFingerprint, cutoff: projection.cutoffMs})};

@@ -1,6 +1,10 @@
 import {test as base, expect, type Page} from '@playwright/test';
 import {addDays, blocks, dayOf} from '../../lib/rota/engine';
-import {canManage, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {canManage, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
+import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
+import type {AllocationDraft} from '../../lib/allocation/types';
+import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
@@ -41,7 +45,25 @@ export class Backend {
   invalidated = false;
   failNextSave = false;
   googleEnabled = false;
+  allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
+  generationNow = Date.parse(NOW);
+  failGenerationSave = false;
   oauthRequests: URL[] = [];
+  generationEnvelope(month: string) {
+    const state = fromSnapshot(this.raw, ids.admin);
+    const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
+    const metadata = this.allocations.get(month);
+    const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved'}));
+    return {revision: this.raw.revision, actualAtMs: this.generationNow, coverageStartMs: coverageStart(month, calendar),
+      generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: 'empty-events', actual: {events: []},
+      facts: {month, members, seniority: this.raw.members.filter(m => m.active && m.status === 'approved').sort((a, b) => a.seniority - b.seniority).map(m => m.id),
+        duties: canonicalDuties(month, calendar).map(d => ({id: d.id, startDate: d.startDate, endDate: d.endDate, units: d.units,
+          primary: state.assignments[d.id]?.primary || null, secondary: state.assignments[d.id]?.secondary || null,
+          title: state.specials.find(s => s.start <= d.startDate && s.end > d.startDate)?.title ?? '',
+          extra: state.specials.find(s => s.start <= d.startDate && s.end > d.startDate)?.extra ?? 0, weekendId: d.weekendId ?? null})),
+        neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
+        sourcePublicationId: null, generation: metadata?.generation ?? null, locks: metadata?.locks ?? [], approvals: metadata?.approvals ?? []}};
+  }
   snapshot(user: string) {
     const raw = structuredClone(this.raw), admin = canManage(raw, user);
     const member = raw.members.find(m => m.id === user)!;
@@ -69,7 +91,30 @@ export class Backend {
     if (name === 'duty_load') return this.snapshot(user);
     expect(p.p_revision).toBe(this.raw.revision);
     const admin = canManage(this.raw, user);
-    if (name === 'duty_save_schedule') {
+    if (name === 'duty_generation_context') {
+      expect(admin).toBe(true); return this.generationEnvelope(String(p.p_month));
+    } else if (name === 'duty_confirm_allocation') {
+      expect(admin).toBe(true); expect(p.p_fingerprint).toBe(`fixture-${this.raw.revision}`);
+      this.allocations.set(String(p.p_month), {draft: p.p_allocation as AllocationDraft, locks: p.p_locks as NonNullable<GenerationInput['locks']>, approvals: p.p_approvals as Approval[]});
+      this.raw.revision!++; return this.generationEnvelope(String(p.p_month));
+    } else if (name === 'duty_save_generation') {
+      expect(admin).toBe(true); expect(p.p_fingerprint).toBe(`fixture-${this.raw.revision}`);
+      if (this.failGenerationSave) {this.failGenerationSave = false; throw Error('Synthetic stale generation. Refresh and review.');}
+      const month = String(p.p_month), assignments = p.p_assignments as PrimaryAssignments, meta = this.allocations.get(month)!;
+      const envelope = this.generationEnvelope(month), f = envelope.facts;
+      const metrics = validateGeneration({month, sourceRevision: String(this.raw.revision), calendar: {specials: fromSnapshot(this.raw, ids.admin).specials, splitWeekends: fromSnapshot(this.raw, ids.admin).splitWeekends}, members: f.members,
+        targets: Object.fromEntries(Object.entries(meta.draft.targetsUnits).map(([id, u]) => [id, u / 2])), constraints: f.constraints, locks: meta.locks, approvals: meta.approvals,
+        secondary: Object.fromEntries(f.duties.filter(d => d.secondary).map(d => [d.id, d.secondary!]))}, assignments);
+      if (!envelope.generationAllowed) throw Error('Synthetic stale generation-window-closed');
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0, 7) === month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      this.raw.assignments.push(...f.duties.map(d => ({id: `generated-${d.id}`, publication_id: null, day: d.startDate, end_day: d.endDate, primary_id: assignments[d.id].primary,
+        secondary_id: d.secondary, title: d.title, extra_points: d.extra, points: d.units / 2, manager_override: false})));
+      let m = this.raw.months.find(m => m.month === month);
+      if (!m) {m = {month, deadline: addDays(month + '-01', -7), status: 'draft', generated: true, current_publication_id: null, publication_sequence: 0}; this.raw.months.push(m);}
+      m.generated = true; meta.generation = {seed: p.p_seed, metrics};
+      this.raw.revision!++; return this.generationEnvelope(month);
+    } else if (name === 'duty_save_schedule') {
       expect(admin).toBe(true);
       if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
       const state = p.p_state as {team:{id:string;color:string;active:boolean}[];duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
@@ -221,6 +266,7 @@ export const test = base.extend<Fixtures>({
       });
       await target.goto((backend.runtimeOrigin??'/')+(oauthReturn?'?code=synthetic-oauth-code':''));
       if (waitForReady) await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
+      if (waitForReady && canManage(backend.raw, user.id)) await expect(target.locator('.workspace-controls')).toBeEnabled();
       return target;
     });
     // Finish intercepted responses before Playwright disposes the page/request context.

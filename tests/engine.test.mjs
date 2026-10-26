@@ -48,7 +48,7 @@ test('swap constraint conflicts require an explicit new override including Satur
  const s=swapFixture();s.constraints={e0:{'2026-10-03':'no'}};const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02');assert.equal(r.reason,'availability');assert.deepEqual(r.conflicts,[{person:'e0',date:'2026-10-03'}]);const approved=swapDraft(s,'2026-10','2026-10-01','2026-10-02',true);assert.ok(approved.ok);assert.equal(approved.assignments['2026-10-02'].override,true);assert.equal(approved.assignments['2026-10-01'].override,undefined);
 });
 test('swapping differently weighted blocks recalculates points by destination',()=>{
- const s=swapFixture();s.specials=[{id:'sp',title:'Holiday',start:'2026-10-01',end:'2026-10-02',extra:3}];const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02');assert.ok(r.ok);const pts=totals({...s,assignments:r.assignments},blocks('2026-10',s.specials));assert.equal(pts.e1,4);assert.equal(pts.e0,1);assert.equal(pts.e2,4);
+ const s=swapFixture();s.specials=[{id:'sp',title:'Holiday',start:'2026-10-01',end:'2026-10-02',extra:3}];const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02');assert.ok(r.ok);const pts=totals({...s,assignments:r.assignments},blocks('2026-10',s.specials));assert.equal(pts.e1,4);assert.equal(pts.e0,1);assert.equal(pts.e2,0);assert.equal(r.assignments['2026-10-01'].secondary,'e2');
 });
 
 test('generation assigns no more than one weekend per engineer',()=>{for(const seed of [1,32,981]){const s=demo();s.assignments=generate(s,'2026-10',seed).assignments;assert.ok(Object.values(weekendCounts(s,'2026-10')).every(n=>n<=1));}});

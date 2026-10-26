@@ -1,8 +1,15 @@
 # Allocation and generation database boundary
 
-The new RPCs are available for typed integration; the application Generate button
-and UI retain their existing behavior. The [specification](GENERATE_ALGORITHM.md)
-remains authoritative. No hosted migration is authorized by this implementation.
+Application Generate now uses these RPCs through the single allocation popup and
+cancellable allocation/scheduling Workers. The [specification](GENERATE_ALGORITHM.md)
+remains authoritative. No hosted migration or deployment is authorized by this implementation.
+
+The workspace shares identity/save locking and reload recovery with ordinary
+mutations, while preserving the explicitly captured generation revision. An
+unchanged authoritative context avoids another calendar read; reconciliation
+that advances the revision reloads it. A missing owner draft is created only on
+explicit confirmation, then the known resulting revision is captured and the
+reviewed source facts are compared before confirmation. Stale writes are never retried.
 
 ## Persistence
 

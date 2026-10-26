@@ -41,6 +41,7 @@ export function WorkspaceTeam({
         onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
         selfId={meId}
         readOnly={remote.readOnly||!isManager}
+        saving={remote.saving}
         team={state.team}
         revision={remote.snapshot?.revision ?? 0}
         monthTotals={monthTotals}

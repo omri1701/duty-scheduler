@@ -11,6 +11,8 @@ export function WorkspaceToolbar({
   isManager,
   readOnly,
   busy,
+  generationClosed = false,
+  allocationMismatch = false,
   metrics,
   blockCount,
   t,
@@ -28,6 +30,8 @@ export function WorkspaceToolbar({
   isManager: boolean;
   readOnly: boolean;
   busy: boolean;
+  generationClosed?: boolean;
+  allocationMismatch?: boolean;
   metrics: WorkspaceMetrics;
   blockCount: number;
   t: Translate;
@@ -81,7 +85,8 @@ export function WorkspaceToolbar({
                 <Button
                   className="generate-month-action"
                   variant="outline"
-                  disabled={readOnly || busy || !metrics.active.length}
+                  disabled={readOnly || busy || generationClosed || !metrics.active.length}
+                  title={generationClosed ? t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך ידנית או לבצע החלפות.') : undefined}
                   onClick={runGenerate}
                   aria-label={generateLabel}
                 >
@@ -92,7 +97,7 @@ export function WorkspaceToolbar({
                 <Button
                   className="publish-month-action"
                   disabled={
-                    readOnly || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
+                    readOnly || allocationMismatch || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
                   }
                   onClick={onPublish}
                 >

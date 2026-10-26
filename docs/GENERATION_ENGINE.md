@@ -1,9 +1,10 @@
 # Isolated domain generation engine
 
 `lib/scheduling/index.ts` is the reusable TypeScript entry point for the generation
-part of [the specification](GENERATE_ALGORITHM.md). Application Generate still
-uses `lib/rota/engine.ts`. This engine adds no allocation UI, compensation ledger,
-database migrations, persistence writes or publication path.
+part of [the specification](GENERATE_ALGORITHM.md). Application Generate now uses
+this engine after explicit allocation confirmation. The pure engine remains
+independent of UI, storage and authorization; the application uses the checked
+[database boundary](ALLOCATION_DATABASE.md).
 
 ## Inputs and execution
 
@@ -31,7 +32,7 @@ import {
   type GenerationInput,
 } from './lib/scheduling/index.ts';
 
-// Build input from authoritative, confirmed source facts in the future adapter.
+// Build input from authoritative, confirmed source facts in the database adapter.
 declare const input: GenerationInput;
 const adapter = await createHighsAdapter(loadHighs);
 const request = createGenerationRequest(input, {now: Date.now()});
@@ -47,11 +48,12 @@ result; create a new wrapper afterward. A busy wrapper rejects concurrent reques
 Progress exposes duty IDs, engineer IDs, independently checked assignments,
 metrics and the proved objective prefix. It is provisional, not accepted data.
 
-The Worker reuses PR #31's self-hosted assets. They remain opt-in under
-`DUTY_SOLVER_SPIKE=1` at `/api/solver-spike/asset/*`; no production Generate code
-imports the new API. The old spike imports are compatibility facades over the
-shared solver. Future UI integration must deliberately enable an appropriate
-asset-serving path rather than relying on the diagnostic flag in production.
+Production Workers load `/api/scheduling/asset/highs.mjs` and `highs.wasm` from the
+lockfile-pinned package. The route allowlists only those files and LICENSE, sets
+explicit MIME types, nosniff and same-origin resource policy, and is included in
+Next's deployment tracing. It needs no diagnostic flag, CDN, SharedArrayBuffer or
+cross-origin isolation. The separate spike route remains opt-in under
+`DUTY_SOLVER_SPIKE=1`; its imports are compatibility facades over the shared solver.
 
 `createGenerationRequest` clones source facts and draws a fresh cryptographic
 31-bit seed when none is supplied. Pure conversion, validation and solver code
@@ -63,6 +65,13 @@ for reproduction. Stable fact ordering supports equivalent input permutations.
 A wall-clock-limited unfinished search does not promise identical incumbents;
 use the recorded seed, node budget, package/runtime/environment and sufficient
 time for deterministic completed replay.
+
+Model `highs-leximin-v2` keeps the final seeded tie coefficients below 1,000.
+Million-scale coefficients caused native floating-point objective drift on a
+six-engineer emergency-cover fixture, despite exact valid binary assignments.
+Smaller scores preserve the priority hierarchy and strict integer/objective
+checks; seed reproduction must use the recorded model version. Earlier benchmark
+records below describe v1.
 
 ## Constraints, objectives and acceptance
 
@@ -78,7 +87,7 @@ acknowledges the selected lock and the exact neighboring commitment. Additional
 weekend approval names exactly the engineer's reviewed locked weekend identities;
 it permits no third automatic weekend. There is no generic override flag.
 
-The future source adapter must supply **both** current live publications and
+The source adapter supplies **both** current live publications and
 existing working commitments from neighboring owners, including actual cross-month
 intervals. Historical versions must be excluded. The engine unions/deduplicates
 owner/interval/primary facts while retaining source labels, guards every binding
@@ -120,7 +129,7 @@ return. Synchronous callers must invoke `acceptGeneration` with authoritative
 current inputs/time immediately before acceptance. It rejects changed source
 facts, late results and accidental mutation of returned assignments/metadata.
 Snapshot keys are exact canonical serializations for consistency, not security
-tokens. A future checked save must enforce authoritative time, revisions,
+tokens. The checked database save enforces authoritative time, revisions,
 permissions, identities and independent validation transactionally; none of
 those database guarantees can be replaced by client proof metadata.
 
@@ -171,5 +180,5 @@ repeats. End-to-end measurements include conversion/final validation but exclude
 WASM initialization (recorded separately). These local desktop cases are not a
 worst-case guarantee or a mobile performance claim. Real iPhone Safari validation,
 including WASM loading, cancellation and responsiveness, remains a release
-requirement. UI/persistence/compensation and authoritative server enforcement are
-separate future work; this engine alone does not establish release readiness.
+requirement. UI, persistence, compensation and authoritative server enforcement
+are integrated separately; these desktop measurements alone do not establish release readiness.

@@ -116,5 +116,31 @@ export function createWorkspace(callbacks: {
     current.save = save;
     return save;
   }
-  return {connect, prepare, clear, refresh, mutate, isSaving: () => !!scope?.save};
+  /** Generation uses its original revision, never mutate()'s latest revision.
+   * Share the identity/save lock and final reload with ordinary workspace writes. */
+  function captured<T>(revision: number, operation: (client: DutyClient) => Promise<T>, resultRevision?: (result: T) => number): Promise<T> {
+    const current = scope;
+    if (!current || current.snapshot?.revision !== revision) return Promise.reject(Error('The team data changed. Refresh and review allocation.'));
+    try {assertWritable(current.client);} catch (error) {return Promise.reject(error);}
+    if (current.save) return Promise.reject(Error('Please wait for the current save.'));
+    current.request++; callbacks.saving(true);
+    const save = (async () => {
+      try {
+        const result = await operation(current.client);
+        if (scope !== current) throw Error('Your session changed. The result was discarded.');
+        // A context read often reconciles nothing. Its authoritative unchanged
+        // revision proves the accepted calendar is current; avoid a duplicate load.
+        if (!resultRevision || resultRevision(result) !== current.snapshot?.revision) await load(current);
+        return result;
+      } catch (error) {
+        if (scope === current) await load(current).catch(() => {});
+        throw error;
+      } finally {
+        if (scope === current) {current.save = null; callbacks.saving(false);}
+      }
+    })();
+    current.save = save;
+    return save;
+  }
+  return {connect, prepare, clear, refresh, mutate, captured, isSaving: () => !!scope?.save};
 }

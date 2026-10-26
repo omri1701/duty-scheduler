@@ -9,6 +9,10 @@ import {createWorkspace} from '@/lib/supabase/workspace';
 import {errorMessage,type DutyClient} from '@/lib/supabase/rpc';
 import {signOutSafely} from '@/lib/supabase/write-policy';
 import type {State} from '@/lib/rota/engine';
+import {generationContext, confirmAllocation, saveGeneration, type GenerationContext} from '@/lib/supabase/generation';
+import type {AllocationDraft} from '@/lib/allocation/types';
+import type {Approval, GenerationInput} from '@/lib/scheduling/types';
+import type {PrimaryAssignments} from '@/lib/scheduling/validate';
 
 export function useTeamWorkspace(){
  const [environment,setEnvironment]=useState<Environment|null>(null);
@@ -47,6 +51,14 @@ export function useTeamWorkspace(){
  const me=snapshot?.members.find(m=>m.id===user?.id);
  return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   refresh:()=>workspace.refresh(),
+  generationContext:(month:string,revision:number)=>workspace.captured(revision,c=>generationContext(c,month,revision),result=>result.revision),
+  openGenerationMonth:(context:GenerationContext,s:State)=>workspace.captured(context.revision,async c=>{
+   const {error}=await c.rpc('duty_save_schedule',{p_state:schedulePayload(s,context.input.schedule.month),p_publish:null,p_revision:context.revision});
+   if(error)throw error;
+   return generationContext(c,context.input.schedule.month,context.revision+1);
+  }),
+  confirmAllocation:(context:GenerationContext,draft:AllocationDraft,locks?:GenerationInput['locks'],approvals?:Approval[])=>workspace.captured(context.revision,c=>confirmAllocation(c,context,draft,locks,approvals)),
+  saveGeneration:(context:GenerationContext,assignments:PrimaryAssignments,seed:number)=>workspace.captured(context.revision,c=>saveGeneration(c,context,assignments,seed)),
   async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async signInLocal(email:string,password:string){try{setError('');await signInLocally(email,password)}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async completeInspection(returnUrl:string){try{setError('');await completeInspectionLogin(returnUrl)}catch{setError('Could not complete inspection login. Start Google sign-in again.')}},

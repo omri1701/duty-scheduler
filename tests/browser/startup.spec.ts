@@ -1,4 +1,4 @@
-import {test, expect, ids} from './fixtures';
+import {test, expect, ids, MONTH} from './fixtures';
 
 function gate() {
   let release!: () => void;
@@ -23,7 +23,7 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
     if (phase==='auth') backend.authGate=held.wait;
     if (phase==='snapshot') backend.loadGate=held.wait;
     const requests:string[]=[];
-    page.on('request',request=>{const path=new URL(request.url()).pathname;if(['/api/config','/auth/v1/user','/rest/v1/rpc/duty_load'].includes(path))requests.push(path);});
+    page.on('request',request=>{const path=new URL(request.url()).pathname;if(['/api/config','/auth/v1/user','/rest/v1/rpc/duty_load','/rest/v1/rpc/duty_generation_context'].includes(path))requests.push(path);});
     await watchPrivateMounts(page);
     await openApp('admin',page,{waitForReady:false});
     const shell=page.locator('.startup-skeleton');
@@ -36,6 +36,7 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
       await expect(shell).not.toContainText(/Avery|Atlas|Synthetic vacation|Holiday coverage|example.invalid/);
       await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')).toHaveCount(0);
       expect(await page.evaluate(()=>(window as unknown as {privateMounts:number}).privateMounts)).toBe(0);
+      expect(backend.calls.filter(c=>c.name==='duty_generation_context')).toHaveLength(0);
       await page.keyboard.press('Tab');
       expect(await shell.evaluate(node=>node.contains(document.activeElement))).toBe(false);
       const before=await page.locator('.topbar').boundingBox();
@@ -47,8 +48,10 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
       expect(await page.evaluate(()=>(window as unknown as {accessMounts:number}).accessMounts)).toBe(0);
       expect(await page.locator('.topbar').boundingBox()).toEqual(before);
       if (info.project.name==='mobile') expect(await page.locator('.nav-row').boundingBox()).toEqual(navBefore);
-      expect(backend.calls.map(c=>c.name)).toEqual(['duty_load']);
-      expect(requests.sort()).toEqual(['/api/config','/auth/v1/user','/rest/v1/rpc/duty_load']);
+      // The verified manager reads allocation/cutoff facts after bootstrap.
+      await expect.poll(()=>backend.calls.map(c=>c.name)).toEqual(['duty_load','duty_generation_context']);
+      expect(backend.calls[1]).toMatchObject({user:ids.admin,params:{p_month:MONTH,p_revision:backend.raw.revision}});
+      expect(requests.sort()).toEqual(['/api/config','/auth/v1/user','/rest/v1/rpc/duty_generation_context','/rest/v1/rpc/duty_load']);
     } finally {held.release();}
   });
 }

@@ -2,7 +2,7 @@
 
 `lib/allocation/index.ts` implements the proposal and edit domain from
 [the generation specification, sections 5–6](GENERATE_ALGORITHM.md). It has no UI,
-storage, clock reads, RPCs or connection to application Generate. Callers inject
+storage, clock reads or RPCs. Application Generate injects
 the existing HiGHS adapter and authoritative scheduling/accounting snapshots.
 
 All allocation amounts are **integer half-point units**, including signed edits.
@@ -77,7 +77,7 @@ to offset numerically. Managers can explicitly finish a balanced partial table.
 `assessAllocation` checks the supplied targets verbatim. It does not propose or
 redistribute anything. Source, weight, membership, constraint, ledger or saved
 seniority changes invalidate an old draft. Save the selected ordinary baseline
-and counterpart provenance with the future allocation snapshot.
+and counterpart provenance with the checked allocation snapshot.
 
 `compileAllocation(input, draft, assignments)` independently validates the supplied
 actual assignments against the confirmed targets and all scheduling rules. It
@@ -144,7 +144,12 @@ independently validates baseline/source budgets and scheduling, and supports rou
 intents through the checked publication boundary. Use its typed context/confirmation/
 save adapters; the database constructs authoritative accounting metadata itself.
 The pure binder still requires lineage review for existing publication histories.
-Allocation UI, Worker integration and application Generate activation remain future work.
+Application Generate uses `lib/allocation/client.ts` and `worker.ts` for proposals,
+edits, checks and actual-assignment compilation. `reviewAllocation` validates a
+saved table's provenance against captured facts without changing its numbers.
+Manual review after opening projects through the later of opening/server time;
+the separate generation cutoff still prohibits solving that month. Copied
+publication intent remains under the checked database lineage rules.
 
 ## Focused verification
 

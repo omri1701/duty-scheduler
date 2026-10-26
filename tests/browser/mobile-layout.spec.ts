@@ -62,7 +62,8 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
       }
     }
     expect(backend.raw).toEqual(original);
-    expect(backend.calls.filter(c => c.name !== 'duty_load' && c.name !== 'duty_join')).toEqual([]);
+    expect(backend.calls.filter(c => !['duty_load','duty_join','duty_generation_context'].includes(c.name))).toEqual([]);
+    for(const call of backend.calls.filter(c=>c.name==='duty_generation_context'))expect(call.user).toBe(ids.admin);
   });
 }
 
