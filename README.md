@@ -1,6 +1,6 @@
 # Duty — team rota
 
-A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty and use real, approved accounts only. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager confirms the monthly allocation and runs Generate.
+A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty. Engineers join through approved accounts or are added by an admin as temporary members without accounts. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager confirms the monthly allocation and runs Generate.
 
 For Codex setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
 For database-first deployments, approved Production releases, environment secrets
@@ -35,6 +35,30 @@ pnpm build
 ```
 
 The application uses native Next.js 16 App Router, React 19, TypeScript and Radix components. `lib/rota/engine.ts` is a pure scheduling module independent of the UI or database; `tests/engine.test.mjs` exercises its rules; `tests/gesture.test.mjs` simulates quick taps, scrolling, long presses, desktop drags and cancellation. See [Supabase setup](docs/SUPABASE_SETUP.md) for Google configuration and first-admin onboarding, and [database architecture](supabase/README.md) for canonical schema files, clean migrations and real database validation.
+
+## Temporary members
+
+Admins can use **Team & fairness → Add Temporary Member**, enter only a name,
+and repeat for each engineer. Temporary members are approved active engineers in
+the existing team, labeled **Temporary**, with no email or sign-in account. Admins
+can use **Edit name**, reorder seniority with the existing drag/arrow-key controls,
+and toggle **Active**. Use **Availability → Engineer** to enter their constraints
+and private notes, then select November and **Generate month** to review the
+allocation and **Confirm & generate**. Accepted generation saves automatically;
+reload to verify it before separately publishing.
+
+Deactivate test engineers individually in the team list before planning. Keep an
+active admin account. Inactive members receive no new automatic allocations;
+existing assignments, constraints, IDs and compensation history remain. Existing
+assignments involving inactive members require manager review before publication.
+Temporary engineers participate in the same fairness and compensation rules as
+regular engineers. Account linking is not available; do not create replacement
+members or rename them to an email as a linking workaround.
+
+For an unmerged branch, use `pnpm dev:local` and the local admin account described
+in [Supabase setup](docs/SUPABASE_SETUP.md#temporary-members-local-development).
+`pnpm dev` uses hosted Development, which needs the reviewed database-first release
+before these new RPCs are available.
 
 ## Native Next.js runtime and Vercel deployment
 

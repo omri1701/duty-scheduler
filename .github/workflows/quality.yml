@@ -152,6 +152,7 @@ jobs:
           # Parity runs the real compensation/settlement SQL RPC fixtures too.
           node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
           node supabase/tests/generation.mjs supabase_db_duty-scheduler
+          node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
           node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
           node supabase/tests/compensation-upgrade.mjs supabase_db_duty-scheduler
           node supabase/tests/compensation-races.mjs supabase_db_duty-scheduler

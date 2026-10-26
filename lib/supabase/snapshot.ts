@@ -1,5 +1,5 @@
 import {addDays,dayOf,blocks,ownerMonth,type State,type Special} from '../rota/engine.ts';
-export type Member={id:string;email:string;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
+export type Member={id:string;email:string|null;is_temporary?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
 export type Lookup={code:string;label:string};
 export type Role=Lookup&{can_manage:boolean};
 export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;manager_override:boolean;title:string;extra_points:number;points:number};
@@ -18,7 +18,7 @@ const rows = (shape: Record<string, Check>): Check => value => Array.isArray(val
 const lookup = {code: text, label: text};
 const snapshotChecks = {
  revision,
- members: rows({id:text,email:text,name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
+ members: rows({id:text,email:nullableText,is_temporary:value=>value===undefined||boolean(value),name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
  months: rows({month:text,deadline:text,status:oneOf('draft','published'),generated:boolean,current_publication_id:nullableText,publication_sequence:number}),
  constraints: rows({member_id:text,day:text,kind:oneOf('no','prefer'),note:text}),
  assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,manager_override:boolean,title:text,extra_points:number,points:number}),

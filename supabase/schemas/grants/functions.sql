@@ -167,3 +167,15 @@ REVOKE ALL ON FUNCTION duty_private.allocation_better_baseline(weights integer[]
 REVOKE ALL ON FUNCTION duty_private.allocation_partition(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.allocation_rebind(s jsonb, publication jsonb, source_publication uuid, allocation_id uuid, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.add_temporary_member(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.add_temporary_member(text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.rename_temporary_member(uuid, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.rename_temporary_member(uuid, text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_add_temporary_member(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_add_temporary_member(text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) TO authenticated;

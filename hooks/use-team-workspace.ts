@@ -76,6 +76,8 @@ export function useTeamWorkspace(){
    if(result==='invalidated')throw Error('This request was invalidated because its published duties are no longer eligible.');
   },
   review:(person:string,status:'approved'|'rejected')=>workspace.mutate('duty_review_member',{p_member:person,p_status:status}).then(()=>{}),
+  addTemporaryMember:(name:string)=>workspace.mutate('duty_add_temporary_member',{p_name:name}),
+  renameTemporaryMember:(person:string,name:string)=>workspace.mutate('duty_rename_temporary_member',{p_member:person,p_name:name}).then(()=>{}),
  };
 }
 export type TeamWorkspace=ReturnType<typeof useTeamWorkspace>;
