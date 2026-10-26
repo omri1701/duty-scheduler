@@ -2,7 +2,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
-import {createAllocationWorker, schedulingSupported, type AllocationOperation} from '@/lib/allocation/client';
+import {createAllocationWorker, generationNow, schedulingSupported, type AllocationOperation} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import type {AllocationDraft, Check, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -35,7 +35,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     contextRef.current = context; receivedAt.current = performance.now(); setCaptured(context);
     setClosed(!context.generationAllowed);
   }
-  const now = () => (contextRef.current?.actualAtMs ?? Date.now()) + performance.now() - receivedAt.current;
+  const now = () => generationNow(contextRef.current?.actualAtMs ?? Date.now(), receivedAt.current, performance.now());
   function stop() {sequence.current++; worker.current?.terminate(); worker.current = null;}
   function fail(e: unknown) {
     setError(errorMessage(e, t('Could not finish. Your saved draft is unchanged. Retry or refresh and review.', 'הפעולה לא הושלמה. הטיוטה השמורה נשמרה. אפשר לנסות שוב או לרענן ולבדוק.')));
