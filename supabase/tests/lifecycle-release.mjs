@@ -42,14 +42,16 @@ try {
  // Lifecycle conversion and compensation cutover each invalidate old snapshots.
  // Their individual +1 deltas are checked by lifecycle/compensation-upgrade.mjs;
  // this release applies both migrations, so the combined delta must be exactly 2.
- const expected={...before,duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)),revision:before.revision+2};
+ // Temporary-member expansion adds identity fields to existing regular members;
+ // every original member field and Auth binding must remain exactly unchanged.
+ const expected={...before,members:before.members.map(member=>({...member,is_temporary:false,auth_user_id:member.id})),duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)),revision:before.revision+2};
  const ledgerQuery='select duty_private.compensation_view(duty_private.compensation_state())';
  let committedLedger;
  // Friday 31 December owns split Saturday 1 January, independently of row span.
  const assertData=()=>{
   const actual=JSON.parse(query(snapshot));
   assert.equal(actual.revision,expected.revision,'Each data cutover must invalidate the workspace once');
-  assert.deepEqual(actual,expected,'Only redundant published working rows and revision may change');
+  assert.deepEqual(actual,expected,'Only identity expansion, redundant published working rows and revision may change');
   const ledger=JSON.parse(query(ledgerQuery));
   assert.deepEqual(ledger.net,{[manager]:0,[engineer]:0},'Cutover starts every engineer at zero');
   for(const key of ['lots','claims','settlements','contributions'])assert.deepEqual(ledger[key],[],'Cutover must not backfill compensation');
