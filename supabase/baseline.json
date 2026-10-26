@@ -104,6 +104,10 @@
     "schemas/functions/duty_private/allocation_better_baseline.sql",
     "schemas/functions/duty_private/allocation_partition.sql",
     "schemas/functions/duty_private/allocation_rebind.sql",
+    "schemas/functions/duty_private/add_temporary_member.sql",
+    "schemas/functions/duty_private/rename_temporary_member.sql",
+    "schemas/functions/public/duty_add_temporary_member.sql",
+    "schemas/functions/public/duty_rename_temporary_member.sql",
     "schemas/grants/functions.sql",
     "schemas/grants/tables.sql"
   ],

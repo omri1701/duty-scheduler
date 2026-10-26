@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { toast } from 'sonner';
+import { TemporaryMemberDialog } from './temporary-member-dialog';
+import type { Member } from '@/lib/supabase/snapshot';
 import { Button } from '@/components/ui/button';
 import { TeamList } from '@/components/rota/team-list';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
@@ -25,8 +28,10 @@ export function WorkspaceTeam({
   update: UpdateDraft;
 }) {
   const { active, monthTotals, historyTotals } = metrics;
+  const [editing,setEditing]=useState<Member|null|undefined>(undefined);
+  const temporaryMembers=remote.snapshot?.members.filter(m=>m.is_temporary)??[];
   return (
-    <section className="team-panel">
+    <><section className="team-panel">
       <div className="section-heading">
         <div>
           <h3>{t('Team order', 'סדר הצוות')}</h3>
@@ -36,7 +41,10 @@ export function WorkspaceTeam({
           {active.length} {t('active engineers', 'מהנדסים פעילים')}
         </span>
       </div>
+      {isManager&&!remote.readOnly&&<Button disabled={remote.saving} onClick={()=>setEditing(null)}>{t('Add Temporary Member','הוספת חבר זמני')}</Button>}
       <TeamList
+        temporaryIds={temporaryMembers.map(m=>m.id)}
+        onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
         roles={remote.snapshot?.roles ?? []}
         onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
         selfId={meId}
@@ -102,6 +110,6 @@ export function WorkspaceTeam({
           )}
         </div>
       )}
-    </section>
+    </section>{editing!==undefined&&isManager&&!remote.readOnly&&<TemporaryMemberDialog member={editing} remote={remote} lang={lang} onClose={()=>setEditing(undefined)}/>}</>
   );
 }

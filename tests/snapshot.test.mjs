@@ -60,6 +60,19 @@ test('snapshot validation accepts nullable revisions, optional swaps and extra d
  assert.equal(readSnapshot(raw),raw);
  raw.swapRequests=[];assert.equal(readSnapshot(raw),raw);
 });
+test('temporary members keep identity, constraints and history through snapshot conversion and schedule payloads',()=>{
+ const raw=fixture(),temporary={...member('temporary'),email:null,is_temporary:true};
+ raw.members.push(temporary);raw.constraints.push({member_id:temporary.id,day:'2026-10-02',kind:'no',note:'Private absence'});
+ raw.assignments.push(row('2026-10-02',temporary.id));
+ assert.equal(readSnapshot(raw),raw);
+ let state=fromSnapshot(raw,'admin');
+ assert.equal(state.team.find(m=>m.id===temporary.id).active,true);
+ assert.equal(state.constraints[temporary.id]['2026-10-02'],'no');
+ temporary.active=false;state=fromSnapshot(raw,'admin');
+ assert.equal(state.assignments['2026-10-02'].primary,temporary.id);
+ assert.equal(schedulePayload(state).team.find(m=>m.id===temporary.id).active,false);
+ raw.members.at(-1).is_temporary='yes';assert.throws(()=>readSnapshot(raw),/Invalid team data/);
+});
 test('snapshot validation rejects malformed nested data and unsafe revisions',()=>{
  for(const value of [null,[],{...fixture(),members:null},{...fixture(),roles:[{code:'admin',label:'Admin',can_manage:'true'}]},{...fixture(),constraints:[{member_id:'engineer',day:'2026-10-01',kind:'no',note:42}]},{...fixture(),revision:NaN},{...fixture(),revision:Number.MAX_SAFE_INTEGER+1},{...fixture(),swapRequests:[{status:'unexpected'}]}])assert.throws(()=>readSnapshot(value),/Invalid team data/);
 });

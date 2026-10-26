@@ -17,6 +17,8 @@ export type Functions = {
     p_locks: NonNullable<GenerationInput['locks']>; p_approvals: Approval[]; p_fingerprint: string}, unknown>;
   duty_save_generation: Operation<Revision & {p_month: string; p_assignments: PrimaryAssignments; p_fingerprint: string; p_seed: number}, unknown>;
   duty_join: Operation<{p_name: string}>;
+  duty_add_temporary_member: Operation<Revision & {p_name: string}, string>;
+  duty_rename_temporary_member: Operation<Revision & {p_member: string; p_name: string}>;
   duty_save_schedule: Operation<Revision & {p_state: ReturnType<typeof schedulePayload> & {compensation?: CompensationPublicationMetadata}; p_publish: string | null}>;
   duty_compensation: Operation<Revision & {p_operation: ManualOperation | {kind: 'reconcile'}; p_source_key: string | null; p_reason: string | null; p_fingerprint: string | null; p_cutoff: number | null}, unknown>;
   duty_set_constraints: Operation<Revision & {p_member: string; p_days: string[]; p_kind: string; p_note: string}>;

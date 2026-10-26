@@ -10,6 +10,45 @@ Native Next.js needs only a project URL and publishable key; no service-role key
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
 
+## Temporary members: local development
+
+On `feat/temporary-members`, stop the existing development server and run
+`pnpm install`, then `pnpm dev:local`. Docker Desktop must be running. This starts
+the isolated LOCAL services and applies pending migrations while preserving local
+data. Open `http://localhost:5173`, verify the **LOCAL** badge, and sign in with
+the existing local admin credentials from the localhost setup section below.
+Add temporary engineers through **Team & fairness → Add Temporary Member**.
+Names are the only required input. Enter constraints from **Availability**,
+deactivate unwanted test engineers individually, and generate November before its
+existing owner-month opening cutoff. Keep your admin active. Generation saves
+automatically; verify by reloading.
+
+Migration `20261026200905_temporary_members.sql` makes email nullable only for
+temporary approved engineers. `duty_members.id` remains the stable member key for
+all existing assignment, constraint, publication and compensation references.
+The generated `auth_user_id` is the existing ID for regular members and NULL for
+temporary members; its Auth FK retains deletion protection for regular accounts.
+Temporary members cannot gain an admin role, pass member authorization or sign in.
+No Auth users/identities are created. Future account linking would need a separately
+reviewed identity migration; this feature provides no linking or claiming endpoint.
+
+Focused database verification (empty disposable LOCAL database only):
+
+```powershell
+node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
+```
+
+The latter rolls back all fixtures, checks denied RPC/direct writes and private
+notes, creates 12 members, changes constraints/status, runs the real allocation
+planner and HiGHS for November, saves/reloads/publishes, and checks retained history
+and compensation. It creates no fake identities for temporary engineers. Existing
+data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
+These commands never target the populated `duty-scheduler-app` database.
+
+Hosted Development activation requires the normal reviewed database-first release
+after merge into `develop`; this feature PR does not apply hosted migrations.
+
 ## Unmerged migrations in local development
 
 `pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.

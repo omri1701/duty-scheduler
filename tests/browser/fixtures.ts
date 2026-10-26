@@ -135,6 +135,16 @@ export class Backend {
       const days = p.p_days as string[];
       this.raw.constraints = this.raw.constraints.filter(c => c.member_id !== p.p_member || !days.includes(c.day));
       if (p.p_kind !== 'clear') this.raw.constraints.push(...days.map(day => ({member_id: p.p_member as string, day, kind: p.p_kind as 'no' | 'prefer', note: p.p_note as string})));
+    } else if (name === 'duty_add_temporary_member') {
+      expect(admin).toBe(true);
+      if (this.failNextSave) {this.failNextSave=false;throw Error('Synthetic stale revision. Refresh and try again.');}
+      const id = `22000000-0000-4000-8000-${String(this.raw.revision).padStart(12,'0')}`;
+      this.raw.members.push({id,name:String(p.p_name).trim(),email:null,is_temporary:true,role:'engineer',status:'approved',active:true,seniority:this.raw.members.length,color:'#adc9ee'});
+      this.raw.revision!++; return id;
+    } else if (name === 'duty_rename_temporary_member') {
+      expect(admin).toBe(true);
+      const member=this.raw.members.find(m=>m.id===p.p_member&&m.is_temporary)!;
+      expect(member).toBeTruthy();member.name=String(p.p_name).trim();
     } else if (name === 'duty_rename_self') {
       this.raw.members.find(m => m.id === user)!.name = p.p_name as string;
     } else if (name === 'duty_review_member') {
