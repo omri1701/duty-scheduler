@@ -40,7 +40,7 @@ for(const identity of ['admin','a'] as const) test(`month navigation survives em
   await expect(page.locator('.app-shell:not(.startup-skeleton)')).toBeVisible();
   await assertMonthNavigation(page);
   await traverseMonths(page,1);
-  expect(backend.calls.every(call=>call.name==='duty_load'),'navigation never writes schedule data').toBe(true);
+  expect(backend.calls.every(call=>call.name==='duty_load'||(identity==='admin'&&call.name==='duty_generation_context')),'navigation only loads the workspace and manager allocation facts').toBe(true);
 });
 
 test('month navigation remains usable after actual browser zoom with visible completed requests',async({backend,openApp},info)=>{
@@ -61,5 +61,5 @@ test('month navigation remains usable after actual browser zoom with visible com
       }
     }
   } finally {await context.close();}
-  expect(backend.calls.every(call=>call.name==='duty_load')).toBe(true);
+  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_generation_context')).toBe(true);
 });
