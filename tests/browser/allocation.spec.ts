@@ -85,19 +85,40 @@ test('real generation Worker saves a verified partial, retains targets and emerg
   await expect(page.locator('.allocation-row output')).toHaveText(targets);
 });
 
+test('fractional monotonic time generates and saves through a real Worker', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  // Fixed browser dates can hide the fractional performance.now() values seen in production.
+  await page.evaluate(() => {
+    let ms = 100.25;
+    Object.defineProperty(performance, 'now', {configurable: true, value: () => {ms += .125; return ms;}});
+  });
+  let workers = 0; page.on('worker', () => {workers++;});
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
+  expect(workers).toBeGreaterThanOrEqual(2); // Generation and allocation compilation both ran in Workers.
+  await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
+  expect(backend.raw.months[0].generated).toBe(true);
+});
+
 test('cancelling synchronous WASM retains accepted assignments and a fresh Worker can retry', async ({page, backend, openApp}) => {
   fresh(backend); acceptedDraft(backend); await openApp(); await openPlan(page);
   const before = structuredClone(backend.raw.assignments);
   let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
+  const started = page.waitForEvent('worker');
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  const active = await started, stopped = active.waitForEvent('close');
   await expect(page.getByText('Finding the best arrangement…', {exact: true})).toBeVisible();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click(); release();
+  await stopped;
   expect(backend.raw.assignments).toEqual(before);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
   await expect(page.getByText('Cancelled. Your saved draft is unchanged.', {exact: true})).toBeVisible();
   await page.unroute('**/api/scheduling/asset/highs.mjs');
+  const restarted = page.waitForEvent('worker');
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  expect(await restarted).not.toBe(active);
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
 });
@@ -179,6 +200,25 @@ test('a cutoff crossed with the popup open cancels planning and never changes as
   const before = structuredClone(backend.raw.assignments);
   await openApp(); await page.getByRole('button', {name: 'Generate month', exact: true}).click();
   await expect(page.getByRole('dialog')).toContainText('Monthly coverage has started', {timeout: 10_000});
+  expect(backend.raw.assignments).toEqual(before);
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
+});
+
+test('exact cutoff during real Worker generation terminates it without saving assignments', async ({page, backend, openApp}) => {
+  fresh(backend); acceptedDraft(backend); backend.generationNow = coverageStart(MONTH, {}) - 60_000;
+  const before = structuredClone(backend.raw.assignments);
+  await openApp(); await openPlan(page);
+  await page.evaluate(() => {Object.defineProperty(performance, 'now', {configurable: true, value: () => 100.25});});
+  let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
+  await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
+  const started = page.waitForEvent('worker');
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  const active = await started, stopped = active.waitForEvent('close');
+  await expect(page.getByText('Finding the best arrangement…', {exact: true})).toBeVisible();
+  // The confirmed server sample was received at 100.25; advance exactly 60 seconds.
+  await page.evaluate(() => {Object.defineProperty(performance, 'now', {configurable: true, value: () => 60_100.25});});
+  await stopped; release();
+  await expect(page.getByRole('dialog')).toContainText('Monthly coverage has started');
   expect(backend.raw.assignments).toEqual(before);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
 });

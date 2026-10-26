@@ -9,10 +9,10 @@ export type AllocationOperation = {input: AllocationInput} & (
 );
 export type AllocationReply = {draft: AllocationDraft; check: Check; optimal?: boolean; compiled?: ReturnType<typeof compileAllocation>};
 
-/** Keep the server-based monotonic clock in integer UTC milliseconds, as required
- * by requireGenerationWindow. performance.now() itself is fractional. */
+/** Add only whole elapsed milliseconds to the integer server timestamp.
+ * Rounding at epoch magnitude can otherwise close the window just before cutoff. */
 export function generationNow(serverMs: number, receivedMonotonicMs: number, monotonicMs: number) {
-  return Math.floor(serverMs + monotonicMs - receivedMonotonicMs);
+  return serverMs + Math.floor(monotonicMs - receivedMonotonicMs);
 }
 
 export function schedulingSupported() {
