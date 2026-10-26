@@ -12,6 +12,17 @@ test('Quality executes the real lifecycle concurrency and conversion regressions
  for(const file of ['lifecycle-races.mjs','lifecycle-upgrade.mjs'])assert(workflow.includes(`node supabase/tests/${file} supabase_db_duty-scheduler`));
 });
 
+test('database job installs locked application dependencies before the real HiGHS integration test',()=>{
+ const workflow=readFileSync('.github/workflows/quality.yml','utf8');
+ const database=workflow.split('\n  database:')[1].split('\n  quality:')[0];
+ const setup=database.indexOf('uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1');
+ const install=database.indexOf('run: pnpm install --frozen-lockfile');
+ const regressions=database.indexOf('name: Fresh local database and permission regressions');
+ const integration=database.indexOf('node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler');
+ assert(setup>=0&&setup<install&&install<regressions&&regressions<integration);
+ assert(!database.includes('continue-on-error'));
+});
+
 function fixture(branch = 'master') {
   const sha = 'a'.repeat(40), repository = 'owner/duty', now = Date.parse('2026-10-13T12:00:00Z');
   const options = {repository, branch, sha, runId: '10', currentRunId: '20', now};
