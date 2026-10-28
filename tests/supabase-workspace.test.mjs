@@ -55,6 +55,45 @@ function fixture() {
   return {client, workspace, calls, snapshots, errors, saving, headers, responses, setRaw: s => {raw = s;}};
 }
 
+const lockDay = '2026-11-02';
+const lockRow = (locked = false) => ({id:'duty',publication_id:null,day:lockDay,end_day:'2026-11-03',primary_id:'admin',secondary_id:null,locked,manager_override:false,title:'',extra_points:0,points:1});
+const lockArgs = (locked = true) => ({p_publish:null,p_state:{team:[],months:{'2026-11':{status:'draft',deadline:'2026-10-25'}},duties:[lockRow(locked)],lock_edits:[lockDay]}});
+
+test('lock Save refuses an unmigrated snapshot before any write and allows recovery', async()=>{
+ const f=fixture(),raw=snapshot(1),legacy=lockRow();delete legacy.locked;raw.assignments=[legacy];f.setRaw(raw);
+ await f.workspace.connect(f.client,user('admin'));
+ await assert.rejects(f.workspace.mutate('duty_save_schedule',lockArgs()),/Required migration: 20261028204239/);
+ assert.equal(f.calls.filter(c=>c.name==='duty_save_schedule').length,0);assert.equal(f.workspace.isSaving(),false);
+ f.setRaw({...raw,assignments:[lockRow()]});await f.workspace.refresh();
+ f.responses.set('duty_save_schedule',()=>{f.setRaw({...raw,revision:2,assignments:[lockRow(true)]});return Promise.resolve(result(null));});
+ await f.workspace.mutate('duty_save_schedule',lockArgs());assert.equal(f.snapshots.at(-1).assignments[0].locked,true);
+});
+
+test('lock and unlock Save reject HTTP success when authoritative readback disagrees', async()=>{
+ for(const wanted of [true,false]) {
+  const f=fixture(),raw={...snapshot(1),assignments:[lockRow(!wanted)]};f.setRaw(raw);await f.workspace.connect(f.client,user('admin'));
+  await assert.rejects(f.workspace.mutate('duty_save_schedule',lockArgs(wanted)),/not saved as requested/);
+  assert.equal(f.workspace.isSaving(),false);assert.match(f.errors.at(-1),/not saved as requested/);
+ }
+});
+
+test('first lock Save on an empty legacy database detects ignored fields after readback', async()=>{
+ const f=fixture();await f.workspace.connect(f.client,user('admin'));
+ const legacy=lockRow();delete legacy.locked;
+ f.responses.set('duty_save_schedule',()=>{f.setRaw({...snapshot(2),assignments:[legacy]});return Promise.resolve(result(null));});
+ await assert.rejects(f.workspace.mutate('duty_save_schedule',lockArgs()),/Required migration: 20261028204239/);
+ assert.equal(f.workspace.isSaving(),false);
+});
+
+test('readback verifies combined weekend shape and the newly saved primary',async()=>{
+ const f=fixture(),raw={...snapshot(1),assignments:[{...lockRow(true),day:'2026-11-06',end_day:'2026-11-08',primary_id:'engineer'}]};
+ f.setRaw(raw);await f.workspace.connect(f.client,user('admin'));
+ const args=lockArgs();args.p_state.lock_edits=['2026-11-06','2026-11-07'];args.p_state.duties=structuredClone(raw.assignments);
+ await f.workspace.mutate('duty_save_schedule',args);
+ args.p_state.duties[0].primary_id='admin';
+ await assert.rejects(f.workspace.mutate('duty_save_schedule',args),/not saved as requested/);
+});
+
 test('overlapping refreshes share one read, and a failed read can retry', async () => {
   for (const fail of [false, true]) {
     const f = fixture(); await f.workspace.connect(f.client, user('admin'));

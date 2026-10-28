@@ -249,6 +249,21 @@ pre-allocation locks, repeated generation, primary replacement, unlock, stale an
 unauthorized writes, and upgrade preservation. Use LOCAL for unmerged migrations;
 release ordering remains database first, with no feature-branch hosted migration.
 
+An older `duty_save_schedule` can accept unknown JSON fields while ignoring
+`locked`. The client refuses lock edits when loaded duty rows lack lock support,
+and verifies the saved primary, emergency cover, span and lock against the
+authoritative reload before reporting success. A missing migration is a visible
+error; it must not look like a saved lock.
+
+For the real LOCAL browser/Auth/PostgREST lock workflow, with no screenshots or
+backend interception, run `pnpm build` then
+`pnpm exec node scripts/verify-duty-locks-local.mjs`. It applies pending migrations
+only to LOCAL, uses a separate preview on port 5174 (leaving port 5173 alone),
+and exercises Lock/Save/indicator/reload/regeneration, Unlock/Save, dismissal,
+and an HTTP-success write that fails to retain the lock. It removes only its
+unused synthetic test month and temporary failure trigger. Boolean evidence is
+written to `work/duty-locks-local/result.json`.
+
 Allocation/generation persistence adds manager-only context, confirmation and
 generation-save RPCs, used by the allocation popup and Worker generation workflow. See the
 [database contract and disposable tests](ALLOCATION_DATABASE.md). Its additive
