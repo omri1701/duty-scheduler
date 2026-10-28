@@ -62,7 +62,8 @@ GitHub owns CI. The required `quality` check still aggregates scope, application
 and disposable database checks. Only allowlisted documentation/AI-only PRs skip
 application/database jobs; executable/unknown paths, branch pushes and manual
 runs require full checks. Delivery stops after push and PR creation/update;
-CI failures are handled when the user supplies results. Do not infer green CI or
+CI failures are handled when the user supplies results or explicitly asks to
+"check CI" (one `gh pr checks` read, per AGENTS.md). Do not infer green CI or
 merge readiness from local validation. Release gates and database-first ordering
 remain documented in [DEPLOYMENT.md](DEPLOYMENT.md).
 

@@ -24,8 +24,11 @@ Mobile-first English/Hebrew rota: React, TypeScript, Next.js App Router, Supabas
   correctness, database integrity or security; diagnose failures before retrying.
   Preserve regression protection and report actual results and gaps.
 - Never poll or wait for GitHub Actions, or inspect runs/logs/artifacts during
-  delivery. The user supplies CI results for follow-up. Quality/release gates remain
-  in force; local success does not establish merge readiness.
+  delivery. The user supplies CI results for follow-up. Only when the user explicitly
+  asks to "check CI", run `gh pr checks <n>` once and report pass/fail/pending in
+  one line; if pending, say so and stop. Name failed checks; read only a failed
+  log's tail, and only if the user asks. Quality/release gates remain in force;
+  local success does not establish merge readiness.
 - Use existing authorized connections. Never initiate interactive website
   sign-ins or login/device flows; report the required manual step if access is missing.
 
