@@ -47,11 +47,12 @@ function fixture(branch = 'master') {
 }
 
 test('instruction-only PR allowlist fails closed and branch runs always execute full Quality', () => {
-  const allowed = ['README.md', 'AGENTS.md', 'docs/DEPLOYMENT.md', '.codex/config.toml', '.codex/agents/security.toml', '.agents/skills/feature-delivery/SKILL.md'];
+  const allowed = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'docs/DEPLOYMENT.md', '.codex/config.toml', '.codex/agents/security.toml',
+    '.agents/skills/feature-delivery/SKILL.md', '.claude/skills/feature-delivery/SKILL.md', '.claude/agents/qa.md'];
   assert(instructionOnly('pull_request', allowed));
   for (const event of ['push', 'workflow_dispatch', 'pull_request_target']) assert(!instructionOnly(event, allowed));
   assert(!instructionOnly('pull_request', []));
-  for (const file of ['package.json', '.github/workflows/quality.yml', 'scripts/quality-scope.mjs', 'docs/runtime.mjs', '.agents/skills/new/SKILL.md', 'app/page.tsx', 'supabase/tests/access.sql', 'tests/engine.test.mjs']) {
+  for (const file of ['package.json', '.github/workflows/quality.yml', 'scripts/quality-scope.mjs', 'docs/runtime.mjs', '.agents/skills/new/SKILL.md', '.claude/skills/new/SKILL.md', '.claude/agents/new.md', '.claude/settings.json', 'app/page.tsx', 'supabase/tests/access.sql', 'tests/engine.test.mjs']) {
     assert(!instructionOnly('pull_request', [...allowed, file]), file);
   }
 });

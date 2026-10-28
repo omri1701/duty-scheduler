@@ -39,6 +39,16 @@ primary. Reviewer files retain `sandbox_mode = "read-only"` conservatively, but
 current custom-agent documentation says sandbox settings do not override parent
 permissions. Their no-edit instruction is explicit, not a separate sandbox guarantee.
 
+## Claude Code
+
+Claude Code runs alongside Codex. `CLAUDE.md` imports AGENTS.md, so both share one
+rule set. `.claude/skills/` mirrors `.agents/skills/` byte for byte: edit both
+copies together; the validator rejects drift. `.claude/agents/qa.md` and
+`security.md` restate the Codex reviewers with only Read, Grep and Glob tools and
+inherit the session model. Claude's built-in `/security-review` shares the project
+skill's name; confirm which one runs before relying on it. Restart the session
+after pulling instruction changes.
+
 ## Validation and GitHub gates
 
 Run `python3 scripts/validate-ai-config.py` with Python 3.11+ (`python` on Windows

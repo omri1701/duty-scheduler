@@ -2,7 +2,7 @@
 
 A mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty. Engineers join through approved accounts or are added by an admin as temporary members without accounts. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager confirms the monthly allocation and runs Generate.
 
-For Codex setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
+For Codex and Claude Code setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
 For database-first deployments, approved Production releases, environment secrets
 and recovery, see [CI/CD release workflow](docs/DEPLOYMENT.md).
 
