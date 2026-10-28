@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = {"gpt-6.1-sol": {"low", "medium", "high"}, "gpt-6-luna": {"high"}}
 SKILLS = {"scheduling-regression", "code-change-validation", "security-review", "feature-delivery"}
+# Claude Code expands `@path` imports into context and runs !`cmd` in skills; instruction-only PRs allow neither.
+IMPORT = re.compile(r"(?<![\w`])@[^\s`]+")
 
 
 def require(condition, message):
@@ -74,11 +76,13 @@ def validate(root=ROOT):
         require(0 < len(description) <= 240, f"{path}: keep trigger concise")
         require(body.strip() and len(body.split()) <= 300, f"{path}: missing or oversized workflow")
         require("TODO" not in text, f"{path}: unfinished template")
+        require("!`" not in text, f"{path}: skills must not run shell commands")
 
     # Claude Code runs alongside Codex: same rules, mirrored skills, read-only reviewers.
     claude = (root / "CLAUDE.md").read_text(encoding="utf-8")
     require(claude.startswith("@AGENTS.md\n") and len(claude.split()) <= 60,
             "CLAUDE.md must import @AGENTS.md first and stay a short pointer")
+    require(IMPORT.findall(claude) == ["@AGENTS.md"], "CLAUDE.md may import only @AGENTS.md")
     mirrors = sorted((root / ".claude/skills").glob("*/SKILL.md"))
     require({path.parent.name for path in mirrors} == SKILLS, "Expected the documented Claude skills")
     for path in mirrors:
@@ -99,6 +103,7 @@ def validate(root=ROOT):
 
     instructions = (root / "AGENTS.md").read_text(encoding="utf-8")
     require(len(instructions.split()) <= 450, "Keep root AGENTS.md at most 450 words")
+    require(not IMPORT.search(instructions), "AGENTS.md must not import files")
     guide = (root / "docs/AI_DEVELOPMENT.md").read_text(encoding="utf-8")
     require(len(guide.split()) <= 650, "Keep AI development guide at most 650 words")
     for name in SKILLS:
@@ -112,7 +117,7 @@ def validate(root=ROOT):
 
 if __name__ == "__main__":
     try:
-        validate()
+        validate(Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"AI config validation failed: {error}", file=sys.stderr)
         sys.exit(1)

@@ -43,7 +43,8 @@ permissions. Their no-edit instruction is explicit, not a separate sandbox guara
 
 Claude Code runs alongside Codex. `CLAUDE.md` imports AGENTS.md, so both share one
 rule set. `.claude/skills/` mirrors `.agents/skills/` byte for byte: edit both
-copies together; the validator rejects drift. `.claude/agents/qa.md` and
+copies together; the validator rejects drift, `` !`command` `` lines in skills and
+any `@` import other than CLAUDE.md's `@AGENTS.md`. `.claude/agents/qa.md` and
 `security.md` restate the Codex reviewers with only Read, Grep and Glob tools and
 inherit the session model. Claude's built-in `/security-review` shares the project
 skill's name; confirm which one runs before relying on it. Restart the session
