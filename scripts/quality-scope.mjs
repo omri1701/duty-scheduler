@@ -6,9 +6,10 @@ import {pathToFileURL} from 'node:url';
 
 export function instructionOnly(event, files) {
   return event === 'pull_request' && files.length > 0 && files.every(file =>
-    ['README.md', 'AGENTS.md', '.codex/config.toml', '.codex/agents/qa.toml', '.codex/agents/security.toml'].includes(file)
+    ['README.md', 'AGENTS.md', 'CLAUDE.md', '.codex/config.toml', '.codex/agents/qa.toml', '.codex/agents/security.toml',
+      '.claude/agents/qa.md', '.claude/agents/security.md'].includes(file)
     || /^docs\/[\w/-]+\.md$/.test(file)
-    || /^\.agents\/skills\/(scheduling-regression|code-change-validation|security-review|feature-delivery)\/SKILL\.md$/.test(file));
+    || /^\.(agents|claude)\/skills\/(scheduling-regression|code-change-validation|security-review|feature-delivery)\/SKILL\.md$/.test(file));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

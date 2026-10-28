@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline checks for this repo's small Codex configuration contract (Python 3.11+).
+"""Offline checks for this repo's small Codex and Claude Code configuration contract (Python 3.11+).
 
 This is not a replacement for Codex's parser or an account/model availability test.
 Skill frontmatter intentionally uses only plain names and JSON-quoted descriptions,
@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = {"gpt-6.1-sol": {"low", "medium", "high"}, "gpt-6-luna": {"high"}}
 SKILLS = {"scheduling-regression", "code-change-validation", "security-review", "feature-delivery"}
+# Claude Code expands `@path` imports into context and runs !`cmd` in skills; instruction-only PRs allow neither.
+IMPORT = re.compile(r"(?<![\w`])@[^\s`]+")
 
 
 def require(condition, message):
@@ -74,9 +76,34 @@ def validate(root=ROOT):
         require(0 < len(description) <= 240, f"{path}: keep trigger concise")
         require(body.strip() and len(body.split()) <= 300, f"{path}: missing or oversized workflow")
         require("TODO" not in text, f"{path}: unfinished template")
+        require("!`" not in text, f"{path}: skills must not run shell commands")
+
+    # Claude Code runs alongside Codex: same rules, mirrored skills, read-only reviewers.
+    claude = (root / "CLAUDE.md").read_text(encoding="utf-8")
+    require(claude.startswith("@AGENTS.md\n") and len(claude.split()) <= 60,
+            "CLAUDE.md must import @AGENTS.md first and stay a short pointer")
+    require(IMPORT.findall(claude) == ["@AGENTS.md"], "CLAUDE.md may import only @AGENTS.md")
+    mirrors = sorted((root / ".claude/skills").glob("*/SKILL.md"))
+    require({path.parent.name for path in mirrors} == SKILLS, "Expected the documented Claude skills")
+    for path in mirrors:
+        require(path.read_bytes() == (root / ".agents/skills" / path.parent.name / "SKILL.md").read_bytes(),
+                f"{path}: must be identical to its .agents/skills copy")
+    claude_agents = sorted((root / ".claude/agents").glob("*.md"))
+    require({path.stem for path in claude_agents} == {"qa", "security"},
+            "Expected only qa and security Claude agents")
+    for path in claude_agents:
+        match = re.fullmatch(r'---\nname: ([a-z]+)\ndescription: ("[^\n]*")\ntools: ([^\n]+)\n---\n\n(.+)',
+                             path.read_text(encoding="utf-8"), flags=re.DOTALL)
+        require(match is not None, f"{path}: expected name, JSON-quoted description and tools frontmatter")
+        name, encoded, tools, body = match.groups()
+        require(name == path.stem and json.loads(encoded).strip(), f"{path}: name/description mismatch")
+        require({tool.strip() for tool in tools.split(",")} <= {"Read", "Grep", "Glob"},
+                f"{path}: reviewer tools must be read-only")
+        require(body.strip() and len(body.split()) <= 100, f"{path}: keep reviewer instructions at most 100 words")
 
     instructions = (root / "AGENTS.md").read_text(encoding="utf-8")
     require(len(instructions.split()) <= 450, "Keep root AGENTS.md at most 450 words")
+    require(not IMPORT.search(instructions), "AGENTS.md must not import files")
     guide = (root / "docs/AI_DEVELOPMENT.md").read_text(encoding="utf-8")
     require(len(guide.split()) <= 650, "Keep AI development guide at most 650 words")
     for name in SKILLS:
@@ -85,12 +112,12 @@ def validate(root=ROOT):
                  "tests/engine.test.mjs", "tests/gesture.test.mjs", "tests/snapshot.test.mjs",
                  "supabase/tests/access.sql", ".github/workflows/quality.yml"):
         require((root / path).is_file(), f"Missing referenced path: {path}")
-    print(f"AI config valid: 2 agents, {len(SKILLS)} skills, {len(instructions.split())} root words")
+    print(f"AI config valid: 2 agents, {len(SKILLS)} skills (Codex + Claude), {len(instructions.split())} root words")
 
 
 if __name__ == "__main__":
     try:
-        validate()
+        validate(Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"AI config validation failed: {error}", file=sys.stderr)
         sys.exit(1)
