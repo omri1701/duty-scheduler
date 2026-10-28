@@ -5,6 +5,14 @@ import {addDays,blocks,totals} from '../lib/rota/engine.ts';
 import {visibleCalendarBlocks} from '../lib/rota/workspace-data.ts';
 const member=(id,role='engineer',status='approved')=>({id,email:id+'@example.invalid',name:id,role,status,active:true,seniority:1,color:'#adc9ee'});
 
+test('saved lock flags round-trip without implicitly reviewing unrelated locked duties',()=>{
+ const raw=fixture();raw.assignments.find(r=>r.day==='2026-10-01'&&r.publication_id===null).locked=true;
+ const state=fromSnapshot(readSnapshot(raw),'admin');assert.equal(state.assignments['2026-10-01'].locked,true);
+ const payload=schedulePayload(state,'2026-10');assert.equal(payload.duties.find(d=>d.day==='2026-10-01').locked,true);assert.equal(payload.lock_edits,undefined);
+ assert.deepEqual(schedulePayload(state,'2026-10',false,['2026-10-01']).lock_edits,['2026-10-01']);
+ raw.assignments[0].locked='true';assert.throws(()=>readSnapshot(raw),/Invalid team data/);
+});
+
 test('manager published calendar reads current snapshots across adjacent months, preserving private drafts',()=>{
  const raw=fixture();
  raw.months=[{month:'2027-12',status:'draft',generated:true,current_publication_id:'dec'}, {month:'2028-01',status:'draft',generated:true,current_publication_id:'jan'}];

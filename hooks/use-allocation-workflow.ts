@@ -137,10 +137,6 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     else if (c.allocation) {setDraft(c.allocation); await plan({kind: 'assess', input: c.input, draft: c.allocation, copied: !!c.sourcePublicationId}, 'checking');}
     else await plan({kind: 'propose', input: c.input}, 'proposing');
   }
-  function changeLocks(next: Review['locks'], nextApprovals: Approval[]) {
-    remember(); setLocks(next); setApprovals(nextApprovals); setCheck(null); setError('');
-    setNotice(t('Lock scope updated. Confirm to save these changes.', 'הנעילות עודכנו. יש לאשר כדי לשמור את השינויים.'));
-  }
   async function confirm(generate = true) {
     if (!captured || !draft || !input || structural || !reviewed || phase !== 'idle' || rpc.current) return;
     if (generate && now() >= captured.coverageStartMs) {setClosed(true); return;}
@@ -195,7 +191,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, check,
     locks, approvals, totals, step, setStep, error, notice, structural, closed, progress, result, reviewed,
-    history, undo, edit, changeLocks, refreshReview, confirm, cancel,
+    history, undo, edit, refreshReview, confirm, cancel,
     propose: async () => {if (input && phase === 'idle') {remember(); await plan({kind: 'propose', input}, 'proposing');}},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle',

@@ -1,11 +1,7 @@
 'use client';
-import {useState} from 'react';
 import {Check, LockKeyhole, Minus, Plus, RotateCcw, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {EditorDialog} from './editor-dialog';
-import {approvalScopeKey as scopeKey, lockExceptions, type ApprovalScope} from '@/lib/allocation/review';
-import {canonicalDuties} from '@/lib/scheduling/calendar';
-import type {Approval} from '@/lib/scheduling/types';
 import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Language, Translate} from './workspace-types';
@@ -20,8 +16,8 @@ export function allocationMessage(message: string, t: Translate) {
   if (/lineage|compound|ambiguous/.test(message)) return t('This month carries a published adjustment that needs review. Keep its original plan before changing transfers.', 'בחודש זה קיים שינוי שפורסם ודורש בדיקה. יש לשמור על התוכנית המקורית לפני שינוי העברות.');
   if (/target-total-mismatch|invalid-baseline-total/.test(message)) return t('Targets must add up to the required month total. Place the remaining points or undo.', 'סכום היעדים חייב להתאים לסך הנקודות לחודש. יש לחלק את הנקודות שנותרו או לבטל את השינוי.');
   if (/locked-points|lock.*target|target.*lock/.test(message)) return t('A target is below its locked points. Increase it or explicitly unlock duties.', 'יעד נמוך מהנקודות הנעולות. יש להגדיל אותו או לבטל נעילות במפורש.');
-  if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the exact dates and approve an exception below, or unlock.', 'המהנדס הנעול אינו זמין. יש לבדוק את התאריכים ולאשר חריגה בהמשך, או לבטל את הנעילה.');
-  if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review the specific lock exceptions below.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את החריגות הספציפיות בהמשך.');
+  if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
+  if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
   if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
   if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed. Refresh and review your retained targets before retrying.', 'נתוני הצוות השתנו. יש לרענן ולבדוק את היעדים שנשמרו לפני ניסיון נוסף.');
   if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection and retry in a current browser. Your saved draft is retained.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
@@ -32,19 +28,7 @@ export function allocationMessage(message: string, t: Translate) {
 export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;
 }) {
-  const [reason, setReason] = useState('');
   const name = (id: string) => state.team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
-  const duties = f.input ? canonicalDuties(f.input.schedule.month, f.input.schedule.calendar) : [];
-  const scopes = f.input ? lockExceptions(f.input.schedule, f.locks) : [];
-  function scopeLabel(a: ApprovalScope) {
-    if (a.rule === 'availability') return `${name(a.engineer)} · ${a.dates.map(d => shortDate(d, lang)).join(', ')} · ${t('Unavailable', 'לא זמין')}`;
-    if (a.rule === 'consecutive') return `${a.duties.map(d => shortDate(d, lang)).join(' + ')} · ${t('Consecutive locked duties', 'תורנויות נעולות רצופות')}`;
-    if (a.rule === 'boundary') {
-      const n = f.input?.schedule.neighbors?.find(n => n.id === a.neighborId);
-      return `${shortDate(a.dutyId, lang)} + ${n ? shortDate(n.start, lang) : ''} · ${t('Neighboring month', 'חודש סמוך')} (${n?.source === 'published' ? t('Published', 'פורסם') : t('Draft', 'טיוטה')})`;
-    }
-    return `${name(a.engineer)} · ${a.weekends.map(d => shortDate(d, lang)).join(', ')} · ${t('Additional locked weekends', 'סופי שבוע נעולים נוספים')}`;
-  }
   const isPlanning = ['proposing', 'editing', 'checking'].includes(f.phase);
   const partial = f.check?.feasibility === 'partial';
   const status = f.phase === 'loading' ? t('Loading the authoritative month…', 'טוען את נתוני החודש…')
@@ -87,21 +71,6 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
         {f.draft.repayments.map((r, i) => <p key={i}>{name(r.claim.debtorId)} → {name(r.claim.creditorId)} · {points(r.units)} {t('pts proposed repayment', 'נק׳ להחזרה מתוכננת')}</p>)}
         <p>{t('Only actual primary assignments fund compensation when published. Unperformed repayment stays outstanding.', 'הפיצוי מבוסס רק על שיבוצים ראשיים בפועל בעת הפרסום. החזרה שלא בוצעה נשארת פתוחה.')}</p>
         <div className="allocation-compensation"><strong>{t('Owed relief now → at month opening', 'הקלת עומס כעת ← בפתיחת החודש')}</strong>{f.input?.seniority.filter(id => f.captured?.actual.net[id] || f.captured?.projected.net[id]).map(id => <p key={id}>{name(id)} <bdi>{signed(f.captured!.actual.net[id] ?? 0)} → {signed(f.captured!.projected.net[id] ?? 0)}</bdi></p>)}<small>{t('Positive: owed relief · Negative: owes work. Future work is a projection until completed.', 'חיובי: זכאות להקלה · שלילי: עבודה להחזרה. עבודה עתידית היא תחזית עד להשלמתה.')}</small></div>
-      </details>}
-      {f.input && <details className="allocation-details" open={!!scopes.some(s => !f.approvals.some(a => scopeKey(a) === scopeKey(s)))}><summary><LockKeyhole size={15}/>{t('Explicit locks & exceptions', 'נעילות וחריגות מפורשות')}<span>{f.locks.length}</span></summary><p>{t('Only locked primaries stay fixed on Regenerate. Assign a primary in the calendar first, then lock it here.', 'רק שיבוצים נעולים נשמרים בשיבוץ מחדש. תחילה יש לשבץ מהנדס בלוח ואז לנעול כאן.')}</p>
-        <div className="allocation-lock-list">{duties.filter(d => f.captured?.assignments[d.id]?.primary).map(d => {
-          const engineer = f.captured!.assignments[d.id].primary!, checked = f.locks.some(l => l.dutyId === d.id);
-          return <label key={d.id}><input type="checkbox" checked={checked} disabled={f.busy} onChange={() => {
-            const next = checked ? f.locks.filter(l => l.dutyId !== d.id) : [...f.locks, {dutyId: d.id, engineer}];
-            const valid = lockExceptions(f.input!.schedule, next).map(scopeKey);
-            f.changeLocks(next, f.approvals.filter(a => valid.includes(scopeKey(a))));
-          }}/><span>{shortDate(d.startDate, lang)}{d.dates.length > 1 ? `–${shortDate(d.dates.at(-1)!, lang)}` : ''}<small>{name(engineer)}</small></span><bdi>{points(d.units)} {t('pts', 'נק׳')}</bdi></label>;
-        })}</div>
-        {!duties.some(d => f.captured?.assignments[d.id]?.primary) && <p>{t('No assigned duties to lock yet.', 'אין עדיין תורנויות משובצות לנעילה.')}</p>}
-        {!!scopes.length && <div className="allocation-exceptions"><label className="field-label">{t('Reason for new exceptions', 'סיבה לחריגות חדשות')}<input value={reason} onChange={e => setReason(e.target.value)} disabled={f.busy} maxLength={300} placeholder={t('Explain this specific approval', 'הסבר לאישור הספציפי')}/></label>{scopes.map(s => {
-          const existing = f.approvals.find(a => scopeKey(a) === scopeKey(s));
-          return <label className="allocation-exception" key={scopeKey(s)}><input type="checkbox" checked={!!existing} disabled={f.busy || (!existing && !reason.trim())} onChange={() => f.changeLocks(f.locks, existing ? f.approvals.filter(a => a !== existing) : [...f.approvals, {...s, reason: reason.trim()} as Approval])}/><span>{scopeLabel(s)}{existing && <small>{existing.reason}</small>}</span></label>;
-        })}</div>}
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}

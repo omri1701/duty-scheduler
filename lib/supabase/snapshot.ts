@@ -2,7 +2,7 @@ import {addDays,dayOf,blocks,ownerMonth,type State,type Special} from '../rota/e
 export type Member={id:string;email:string|null;is_temporary?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
 export type Lookup={code:string;label:string};
 export type Role=Lookup&{can_manage:boolean};
-export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;manager_override:boolean;title:string;extra_points:number;points:number};
+export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;locked?:boolean;manager_override:boolean;title:string;extra_points:number;points:number};
 export type Publication={id:string;month:string;version:number;published_at:string;published_by:string};
 export type SwapRequest={id:string;month:string;source_publication_id:string|null;requester_id:string;other_id:string;from_day:string;from_end_day:string;to_day:string;to_end_day:string;explanation:string;status:'awaiting_engineer'|'awaiting_admin'|'approved'|'declined'|'rejected'|'cancelled'|'invalidated';accepted_by:string|null;accepted_at:string|null;created_at:string;resolved_at:string|null;resolved_by:string|null;result_publication_id:string|null;override_reason:string};
 export type Snapshot={swapRequests?:SwapRequest[];revision:number|null;members:Member[];months:{month:string;deadline:string;status:'draft'|'published';generated:boolean;current_publication_id:string|null;publication_sequence:number}[];constraints:{member_id:string;day:string;kind:'no'|'prefer';note:string}[];assignments:DutyRow[];publications:Publication[];roles:Role[];memberStatuses:Lookup[];monthStatuses:Lookup[];constraintTypes:Lookup[]};
@@ -21,7 +21,7 @@ const snapshotChecks = {
  members: rows({id:text,email:nullableText,is_temporary:value=>value===undefined||boolean(value),name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
  months: rows({month:text,deadline:text,status:oneOf('draft','published'),generated:boolean,current_publication_id:nullableText,publication_sequence:number}),
  constraints: rows({member_id:text,day:text,kind:oneOf('no','prefer'),note:text}),
- assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,manager_override:boolean,title:text,extra_points:number,points:number}),
+ assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,locked:value=>value===undefined||boolean(value),manager_override:boolean,title:text,extra_points:number,points:number}),
  publications: rows({id:text,month:text,version:number,published_at:text,published_by:text}),
  roles: rows({...lookup,can_manage:boolean}),
  memberStatuses: rows(lookup), monthStatuses: rows(lookup), constraintTypes: rows(lookup),
@@ -37,7 +37,7 @@ function rowOwner(row:DutyRow){return (dayOf(row.day)===6?addDays(row.day,-1):ro
 function applyRows(state:State,rows:DutyRow[]){
  const specials:Special[]=[],splits=new Set<string>();
  for(const row of rows){
-  state.assignments[row.day]={primary:row.primary_id??'',secondary:row.secondary_id??undefined,override:row.manager_override||undefined};
+  state.assignments[row.day]={primary:row.primary_id??'',secondary:row.secondary_id??undefined,locked:row.locked||undefined,override:row.manager_override||undefined};
   if(row.title||Number(row.extra_points)>0)specials.push({id:row.id,title:row.title,start:row.day,end:row.end_day,extra:Number(row.extra_points)});
   if(row.end_day===addDays(row.day,1)&&[5,6].includes(dayOf(row.day)))splits.add(dayOf(row.day)===5?row.day:addDays(row.day,-1));
  }
@@ -57,13 +57,13 @@ export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:stri
  for(const row of rows){for(const [key,existing] of byDay)if(existing.day<row.end_day&&existing.end_day>row.day)byDay.delete(key);byDay.set(row.day,row)}
  return applyRows(state,[...byDay.values()]);
 }
-export function schedulePayload(s:State,month?:string,publish=false){
+export function schedulePayload(s:State,month?:string,publish=false,reviewedLocks?:string[]){
   const months=new Set(month?[month]:Object.keys(s.months));
  const duties=new Map<string,ReturnType<typeof blocks>[number]>();
  for(const month of months)for(const duty of blocks(month,s.specials,s.splitWeekends)){
   // Include only explicit data or duties belonging to an existing month; never invent a carried assignment.
    if(months.has(ownerMonth(duty))&&s.months[ownerMonth(duty)]&&(s.months[ownerMonth(duty)].status==='draft'||publish&&ownerMonth(duty)===month))duties.set(duty.id,duty);
  }
-  return {team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
+  return {...(reviewedLocks?{lock_edits:reviewedLocks}:{}),team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,locked:!!s.assignments[d.id]?.locked,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
 }
 export {todayIsrael} from '../rota/calendar-dates.ts';

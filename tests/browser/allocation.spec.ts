@@ -8,7 +8,7 @@ function fresh(backend: Backend, count = 6) {
   backend.raw.members.forEach((m, i) => {if (i >= count && m.status === 'approved') m.active = false;});
 }
 function acceptedDraft(backend: Backend) {
-  backend.raw.assignments.push({id: 'accepted', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: ids.admin, secondary_id: ids.a, title: '', extra_points: 0, points: 1, manager_override: false});
+  backend.raw.assignments.push({id: 'accepted', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: ids.admin, secondary_id: ids.a, title: '', extra_points: 0, points: 1, locked: false, manager_override: false});
 }
 async function openPlan(page: import('@playwright/test').Page) {
   await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
@@ -155,27 +155,15 @@ test('a real Worker asset failure retains the accepted draft and recovers after 
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
 });
 
-test('lock approval is exact, reasoned and saved separately from primary generation', async ({page, backend, openApp}) => {
+test('conflicting calendar locks still block generation without an exception panel', async ({page, backend, openApp}) => {
   fresh(backend);
-  backend.raw.assignments.push({id: 'manual', publication_id: null, day: '2026-11-04', end_day: '2026-11-05', primary_id: ids.a, secondary_id: null, title: '', extra_points: 0, points: 1, manager_override: true});
-  await openApp(); await openPlan(page);
-  await page.getByText('Explicit locks & exceptions', {exact: false}).click();
-  await page.locator('.allocation-lock-list input').check();
-  await expect(page.getByRole('alert')).toContainText('unavailable');
-  await page.getByLabel('Reason for new exceptions', {exact: true}).fill('Reviewed this specific coverage with Alex');
-  await page.locator('.allocation-exception input').check();
-  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
-  await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  const confirm = backend.calls.find(c => c.name === 'duty_confirm_allocation')!;
-  expect(confirm.params.p_locks).toEqual([{dutyId: '2026-11-04', engineer: ids.a}]);
-  expect(confirm.params.p_approvals).toEqual([{rule: 'availability', dutyId: '2026-11-04', engineer: ids.a, dates: ['2026-11-04'], reason: 'Reviewed this specific coverage with Alex'}]);
-  expect(backend.raw.assignments.find(d => d.day === '2026-11-04')!.primary_id).toBe(ids.a);
-  expect(backend.raw.constraints[0].note).toBe('Synthetic vacation');
-  const metadata = backend.allocations.get(MONTH)!;
-  metadata.approvals = metadata.approvals.map(a => Object.fromEntries(Object.entries(a).reverse()) as typeof a);
-  await page.reload(); await openPlan(page);
-  await page.getByText('Explicit locks & exceptions', {exact: false}).click();
-  await expect(page.locator('.allocation-exception input')).toBeChecked();
+  backend.raw.assignments.push({id: 'manual', publication_id: null, day: '2026-11-04', end_day: '2026-11-05', primary_id: ids.a, secondary_id: null, locked: true, title: '', extra_points: 0, points: 1, manager_override: true});
+  await openApp();
+  await page.getByRole('button', {name: 'Generate month', exact: true}).click();
+  await expect(page.getByRole('alert')).toContainText('unavailable', {timeout: 30_000});
+  await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/})).toBeDisabled();
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
 });
 
 test('unsupported browser explains recovery without running the old generator', async ({page, backend, openApp}) => {

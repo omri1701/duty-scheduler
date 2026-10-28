@@ -65,6 +65,7 @@ test('duty modal dismisses local edits, keeps nested selects open, restores focu
  const request=page.waitForRequest('**/rest/v1/rpc/duty_save_schedule');
  await dialog.getByRole('button',{name:'Save assignment',exact:true}).click();await request;
  await expect(dialog.getByRole('button',{name:'Save assignment',exact:true})).toBeDisabled();
+ await expect(dialog.getByRole('button',{name:'Lock duty',exact:true})).toBeDisabled();
  await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeDisabled();
  await page.keyboard.press('Escape');await page.mouse.click(5,5);await expect(dialog).toBeVisible();
  release();await expect(dialog).toBeHidden();

@@ -241,6 +241,14 @@ PostgreSQL sessions, including a held-lock demotion with a predicted new revisio
 
 ## Permissions and validation
 
+Duty Lock/Unlock uses `20261028204239_duty_editor_locks.sql`. It adds a checked
+primary lock flag to duty rows, preserves existing allocation locks and copies
+flags through publication/restore. Editor Save remains the single atomic,
+revision-checked write. The disposable `supabase/tests/generation.mjs` suite covers
+pre-allocation locks, repeated generation, primary replacement, unlock, stale and
+unauthorized writes, and upgrade preservation. Use LOCAL for unmerged migrations;
+release ordering remains database first, with no feature-branch hosted migration.
+
 Allocation/generation persistence adds manager-only context, confirmation and
 generation-save RPCs, used by the allocation popup and Worker generation workflow. See the
 [database contract and disposable tests](ALLOCATION_DATABASE.md). Its additive

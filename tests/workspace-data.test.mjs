@@ -12,6 +12,16 @@ function publishedMonths() {
   return state;
 }
 
+test('saving another duty preserves the shape, owners and locks of an existing split weekend',()=>{
+ const s=publishedMonths();s.months['2026-07'].status='draft';s.splitWeekends=['2026-07-31'];
+ s.assignments={'2026-07-31':{primary:'e0',secondary:'e2',locked:true},'2026-08-01':{primary:'e0',secondary:'e2',locked:true},'2026-07-06':{primary:'e1'}};
+ const before=structuredClone(s);
+ const n=prepareWorkspaceUpdate(s,{...s,assignments:{...s.assignments,'2026-07-06':{primary:'e3'}}},'2026-07',s.months['2026-07']);
+ assert.deepEqual(n.splitWeekends,['2026-07-31']);
+ for(const day of ['2026-07-31','2026-08-01'])assert.deepEqual(n.assignments[day],before.assignments[day]);
+ assert.deepEqual(s,before);
+});
+
 test('calendar dates retain complete Sunday–Saturday rows at leap and month boundaries', () => {
   assert.deepEqual([calendarDates('2028-02')[0], calendarDates('2028-02').at(-1)],
     ['2028-01-30', '2028-03-04']);

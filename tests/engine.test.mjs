@@ -41,6 +41,23 @@ function swapFixture(){const s=demo();s.constraints={};s.assignments={'2026-10-0
 test('draft swaps move whole weekend primary blocks while leaving emergency cover in place',()=>{
  const s=swapFixture(),original=structuredClone(s);const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02');assert.ok(r.ok);assert.equal(r.assignments['2026-10-01'].primary,'e1');assert.equal(r.assignments['2026-10-01'].secondary,'e2');assert.equal(r.assignments['2026-10-02'].primary,'e0');assert.equal(r.assignments['2026-10-03'],undefined);assert.deepEqual(s,original);
 });
+
+test('weekend normalization preserves different lock states and follows both locked primaries when split',()=>{
+ const s=demo();s.specials=[];s.assignments={'2026-07-31':{primary:'e0',secondary:'e2',locked:true}};
+ const [fri,sat]=weekendAssignments(s,'2026-07-31');assert.equal(sat.locked,true);
+ const split=setWeekendAssignments(s,'2026-07-31',fri,{...sat,primary:'e1'});
+ assert.equal(split.assignments['2026-08-01'].locked,true);assert.equal(ownerMonth(blocks('2026-07',[],split.splitWeekends).find(b=>b.id==='2026-08-01')),'2026-07');
+ const mixed=setWeekendAssignments(s,'2026-07-31',fri,{...sat,locked:false});
+ assert.ok(mixed.splitWeekends.includes('2026-07-31'));assert.equal(mixed.assignments['2026-08-01'].locked,false);
+ const merged=setWeekendAssignments(split,'2026-07-31',fri,sat);assert.ok(!merged.splitWeekends.includes('2026-07-31'));assert.equal(merged.assignments['2026-07-31'].locked,true);
+});
+
+test('draft swaps require unlocking even when manager exceptions are approved',()=>{
+ const s=swapFixture();s.assignments['2026-10-01'].locked=true;
+ const before=structuredClone(s.assignments);
+ assert.deepEqual(swapDraft(s,'2026-10','2026-10-01','2026-10-02',true),{ok:false,reason:'locked'});
+ assert.deepEqual(s.assignments,before);
+});
 test('swaps reject published, cross-month, and duplicate emergency assignments',()=>{
  const s=swapFixture();s.months['2026-10'].status='published';assert.equal(swapDraft(s,'2026-10','2026-10-01','2026-10-02').reason,'published');s.months['2026-10'].status='draft';assert.equal(swapDraft(s,'2026-10','2026-09-30','2026-10-02').reason,'other-month');s.assignments['2026-10-01'].secondary='e1';assert.equal(swapDraft(s,'2026-10','2026-10-01','2026-10-02').reason,'duplicate');
 });
