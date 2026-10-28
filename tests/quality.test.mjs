@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {readdir} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {instructionOnly} from '../scripts/quality-scope.mjs';
 import {verifyQualityEvidence} from '../scripts/quality-evidence.mjs';
 import {databaseSourceHash, verifyContractIdentity} from '../scripts/database-contract.mjs';
@@ -47,12 +50,44 @@ function fixture(branch = 'master') {
 }
 
 test('instruction-only PR allowlist fails closed and branch runs always execute full Quality', () => {
-  const allowed = ['README.md', 'AGENTS.md', 'docs/DEPLOYMENT.md', '.codex/config.toml', '.codex/agents/security.toml', '.agents/skills/feature-delivery/SKILL.md'];
+  const allowed = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'docs/DEPLOYMENT.md', '.codex/config.toml', '.codex/agents/security.toml',
+    '.agents/skills/feature-delivery/SKILL.md', '.claude/skills/feature-delivery/SKILL.md', '.claude/agents/qa.md'];
   assert(instructionOnly('pull_request', allowed));
   for (const event of ['push', 'workflow_dispatch', 'pull_request_target']) assert(!instructionOnly(event, allowed));
   assert(!instructionOnly('pull_request', []));
-  for (const file of ['package.json', '.github/workflows/quality.yml', 'scripts/quality-scope.mjs', 'docs/runtime.mjs', '.agents/skills/new/SKILL.md', 'app/page.tsx', 'supabase/tests/access.sql', 'tests/engine.test.mjs']) {
+  for (const file of ['package.json', '.github/workflows/quality.yml', 'scripts/quality-scope.mjs', 'docs/runtime.mjs', '.agents/skills/new/SKILL.md', '.claude/skills/new/SKILL.md', '.claude/agents/new.md', '.claude/settings.json', '.claude/settings.local.json', '.claude/commands/x.md', '.claude/skills/feature-delivery/extra.md', '.Claude/agents/qa.md', '.mcp.json', 'app/page.tsx', 'supabase/tests/access.sql', 'tests/engine.test.mjs']) {
     assert(!instructionOnly('pull_request', [...allowed, file]), file);
+  }
+});
+
+test('AI config validator rejects instruction-only changes that run commands, import files or widen reviewers', () => {
+  const files = ['.codex', '.agents/skills', '.claude/skills', '.claude/agents', 'AGENTS.md', 'CLAUDE.md', 'README.md',
+    'docs/AI_DEVELOPMENT.md', 'docs/SUPABASE_SETUP.md', 'tests/engine.test.mjs', 'tests/gesture.test.mjs',
+    'tests/snapshot.test.mjs', 'supabase/tests/access.sql', '.github/workflows/quality.yml'];
+  const skill = name => [`.agents/skills/${name}/SKILL.md`, `.claude/skills/${name}/SKILL.md`];
+  const append = (paths, text) => root => paths.forEach(file => appendFileSync(join(root, file), text));
+  const run = corrupt => {
+    const root = mkdtempSync(join(tmpdir(), 'duty-ai-config-'));
+    try {
+      for (const file of files) cpSync(file, join(root, file), {recursive: true});
+      corrupt?.(root);
+      return spawnSync(process.platform === 'win32' ? 'python' : 'python3', ['scripts/validate-ai-config.py', root], {encoding: 'utf8'});
+    } finally { rmSync(root, {recursive: true, force: true}); }
+  };
+  const valid = run();
+  assert.equal(valid.status, 0, valid.stderr);
+  const corruptions = {
+    'skills must not run shell commands': append(skill('feature-delivery'), '\n!`cat .env.local`\n'),
+    'CLAUDE.md may import only @AGENTS.md': append(['CLAUDE.md'], '\nSee @.env.local\n'),
+    'AGENTS.md must not import files': append(['AGENTS.md'], '\n@docs/DEPLOYMENT.md\n'),
+    'must be identical': append(['.claude/skills/security-review/SKILL.md'], '\n'),
+    'reviewer tools must be read-only': root => writeFileSync(join(root, '.claude/agents/qa.md'),
+      readFileSync('.claude/agents/qa.md', 'utf8').replace('tools: Read, Grep, Glob', 'tools: Read, Grep, Glob, Bash')),
+  };
+  for (const [message, corrupt] of Object.entries(corruptions)) {
+    const result = run(corrupt);
+    assert.equal(result.status, 1, message);
+    assert.match(result.stderr, new RegExp(message.replace(/[.@]/g, '\\$&')), message);
   }
 });
 
