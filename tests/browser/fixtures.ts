@@ -67,6 +67,8 @@ export class Backend {
   snapshot(user: string) {
     const raw = structuredClone(this.raw), admin = canManage(raw, user);
     const member = raw.members.find(m => m.id === user)!;
+    // Mirrors the migrated column default; legacy rows are covered by unit tests.
+    raw.assignments = raw.assignments.map(d => ({...d, locked: d.locked ?? false}));
     if (!member || member.status !== 'approved' || !member.active) return {...raw, revision: null, members: member ? [member] : [], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
     if (!admin) {
       raw.members = raw.members.filter(m => m.status === 'approved');
