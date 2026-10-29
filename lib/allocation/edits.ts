@@ -54,6 +54,34 @@ export function persistedDraft(source: AllocationDraft): AllocationDraft {
   const draft = {...source}; delete draft.handEdited; return draft;
 }
 
+/** One exact manual transfer, such as dragging one member onto another. Both
+ * members become hand edited; no counterpart is chosen automatically. */
+export function transferAllocation(input: AllocationInput, source: AllocationDraft, transfer: Transfer) {
+  const c = context(input); validateDraft(c, source);
+  const {id, fromId, toId, units: amount, kind} = transfer;
+  if (!id?.trim() || [...source.transfers, ...source.pending].some(t => t.id === id) || !c.ids.includes(fromId) ||
+    !c.ids.includes(toId) || fromId === toId || !['temporary', 'permanent'].includes(kind) ||
+    !Number.isSafeInteger(amount) || amount <= 0) throw Error('invalid-allocation-edit');
+  units(amount);
+  const draft = structuredClone(source);
+  draft.targetsUnits[fromId] -= amount; draft.targetsUnits[toId] += amount;
+  if (draft.targetsUnits[fromId] < c.locked[fromId]) throw Error('edit-below-locked-points');
+  draft.transfers.push({id, fromId, toId, units: amount, kind});
+  draft.handEdited = [...new Set([...draft.handEdited ?? [], fromId, toId])];
+  validateDraft(c, draft);
+  return {draft, balanced: !draft.pending.length && sum(Object.values(draft.targetsUnits)) === c.total};
+}
+
+/** Reclassifies one transfer, e.g. making a dragged temporary transfer permanent.
+ * Targets are unchanged; only its publication compensation changes. */
+export function classifyTransfer(input: AllocationInput, source: AllocationDraft, id: string, kind: Kind) {
+  const c = context(input); validateDraft(c, source);
+  if (!source.transfers.some(t => t.id === id) || !['temporary', 'permanent'].includes(kind)) throw Error('invalid-allocation-edit');
+  const draft = {...structuredClone(source), transfers: source.transfers.map(t => t.id === id ? {...t, kind} : {...t})};
+  validateDraft(c, draft);
+  return draft;
+}
+
 /** Applies one signed Target/Permanent edit, preserving the requested ceiling.
  * Returning pending work is intentional; it requires explicit counterpart edits.
  * The app only rearranges what it arranged itself: automatic counterparts never

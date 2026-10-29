@@ -64,6 +64,88 @@ for (const [width, lang] of [[320, 'he'], [375, 'en'], [1440, 'en']] as const) {
   });
 }
 
+const member = (page: import('@playwright/test').Page, name: string) => {
+  const row = page.locator('.allocation-row').filter({hasText: name});
+  return {row, target: row.locator('output').first(), permanent: row.locator('output').last()};
+};
+const targetOf = async (m: ReturnType<typeof member>) => Number(await m.target.textContent());
+
+test('dragging one engineer onto another gives one exact temporary point, then Make permanent persists and Undo restores', async ({page, backend, openApp}, info) => {
+  test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');
+  fresh(backend); await openApp(); await openPlan(page);
+  const avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas'), others = ['Blair Birch', 'Casey Cedar', 'Drew Dale', 'Eden Elm'].map(n => member(page, n));
+  const [a0, x0] = [await targetOf(avery), await targetOf(alex)], rest = await Promise.all(others.map(targetOf));
+  await avery.row.getByRole('rowheader').dragTo(alex.row);
+  await expect(avery.target).toHaveText(String(a0 - 1)); await expect(alex.target).toHaveText(String(x0 + 1));
+  for (const [i, m] of others.entries()) await expect(m.target).toHaveText(String(rest[i]));
+  const toast = page.locator('.allocation-toast');
+  await expect(toast).toHaveText('Alex Atlas took 1 point from Avery Admin · temporaryMake permanent');
+  await expect(alex.permanent).toHaveText('0');
+  await expect(page.getByRole('dialog')).toContainText('Avery Admin → Alex Atlas · 1 pts · Temporary');
+  await toast.getByRole('button', {name: 'Make permanent', exact: true}).click();
+  await expect(toast).toBeHidden();
+  await expect(alex.permanent).toHaveText('+1'); await expect(avery.permanent).toHaveText('-1');
+  await expect(alex.target).toHaveText(String(x0 + 1));
+  await page.getByRole('button', {name: 'Undo', exact: true}).click();
+  await expect(alex.permanent).toHaveText('0'); await expect(alex.target).toHaveText(String(x0 + 1));
+  await page.getByRole('button', {name: 'Undo', exact: true}).click();
+  await expect(alex.target).toHaveText(String(x0)); await expect(avery.target).toHaveText(String(a0));
+  // Drag again, make it permanent and save: the checked RPC receives only the persisted shape.
+  await avery.row.getByRole('rowheader').dragTo(alex.row);
+  await toast.getByRole('button', {name: 'Make permanent', exact: true}).click();
+  await expect(alex.permanent).toHaveText('+1');
+  await page.getByRole('button', {name: 'Save allocation only', exact: true}).click();
+  await expect(page.getByText('Allocation and locks saved.', {exact: true})).toBeVisible();
+  const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'offeredUnits', 'pending', 'repayments', 'sourceKey', 'targetsUnits', 'transfers']);
+  expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
+});
+
+test('keyboard action on an engineer opens Give 1 point to… and transfers exactly one point', async ({page, backend, openApp}, info) => {
+  test.skip(info.project.name !== 'desktop', 'Keyboard path runs once.');
+  fresh(backend); await openApp(); await openPlan(page);
+  const blair = member(page, 'Blair Birch'), casey = member(page, 'Casey Cedar');
+  const [b0, c0] = [await targetOf(blair), await targetOf(casey)];
+  await blair.row.getByRole('rowheader').focus(); await page.keyboard.press('Enter');
+  const list = page.getByRole('dialog', {name: 'Give 1 point to… · Blair Birch'});
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('button')).toHaveCount(5);
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden(); await expect(page.getByRole('dialog', {name: 'Plan the month'})).toBeVisible();
+  await expect(blair.row.getByRole('rowheader')).toBeFocused();
+  await page.keyboard.press('Shift+F10');
+  await list.getByRole('button', {name: /^Casey Cedar/}).click();
+  await expect(blair.target).toHaveText(String(b0 - 1)); await expect(casey.target).toHaveText(String(c0 + 1));
+  await expect(page.locator('.allocation-toast')).toContainText('Casey Cedar took 1 point from Blair Birch · temporary');
+});
+
+test('long-press opens Give 1 point to… in Hebrew RTL on touch', async ({page, backend, openApp}, info) => {
+  test.skip(info.project.name !== 'mobile', 'Touch path.');
+  fresh(backend); await openApp();
+  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await page.getByRole('button', {name: 'יצירת שיבוץ', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'אישור ושיבוץ', exact: true})).toBeEnabled({timeout: 30_000});
+  const avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas');
+  const [a0, x0] = [await targetOf(avery), await targetOf(alex)];
+  const header = avery.row.getByRole('rowheader');
+  await expect(header).not.toHaveAttribute('draggable', 'true');
+  const box = (await header.boundingBox())!;
+  await header.dispatchEvent('pointerdown', {pointerType: 'touch', isPrimary: true, clientX: box.x + 20, clientY: box.y + 10});
+  const list = page.getByRole('dialog', {name: 'העברת נקודה אחת אל… · Avery Admin'});
+  await expect(list).toBeVisible(); await expect(list).toHaveAttribute('dir', 'rtl');
+  await list.getByRole('button', {name: /^Alex Atlas/}).click();
+  await expect(avery.target).toHaveText(String(a0 - 1)); await expect(alex.target).toHaveText(String(x0 + 1));
+  const toast = page.locator('.allocation-toast');
+  await expect(toast).toContainText('נקודה אחת הועברה מ־Avery Admin אל Alex Atlas · זמני');
+  await toast.getByRole('button', {name: 'להפוך לקבוע', exact: true}).click();
+  await expect(alex.permanent).toHaveText('+1');
+  // A short tap or a moved finger never opens the list.
+  await header.dispatchEvent('pointerdown', {pointerType: 'touch', isPrimary: true, clientX: box.x + 20, clientY: box.y + 10});
+  await header.dispatchEvent('pointerup', {pointerType: 'touch', isPrimary: true, clientX: box.x + 20, clientY: box.y + 10});
+  await page.waitForTimeout(700);
+  await expect(list).toBeHidden();
+});
+
 test('real generation Worker saves a verified partial, retains targets and emergency cover, and blocks publication', async ({page, backend, openApp}) => {
   fresh(backend, 2);
   backend.raw.assignments.push({id: 'emergency', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: null, secondary_id: ids.a, title: '', extra_points: 0, points: 1, manager_override: false});

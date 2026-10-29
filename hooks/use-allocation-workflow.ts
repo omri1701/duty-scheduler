@@ -4,7 +4,7 @@ import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {createAllocationWorker, generationNow, schedulingSupported, type AllocationOperation} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
-import {persistedDraft} from '@/lib/allocation/edits';
+import {classifyTransfer, persistedDraft} from '@/lib/allocation/edits';
 import type {AllocationDraft, Check, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
@@ -29,6 +29,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [reviewed, setReviewed] = useState(false);
   const [closed, setClosed] = useState(false), [progress, setProgress] = useState<number | null>(null);
   const [result, setResult] = useState<GenerationResult | null>(null);
+  // The latest manual drag transfer, offered once as "Make permanent".
+  const [moved, setMoved] = useState<{id: string; fromId: string; toId: string} | null>(null);
   const sequence = useRef(0), worker = useRef<{terminate: () => void} | null>(null), rpc = useRef(false);
   const receivedAt = useRef(0), opening = useRef(false);
   const revision = remote.snapshot?.revision;
@@ -101,14 +103,14 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const active = createAllocationWorker(); worker.current = active;
       const reply = await active.run(operation);
       if (id !== sequence.current) return null;
-      setDraft(reply.draft); setCheck(reply.check); setReviewed(true);
+      setDraft(reply.draft); setCheck(reply.check); setReviewed(true); setMoved(null);
       return reply;
     } catch (e) {if (id === sequence.current) fail(e); return null;}
     finally {if (id === sequence.current) {worker.current = null; setPhase('idle');}}
   }
   async function show() {
     if (opening.current) return; opening.current = true;
-    setOpen(true); setStep(2); setHistory([]); setError(''); setNotice('');
+    setOpen(true); setStep(2); setHistory([]); setMoved(null); setError(''); setNotice('');
     const c = contextRef.current ?? await load();
     if (!c) {opening.current = false; return;}
     setDraft(c.allocation); setReviewed(false); setCheck(null);
@@ -126,10 +128,25 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     const reply = await plan({kind: 'edit', input, draft, edit: {id: crypto.randomUUID(), engineer, deltaUnits, kind}}, 'editing');
     if (reply) {setHistory(h => [...h, previous]); setNotice(t('Targets updated. Counterpart changes are shown below.', 'היעדים עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));}
   }
+  /** Exact manual transfer of one point; temporary until made permanent. */
+  async function transfer(fromId: string, toId: string) {
+    if (!input || !draft || phase !== 'idle' || fromId === toId) return;
+    const previous = {draft, locks, approvals}, id = `${crypto.randomUUID()}/0`;
+    const reply = await plan({kind: 'transfer', input, draft, transfer: {id, fromId, toId, units: 2, kind: 'temporary'}}, 'editing');
+    if (reply) {setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');}
+  }
+  function makePermanent() {
+    if (!input || !draft || !moved || phase !== 'idle') return;
+    try {
+      const next = classifyTransfer(input, draft, moved.id, 'permanent');
+      setHistory(h => [...h, {draft, locks, approvals}]); setDraft(next); setMoved(null);
+      setNotice(t('Transfer made permanent.', 'ההעברה הפכה לקבועה.'));
+    } catch (e) {fail(e);}
+  }
   function undo() {
     stop(); setPhase('idle'); const previous = history.at(-1); if (!previous) return;
     setDraft(previous.draft); setLocks(previous.locks); setApprovals(previous.approvals);
-    setHistory(h => h.slice(0, -1)); setCheck(null); setReviewed(true); setError(''); setNotice(t('Last change undone.', 'השינוי האחרון בוטל.'));
+    setHistory(h => h.slice(0, -1)); setMoved(null); setCheck(null); setReviewed(true); setError(''); setNotice(t('Last change undone.', 'השינוי האחרון בוטל.'));
   }
   async function refreshReview() {
     const old = draft, c = await load(); if (!c) return;
@@ -192,7 +209,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, check,
     locks, approvals, totals, step, setStep, error, notice, structural, closed, progress, result, reviewed,
-    history, undo, edit, refreshReview, confirm, cancel,
+    history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), refreshReview, confirm, cancel,
     propose: async () => {if (input && phase === 'idle') {remember(); await plan({kind: 'propose', input}, 'proposing');}},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle',

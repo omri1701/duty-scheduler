@@ -71,7 +71,10 @@ member the manager changed by hand is recorded in the draft's local `handEdited`
 list, and automatic counterparts never take from or give to them. Members changed
 only automatically stay re-adjustable, ranked as before. The list survives later
 edits and Undo, resets with a new proposal, and is stripped before the checked
-RPC persists the allocation. Partial-month probes require the recipient to carry the
+RPC persists the allocation. `transferAllocation` records one exact manual
+transfer, such as a drag, without choosing a counterpart and protects both
+members. `classifyTransfer` only changes a transfer's kind, so Make permanent keeps
+targets and removes its future compensation. Partial-month probes require the recipient to carry the
 increment relative to the prior witness without degrading its coverage priorities.
 Unproved probes leave explicit pending edits; they are not labeled impossible.
 The requested target is preserved when redistribution cannot finish. Subsequent

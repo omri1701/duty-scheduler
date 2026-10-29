@@ -1,6 +1,8 @@
 'use client';
+import {useEffect, useRef, useState} from 'react';
 import {Check, LockKeyhole, Minus, Plus, RotateCcw, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
 import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
@@ -30,6 +32,22 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
 }) {
   const name = (id: string) => state.team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
   const isPlanning = ['proposing', 'editing', 'checking'].includes(f.phase);
+  // Drag a member onto another to give one point. Long-press, right-click or a
+  // keyboard action on the member opens the same choice as a list.
+  const [dragging, setDragging] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
+  const [giving, setGiving] = useState<string | null>(null);
+  const press = useRef<{timer: ReturnType<typeof setTimeout>; x: number; y: number} | null>(null), toastRef = useRef<HTMLDivElement>(null);
+  const endPress = () => {if (press.current) clearTimeout(press.current.timer); press.current = null;};
+  // Touch screens long-press instead; a native touch drag would swallow the hold.
+  const finePointer = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
+  const canGive = (id: string) => {const r = f.totals?.rows.find(r => r.id === id); return !f.busy && !!r && r.target - 2 >= r.locked;};
+  const give = (fromId: string, toId: string) => {setGiving(null); if (fromId !== toId && canGive(fromId)) void f.transfer(fromId, toId);};
+  const {moved, dismissMoved} = f;
+  useEffect(() => {
+    if (!moved) return;
+    const timer = setTimeout(() => {if (!toastRef.current?.contains(document.activeElement)) dismissMoved();}, 8000);
+    return () => clearTimeout(timer);
+  }, [moved, dismissMoved]);
   const partial = f.check?.feasibility === 'partial';
   const status = f.phase === 'loading' ? t('Loading the authoritative month…', 'טוען את נתוני החודש…')
     : f.phase === 'proposing' ? t('Preparing a balanced proposal…', 'מכין הצעה מאוזנת…')
@@ -48,8 +66,26 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       <div className="allocation-controls"><div className="allocation-step" role="group" aria-label={t('Point step', 'גודל צעד בנקודות')}><span>{t('Step', 'צעד')}</span>{[2, 1].map(step => <button key={step} aria-pressed={f.step === step} onClick={() => f.setStep(step)}>{points(step)}</button>)}</div><Button variant="ghost" size="sm" disabled={!f.history.length || f.saving} onClick={f.undo}><RotateCcw/>{t('Undo', 'ביטול שינוי')}</Button></div>
       {f.draft && <div className="allocation-table" role="table" aria-label={t('Monthly point allocation', 'הקצאת נקודות חודשית')}>
         <div className="allocation-table-head" role="row">{[t('Engineer', 'מהנדס'), t('Target', 'יעד'), t('Permanent', 'קבוע'), t('Locked', 'נעול'), t('Generate', 'לשיבוץ')].map(label => <span key={label} role="columnheader">{label}</span>)}</div>
-        {f.totals?.rows.map((r, index) => <div className="allocation-row" role="row" key={r.id} data-engineer={r.id}>
-          <div className="allocation-engineer" role="rowheader"><span className="allocation-rank">{String(index + 1).padStart(2, '0')}</span><span className="avatar small" style={{background: state.team.find(p => p.id === r.id)?.color}}>{name(r.id).split(' ').map(n => n[0]).join('').slice(0, 2)}</span><strong>{name(r.id)}</strong></div>
+        {f.totals?.rows.map((r, index) => <div className={`allocation-row${over === r.id ? ' drop-target' : ''}${dragging === r.id ? ' dragging' : ''}`} role="row" key={r.id} data-engineer={r.id}
+          onDragOver={e => {if (dragging && dragging !== r.id) {e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(r.id);}}}
+          onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(o => o === r.id ? null : o);}}
+          onDrop={e => {e.preventDefault(); const from = dragging; setDragging(null); setOver(null); if (from) give(from, r.id);}}>
+          <Popover open={giving === r.id} onOpenChange={open => {if (!open) setGiving(null);}}><PopoverAnchor asChild>
+          <div className="allocation-engineer" role="rowheader" tabIndex={0} draggable={finePointer && canGive(r.id)} aria-haspopup="dialog" aria-expanded={giving === r.id}
+            title={t('Drag onto another engineer to give 1 point', 'גוררים אל מהנדס אחר כדי להעביר נקודה אחת')}
+            onDragStart={e => {e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.id); setDragging(r.id);}}
+            onDragEnd={() => {setDragging(null); setOver(null);}}
+            onKeyDown={e => {if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); if (canGive(r.id)) setGiving(r.id);}}}
+            onContextMenu={e => {e.preventDefault(); endPress(); if (canGive(r.id)) setGiving(r.id);}}
+            onPointerDown={e => {if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
+            onPointerMove={e => {if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress();}}
+            onPointerUp={endPress} onPointerCancel={endPress}>
+            <span className="allocation-rank">{String(index + 1).padStart(2, '0')}</span><span className="avatar small" style={{background: state.team.find(p => p.id === r.id)?.color}}>{name(r.id).split(' ').map(n => n[0]).join('').slice(0, 2)}</span><strong>{name(r.id)}</strong></div>
+          </PopoverAnchor><PopoverContent className="allocation-give" align="start" dir={lang === 'he' ? 'rtl' : 'ltr'}
+            onCloseAutoFocus={e => {e.preventDefault(); document.querySelector<HTMLElement>(`.allocation-row[data-engineer="${CSS.escape(r.id)}"] .allocation-engineer`)?.focus({preventScroll: true});}} aria-label={`${t('Give 1 point to…', 'העברת נקודה אחת אל…')} · ${name(r.id)}`}>
+            <p>{t('Give 1 point to…', 'העברת נקודה אחת אל…')}</p>
+            {f.totals?.rows.filter(o => o.id !== r.id).map(o => <button key={o.id} type="button" onClick={() => give(r.id, o.id)}>{name(o.id)}<bdi dir="ltr">{points(o.target)}</bdi></button>)}
+          </PopoverContent></Popover>
           {(['temporary', 'permanent'] as const).map(kind => {
             const permanent = kind === 'permanent', label = permanent ? t('Permanent', 'קבוע') : t('Target', 'יעד');
             return <div className={`allocation-point-cell${permanent ? ' permanent' : ''}`} role="cell" key={kind}><span className="allocation-mobile-label">{label}</span><div className="allocation-stepper" aria-label={`${label} · ${name(r.id)}`}>
@@ -77,6 +113,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {!f.busy && f.draft && !f.structural && !f.error && <div className="allocation-validation" role="status"><Check size={16}/>{partial ? t('A partial schedule can be generated. Uncovered dates will need your review.', 'ניתן ליצור שיבוץ חלקי. תאריכים ללא כיסוי יידרשו לבדיקה.') : f.check?.feasibility === 'complete' ? t('Full coverage is possible with these targets.', 'ניתן לכסות את כל התורנויות עם היעדים האלה.') : t('Full coverage is not yet established. Generate will search these exact targets.', 'כיסוי מלא טרם הוכח. השיבוץ יחפש פתרון עם היעדים המדויקים האלה.')}</div>}
       {!!f.check?.diagnostics.some(d => ['no-primary-candidates', 'insufficient-individual-capacity', 'unreachable-target-combination', 'shared-capacity-shortage', 'secondary-needs-publication-review'].includes(d.code)) && <details className="allocation-details"><summary>{t('Coverage checks', 'בדיקות כיסוי')}</summary>{f.check.diagnostics.filter(d => ['no-primary-candidates', 'insufficient-individual-capacity', 'unreachable-target-combination', 'shared-capacity-shortage', 'secondary-needs-publication-review'].includes(d.code)).map((d, i) => <p key={i}>{d.engineer && <strong>{name(d.engineer)} · </strong>}{d.dates?.map(date => shortDate(date, lang)).join(', ')} {d.code === 'no-primary-candidates' ? t('No available primary engineer on these dates.', 'אין מהנדס ראשי זמין בתאריכים אלה.') : d.code === 'secondary-needs-publication-review' ? t('Review the preserved emergency cover before publication.', 'יש לבדוק את כיסוי החירום שנשמר לפני הפרסום.') : d.code === 'unreachable-target-combination' ? t('Available duty weights cannot meet this exact target. Partial output remains available.', 'משקלי התורנויות הזמינות אינם מאפשרים להגיע ליעד המדויק. ניתן ליצור שיבוץ חלקי.') : d.code === 'shared-capacity-shortage' ? t('Engineers share too few available duties to meet every target.', 'אין מספיק תורנויות זמינות משותפות כדי להגיע לכל היעדים.') : t('Available primary capacity is below the requested target.', 'הקיבולת הזמינה לתורנויות ראשיות נמוכה מהיעד המבוקש.')}</p>)}</details>}
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
+      {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
       <div className="allocation-secondary-actions"><Button variant="ghost" size="sm" disabled={f.busy} onClick={f.refreshReview}>{t('Refresh & review retained targets', 'רענון ובדיקת היעדים שנשמרו')}</Button><Button variant="ghost" size="sm" disabled={f.busy || f.closed || !f.input} onClick={f.propose}>{t('Use a new proposal', 'שימוש בהצעה חדשה')}</Button>{!f.closed && <Button variant="ghost" size="sm" disabled={!f.canConfirm} onClick={() => f.confirm(false)}>{t('Save allocation only', 'שמירת ההקצאה בלבד')}</Button>}</div>
     </div>
