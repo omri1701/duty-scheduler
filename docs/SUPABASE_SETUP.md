@@ -322,6 +322,7 @@ hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
 | Command | Target / behavior |
 |---|---|
 | `pnpm dev:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next. |
+| `pnpm dev:mobile:local` | Same LOCAL setup and app on a phone through your static ngrok origin; see [phone testing against LOCAL](#phone-testing-against-local). |
 | `pnpm dev:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
 | `pnpm dev:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
 | `pnpm local:setup` | Starts/prepares and verifies local Auth, onboarding, workspace reads and denied direct table writes without starting Next. |
@@ -329,7 +330,10 @@ hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
 
 LOCAL requires Docker Desktop and the pinned CLI (`pnpm dlx supabase@2.119.0`).
 It uses ignored `work/local-supabase`, project `duty-scheduler-app`, ports
-58320?58324, and container `supabase_db_duty-scheduler-app`. This stack is separate
+48320–48324 (below Windows' dynamic/excluded range), and container
+`supabase_db_duty-scheduler-app`. A stack still running on the former ports
+58320–58324 is refused; stop it once, keeping its data, with
+`pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler-app`. This stack is separate
 from Quality's empty `duty-scheduler` SQL-test database. Auth/API/Studio/mail run;
 unneeded analytics, pooling, Realtime, Storage and Edge services are excluded.
 No hosted links, service-role keys, Google secrets or live data are copied.
@@ -480,6 +484,31 @@ configured ngrok hostname is added to Next.js `allowedDevOrigins`; application
 environment resolution still checks the exact HTTPS origin and DEV project.
 No database permissions or session verification rules change.
 
+### Phone testing against LOCAL
+
+`pnpm dev:mobile:local` uses the same `DUTY_DEV_ORIGIN`, `work/ngrok/ngrok.yml`,
+port check and served-CSS check as `pnpm dev:mobile`, but starts the `dev:local`
+launcher (Docker setup, current-branch migrations, test accounts). The phone
+cannot reach the LOCAL API on `127.0.0.1:48321`, so the same tunnel carries it:
+under `next dev` only, Next rewrites `/auth/v1/*` and `/rest/v1/*` on the tunnel
+origin to that loopback API, and the browser uses the tunnel origin as its
+Supabase URL. Nothing else is forwarded (no Studio, mail, database or admin tools).
+The launcher waits for LOCAL `/api/config` and a proxied Auth health check
+before starting ngrok.
+
+The proxy is enabled only by the launcher's own `DUTY_LOCAL_TUNNEL_ORIGIN`
+together with `next dev`, target `local`, an `http://127.0.0.1:<port>` API, no
+DEV tunnel origin, no Production confirmation and no Vercel variables. Otherwise
+the rewrites do not exist (fail closed); DEV/PROD and builds never get them. The
+browser receives only the LOCAL public key; no service/secret key is configured
+or forwarded, and RLS and checked RPCs are unchanged. Anyone with the ngrok URL
+can reach the LOCAL Auth/REST API while it runs, like the DEV tunnel, so use it
+only with fictional LOCAL data and stop it when done.
+
+Open the HTTPS URL on the phone, pass ngrok's browser interstitial if shown,
+confirm the LOCAL badge and sign in with a local test account and its password
+(above). Google sign-in is not available on LOCAL.
+
 For Vercel hosting, retain the standard Next.js preset and configure
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
 Use Node 24 and set `ENABLE_EXPERIMENTAL_COREPACK=1` to select the pinned pnpm version.
@@ -574,7 +603,7 @@ These are LOCAL commands. Never pass `--linked`, a hosted URL or hosted credenti
 For full local services use `supabase start`; Next.js still runs on port 5173.
 On Windows, if Docker cannot bind the default ports, copy config/migrations to a
 disposable work directory, assign available API/DB/shadow/Studio/mail ports there
-(e.g. 58321/58322/58320/58323/58324), change the local project ID and use its actual
+(e.g. 48321/48322/48320/48323/48324), change the local project ID and use its actual
 `supabase_db_<id>` container. Keep hosted project links out of that directory.
 `tests/schema.sql` must pass before onboarding/fixtures. The canonical verification
 builds application objects in temporary LOCAL schemas, compares catalog/permission

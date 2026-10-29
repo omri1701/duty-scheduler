@@ -14,7 +14,8 @@ export function selectConfiguration(mode, env, productionConfirmed = false) {
   const key = mode === 'prod' ? env.SUPABASE_PROD_PUBLISHABLE_KEY : env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || connectionTarget(url) !== mode) throw Error(`Missing or mismatched ${mode.toUpperCase()} configuration.`);
   validatePublicKey(url,key);
-  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':'',DUTY_DEV_ORIGIN:mode==='dev'&&env.DUTY_DEV_ORIGIN?validateDevOrigin(env.DUTY_DEV_ORIGIN):''};
+  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':'',DUTY_DEV_ORIGIN:mode==='dev'&&env.DUTY_DEV_ORIGIN?validateDevOrigin(env.DUTY_DEV_ORIGIN):'',
+    DUTY_LOCAL_TUNNEL_ORIGIN:mode==='local'&&env.DUTY_LOCAL_TUNNEL_ORIGIN?validateDevOrigin(env.DUTY_LOCAL_TUNNEL_ORIGIN):''};
 }
 function readEnv(file) {
   try {return parseEnv(readFileSync(file,'utf8'));}
@@ -40,7 +41,8 @@ async function main() {
   let env;
   if (mode === 'local') {
     const {prepareLocal} = await import('./local-supabase.mjs');
-    env = await prepareLocal();
+    // Only the pnpm dev:mobile:local launcher supplies the LOCAL tunnel origin.
+    env = {...await prepareLocal(),DUTY_LOCAL_TUNNEL_ORIGIN:process.env.DUTY_LOCAL_TUNNEL_ORIGIN};
   } else if (mode === 'dev') env = readDevelopmentEnv();
   else env = {...readEnv('.env.prod.local'),...process.env};
   const selected = selectConfiguration(mode,env,confirmed);

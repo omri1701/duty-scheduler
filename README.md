@@ -15,6 +15,7 @@ pnpm install
 pnpm dev:dev   # default: Frankfurt Development, http://localhost:5173
 pnpm dev:mobile # same DEV app through your configured static HTTPS ngrok origin
 pnpm dev:local # Docker / Supabase CLI, current branch migrations + local test accounts
+pnpm dev:mobile:local # same LOCAL app on your phone through the same ngrok origin
 pnpm dev:prod  # explicit confirmation each run; application read-only inspection
 pnpm dev:select # optional interactive selector
 ```

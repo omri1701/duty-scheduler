@@ -5,9 +5,10 @@ import {resolve,dirname} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {createClient} from '@supabase/supabase-js';
-import {connectionTarget,validatePublicKey} from '../lib/supabase/environment.ts';
+import {LOCAL_API_URL,connectionTarget,validatePublicKey} from '../lib/supabase/environment.ts';
 
 const root=resolve(import.meta.dirname,'..'),directory=resolve(root,'work/local-supabase'),container='supabase_db_duty-scheduler-app';
+const STALE_STACK='The LOCAL stack still uses old ports 58320–58324. Stop it once (data is kept): pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler-app, then rerun.';
 export const LOCAL_PASSWORD='Duty-local-only-1701!';
 export const LOCAL_ACCOUNTS=[['admin@duty.local','Local Admin'],['engineer@duty.local','Local Engineer'],['pending@duty.local','Local Pending']];
 // Fictional temporary members, in seniority order, for a 12-engineer LOCAL team.
@@ -18,11 +19,11 @@ function cli(args,capture=false) {
   if (!process.env.npm_execpath) throw Error('Run via pnpm local:setup or pnpm dev:local.');
   const native=process.env.npm_execpath.endsWith('.exe');
   try {return execFileSync(native?process.env.npm_execpath:process.execPath,[...(native?[]:[process.env.npm_execpath]),'dlx','supabase@2.119.0',...args,'--workdir',directory],{cwd:root,encoding:'utf8',stdio:capture?['ignore','pipe','pipe']:['ignore','ignore','pipe']});}
-  catch {throw Error('Local Supabase command failed. Check Docker Desktop and available ports 58320–58324; run the documented local CLI command for diagnostics.');}
+  catch {throw Error('Local Supabase command failed. Check Docker Desktop and available ports 48320–48324; run the documented local CLI command for diagnostics.');}
 }
 export async function prepareLocal() {
   mkdirSync(resolve(directory,'supabase'),{recursive:true});
-  const config=readFileSync(resolve(root,'supabase/config.toml'),'utf8').replace('project_id = "duty-scheduler"','project_id = "duty-scheduler-app"').replaceAll('5432','5832');
+  const config=readFileSync(resolve(root,'supabase/config.toml'),'utf8').replace('project_id = "duty-scheduler"','project_id = "duty-scheduler-app"').replaceAll('5432','4832');
   writeFileSync(resolve(directory,'supabase/config.toml'),config);
   const manifestFile=resolve(directory,'migrations.json');
   const source=readdirSync(resolve(root,'supabase/migrations')).filter(f=>f.endsWith('.sql')).sort();
@@ -41,6 +42,11 @@ export async function prepareLocal() {
   // database from a different branch. Explicit local:reset recreates fixtures.
   const copied=readdirSync(resolve(directory,'supabase/migrations')).filter(f=>f.endsWith('.sql')).sort();
   if (JSON.stringify(source)!==JSON.stringify(copied)) throw Error('Stale branch migrations. Run pnpm local:reset to replay only the isolated app database.');
+  // A stack started before the move out of Windows' dynamic port range keeps
+  // its old ports; the CLI would report the new ones without restarting it.
+  let ports='';
+  try {ports=execFileSync('docker',['ps','--filter','name=supabase_kong_duty-scheduler-app','--format','{{.Ports}}'],{encoding:'utf8',stdio:['ignore','pipe','ignore']});} catch {}
+  if (/:58321->/.test(ports)) throw Error(STALE_STACK);
   console.log('Starting isolated local Supabase Auth/API stack…');
   cli(['start','--exclude','logflare,vector,supavisor,edge-runtime,imgproxy,storage-api,realtime']);
   if(reset)cli(['db','reset','--local','--no-seed']);
@@ -49,7 +55,7 @@ export async function prepareLocal() {
   const output=cli(['status','-o','json'],true);
   const status=JSON.parse(output.slice(output.indexOf('{'),output.lastIndexOf('}')+1));
   const env={SUPABASE_URL:status.API_URL,SUPABASE_PUBLISHABLE_KEY:status.PUBLISHABLE_KEY??status.ANON_KEY};
-  if (connectionTarget(env.SUPABASE_URL)!=='local' || new URL(env.SUPABASE_URL).port!=='58321') throw Error('Unexpected local API.');
+  if (connectionTarget(env.SUPABASE_URL)!=='local' || env.SUPABASE_URL!==LOCAL_API_URL) throw Error('Unexpected local API.');
   validatePublicKey(env.SUPABASE_URL,env.SUPABASE_PUBLISHABLE_KEY);
   const users=[];
   for (const [email,name] of LOCAL_ACCOUNTS) {

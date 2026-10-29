@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GET,dynamic} from '../app/api/config/route.ts';
-import {PROJECTS} from '../lib/supabase/environment.ts';
+import {PROJECTS,LOCAL_API_URL} from '../lib/supabase/environment.ts';
 
 test('runtime config validates project, public key, origin, mode and inspection confirmation; never caches',async()=>{
  const names=['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','DUTY_SUPABASE_TARGET','DUTY_PRODUCTION_INSPECTION','VERCEL_ENV','VERCEL_URL','NODE_ENV','DUTY_DEV_ORIGIN'];
@@ -22,7 +22,7 @@ test('runtime config validates project, public key, origin, mode and inspection 
    [PROJECTS.prod,'sb_publishable_synthetic','https://duty-production-immutable.vercel.app',{VERCEL_ENV:'production',VERCEL_URL:'duty-production-immutable.vercel.app'},200],
    [PROJECTS.prod,'sb_publishable_synthetic','https://duty-production-immutable.vercel.app',{VERCEL_ENV:'preview',VERCEL_URL:'duty-production-immutable.vercel.app'},503],
    [PROJECTS.dev,'sb_publishable_synthetic','https://duty-preview.vercel.app',{VERCEL_ENV:'preview',VERCEL_URL:'duty-preview.vercel.app'},200],
-   ['http://127.0.0.1:58321','sb_publishable_local','http://localhost:5173',{DUTY_SUPABASE_TARGET:'local'},200],
+   ['http://127.0.0.1:48321','sb_publishable_local','http://localhost:5173',{DUTY_SUPABASE_TARGET:'local'},200],
   ]){
    for(const name of names)delete process.env[name];
    if(url)process.env.SUPABASE_URL=url;
@@ -71,6 +71,33 @@ test('mobile config trusts only its explicit DEV proxy and stays disabled in Pro
     assert.equal(body.url,process.env.SUPABASE_URL);
     assert.equal(body.devOrigin,extra.NODE_ENV==='production'||extra.VERCEL_ENV?undefined:origin);
    }
+  }
+ }finally{for(const name of names){if(original[name]===undefined)delete process.env[name];else process.env[name]=original[name];}}
+});
+
+test('LOCAL phone config returns the loopback API only with its explicit LOCAL tunnel',async()=>{
+ const names=['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','DUTY_SUPABASE_TARGET','DUTY_PRODUCTION_INSPECTION','VERCEL','VERCEL_ENV','VERCEL_URL','NODE_ENV','DUTY_DEV_ORIGIN','DUTY_LOCAL_TUNNEL_ORIGIN'];
+ const original=Object.fromEntries(names.map(name=>[name,process.env[name]]));
+ const origin='https://synthetic-device.ngrok-free.app';
+ const host=new URL(origin).host;
+ try {
+  for(const [requestOrigin,headers,extra,status] of [
+   [origin,{}, {},200],
+   ['https://127.0.0.1:5173',{host,'x-forwarded-proto':'https'},{},200],
+   ['http://localhost:5173',{}, {},200],
+   ['https://127.0.0.1:5173',{host,'x-forwarded-proto':'http'},{},503],
+   ['https://other.ngrok-free.app',{}, {},503],
+   [origin,{}, {NODE_ENV:'production'},503],
+   [origin,{}, {VERCEL_ENV:'development'},503],
+   [origin,{}, {DUTY_SUPABASE_TARGET:'dev'},503],
+   [origin,{}, {DUTY_LOCAL_TUNNEL_ORIGIN:undefined,DUTY_DEV_ORIGIN:origin},503],
+  ]) {
+   for(const name of names)delete process.env[name];
+   Object.assign(process.env,{SUPABASE_URL:LOCAL_API_URL,SUPABASE_PUBLISHABLE_KEY:'sb_publishable_local',DUTY_SUPABASE_TARGET:'local',NODE_ENV:'development',DUTY_LOCAL_TUNNEL_ORIGIN:origin},extra);
+   for(const name of names)if(process.env[name]==='undefined')delete process.env[name];
+   const response=await GET(new Request(requestOrigin+'/api/config',{headers}));
+   assert.equal(response.status,status,JSON.stringify([requestOrigin,headers,extra]));
+   if(status===200)assert.deepEqual(await response.json(),{url:LOCAL_API_URL,key:'sb_publishable_local',localTunnel:origin});
   }
  }finally{for(const name of names){if(original[name]===undefined)delete process.env[name];else process.env[name]=original[name];}}
 });
