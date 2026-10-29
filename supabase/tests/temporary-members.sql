@@ -31,6 +31,13 @@ select pg_temp.must_fail($c$select public.duty_add_temporary_member('  ',(select
 select pg_temp.must_fail($c$select public.duty_add_temporary_member(repeat('x',81),(select revision from public.duty_workspace))$c$,'name between');
 create temp table created(id uuid);
 insert into created select public.duty_add_temporary_member('  Temporary engineer  ',(select revision from public.duty_workspace));
+-- The 15-color palette is appended: earlier slots keep their colors, then it wraps.
+do $$declare i int;begin
+ for i in 1..11 loop perform public.duty_add_temporary_member('Palette '||i,(select revision from public.duty_workspace));end loop;
+ if (select color from public.duty_members where id=(select id from created))<>'#e9a2aa'
+  or array(select color from public.duty_members where name like 'Palette %' order by seniority)<>array['#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9','#dbb677','#f1c3ba','#a5dfac','#adc9ee']
+ then raise exception 'Member palette changed';end if;
+end$$;
 select public.duty_rename_temporary_member((select id from created),'Renamed',(select revision from public.duty_workspace));
 select public.duty_set_constraints((select id from created),array['2026-11-05'::date],'no','Private temporary note',(select revision from public.duty_workspace));
 select pg_temp.must_fail($c$select public.duty_rename_temporary_member('74000000-0000-0000-0000-000000000002','Changed',(select revision from public.duty_workspace))$c$,'Temporary member required');
