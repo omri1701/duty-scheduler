@@ -115,11 +115,11 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   }
   draft.pending = draft.pending.filter(p => p.deltaUnits);
   const rank = (id: string) => input.seniority.indexOf(id);
+  // Givers: most points, senior first. Receivers: fewest points, newest first,
+  // matching the baseline remainder order. Feasibility still decides in tryAmount.
   const candidates = () => c.ids.filter(id => !handEdited.has(id)).sort((a, b) => {
     if (remaining > 0) return draft.targetsUnits[b] - draft.targetsUnits[a] || rank(a) - rank(b);
-    if (edit.kind === 'permanent') return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
-    const pos = rank(edit.engineer), distance = (id: string) => (rank(id) - pos + c.ids.length) % c.ids.length;
-    return distance(a) - distance(b);
+    return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
   });
   const tryAmount = (counterpart: string, amount: number) => {
     const direction = Math.sign(remaining), current = {...draft.targetsUnits};
