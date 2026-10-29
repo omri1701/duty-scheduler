@@ -74,7 +74,7 @@ try {
   await reloadMonth(); await expect(indicator).toBeVisible(); proof.reload = true;
   await cancelToggle('Unlock duty'); proof.cancelUnlock = true;
   await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
-  const generate = dialog.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/});
+  const generate = dialog.getByRole('button', {name: 'Confirm & generate', exact: true});
   await expect(generate).toBeEnabled({timeout: 40_000});
   const generationResponse = page.waitForResponse(r => r.url() === env.SUPABASE_URL + '/rest/v1/rpc/duty_save_generation', {timeout: 60_000});
   await generate.click(); assert.equal((await generationResponse).status(), 200); await expect(dialog).toBeHidden({timeout: 60_000});

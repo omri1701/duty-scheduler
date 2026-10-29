@@ -1,13 +1,12 @@
 'use client';
 import {useEffect, useRef, useState} from 'react';
-import {Check, LockKeyhole, Minus, Plus, RotateCcw, Sparkles} from 'lucide-react';
+import {LockKeyhole, Minus, Plus, RotateCcw, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
 import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Language, Translate} from './workspace-types';
-import {shortDate} from '@/lib/date-format';
 import {nettedCompensation} from '@/lib/allocation/netting';
 
 const points = (units: number) => String(units / 2);
@@ -32,7 +31,6 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;
 }) {
   const name = (id: string) => state.team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
-  const isPlanning = ['proposing', 'editing', 'checking'].includes(f.phase);
   // Drag a member onto another to give one point. Long-press, right-click or a
   // keyboard action on the member opens the same choice as a list.
   const [dragging, setDragging] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
@@ -49,13 +47,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
     const timer = setTimeout(() => {if (!toastRef.current?.contains(document.activeElement)) dismissMoved();}, 8000);
     return () => clearTimeout(timer);
   }, [moved, dismissMoved]);
-  const partial = f.check?.feasibility === 'partial';
   const owed = f.draft && f.captured ? nettedCompensation(f.captured.projected.net, f.draft, f.input?.seniority ?? []) : [];
   const pendingUnits = f.draft?.pending.reduce((n, p) => n + Math.abs(p.deltaUnits), 0) ?? 0;
   const status = f.phase === 'loading' ? t('Loading the authoritative month…', 'טוען את נתוני החודש…')
-    : f.phase === 'proposing' ? t('Preparing a balanced proposal…', 'מכין הצעה מאוזנת…')
-    : f.phase === 'editing' ? t('Redistributing points…', 'מחלק את הנקודות מחדש…')
-    : f.phase === 'checking' ? t('Checking this allocation…', 'בודק את ההקצאה…')
     : f.phase === 'confirming' ? t('Confirming targets…', 'מאשר את היעדים…')
     : f.phase === 'generating' ? t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…')
     : t('Verifying and saving your draft…', 'מאמת ושומר את הטיוטה…');
@@ -99,6 +93,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           })}
           <div className="allocation-readout" role="cell"><span className="allocation-mobile-label">{t('Locked', 'נעול')}</span><LockKeyhole size={12}/><bdi>{points(r.locked)}</bdi></div>
           <div className="allocation-readout generate" role="cell"><span className="allocation-mobile-label">{t('Generate', 'לשיבוץ')}</span><bdi>{points(r.generate)}</bdi></div>
+          {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
         </div>)}
       </div>}
       <p className="allocation-caption">{t('Target includes Permanent. Generate is Target minus Locked; it may require a partial schedule.', 'היעד כולל את השינוי הקבוע. לשיבוץ = יעד פחות נעול; ייתכן שיתקבל שיבוץ חלקי.')}</p>
@@ -111,13 +106,11 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}
-      {!f.busy && f.draft && !f.structural && !f.error && <div className="allocation-validation" role="status"><Check size={16}/>{partial ? t('A partial schedule can be generated. Uncovered dates will need your review.', 'ניתן ליצור שיבוץ חלקי. תאריכים ללא כיסוי יידרשו לבדיקה.') : f.check?.feasibility === 'complete' ? t('Full coverage is possible with these targets.', 'ניתן לכסות את כל התורנויות עם היעדים האלה.') : t('Full coverage is not yet established. Generate will search these exact targets.', 'כיסוי מלא טרם הוכח. השיבוץ יחפש פתרון עם היעדים המדויקים האלה.')}</div>}
-      {!!f.check?.diagnostics.some(d => ['no-primary-candidates', 'insufficient-individual-capacity', 'unreachable-target-combination', 'shared-capacity-shortage', 'secondary-needs-publication-review'].includes(d.code)) && <details className="allocation-details"><summary>{t('Coverage checks', 'בדיקות כיסוי')}</summary>{f.check.diagnostics.filter(d => ['no-primary-candidates', 'insufficient-individual-capacity', 'unreachable-target-combination', 'shared-capacity-shortage', 'secondary-needs-publication-review'].includes(d.code)).map((d, i) => <p key={i}>{d.engineer && <strong>{name(d.engineer)} · </strong>}{d.dates?.map(date => shortDate(date, lang)).join(', ')} {d.code === 'no-primary-candidates' ? t('No available primary engineer on these dates.', 'אין מהנדס ראשי זמין בתאריכים אלה.') : d.code === 'secondary-needs-publication-review' ? t('Review the preserved emergency cover before publication.', 'יש לבדוק את כיסוי החירום שנשמר לפני הפרסום.') : d.code === 'unreachable-target-combination' ? t('Available duty weights cannot meet this exact target. Partial output remains available.', 'משקלי התורנויות הזמינות אינם מאפשרים להגיע ליעד המדויק. ניתן ליצור שיבוץ חלקי.') : d.code === 'shared-capacity-shortage' ? t('Engineers share too few available duties to meet every target.', 'אין מספיק תורנויות זמינות משותפות כדי להגיע לכל היעדים.') : t('Available primary capacity is below the requested target.', 'הקיבולת הזמינה לתורנויות ראשיות נמוכה מהיעד המבוקש.')}</p>)}</details>}
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
       <div className="allocation-secondary-actions"><Button variant="ghost" size="sm" disabled={f.busy} onClick={f.refreshReview}>{t('Refresh & review retained targets', 'רענון ובדיקת היעדים שנשמרו')}</Button><Button variant="ghost" size="sm" disabled={f.busy || f.closed || !f.input} onClick={f.propose}>{t('Use a new proposal', 'שימוש בהצעה חדשה')}</Button>{!f.closed && <Button variant="ghost" size="sm" disabled={!f.canConfirm} onClick={() => f.confirm(false)}>{t('Save allocation only', 'שמירת ההקצאה בלבד')}</Button>}</div>
     </div>
-    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{t('Confirm targets · save as draft', 'אישור יעדים · שמירה כטיוטה')}</small></div>{f.phase === 'generating' || isPlanning ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button> : <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : partial ? t('Generate partial', 'יצירת שיבוץ חלקי') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>}</div>
+    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{t('Confirm targets · save as draft', 'אישור יעדים · שמירה כטיוטה')}</small></div>{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button> : <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>}</div>
   </EditorDialog>;
 }

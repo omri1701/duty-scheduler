@@ -13,7 +13,7 @@ function acceptedDraft(backend: Backend) {
 async function openPlan(page: import('@playwright/test').Page) {
   await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
   await expect(page.getByRole('dialog', {name: 'Plan the month'})).toBeVisible();
-  await expect(page.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/})).toBeEnabled({timeout: 30_000});
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
 }
 
 test('allocation controls preserve one-point and half-point intent, redistribute, undo and restore keyboard focus', async ({page, backend, openApp}) => {
@@ -23,17 +23,18 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   await first.getByRole('button', {name: 'Decrease Target · Avery Admin', exact: true}).click();
   await expect(values.first()).toHaveText(String(original - 1));
   await expect(page.getByRole('button', {name: '0.5', exact: true})).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(values.first()).toHaveText(String(original));
   await page.getByRole('button', {name: '0.5', exact: true}).click();
   await first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true}).click();
   await expect(values.last()).toHaveText('+0.5');
   await expect(values.first()).toHaveText(String(original + .5));
-  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeDisabled();
+  // A half point is placed with a counterpart at once; whole-point duties make it
+  // partial at Generate, which never blocks the plan.
+  await expect(page.locator('.allocation-month-summary strong')).toHaveText('26');
   await page.locator('.allocation-row').nth(1).getByRole('button', {name: 'Decrease Permanent · Alex Atlas', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
-  // Whole-point duties cannot achieve these half targets; UNKNOWN does not block.
   await expect(page.getByRole('dialog')).toContainText('Permanent');
   expect(backend.calls.filter(c => c.name === 'duty_confirm_allocation')).toHaveLength(0);
   await page.keyboard.press('Escape');
@@ -63,6 +64,20 @@ for (const [width, lang] of [[320, 'he'], [375, 'en'], [1440, 'en']] as const) {
     await page.keyboard.press('Tab'); await expect(dialog.locator(':focus')).toHaveCount(1);
   });
 }
+
+test('opening the plan runs no Worker; a target above availability warns on its row without blocking', async ({page, backend, openApp}) => {
+  fresh(backend);
+  backend.raw.constraints = Array.from({length: 30}, (_, i) => ({member_id: ids.a, day: `2026-11-${String(i + 1).padStart(2, '0')}`, kind: 'no' as const, note: 'Synthetic vacation'}));
+  let workers = 0; page.on('worker', () => {workers++;});
+  await openApp(); await openPlan(page);
+  const alex = member(page, 'Alex Atlas');
+  await expect(alex.row.getByRole('note')).toHaveText('Availability allows about 0');
+  await expect(page.locator('.allocation-row-warning')).toHaveCount(1);
+  await alex.row.getByRole('button', {name: 'Decrease Target · Alex Atlas', exact: true}).click();
+  await expect(alex.target).toHaveText('3');
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+  expect(workers).toBe(0);
+});
 
 const member = (page: import('@playwright/test').Page, name: string) => {
   const row = page.locator('.allocation-row').filter({hasText: name});
@@ -153,7 +168,7 @@ test('real generation Worker saves a verified partial, retains targets and emerg
   backend.raw.assignments.push({id: 'emergency', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: null, secondary_id: ids.a, title: '', extra_points: 0, points: 1, manager_override: false});
   await openApp(); await openPlan(page);
   const targets = await page.locator('.allocation-row output').allTextContents();
-  await page.getByRole('button', {name: 'Generate partial', exact: true}).click();
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   await expect(page.getByText('Partial · Requires Manager Resolution', {exact: true})).toBeVisible();
   await expect(page.locator('.allocation-uncovered')).toContainText('Uncovered dates');
@@ -179,7 +194,7 @@ test('fractional monotonic time generates and saves through a real Worker', asyn
   let workers = 0; page.on('worker', () => {workers++;});
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  expect(workers).toBeGreaterThanOrEqual(2); // Generation and allocation compilation both ran in Workers.
+  expect(workers).toBe(1); // Only Generate solves; the allocation plan is plain arithmetic.
   await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
   expect(backend.raw.months[0].generated).toBe(true);
@@ -246,7 +261,7 @@ test('conflicting calendar locks still block generation without an exception pan
   await page.getByRole('button', {name: 'Generate month', exact: true}).click();
   await expect(page.getByRole('alert')).toContainText('unavailable', {timeout: 30_000});
   await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
-  await expect(page.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeDisabled();
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
 });
 

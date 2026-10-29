@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import loadHighs from 'highs';
-import {createHighsAdapter, canonicalDuties, validateGeneration} from '../lib/scheduling/index.ts';
+import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
 import {record, replay, sliceClaim} from '../lib/compensation/index.ts';
-import {proposeAllocation, editAllocation, compileAllocation, assessAllocation, persistedDraft, transferAllocation, classifyTransfer} from '../lib/allocation/index.ts';
+import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, persistedDraft, transferAllocation, classifyTransfer} from '../lib/allocation/index.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
+// Allocation is solver-free; only Generate's own solver supplies actual assignments.
 const solver = await createHighsAdapter(loadHighs);
 const total = xs => xs.reduce((a, b) => a + b, 0);
 const send = (h, operation, sourceKey, at = (h.at(-1)?.at ?? 0) + 1) => record(h,
@@ -19,18 +20,19 @@ function scenario(kind = 'normal') {
 const owe = (i, debtorId, creditorId, units, id) => {
   i.events = send(i.events, {kind: 'claim', debtorId, creditorId, units}, id); return i;
 };
-const proposal = i => proposeAllocation(solver, i, {seconds: 10});
+const proposal = i => proposeAllocation(i);
 const edit = (i, d, engineer, deltaUnits, kind = 'temporary', id = 'edit') =>
-  editAllocation(solver, i, d, {id, engineer, deltaUnits, kind}, {seconds: 4});
-const compiled = (i, d, assignments = assessAllocation(solver, i, d, {seconds: 4}).assignments) =>
-  compileAllocation(i, d, assignments);
+  editAllocation(i, d, {id, engineer, deltaUnits, kind});
+const generated = (i, d) => solveGeneration(solver, createGenerationRequest({...i.schedule,
+  targets: Object.fromEntries(Object.entries(d.targetsUnits).map(([k, v]) => [k, v / 2]))}, {now: i.now, seed: 17, seconds: 4})).assignments;
+const compiled = (i, d, assignments = generated(i, d)) => compileAllocation(i, d, assignments);
 function invariant(i, r) {
-  const duties = canonicalDuties(i.schedule.month, i.schedule.calendar);
+  const duties = canonicalDuties(i.schedule.month, i.schedule.calendar), locked = {};
+  for (const l of i.schedule.locks ?? []) locked[l.engineer] = (locked[l.engineer] ?? 0) + duties.find(d => d.id === l.dutyId).units;
   assert.equal(total(Object.values(r.draft.baselineUnits)), total(duties.map(d => d.units)));
   assert.equal(total(Object.values(r.draft.targetsUnits)), total(duties.map(d => d.units)));
-  if (r.check.assignments) validateGeneration({...i.schedule,
-    targets: Object.fromEntries(Object.entries(r.draft.targetsUnits).map(([k, v]) => [k, v / 2]))}, r.check.assignments);
-  assert.equal(solver.activeModels, 0);
+  for (const [id, units] of Object.entries(r.draft.targetsUnits)) assert.ok(units >= (locked[id] ?? 0), `${id} keeps its locked floor`);
+  assert.deepEqual(r.draft.pending, []);
 }
 function freeze(v) {if (v && typeof v === 'object') {Object.values(v).forEach(freeze); Object.freeze(v);} return v;}
 
@@ -38,7 +40,7 @@ const normalInput = freeze(scenario()), normal = proposal(normalInput);
 
 test('ordinary baseline uses exact attainable weights; saved seniority only breaks equivalent choices', () => {
   invariant(normalInput, normal);
-  assert.equal(normal.optimal, true); assert.equal(normal.check.feasibility, 'complete');
+  assert.deepEqual(proposal(normalInput), normal, 'deterministic');
   assert.deepEqual(Object.values(normal.draft.baselineUnits), [...Array(10).fill(4), 6, 6]);
   assert.deepEqual(normal.draft.transfers, []);
   const p = compiled(normalInput, normal.draft);
@@ -54,15 +56,16 @@ test('ordinary baseline uses exact attainable weights; saved seniority only brea
   }
 });
 
-test('repayment has no monthly cap, respects creditor relief and precedes seniority', () => {
+test('repayment has no monthly cap beyond creditor relief and debtor availability', () => {
   const i = owe(scenario(), 'e11', 'e00', 8, 'old'), r = proposal(i);
-  invariant(i, r); assert.equal(r.optimal, true);
-  assert.equal(r.draft.baselineUnits.e00, 6, 'equivalent ordinary baseline retained for repayment');
-  assert.equal(total(r.draft.repayments.map(p => p.units)), 6, 'three points, bounded by ordinary creditor share');
+  invariant(i, r);
+  assert.equal(r.draft.baselineUnits.e00, 4, 'equal ordinary share; repayment never changes the baseline');
+  assert.equal(total(r.draft.repayments.map(p => p.units)), 4, 'two points, bounded by the creditor share');
   assert.equal(r.draft.targetsUnits.e00, 0);
-  assert.equal(r.draft.targetsUnits.e11, r.draft.baselineUnits.e11 + 6);
+  assert.equal(r.draft.targetsUnits.e11, r.draft.baselineUnits.e11 + 4);
+  assert.deepEqual(r.draft.offeredUnits, r.draft.targetsUnits);
   const p = compiled(i, r.draft).plan;
-  assert.equal(total(p.repayments.map(r => r.units)), 6); assert.equal(total(p.deferred.map(r => r.units)), 2);
+  assert.equal(total(p.repayments.map(r => r.units)), 4); assert.equal(total(p.deferred.map(r => r.units)), 4);
   assert.deepEqual(p.intents, []);
 });
 
@@ -73,7 +76,7 @@ test('partial oldest repayment uses real half duties; a younger claim cannot tak
   i.schedule.constraints.e00 = Object.fromEntries(canonicalDuties(i.schedule.month, i.schedule.calendar)
     .flatMap(d => allowed.includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
   const r = proposal(i); invariant(i, r);
-  assert.equal(r.optimal, true); assert.equal(r.check.feasibility, 'complete');
+  assert.equal(allocationCeilings(i).e00, 7, 'three whole duties and one half duty');
   assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['old', 3]]);
   assert.equal(r.draft.targetsUnits.e00, 7);
 });
@@ -83,26 +86,29 @@ test('an older infeasible claim stays open while a feasible younger obligation p
   i.schedule.constraints.e00 = Object.fromEntries(canonicalDuties(i.schedule.month, {}).flatMap(d =>
     ['2026-11-01', '2026-11-02', '2026-11-03'].includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
   const r = proposal(i); invariant(i, r);
+  assert.equal(allocationCeilings(i).e00, 4, 'three back-to-back duties allow two');
   assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['young', 2]]);
   assert.ok(compiled(i, r.draft).plan.deferred.some(p => p.claim.path[0].lotId === 'old' && p.units === 4));
 });
 
 test('half-point debt cannot split a whole-point duty or manufacture a rounding transfer', () => {
   const i = owe(scenario(), 'e00', 'e11', 1, 'half'), r = proposal(i);
-  assert.equal(r.optimal, true); assert.deepEqual(r.draft.repayments, []); assert.deepEqual(r.draft.transfers, []);
+  assert.deepEqual(r.draft.repayments, []); assert.deepEqual(r.draft.transfers, []);
   assert.equal(compiled(i, r.draft).plan.deferred[0].units, 1);
 });
 
-test('availability relief is explicit temporary intent; ordinary baseline remains fair', () => {
+test('availability is a live ceiling, not an automatic change; the baseline remains fair', () => {
   const i = scenario();
+  assert.ok(Object.values(allocationCeilings(i)).every(units => units >= 14), 'no back-to-back duties: about half the month');
   i.schedule.constraints.e00 = Object.fromEntries(canonicalDuties(i.schedule.month, {}).flatMap(d => d.dates.map(date => [date, 'no'])));
   const r = proposal(i); invariant(i, r);
-  assert.equal(r.check.feasibility, 'complete'); assert.equal(r.draft.baselineUnits.e00, 4);
-  assert.equal(r.draft.targetsUnits.e00, 0); assert.equal(r.reviewRequired, true);
-  assert.ok(r.draft.transfers.every(t => t.fromId === 'e00' && t.kind === 'temporary'));
-  const p = compiled(i, r.draft).plan;
-  assert.equal(total(p.intents.map(t => t.units)), 4);
-  assert.ok(p.intents.every(t => t.fromId === 'e00'));
+  assert.equal(allocationCeilings(i).e00, 0);
+  assert.equal(r.draft.baselineUnits.e00, 4); assert.equal(r.draft.targetsUnits.e00, 4, 'the manager moves it; the row warns');
+  assert.deepEqual(r.draft.transfers, []);
+  // A dragged relief point becomes explicit temporary intent.
+  const moved = transferAllocation(i, r.draft, {id: 'relief/0', fromId: 'e00', toId: 'e09', units: 2, kind: 'temporary'}).draft;
+  const p = compiled(i, moved).plan;
+  assert.ok(p.intents.every(t => t.fromId === 'e00' && t.kind === 'temporary'));
 });
 
 test('temporary/permanent counterpart preferences and whole-request precedence', () => {
@@ -130,11 +136,15 @@ test('automatic Target counterparts follow the baseline remainder order, not the
   assert.deepEqual(plus.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e10', 'e00', 2]], 'most senior 3-point member gives');
 });
 
-test('unplaceable edits preserve the requested limit; explicit controls consume pending provenance', () => {
-  const i = normalInput, first = edit(i, normal.draft, 'e00', -1);
+test('half-point edits redistribute exactly; unplaceable edits stay pending and explicit controls consume them', () => {
+  const i = normalInput, half = edit(i, normal.draft, 'e00', -1);
+  assert.equal(half.balanced, true);
+  assert.deepEqual(half.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e00', 'e09', 1]]);
+  // With every counterpart hand edited, the change waits for an explicit counterpart.
+  const first = edit(i, {...normal.draft, handEdited: i.seniority.filter(id => id !== 'e00')}, 'e00', -1);
   assert.equal(first.balanced, false); assert.equal(first.draft.targetsUnits.e00, 3);
   assert.equal(first.draft.pending[0].deltaUnits, -1);
-  assert.equal(compiled(i, first.draft).confirmable, false);
+  assert.equal(compiled(i, first.draft, {}).confirmable, false);
   const undone = edit(i, first.draft, 'e00', 1, 'temporary', 'undo');
   assert.equal(undone.balanced, true); assert.deepEqual(undone.draft.targetsUnits, normal.draft.targetsUnits);
   assert.deepEqual(undone.draft.transfers, []); assert.deepEqual(undone.draft.pending, []);
@@ -142,9 +152,8 @@ test('unplaceable edits preserve the requested limit; explicit controls consume 
   assert.equal(second.balanced, true); assert.deepEqual(second.draft.pending, []);
   assert.deepEqual(second.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e00', 'e01', 1]]);
   const p = compiled(i, second.draft);
-  assert.equal(p.check.feasibility, 'partial'); assert.equal(p.confirmable, true);
-  assert.deepEqual(p.plan.intents, [], 'unperformed burden creates no debt');
-  assert.equal(p.plan.unfundedUnits.e01, 1);
+  assert.equal(p.check.feasibility, 'partial', 'whole-point duties cannot meet half targets; Generate keeps partial');
+  assert.equal(p.confirmable, true);
 });
 
 test('automatic counterparts never move hand-edited members; protection survives edits', () => {
@@ -268,17 +277,19 @@ test('locks are final floors, require classification above offered work, and can
   const i = scenario();
   i.schedule.locks = ['2026-11-01', '2026-11-04', '2026-11-09', '2026-11-12'].map(dutyId => ({dutyId, engineer: 'e00'}));
   const r = proposal(i); invariant(i, r);
-  assert.ok(r.draft.baselineUnits.e00 < 8); assert.ok(r.draft.targetsUnits.e00 >= 8);
-  assert.ok(r.check.diagnostics.some(d => d.code === 'classify-locked-target-increase'));
+  assert.equal(r.draft.baselineUnits.e00, 4); assert.equal(r.draft.targetsUnits.e00, 8);
+  assert.deepEqual(r.draft.transfers.map(t => [t.fromId, t.toId, t.units, t.kind]), [['e10', 'e00', 2, 'temporary'], ['e11', 'e00', 2, 'temporary']],
+    'most points give first, most senior on ties');
   assert.throws(() => edit(i, r.draft, 'e00', -r.draft.targetsUnits.e00), /edit-below-locked-points/);
 });
 
-test('partial months retain all required nominal points and independently valid coverage', () => {
+test('partial months retain all required nominal points; Generate keeps the partial result', () => {
   for (const kind of ['small-team', 'weighted', 'boundary']) {
     const i = scenario(kind), r = proposal(i); invariant(i, r);
-    assert.equal(r.optimal, true, kind);
-    assert.equal(r.check.feasibility, kind === 'small-team' ? 'partial' : 'complete', kind);
-    if (kind === 'small-team') assert.ok(total(Object.values(r.draft.targetsUnits)) > r.check.assignedUnits);
+    const p = compiled(i, r.draft);
+    assert.equal(p.confirmable, true, kind);
+    assert.equal(p.check.feasibility, kind === 'small-team' ? 'partial' : 'complete', kind);
+    if (kind === 'small-team') assert.ok(total(Object.values(r.draft.targetsUnits)) > p.check.assignedUnits);
   }
 });
 
@@ -286,31 +297,24 @@ test('partial compilation accounts only against the supplied feasibility witness
   const i = scenario();
   i.schedule.members = i.schedule.members.slice(0, 3); i.seniority = i.seniority.slice(0, 3);
   owe(i, 'e00', 'e02', 2, 'old');
-  const r = proposal(i), p = compiled(i, r.draft, r.check.assignments); invariant(i, r);
+  const r = proposal(i), assignments = generated(i, r.draft), p = compiled(i, r.draft, assignments); invariant(i, r);
   assert.equal(p.check.feasibility, 'partial');
-  assert.deepEqual(p.check.assignments, r.check.assignments);
+  assert.deepEqual(p.check.assignments, assignments);
   assert.deepEqual(p.check.stages, []);
-  assert.ok(total(p.plan.repayments.map(r => r.units)) <= r.check.actualUnits.e00);
+  assert.ok(total(p.plan.repayments.map(r => r.units)) <= p.check.actualUnits.e00);
 });
 
-test('zero budget stays UNKNOWN; confirmed targets remain verbatim; source changes invalidate drafts', () => {
-  const r = proposeAllocation(solver, normalInput, {seconds: 0});
-  assert.equal(r.optimal, false); assert.equal(r.check.feasibility, 'unknown');
-  assert.ok(r.check.diagnostics.some(d => d.certainty === 'unproved'));
+test('confirmed targets remain verbatim; source changes invalidate drafts', () => {
   const before = structuredClone(normal.draft);
-  assert.equal(assessAllocation(solver, normalInput, freeze(structuredClone(before)), {seconds: 0}).feasibility, 'unknown');
-  const pending = editAllocation(solver, normalInput, before,
-    {id: 'unknown', engineer: 'e00', deltaUnits: -2, kind: 'temporary'}, {seconds: 0});
-  assert.equal(pending.draft.targetsUnits.e00, 2); assert.equal(pending.balanced, false);
-  assert.ok(pending.diagnostics.some(d => d.code === 'counterpart-feasibility-unproved'));
+  edit(normalInput, freeze(structuredClone(before)), 'e00', -2);
   assert.deepEqual(normal.draft, before);
   const reordered = {...normalInput, seniority: [...normalInput.seniority].reverse()};
-  assert.throws(() => assessAllocation(solver, reordered, before), /stale-allocation/);
+  assert.throws(() => edit(reordered, before, 'e00', -2), /stale-allocation/);
   for (const change of [
     i => i.schedule.sourceRevision += '-new',
     i => i.schedule.calendar.splitWeekends = ['2026-11-06'],
     i => i.schedule.constraints.e00 = {'2026-11-01': 'no'},
-  ]) {const i = structuredClone(normalInput); change(i); assert.throws(() => compiled(i, before), /stale-allocation/);}
+  ]) {const i = structuredClone(normalInput); change(i); assert.throws(() => compiled(i, before, {}), /stale-allocation/);}
   assert.throws(() => edit(normalInput, before, 'e00', 0.5), /invalid-allocation-edit/);
   assert.throws(() => proposal({...normalInput, seniority: ['e00']}), /invalid-allocation-seniority/);
 });
@@ -318,10 +322,10 @@ test('zero budget stays UNKNOWN; confirmed targets remain verbatim; source chang
 test('duplicate/unexplained accounting slices are rejected', () => {
   const i = owe(scenario(), 'e00', 'e11', 4, 'old'), r = proposal(i), duplicate = structuredClone(r.draft);
   duplicate.repayments.push(structuredClone(duplicate.repayments[0]));
-  assert.throws(() => compiled(i, duplicate), /duplicate-repayment-source/);
+  assert.throws(() => compiled(i, duplicate, {}), /duplicate-repayment-source/);
   const edited = structuredClone(r.draft); edited.targetsUnits.e00++;
-  assert.throws(() => compiled(i, edited), /unexplained-target-edit/);
+  assert.throws(() => compiled(i, edited, {}), /unexplained-target-edit/);
   const forged = structuredClone(r.draft); forged.repayments[0].claim.priority.at = 0;
-  assert.throws(() => compiled(i, forged), /invalid-repayment-source/);
+  assert.throws(() => compiled(i, forged, {}), /invalid-repayment-source/);
   assert.equal(solver.activeModels, 0);
 });
