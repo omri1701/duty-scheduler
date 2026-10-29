@@ -16,7 +16,7 @@ test('verify the CSS linked by production HTML, rejecting stale output and faile
   const css = await readFile('app/globals.css', 'utf8');
   // Simulate an older cached stylesheet alongside a correctly emitted new asset.
   const stale = css.slice(0, css.indexOf('/* Phone-only additions'));
-  const fingerprint = `:root{--duty-css-source:${await currentCssHash()}}`;
+  const fingerprint = `:root{--duty-css-source:"${await currentCssHash()}"}`;
   await writeFile(path.join(directory, 'static/immutable/chunks/current.css'), css + fingerprint);
   await writeFile(path.join(directory, 'static/immutable/chunks/old.css'), stale);
   await writeFile(htmlPath, html('current'));

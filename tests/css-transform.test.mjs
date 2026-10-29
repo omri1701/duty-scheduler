@@ -37,3 +37,14 @@ test('fingerprint precedes the Tailwind cache, so stale output cannot claim curr
  if(result.css.includes('#123456'))assert.throws(()=>assertCssSource(result.css,cssSourceHash(second)),/does not match/);
  else assertCssSource(result.css,cssSourceHash(second));
 });
+
+test('minified fingerprint survives hashes that look like scientific notation',async t=>{
+ const directory=await mkdtemp(resolve('work/css-transform-'));
+ t.after(()=>rm(directory,{recursive:true,force:true}));
+ // CI's LF globals.css hashed to 8335e2…, which the minifier rewrote as 833500….
+ let source;
+ for(let i=0;!source||!/^\d+e\d/.test(cssSourceHash(source));i++)source=`.probe-${i}{color:red}`;
+ const file=resolve(directory,'globals.css');await writeFile(file,source);
+ const result=await postcss([cssSourcePlugin(),tailwind({base:process.cwd(),optimize:{minify:true}})]).process(source,{from:file});
+ assertCssSource(result.css,cssSourceHash(source));
+});
