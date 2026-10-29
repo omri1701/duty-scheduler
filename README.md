@@ -238,12 +238,24 @@ pnpm test:e2e:ci
 `test:e2e:ci` requires Docker and uses the pinned Playwright 1.63.0 Ubuntu Noble
 image (including Chromium and fonts). It starts a native Next.js production server on port 8787,
 reuses the build and installed dependencies, and stops the preview afterwards.
-Quality CI runs this same command once with two workers, a single retry, pnpm
-caching and failure traces/reports. Application/browser and database suites run on
-separate runners; browser report directories never have concurrent writers.
-The required `quality` check aggregates both. Strict documentation/AI-only PRs
-validate instructions and SQL policy without an app/DB suite; branch pushes and
-manual Quality always run everything. There is no second browser install/build.
+Quality CI runs this same command with two workers per runner, a single retry, pnpm
+caching and failure traces/reports. Checks are tiered by the PR diff:
+
+- PRs always run unit tests, `tsc`, lint and the build. Mapped UI/library changes
+  add only their browser specs plus `baseline` and `visual` (about 4 minutes).
+- PRs touching `supabase/**`, `lib/supabase/**` or SQL also run the disposable
+  database job in parallel (about 5 minutes).
+- Unknown or global paths (package/lockfile, configs, `app/globals.css`, shared
+  shells, UI primitives, test fixtures, workflows, `scripts/**`) run everything.
+- Pushes to `develop`/`master` and manual runs always run everything: the browser
+  and visual suite as four shards merged into one report, plus the database job
+  (about 6 minutes). This full run gates Development deployment and releases.
+
+The selector (`scripts/quality-scope.mjs`) runs from the PR's base commit, so a PR
+cannot narrow its own checks. Strict documentation/AI-only PRs validate
+instructions and SQL policy without an app/DB suite. The required `quality` check
+fails if any selected job failed or any unselected job did not skip. Each runner
+has its own browser report directories; there is no second browser install.
 Production releases are manual and reuse trusted exact-SHA Quality evidence;
 see [deployment approval and recovery](docs/DEPLOYMENT.md).
 For native local debugging, run `pnpm exec playwright install chromium` once,
@@ -321,7 +333,7 @@ agent inspects every candidate, explains changed components and possible regress
 and fixes unintended changes before asking for approval.
 
 Quality uploads the portable `visual-review` artifact even when comparisons fail
-and links it in the run summary. Download/extract it and open `index.html`.
+and links it in the run summary (full runs merge the shard galleries first). Download/extract it and open `index.html`.
 The primary agent automatically adds the current artifact link and assessment to
 the authorized PR description (or one concise authorized comment); a local gallery
 is the fallback. CI remains read-only and never posts with elevated PR credentials.

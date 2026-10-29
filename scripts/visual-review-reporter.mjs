@@ -1,7 +1,7 @@
 // Read-only screenshot review. Never creates or updates approved references.
 import {createHash,randomBytes} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,writeFileSync,appendFileSync} from 'node:fs';
+import {cpSync,existsSync,lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,writeFileSync,appendFileSync} from 'node:fs';
 import {isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {reviewHTML} from './visual-review-html.mjs';
@@ -121,7 +121,43 @@ export function ciSummary(root=repository,env=process.env){
   else console.log(summary);
   return summary;
 }
+// Combines sharded CI galleries (work/visual-review-shards/<shard>/) into one gallery.
+// Copies captured images only; never reads or writes approved references.
+export function mergeShardGalleries(root=repository){
+  const work=join(root,'work'),shards=join(work,'visual-review-shards'),output=join(work,'visual-review'),runs=join(output,'runs');
+  mkdirSync(runs,{recursive:true});inside(work,runs);
+  const manifests=[],errors=[],run=/^[a-z0-9]+-[a-f0-9]{12}$/;
+  const image=/^runs\/[a-z0-9]+-[a-f0-9]{12}\/images\/[a-f0-9]{24}-(before|after|difference)\.png$/;
+  for(const name of existsSync(shards)?readdirSync(shards).sort():[]){
+    const dir=join(shards,name),path=join(dir,'manifest.json');
+    if(lstatSync(dir).isSymbolicLink()||!existsSync(path)){errors.push(`Shard ${name} produced no screenshot gallery`);continue;}
+    inside(shards,path);
+    const manifest=JSON.parse(readFileSync(path,'utf8'));
+    if(!Array.isArray(manifest.items)||!Array.isArray(manifest.references)||!Array.isArray(manifest.errors))throw Error('Invalid shard review manifest');
+    for(const item of manifest.items)for(const key of ['before','after','difference'])if(item[key]!==null&&!image.test(item[key]))throw Error('Invalid shard review image path');
+    for(const id of existsSync(join(dir,'runs'))?readdirSync(join(dir,'runs')):[]){
+      if(!run.test(id)||lstatSync(join(dir,'runs',id)).isSymbolicLink())throw Error('Invalid shard review run');
+      cpSync(join(dir,'runs',id),join(runs,id),{recursive:true,errorOnExist:true,force:false});
+    }
+    manifests.push(manifest);
+  }
+  if(!manifests.length)errors.push('No shard produced a screenshot gallery');
+  if(new Set(manifests.map(m=>`${m.sourceCommit} ${m.headCommit}`)).size>1)throw Error('Shard galleries disagree on the reviewed commit');
+  const items=manifests.flatMap(m=>m.items),references=[...new Set(manifests.flatMap(m=>m.references))].sort();
+  const reviewedImages=items.map(({reference,beforeHash,afterHash})=>({reference,beforeHash,afterHash}));
+  reviewedImages.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const failed=manifests.find(m=>m.status!=='passed');
+  const merged={version:1,reviewId:hash(JSON.stringify(reviewedImages)),sourceCommit:manifests[0]?.sourceCommit??null,headCommit:manifests[0]?.headCommit??null,
+    workingTree:manifests[0]?.workingTree??'unavailable',status:manifests.length?(failed?.status??'passed'):'failed',approvalRequired:references.length>0,
+    references,items,errors:[...errors,...manifests.flatMap(m=>m.errors)],history:[],shards:manifests.length};
+  writeFileSync(join(output,'manifest.json'),JSON.stringify(merged,null,2)+'\n');
+  writeFileSync(join(output,'index.html'),reviewHTML(merged));
+  console.log(`Visual review: merged ${manifests.length} shard galleries, ${references.length} changed/missing references.`);
+  return merged;
+}
+
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  if(process.argv[2]!=='--ci-summary')throw Error('Only --ci-summary is supported; references are never updated by this tool');
-  ciSummary();
+  if(process.argv[2]==='--merge-shards')mergeShardGalleries();
+  else if(process.argv[2]==='--ci-summary')ciSummary();
+  else throw Error('Only --ci-summary and --merge-shards are supported; references are never updated by this tool');
 }

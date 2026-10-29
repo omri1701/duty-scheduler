@@ -12,7 +12,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: {timeout: 8_000, toHaveScreenshot: {animations: 'disabled', caret: 'hide', maxDiffPixels: 0}},
   snapshotPathTemplate: '{testDir}/snapshots/{platform}/{projectName}/{arg}{ext}',
-  reporter: [['list'], ['html', {open: 'never'}], ['./scripts/visual-review-reporter.mjs']],
+  // Sharded CI writes blob-report/report-N.zip; Quality merges the shards into one HTML report.
+  reporter: [['list'], process.env.DUTY_E2E_BLOB ? ['blob'] : ['html', {open: 'never'}], ['./scripts/visual-review-reporter.mjs']],
   use: {
     baseURL: external ?? 'http://127.0.0.1:8787',
     locale: 'en-GB', timezoneId: 'Asia/Jerusalem', colorScheme: 'light',

@@ -230,7 +230,9 @@ Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 Production dispatch reuses Quality without rerunning tests. The gate requires the
 canonical `quality.yml` workflow, same repository/head repository, exact current
 `master` SHA, push/manual event, completed successful run and successful scope,
-application, database and `quality` jobs from the current attempt. It rejects PR,
+application, all four `browser N/4` shards, `browser-report`, database and
+`quality` jobs from the current attempt. PR runs may select fewer checks and can
+never authorize a release. It rejects PR,
 fork, skipped, failed, cancelled, stale and incomplete runs. The immutable artifact
 must belong to that run/repository/branch/SHA and attempt, be unexpired and less
 than seven days old. It is downloaded by ID from the specified run, not by a
@@ -373,7 +375,8 @@ against a hosted target as part of routine release/retry.
 
 ## Supplied verification
 
-`tests/quality.test.mjs` covers strict PR scope, full-suite job evidence, trusted
+`tests/quality.test.mjs` covers strict PR scope and spec selection, the executed
+fail-closed selection/gate scripts, full-suite job evidence, trusted
 run/attempt/artifact provenance, stale/expired/forged evidence, source identity and
 the disabled/manual Production gates without hosted connections.
 `tests/release.test.mjs` covers credential isolation, migration policy/history,

@@ -15,6 +15,10 @@ export function githubAPI(repository, token, fetchAPI = fetch) {
   };
 }
 
+// Branch Quality runs the whole browser suite as four shards merged by browser-report.
+export const FULL_QUALITY_JOBS = ['scope', 'application', 'browser 1/4', 'browser 2/4', 'browser 3/4', 'browser 4/4',
+  'browser-report', 'database', 'quality'];
+
 export async function verifyQualityEvidence(api, {repository, branch, sha, runId, currentRunId, now = Date.now()}) {
   assert(['develop', 'master'].includes(branch), 'Unsupported Quality branch');
   assert.match(sha ?? '', /^[a-f0-9]{40}$/);
@@ -39,7 +43,7 @@ export async function verifyQualityEvidence(api, {repository, branch, sha, runId
     assert.equal(run.conclusion, 'success', 'Quality run was unsuccessful');
   }
   const {jobs} = await api(`/actions/runs/${runId}/attempts/${run.run_attempt}/jobs?per_page=100`);
-  for (const name of ['scope', 'application', 'database', 'quality']) {
+  for (const name of FULL_QUALITY_JOBS) {
     const matches = jobs.filter(job => job.name === name);
     assert.equal(matches.length, 1, `Missing/ambiguous full Quality job: ${name}`);
     assert.equal(matches[0].status, 'completed', `Incomplete Quality job: ${name}`);

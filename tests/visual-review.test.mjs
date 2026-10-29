@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,mkdtempSync,readFileSync,renameSync,rmSync,writeFileSync} from 'node:fs';
 import {dirname,join,resolve,sep} from 'node:path';
 import {Script} from 'node:vm';
-import Reporter,{ciSummary} from '../scripts/visual-review-reporter.mjs';
+import Reporter,{ciSummary,mergeShardGalleries} from '../scripts/visual-review-reporter.mjs';
 import {reviewHTML} from '../scripts/visual-review-html.mjs';
 
 const hash=data=>createHash('sha256').update(data).digest('hex');
@@ -115,4 +115,24 @@ test('Quality keeps strict screenshot gating and read-only CI permissions while 
   assert.match(workflow,/name: Retain screenshot comparison gallery[\s\S]*?if: \$\{\{ !cancelled\(\) \}\}[\s\S]*?path: work\/visual-review\//);
   assert.match(workflow,/VISUAL_REVIEW_HEAD_SHA: \$\{\{ github.event.pull_request.head.sha \|\| github.sha \}\}/);
   assert.match(config,/updateSnapshots: 'none'/);assert.match(config,/maxDiffPixels: 0/);assert.match(config,/visual-review-reporter.mjs/);
+});
+
+test('sharded galleries merge into one review, report missing shards and reject forged paths',t=>{
+  const f=fixture(t),shards=join(f.root,'work/visual-review-shards'),output=join(f.root,'work/visual-review'),before=readFileSync(f.reference);
+  f.reporter.onTestEnd(f.scenario,f.result);f.reporter.onEnd({status:'failed'});
+  mkdirSync(shards,{recursive:true});renameSync(output,join(shards,'visual-review-shard-1'));
+  const other=new Reporter({root:f.root,sourceCommit:'a'.repeat(40),headCommit:'b'.repeat(40)});other.onBegin();other.onEnd({status:'passed'});
+  renameSync(output,join(shards,'visual-review-shard-2'));mkdirSync(join(shards,'visual-review-shard-3'));
+  const m=mergeShardGalleries(f.root);
+  assert.equal(m.shards,2);assert.equal(m.items.length,1);assert.equal(m.status,'failed');assert(m.approvalRequired);
+  assert.deepEqual(m.references,['tests/browser/snapshots/linux/mobile/calendar-he.png']);
+  assert(m.errors.some(error=>error.includes('visual-review-shard-3')));
+  assert(existsSync(join(output,m.items[0].after)));assert(existsSync(join(output,'index.html')));
+  assert.deepEqual(JSON.parse(readFileSync(join(output,'manifest.json'),'utf8')),m);assert.deepEqual(readFileSync(f.reference),before);
+  const path=join(shards,'visual-review-shard-1/manifest.json'),original=readFileSync(path,'utf8');
+  const forge=change=>{const manifest=JSON.parse(original);change(manifest);writeFileSync(path,JSON.stringify(manifest));rmSync(output,{recursive:true,force:true});};
+  forge(manifest=>{manifest.items[0].after='../../../../tests/browser/snapshots/linux/mobile/calendar-he.png';});
+  assert.throws(()=>mergeShardGalleries(f.root),/Invalid shard review image path/);
+  forge(manifest=>{manifest.headCommit='c'.repeat(40);});
+  assert.throws(()=>mergeShardGalleries(f.root),/disagree/);
 });

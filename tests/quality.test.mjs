@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {appendFileSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {readdir} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {instructionOnly} from '../scripts/quality-scope.mjs';
-import {verifyQualityEvidence} from '../scripts/quality-evidence.mjs';
+import {instructionOnly, selectChecks, SMOKE_SPECS, SPEC_MAP} from '../scripts/quality-scope.mjs';
+import {FULL_QUALITY_JOBS, verifyQualityEvidence} from '../scripts/quality-evidence.mjs';
 import {databaseSourceHash, verifyContractIdentity} from '../scripts/database-contract.mjs';
 import {verifyProductionActivation} from '../scripts/release.mjs';
 
@@ -33,7 +33,7 @@ function fixture(branch = 'master') {
     repository: {id: 1, full_name: repository}, head_repository: {id: 1, full_name: repository},
     head_sha: sha, head_branch: branch, event: 'push', status: 'completed', conclusion: 'success',
     run_attempt: 2, run_started_at: '2026-10-13T11:00:00Z'};
-  const jobs = ['scope', 'application', 'database', 'quality'].map(name => ({name, status: 'completed', conclusion: 'success'}));
+  const jobs = FULL_QUALITY_JOBS.map(name => ({name, status: 'completed', conclusion: 'success'}));
   const artifact = {id: 100, name: `database-contract-${sha}-2`, expired: false,
     created_at: '2026-10-13T11:05:00Z', expires_at: '2026-10-20T11:05:00Z',
     workflow_run: {id: 10, repository_id: 1, head_repository_id: 1, head_sha: sha, head_branch: branch}};
@@ -133,7 +133,8 @@ test('reject missing, expired, stale, forged, wrong-attempt and ambiguous contra
 });
 
 test('full jobs cannot be missing, failed, skipped, cancelled or from a different attempt', async () => {
-  for (const name of ['scope', 'application', 'database', 'quality']) {
+  assert.deepEqual(FULL_QUALITY_JOBS.filter(name => name.startsWith('browser ')), ['browser 1/4', 'browser 2/4', 'browser 3/4', 'browser 4/4']);
+  for (const name of FULL_QUALITY_JOBS) {
     for (const conclusion of ['failure', 'skipped', 'cancelled', null]) {
       const f = fixture(); f.jobs.find(job => job.name === name).conclusion = conclusion;
       await assert.rejects(verifyQualityEvidence(f.api, f.options));
@@ -170,16 +171,131 @@ test('downloaded contract identity rejects mismatched commit, SQL sources and mi
 test('required quality gate cannot silently skip checks; browsers and releases have separate runners/locks', () => {
   const workflow = readFileSync('.github/workflows/quality.yml', 'utf8');
   const gate = workflow.split('\n  quality:')[1].split('\n  deploy-development:')[0];
-  assert.match(gate, /needs: \[scope, application, database\]/);
+  assert.match(gate, /needs: \[scope, application, browser, browser-report, database\]/);
   assert.match(gate, /if: always\(\)/);
-  for (const check of ['SCOPE', 'APPLICATION', 'DATABASE']) assert(gate.includes(`test "$${check}" = success`));
-  assert.equal(workflow.match(/run: pnpm test:e2e:ci/g)?.length, 1);
-  assert.equal(workflow.match(/run: pnpm build/g)?.length, 1);
+  assert.equal(workflow.match(/pnpm test:e2e:ci/g)?.length, 2, 'one selected PR run and one sharded full run');
+  assert.equal(workflow.match(/run: pnpm build/g)?.length, 2, 'application and each browser shard build once');
   assert.equal(workflow.match(/supabase db start/g)?.length, 1);
+  assert.match(workflow, /if: needs\.scope\.outputs\.application == 'true'/);
+  assert.match(workflow, /if: needs\.scope\.outputs\.database == 'true'/);
+  assert.match(workflow, /if: needs\.scope\.outputs\.browser == 'full'/);
+  assert.match(workflow, /name: browser \$\{\{ matrix\.shard \}\}\/4/);
+  assert.match(workflow, /shard: \[1, 2, 3, 4\]/);
+  assert.match(workflow, /group: quality-browser-\$\{\{ github\.ref \}\}-\$\{\{ matrix\.shard \}\}/, 'shards must not cancel each other');
   assert(!workflow.split('jobs:')[0].includes('cancel-in-progress'), 'Testing concurrency must not cancel deploy jobs');
   const deploy = readFileSync('.github/workflows/deploy.yml', 'utf8');
   assert.match(deploy, /cancel-in-progress: false/);
   assert.match(deploy, /artifact-ids: \$\{\{ needs.authorize.outputs.artifact-id \}\}/);
   assert.match(deploy, /run-id: \$\{\{ inputs.quality-run-id \}\}/);
   assert(deploy.indexOf('scripts/quality-evidence.mjs') < deploy.indexOf('--approval-only'));
+});
+
+const spec = name => `tests/browser/${name}.spec.ts`;
+const smoke = SMOKE_SPECS.map(spec);
+
+test('selector: branch runs, unknown and global paths select every check', () => {
+  const full = {application: true, database: true, browser: 'full', specs: []};
+  for (const event of ['push', 'workflow_dispatch', 'pull_request_target', undefined]) assert.deepEqual(selectChecks(event, ['components/rota/swap-requests.tsx']), full);
+  assert.deepEqual(selectChecks('pull_request', []), full);
+  for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'next.config.ts', 'tsconfig.json', 'postcss.config.mjs',
+    'eslint.config.mjs', 'playwright.config.ts', 'components.json', 'vercel.json', 'app/globals.css', 'app/tailwind.css', 'app/layout.tsx', 'app/page.tsx',
+    'components/rota/workspace.tsx', 'components/ui/button.tsx', 'lib/utils.ts', 'hooks/use-team-workspace.ts', 'vendor/shadcn-tailwind-4.13.0.css',
+    'tests/browser/fixtures.ts', 'tests/browser/zoom-context.mjs', 'tests/browser/snapshots/linux/desktop/x.png', 'tests/fixtures/generation.mjs',
+    '.github/workflows/quality.yml', '.github/workflows/deploy.yml', 'scripts/quality-scope.mjs', 'scripts/browser-container.mjs',
+    'scripts/visual-review-reporter.mjs', 'drizzle/meta/_journal.json', 'public/favicon.svg', 'components/new-feature.tsx', 'lib/new/x.ts']) {
+    assert.deepEqual(selectChecks('pull_request', ['components/rota/swap-requests.tsx', file]), full, file);
+  }
+});
+
+test('selector: the scope script and workflows can never narrow their own checks', () => {
+  for (const file of ['scripts/quality-scope.mjs', '.github/workflows/quality.yml', 'scripts/quality-evidence.mjs'])
+    assert.equal(selectChecks('pull_request', [file, 'README.md']).browser, 'full', file);
+  const workflow = readFileSync('.github/workflows/quality.yml', 'utf8');
+  const scope = workflow.split('\n  scope:')[1].split('\n  application:')[0];
+  assert.match(scope, /git show "\$PR_BASE:scripts\/quality-scope\.mjs" > "\$RUNNER_TEMP\/quality-scope\.mjs"/);
+  assert.match(scope, /node "\$RUNNER_TEMP\/quality-scope\.mjs"/);
+  assert(!/node scripts\/quality-scope\.mjs/.test(workflow), 'PR-controlled selector must not run');
+});
+
+test('selector: UI changes run unit/tsc/lint/build plus mapped specs and smoke, without the database', () => {
+  const checks = selectChecks('pull_request', ['components/rota/swap-requests.tsx', 'tests/swaps.test.mjs', 'docs/DEPLOYMENT.md']);
+  assert.deepEqual(checks, {application: true, database: false, browser: 'selected', specs: [...new Set([spec('calendar-controls'), spec('swaps'), ...smoke])].sort()});
+  const own = selectChecks('pull_request', ['tests/browser/duty-locks.spec.ts'], () => true);
+  assert.deepEqual(own.specs, [...new Set([spec('duty-locks'), ...smoke])].sort());
+  assert.equal(selectChecks('pull_request', ['tests/browser/gone.spec.ts'], () => false).browser, 'full', 'deleted specs cannot be selected');
+  assert.deepEqual(selectChecks('pull_request', ['tests/engine.test.mjs']), {application: true, database: false, browser: 'none', specs: []});
+});
+
+test('selector: SQL and Supabase client changes add the database job', () => {
+  assert.deepEqual(selectChecks('pull_request', ['supabase/schemas/x.sql', 'supabase/tests/access.sql']), {application: true, database: true, browser: 'none', specs: []});
+  const client = selectChecks('pull_request', ['lib/supabase/swaps.ts']);
+  assert.equal(client.database, true);
+  assert.equal(client.browser, 'selected');
+  assert(client.specs.includes(spec('supabase-lifecycle')) && smoke.every(s => client.specs.includes(s)));
+  assert.equal(selectChecks('pull_request', ['lib/other/query.sql']).browser, 'full');
+});
+
+test('selector: docs/AI-only PRs still skip application and database checks', () => {
+  assert.deepEqual(selectChecks('pull_request', ['README.md', 'docs/AI_DEVELOPMENT.md']), {application: false, database: false, browser: 'none', specs: []});
+});
+
+test('selector map names only existing sources and specs', () => {
+  for (const [source, names] of Object.entries(SPEC_MAP)) {
+    assert(existsSync(source), source);
+    assert(names.length > 0, source);
+    for (const name of names) assert(existsSync(spec(name)), `${source} -> ${name}`);
+  }
+  for (const name of SMOKE_SPECS) assert(existsSync(spec(name)), name);
+});
+
+function workflowRun(workflow, step) {
+  const lines = workflow.split('\n'), start = lines.findIndex(line => line.trim() === `- name: ${step}`);
+  const run = lines.findIndex((line, index) => index > start && line.trim() === 'run: |');
+  const indent = lines[run + 1].search(/\S/), body = [];
+  for (const line of lines.slice(run + 1)) { if (line.trim() && line.search(/\S/) < indent) break; body.push(line.slice(indent)); }
+  return body.join('\n');
+}
+const bash = (script, env) => spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {encoding: 'utf8', env: {PATH: process.env.PATH, ...env}});
+
+test('selection normalization fails closed and validates spec names', () => {
+  const script = workflowRun(readFileSync('.github/workflows/quality.yml', 'utf8'), 'Normalize selection (fail closed)');
+  const normalize = env => {
+    const dir = mkdtempSync(join(tmpdir(), 'duty-scope-')), output = join(dir, 'out');
+    try {
+      writeFileSync(output, '');
+      const result = bash(script, {GITHUB_OUTPUT: output, ...env});
+      return result.status === 0 ? Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split(/=(.*)/s).slice(0, 2))) : null;
+    } finally { rmSync(dir, {recursive: true, force: true}); }
+  };
+  const full = {application: 'true', database: 'true', browser: 'full', specs: ''};
+  assert.deepEqual(normalize({EVENT: 'push', APPLICATION: 'false', DATABASE: 'false', BROWSER: 'none'}), full);
+  assert.deepEqual(normalize({EVENT: 'pull_request'}), full, 'a base selector without tiered outputs runs everything');
+  assert.deepEqual(normalize({EVENT: 'pull_request', APPLICATION: 'true', DATABASE: 'false', BROWSER: 'selected', SPECS: ''}), {...full, database: 'false'});
+  assert.deepEqual(normalize({EVENT: 'pull_request', APPLICATION: 'true', DATABASE: 'false', BROWSER: 'selected', SPECS: 'tests/browser/a.spec.ts tests/browser/b-c.spec.ts'}),
+    {application: 'true', database: 'false', browser: 'selected', specs: 'tests/browser/a.spec.ts tests/browser/b-c.spec.ts'});
+  for (const bad of ['tests/browser/*.spec.ts', '--grep=x', 'tests/browser/../x.spec.ts', 'tests/browser/a.spec.ts;id'])
+    assert.equal(normalize({EVENT: 'pull_request', APPLICATION: 'true', DATABASE: 'true', BROWSER: 'selected', SPECS: bad}), null, bad);
+  assert.equal(normalize({EVENT: 'pull_request', APPLICATION: 'false', DATABASE: 'true', BROWSER: 'none'}), null);
+  assert.deepEqual(normalize({EVENT: 'pull_request', APPLICATION: 'false', DATABASE: 'false', BROWSER: 'none'}), {application: 'false', database: 'false', browser: 'none', specs: ''});
+});
+
+test('aggregate gate fails when any selected job failed or an unselected job did not skip', () => {
+  const script = workflowRun(readFileSync('.github/workflows/quality.yml', 'utf8'), 'Require selected checks');
+  const ok = env => bash(script, {SCOPE: 'success', ...env}).status === 0;
+  const push = {EVENT: 'push', RUN_APPLICATION: 'true', RUN_DATABASE: 'true', RUN_BROWSER: 'full', APPLICATION: 'success', DATABASE: 'success', BROWSER: 'success', BROWSER_REPORT: 'success'};
+  assert(ok(push));
+  for (const job of ['APPLICATION', 'DATABASE', 'BROWSER', 'BROWSER_REPORT'])
+    for (const result of ['failure', 'cancelled', 'skipped', '']) assert(!ok({...push, [job]: result}), `${job}=${result}`);
+  assert(!ok({...push, SCOPE: 'failure'}));
+  assert(!ok({...push, RUN_BROWSER: 'selected', BROWSER: 'skipped', BROWSER_REPORT: 'skipped'}), 'branch runs must be full');
+  assert(!ok({...push, RUN_DATABASE: 'false', DATABASE: 'skipped'}), 'branch runs must include the database');
+  const ui = {EVENT: 'pull_request', RUN_APPLICATION: 'true', RUN_DATABASE: 'false', RUN_BROWSER: 'selected', APPLICATION: 'success', DATABASE: 'skipped', BROWSER: 'skipped', BROWSER_REPORT: 'skipped'};
+  assert(ok(ui));
+  assert(ok({...ui, RUN_DATABASE: 'true', DATABASE: 'success'}));
+  assert(!ok({...ui, RUN_DATABASE: 'true', DATABASE: 'failure'}));
+  assert(!ok({...ui, DATABASE: 'failure'}), 'an unselected job that ran and failed still fails the gate');
+  assert(!ok({...ui, APPLICATION: 'failure'}));
+  assert(!ok({...ui, RUN_BROWSER: 'bogus'}));
+  assert(ok({EVENT: 'pull_request', RUN_APPLICATION: 'false', RUN_DATABASE: 'false', RUN_BROWSER: 'none', APPLICATION: 'skipped', DATABASE: 'skipped', BROWSER: 'skipped', BROWSER_REPORT: 'skipped'}));
+  assert(!ok({...push, EVENT: 'pull_request', BROWSER: 'skipped'}));
 });
