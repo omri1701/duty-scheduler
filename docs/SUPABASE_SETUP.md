@@ -32,6 +32,10 @@ Temporary members cannot gain an admin role, pass member authorization or sign i
 No Auth users/identities are created. Future account linking would need a separately
 reviewed identity migration; this feature provides no linking or claiming endpoint.
 
+New members (joining or temporary) get the next of 15 default colors by member
+count. Migration `20261029222841_member_palette_15.sql` appended `#dbb677`,
+`#f1c3ba` and `#a5dfac` to the original 12; existing members keep their colors.
+
 Focused database verification (empty disposable LOCAL database only):
 
 ```powershell

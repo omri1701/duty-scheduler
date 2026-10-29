@@ -9,7 +9,7 @@ begin
  insert into public.duty_members(id,name,is_temporary,status,active,seniority,color)
  values(member_id,trim(p_name),true,'approved',true,
   (select coalesce(max(seniority),0)+1 from public.duty_members),
-  (array['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9'])[(select count(*)::int%12+1 from public.duty_members)]);
+  (array['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9','#dbb677','#f1c3ba','#a5dfac'])[(select count(*)::int%15+1 from public.duty_members)]);
  update public.duty_workspace set revision=revision+1 where id;
  return member_id;
 end $$;

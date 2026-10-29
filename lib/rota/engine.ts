@@ -53,7 +53,7 @@ export function weekendCounts(s:State,month:string){
  const bs=blocks(month,s.specials,s.splitWeekends).filter(b=>ownerMonth(b)===month&&b.weekendId);
  return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id).map(b=>b.weekendId)).size]));
 }
-export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9'];
+export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9','#dbb677','#f1c3ba','#a5dfac'];
 export function ink(color:string){const rgb=color.slice(1).match(/../g)?.map(v=>{const n=parseInt(v,16)/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4})??[0,0,0];return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>0.179?'#101827':'#fff'}
 export function migrate(s:State):State{
  if(s.version>=3)return s;
