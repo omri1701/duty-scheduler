@@ -345,7 +345,10 @@ hosted Google authentication and identity checks stay unchanged. Accounts:
 is `Duty-local-only-1701!`. Operator approval of the two fixtures runs only inside
 the exact local Docker container. No browser bypass or hosted bootstrap exists.
 You can approve the pending account normally; setup preserves that later approval.
-The fixtures do not create schedules. Sessions and PKCE verifiers use separate
+`pnpm local:reset` also adds ten fictional approved, active temporary members
+(Avi, Dana, Yossi, Noa, Eitan, Maya, Lior, Tamar, Omer, Shira, in seniority order)
+through the local admin's checked `duty_add_temporary_member` RPC, skipping
+existing names, for a 12-engineer LOCAL team. The fixtures do not create schedules. Sessions and PKCE verifiers use separate
 storage keys per actual Supabase URL/port; switching targets cannot reuse another
 project's session. Existing pre-selector sessions require a new login once.
 

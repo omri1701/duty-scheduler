@@ -10,6 +10,9 @@ import {connectionTarget,validatePublicKey} from '../lib/supabase/environment.ts
 const root=resolve(import.meta.dirname,'..'),directory=resolve(root,'work/local-supabase'),container='supabase_db_duty-scheduler-app';
 export const LOCAL_PASSWORD='Duty-local-only-1701!';
 export const LOCAL_ACCOUNTS=[['admin@duty.local','Local Admin'],['engineer@duty.local','Local Engineer'],['pending@duty.local','Local Pending']];
+// Fictional temporary members, in seniority order, for a 12-engineer LOCAL team.
+export const LOCAL_TEMPORARY_MEMBERS=['Avi','Dana','Yossi','Noa','Eitan','Maya','Lior','Tamar','Omer','Shira'];
+export const missingTemporaryMembers=members=>LOCAL_TEMPORARY_MEMBERS.filter(name=>!members.some(m=>m.name===name));
 function cli(args,capture=false) {
   // pnpm scripts provide its executable path, avoiding shell quoting on Windows.
   if (!process.env.npm_execpath) throw Error('Run via pnpm local:setup or pnpm dev:local.');
@@ -72,6 +75,18 @@ export async function prepareLocal() {
     where id in ('${users[0].id}','${users[1].id}') and email in ('admin@duty.local','engineer@duty.local');
     update public.duty_workspace set revision=revision+1 where id; commit;`;
   execFileSync('docker',['exec','-i',container,'psql','-U','postgres','-q','-v','ON_ERROR_STOP=1'],{input:sql,stdio:['pipe','ignore','pipe']});
+  // Reset adds the team through the admin's checked RPC with the current revision, like the app.
+  if(reset){
+    let loaded=await users[0].client.rpc('duty_load');
+    if(loaded.error)throw Error('Local admin workspace load failed.');
+    for(const name of missingTemporaryMembers(loaded.data.members)){
+      const added=await users[0].client.rpc('duty_add_temporary_member',{p_name:name,p_revision:loaded.data.revision});
+      if(added.error)throw Error('Local temporary member creation failed.');
+      loaded=await users[0].client.rpc('duty_load');
+      if(loaded.error)throw Error('Local admin workspace load failed.');
+    }
+    if(missingTemporaryMembers(loaded.data.members).length)throw Error('Local temporary members missing.');
+  }
   for(const user of users){
     const loaded=await user.client.rpc('duty_load');
     if(loaded.error||!loaded.data?.members?.find(m=>m.id===user.id))throw Error('Local authenticated workspace load failed.');
@@ -85,4 +100,4 @@ export async function prepareLocal() {
   console.log('LOCAL authentication, checked onboarding, workspace loading and denied table writes verified.');
   return env;
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)prepareLocal().then(()=>console.log('Local accounts: admin@duty.local, engineer@duty.local, pending@duty.local. Password: Duty-local-only-1701!')).catch(error=>{console.error(error.message);process.exitCode=1;});
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)prepareLocal().then(()=>console.log(`Local accounts: admin@duty.local, engineer@duty.local, pending@duty.local. Password: Duty-local-only-1701!${process.argv.includes('--reset')?` Temporary members: ${LOCAL_TEMPORARY_MEMBERS.join(', ')}.`:''}`)).catch(error=>{console.error(error.message);process.exitCode=1;});
