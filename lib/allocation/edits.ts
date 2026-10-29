@@ -45,10 +45,19 @@ export function validateDraft(c: Context, draft: AllocationDraft) {
     units(Math.abs(p.deltaUnits)); expected[p.engineer] += p.deltaUnits;
   }
   if (c.ids.some(id => expected[id] !== draft.targetsUnits[id])) throw Error('unexplained-target-edit');
+  if (draft.handEdited && (!Array.isArray(draft.handEdited) || new Set(draft.handEdited).size !== draft.handEdited.length ||
+    draft.handEdited.some(id => !c.ids.includes(id)))) throw Error('invalid-hand-edits');
+}
+
+/** The checked RPC accepts only the persisted allocation shape. */
+export function persistedDraft(source: AllocationDraft): AllocationDraft {
+  const draft = {...source}; delete draft.handEdited; return draft;
 }
 
 /** Applies one signed Target/Permanent edit, preserving the requested ceiling.
- * Returning pending work is intentional; it requires explicit counterpart edits. */
+ * Returning pending work is intentional; it requires explicit counterpart edits.
+ * The app only rearranges what it arranged itself: automatic counterparts never
+ * take from or give to a member the manager changed by hand. */
 export function editAllocation(adapter: SolverAdapter, input: AllocationInput, source: AllocationDraft,
   edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}, settings: Partial<Settings> = {}) {
   const c = context(input); validateDraft(c, source);
@@ -60,6 +69,7 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   const next = draft.targetsUnits[edit.engineer] + edit.deltaUnits;
   if (next < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
   units(next); draft.targetsUnits[edit.engineer] = next;
+  const handEdited = new Set([...draft.handEdited ?? [], edit.engineer]); draft.handEdited = [...handEdited];
   let remaining = edit.deltaUnits, serial = 0;
   const transfer = (fromId: string, toId: string, amount: number, kind: Kind) => {
     const t: Transfer = {id: `${edit.id}/${serial++}`, fromId, toId, units: amount, kind}; draft.transfers.push(t);
@@ -77,11 +87,11 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   }
   draft.pending = draft.pending.filter(p => p.deltaUnits);
   const rank = (id: string) => input.seniority.indexOf(id);
-  const candidates = () => c.ids.filter(id => id !== edit.engineer).sort((a, b) => {
+  // Givers: most points, senior first. Receivers: fewest points, newest first,
+  // matching the baseline remainder order. Feasibility still decides in tryAmount.
+  const candidates = () => c.ids.filter(id => !handEdited.has(id)).sort((a, b) => {
     if (remaining > 0) return draft.targetsUnits[b] - draft.targetsUnits[a] || rank(a) - rank(b);
-    if (edit.kind === 'permanent') return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
-    const pos = rank(edit.engineer), distance = (id: string) => (rank(id) - pos + c.ids.length) % c.ids.length;
-    return distance(a) - distance(b);
+    return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
   });
   const tryAmount = (counterpart: string, amount: number) => {
     const direction = Math.sign(remaining), current = {...draft.targetsUnits};

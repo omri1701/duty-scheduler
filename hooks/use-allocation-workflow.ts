@@ -4,6 +4,7 @@ import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {createAllocationWorker, generationNow, schedulingSupported, type AllocationOperation} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
+import {persistedDraft} from '@/lib/allocation/edits';
 import type {AllocationDraft, Check, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
@@ -133,7 +134,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   async function refreshReview() {
     const old = draft, c = await load(); if (!c) return;
     setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
-    if (old) await plan({kind: 'assess', input: c.input, draft: old, copied: !!c.sourcePublicationId && JSON.stringify(old) === JSON.stringify(c.allocation)}, 'checking');
+    if (old) await plan({kind: 'assess', input: c.input, draft: old, copied: !!c.sourcePublicationId && JSON.stringify(persistedDraft(old)) === JSON.stringify(c.allocation)}, 'checking');
     else if (c.allocation) {setDraft(c.allocation); await plan({kind: 'assess', input: c.input, draft: c.allocation, copied: !!c.sourcePublicationId}, 'checking');}
     else await plan({kind: 'propose', input: c.input}, 'proposing');
   }
