@@ -160,10 +160,21 @@ Manual review after opening projects through the later of opening/server time;
 the separate generation cutoff still prohibits solving that month. Copied
 publication intent remains under the checked database lineage rules.
 
+## Compensation display
+
+"Adjustments & compensation" lists netted temporary relationships only
+(`nettedCompensation` in `lib/allocation/netting.ts`). It starts from the projected
+net at month opening, adds the draft's temporary transfers and subtracts this
+month's repayments, then pairs net debtors with net creditors. Chains collapse
+(A owes B and B owes C shows A → C), opposite directions cancel, and each line
+shows what is repaid this month and what carries forward. Permanent transfers and
+pending edits do not appear; pending edits show one short warning line. The list is
+display only: stored transfers, repayments, ledger and provenance are unchanged.
+
 ## Focused verification
 
 ```sh
-node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/compensation.test.mjs
+node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
 pnpm exec tsc --noEmit
 pnpm exec eslint lib/allocation lib/compensation/publication.ts lib/compensation/types.ts tests/allocation.test.mjs tests/allocation-binding.test.mjs
 ```

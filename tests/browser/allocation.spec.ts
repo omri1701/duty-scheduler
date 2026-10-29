@@ -81,9 +81,10 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   const toast = page.locator('.allocation-toast');
   await expect(toast).toHaveText('Alex Atlas took 1 point from Avery Admin · temporaryMake permanent');
   await expect(alex.permanent).toHaveText('0');
-  await expect(page.getByRole('dialog')).toContainText('Avery Admin → Alex Atlas · 1 pts · Temporary');
+  const owed = page.locator('.allocation-details li');
+  await expect(owed).toHaveText(['Avery Admin → Alex Atlas · 1 · 1 later']);
   await toast.getByRole('button', {name: 'Make permanent', exact: true}).click();
-  await expect(toast).toBeHidden();
+  await expect(toast).toBeHidden(); await expect(owed).toHaveCount(0);
   await expect(alex.permanent).toHaveText('+1'); await expect(avery.permanent).toHaveText('-1');
   await expect(alex.target).toHaveText(String(x0 + 1));
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
@@ -137,6 +138,7 @@ test('long-press opens Give 1 point to… in Hebrew RTL on touch', async ({page,
   await expect(avery.target).toHaveText(String(a0 - 1)); await expect(alex.target).toHaveText(String(x0 + 1));
   const toast = page.locator('.allocation-toast');
   await expect(toast).toContainText('נקודה אחת הועברה מ־Avery Admin אל Alex Atlas · זמני');
+  await expect(page.locator('.allocation-details li')).toHaveText(['Avery Admin ← Alex Atlas · 1 · 1 בהמשך']);
   await toast.getByRole('button', {name: 'להפוך לקבוע', exact: true}).click();
   await expect(alex.permanent).toHaveText('+1');
   // A short tap or a moved finger never opens the list.

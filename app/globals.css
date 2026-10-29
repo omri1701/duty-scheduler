@@ -470,10 +470,6 @@
 .allocation-details li{margin:6px 0}
 .allocation-details li strong{font-weight:500}
 .allocation-attention{color:#956223!important;background:#fcf3e4;padding:8px 10px;border-radius:6px}
-.allocation-compensation{background:#f2f6ee;border-radius:9px;padding:12px;margin-top:10px}
-.allocation-compensation strong{font-weight:550}
-.allocation-compensation p{display:flex;justify-content:space-between;margin:7px 0}
-.allocation-compensation small{display:block;color:#7a8873}
 .allocation-dialog input:focus-visible,.allocation-dialog button:focus-visible,.allocation-dialog summary:focus-visible{outline:2px solid #4c7a5b;outline-offset:3px}
 .allocation-validation{display:flex;align-items:flex-start;gap:8px;background:#eef5e8;color:#547342;padding:12px;border-radius:9px;font-size:12px;line-height:1.65;margin:8px 0}
 .allocation-validation svg{flex-shrink:0;margin-top:2px}

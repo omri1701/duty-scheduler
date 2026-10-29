@@ -8,6 +8,7 @@ import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Language, Translate} from './workspace-types';
 import {shortDate} from '@/lib/date-format';
+import {nettedCompensation} from '@/lib/allocation/netting';
 
 const points = (units: number) => String(units / 2);
 const signed = (units: number) => `${units > 0 ? '+' : ''}${points(units)}`;
@@ -49,6 +50,8 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
     return () => clearTimeout(timer);
   }, [moved, dismissMoved]);
   const partial = f.check?.feasibility === 'partial';
+  const owed = f.draft && f.captured ? nettedCompensation(f.captured.projected.net, f.draft, f.input?.seniority ?? []) : [];
+  const pendingUnits = f.draft?.pending.reduce((n, p) => n + Math.abs(p.deltaUnits), 0) ?? 0;
   const status = f.phase === 'loading' ? t('Loading the authoritative month…', 'טוען את נתוני החודש…')
     : f.phase === 'proposing' ? t('Preparing a balanced proposal…', 'מכין הצעה מאוזנת…')
     : f.phase === 'editing' ? t('Redistributing points…', 'מחלק את הנקודות מחדש…')
@@ -100,13 +103,11 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       </div>}
       <p className="allocation-caption">{t('Target includes Permanent. Generate is Target minus Locked; it may require a partial schedule.', 'היעד כולל את השינוי הקבוע. לשיבוץ = יעד פחות נעול; ייתכן שיתקבל שיבוץ חלקי.')}</p>
       {f.draft && <details className="allocation-details" open={!!f.draft.pending.length}>
-        <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!f.draft.transfers.length && <span>{f.draft.transfers.length}</span>}</summary>
-        <p>{t('Target changes are temporary: carried work can be returned in a future month. Permanent changes do not create compensation.', 'שינויי יעד הם זמניים: ניתן להחזיר עבודה בחודש עתידי. שינויים קבועים אינם יוצרים פיצוי.')}</p>
-        <ul>{f.draft.transfers.map(tr => <li key={tr.id}><strong>{name(tr.fromId)} → {name(tr.toId)}</strong> · {points(tr.units)} {t('pts', 'נק׳')} · {tr.kind === 'temporary' ? t('Temporary', 'זמני') : t('Permanent', 'קבוע')}</li>)}</ul>
-        {f.draft.pending.map(p => <p className="allocation-attention" key={p.id}>{name(p.engineer)} · {signed(p.deltaUnits)} · {p.kind === 'temporary' ? t('Temporary', 'זמני') : t('Permanent', 'קבוע')} · {t('needs a counterpart', 'נדרשת הקצאה נגדית')}</p>)}
-        {f.draft.repayments.map((r, i) => <p key={i}>{name(r.claim.debtorId)} → {name(r.claim.creditorId)} · {points(r.units)} {t('pts proposed repayment', 'נק׳ להחזרה מתוכננת')}</p>)}
-        <p>{t('Only actual primary assignments fund compensation when published. Unperformed repayment stays outstanding.', 'הפיצוי מבוסס רק על שיבוצים ראשיים בפועל בעת הפרסום. החזרה שלא בוצעה נשארת פתוחה.')}</p>
-        <div className="allocation-compensation"><strong>{t('Owed relief now → at month opening', 'הקלת עומס כעת ← בפתיחת החודש')}</strong>{f.input?.seniority.filter(id => f.captured?.actual.net[id] || f.captured?.projected.net[id]).map(id => <p key={id}>{name(id)} <bdi>{signed(f.captured!.actual.net[id] ?? 0)} → {signed(f.captured!.projected.net[id] ?? 0)}</bdi></p>)}<small>{t('Positive: owed relief · Negative: owes work. Future work is a projection until completed.', 'חיובי: זכאות להקלה · שלילי: עבודה להחזרה. עבודה עתידית היא תחזית עד להשלמתה.')}</small></div>
+        <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
+        {pendingUnits > 0 && <p className="allocation-attention">{points(pendingUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
+        {owed.length ? <ul>{owed.map(l => <li key={`${l.debtorId}>${l.creditorId}`}><strong>{name(l.debtorId)} {lang === 'he' ? '←' : '→'} {name(l.creditorId)}</strong> · <bdi>{points(l.units)}</bdi> · {[
+          l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, l.later && `${points(l.later)} ${t('later', 'בהמשך')}`].filter(Boolean).join(' · ')}</li>)}</ul>
+          : <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}
