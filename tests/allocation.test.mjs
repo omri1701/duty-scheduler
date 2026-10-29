@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, validateGeneration} from '../lib/scheduling/index.ts';
 import {record, replay, sliceClaim} from '../lib/compensation/index.ts';
-import {proposeAllocation, editAllocation, compileAllocation, assessAllocation} from '../lib/allocation/index.ts';
+import {proposeAllocation, editAllocation, compileAllocation, assessAllocation, persistedDraft} from '../lib/allocation/index.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 const solver = await createHighsAdapter(loadHighs);
@@ -135,6 +135,37 @@ test('unplaceable edits preserve the requested limit; explicit controls consume 
   assert.equal(p.check.feasibility, 'partial'); assert.equal(p.confirmable, true);
   assert.deepEqual(p.plan.intents, [], 'unperformed burden creates no debt');
   assert.equal(p.plan.unfundedUnits.e01, 1);
+});
+
+test('automatic counterparts never move hand-edited members; protection survives edits', () => {
+  // A=e01, B=e00 (old rule: B's nearest counterpart was A), E=e04, F=e05.
+  const i = normalInput, d = normal.draft, set = {...d.targetsUnits};
+  let r = edit(i, d, 'e01', -2, 'temporary', 'a'); set.e01 -= 2;
+  assert.deepEqual(r.draft.handEdited, ['e01']);
+  r = edit(i, r.draft, 'e00', -2, 'temporary', 'b'); set.e00 -= 2;
+  r = edit(i, r.draft, 'e04', 2, 'temporary', 'e'); set.e04 += 2;
+  r = edit(i, r.draft, 'e05', 2, 'temporary', 'f'); set.e05 += 2;
+  for (const id of ['e00', 'e01', 'e04', 'e05']) assert.equal(r.draft.targetsUnits[id], set[id], `${id} kept exactly as set`);
+  assert.deepEqual([...r.draft.handEdited].sort(), ['e00', 'e01', 'e04', 'e05']);
+  assert.equal(r.balanced, true); assert.deepEqual(r.draft.pending, []);
+  const hand = new Set(r.draft.handEdited);
+  assert.ok(r.draft.transfers.every(t => hand.has(t.fromId) !== hand.has(t.toId)), 'each automatic leg has one unprotected side');
+  // C absorbed A and B automatically and stays re-adjustable for E and F.
+  assert.deepEqual(r.draft.transfers.map(t => [t.fromId, t.toId]), [['e01', 'e02'], ['e00', 'e02'], ['e02', 'e04'], ['e02', 'e05']]);
+  assert.deepEqual(persistedDraft(r.draft), Object.fromEntries(Object.entries(r.draft).filter(([k]) => k !== 'handEdited')));
+  assert.equal(compiled(i, r.draft).confirmable, true);
+  assert.deepEqual(normal.draft.handEdited, undefined, 'a new proposal starts unprotected');
+});
+
+test('without an unprotected counterpart the requested edit stays pending, never undone', () => {
+  const i = normalInput, ids = i.seniority;
+  const draft = {...structuredClone(normal.draft), handEdited: ids.filter(id => id !== 'e00')};
+  const r = edit(i, draft, 'e00', 2, 'temporary', 'solo');
+  assert.equal(r.draft.targetsUnits.e00, normal.draft.targetsUnits.e00 + 2, 'requested edit kept');
+  for (const id of ids.slice(1)) assert.equal(r.draft.targetsUnits[id], normal.draft.targetsUnits[id]);
+  assert.deepEqual(r.draft.transfers, []); assert.equal(r.balanced, false);
+  assert.equal(r.draft.pending[0].deltaUnits, 2);
+  assert.throws(() => edit(i, {...normal.draft, handEdited: ['nobody']}, 'e00', 1), /invalid-hand-edits/);
 });
 
 test('manual deferral reroutes through the creditor once, preserves source age and does not settle', () => {

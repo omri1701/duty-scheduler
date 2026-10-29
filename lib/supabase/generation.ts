@@ -1,6 +1,7 @@
 import {replay, project} from '../compensation/index.ts';
 import type {CompensationEvent} from '../compensation/types.ts';
 import type {AllocationDraft, AllocationInput} from '../allocation/types.ts';
+import {persistedDraft} from '../allocation/edits.ts';
 import type {Approval, GenerationInput, Neighbor, Member} from '../scheduling/types.ts';
 import {canonicalDuties, coverageStart, halfUnits} from '../scheduling/calendar.ts';
 import {addDays, dayOf} from '../rota/calendar-dates.ts';
@@ -81,7 +82,7 @@ export async function confirmAllocation(client: DutyClient, captured: Generation
   locks?: NonNullable<GenerationInput['locks']>, approvals?: Approval[]) {
   assertWritable(client);
   const {data, error} = await client.rpc('duty_confirm_allocation', {p_month: captured.input.schedule.month,
-    p_allocation: allocation, p_locks: locks ?? captured.input.schedule.locks ?? [],
+    p_allocation: persistedDraft(allocation), p_locks: locks ?? captured.input.schedule.locks ?? [],
     p_approvals: approvals ?? captured.input.schedule.approvals ?? [], p_revision: captured.revision, p_fingerprint: captured.fingerprint});
   if (error) throw error;
   return readGenerationContext(data);

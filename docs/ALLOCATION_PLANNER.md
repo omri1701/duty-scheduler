@@ -66,7 +66,12 @@ coverage proves partial necessity. A timeout never proves impossibility.
 
 `editAllocation` clones the draft, tries the whole change before half-point
 redistribution, refreshes donor/recipient ranking after each transfer and never
-crosses locked floors. Partial-month probes require the recipient to carry the
+crosses locked floors. The app only rearranges what it arranged itself: every
+member the manager changed by hand is recorded in the draft's local `handEdited`
+list, and automatic counterparts never take from or give to them. Members changed
+only automatically stay re-adjustable, ranked as before. The list survives later
+edits and Undo, resets with a new proposal, and is stripped before the checked
+RPC persists the allocation. Partial-month probes require the recipient to carry the
 increment relative to the prior witness without degrading its coverage priorities.
 Unproved probes leave explicit pending edits; they are not labeled impossible.
 The requested target is preserved when redistribution cannot finish. Subsequent
