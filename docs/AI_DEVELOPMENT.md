@@ -58,10 +58,12 @@ budgets offline; it cannot prove runtime/model availability or effective setting
 AI/docs-only edits need no application build or tests. Changes to the validator
 itself are executable changes and remain subject to full GitHub Quality.
 
-GitHub owns CI. The required `quality` check still aggregates scope, application
-and disposable database checks. Only allowlisted documentation/AI-only PRs skip
-application/database jobs; executable/unknown paths, branch pushes and manual
-runs require full checks. Delivery stops after push and PR creation/update;
+GitHub owns CI. The required `quality` check still aggregates scope, application,
+browser shard/report and disposable database checks. PRs run unit/tsc/lint/build
+plus browser specs mapped from the changed files (database job only for SQL or
+Supabase paths); allowlisted documentation/AI-only PRs skip application/database
+jobs. Unknown/global paths, branch pushes and manual runs require full checks.
+The selector runs from the PR's base commit; see the README's test section. Delivery stops after push and PR creation/update;
 CI failures are handled when the user supplies results or explicitly asks to
 "check CI" (one `gh pr checks` read, per AGENTS.md). Do not infer green CI or
 merge readiness from local validation. Release gates and database-first ordering

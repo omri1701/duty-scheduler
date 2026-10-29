@@ -31,7 +31,7 @@ try {
   const head = process.env.VISUAL_REVIEW_HEAD_SHA || source;
   const status = spawnSync('git', ['status', '--porcelain'], {cwd: root, encoding: 'utf8'});
   const tree = status.status === 0 ? (status.stdout.trim() ? 'dirty' : 'clean') : 'unavailable';
-  browser = spawn('docker', ['run', '--rm', '--ipc=host', ...(linux ? ['--network=host'] : []), '-e', `DUTY_E2E_URL=${url}`, '-e', `CI=${process.env.CI ?? ''}`, '-e', `VISUAL_REVIEW_SOURCE_SHA=${source ?? ''}`, '-e', `VISUAL_REVIEW_HEAD_SHA=${head ?? ''}`, '-e', `VISUAL_REVIEW_TREE_STATE=${tree}`, '-v', `${root}:/work`, '-w', '/work', image, 'node', 'node_modules/@playwright/test/cli.js', 'test', '--workers=2', ...process.argv.slice(2)], {cwd: root, stdio: 'inherit'});
+  browser = spawn('docker', ['run', '--rm', '--ipc=host', ...(linux ? ['--network=host'] : []), '-e', `DUTY_E2E_URL=${url}`, '-e', `CI=${process.env.CI ?? ''}`, '-e', `DUTY_E2E_BLOB=${process.env.DUTY_E2E_BLOB ?? ''}`, '-e', `VISUAL_REVIEW_SOURCE_SHA=${source ?? ''}`, '-e', `VISUAL_REVIEW_HEAD_SHA=${head ?? ''}`, '-e', `VISUAL_REVIEW_TREE_STATE=${tree}`, '-v', `${root}:/work`, '-w', '/work', image, 'node', 'node_modules/@playwright/test/cli.js', 'test', '--workers=2', ...process.argv.slice(2)], {cwd: root, stdio: 'inherit'});
   process.exitCode = await new Promise((resolve, reject) => {browser.on('error', reject); browser.on('exit', code => resolve(code ?? 1));});
 } catch (error) {console.error(error.message); process.exitCode = 1;}
 finally {stop();}

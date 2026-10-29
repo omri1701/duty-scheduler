@@ -22,7 +22,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      full: ${{ steps.scope.outputs.full }}
+      application: ${{ steps.select.outputs.application }}
+      database: ${{ steps.select.outputs.database }}
+      browser: ${{ steps.select.outputs.browser }}
+      specs: ${{ steps.select.outputs.specs }}
       base: ${{ steps.database-base.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -32,11 +35,43 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24.19.0"
-      - name: Select checks
+      # The PR under test must not choose its own checks: run the selector from the
+      # trusted base commit. It selects every check when scripts/** or workflows change.
+      - name: Select PR checks with the base commit's selector
         id: scope
+        if: github.event_name == 'pull_request'
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/quality-scope.mjs
+        run: |
+          git show "$PR_BASE:scripts/quality-scope.mjs" > "$RUNNER_TEMP/quality-scope.mjs"
+          node "$RUNNER_TEMP/quality-scope.mjs"
+      - name: Normalize selection (fail closed)
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          APPLICATION: ${{ steps.scope.outputs.application }}
+          DATABASE: ${{ steps.scope.outputs.database }}
+          BROWSER: ${{ steps.scope.outputs.browser }}
+          SPECS: ${{ steps.scope.outputs.specs }}
+        run: |
+          # Only explicit narrow values relax a check; branch runs always select everything.
+          set -f
+          application=true database=true browser=full specs=
+          if [ "$EVENT" = pull_request ]; then
+            if [ "$APPLICATION" = false ]; then
+              test "$DATABASE" = false
+              test "$BROWSER" = none
+              application=false database=false browser=none
+            else
+              if [ "$DATABASE" = false ]; then database=false; fi
+              if [ "$BROWSER" = none ]; then browser=none; fi
+              if [ "$BROWSER" = selected ] && [ -n "$SPECS" ]; then
+                for spec in $SPECS; do [[ "$spec" =~ ^tests/browser/[A-Za-z0-9_-]+\.spec\.ts$ ]]; done
+                browser=selected specs="$SPECS"
+              fi
+            fi
+          fi
+          printf 'application=%s\ndatabase=%s\nbrowser=%s\nspecs=%s\n' "$application" "$database" "$browser" "$specs" | tee -a "$GITHUB_OUTPUT"
       - name: Validate AI configuration
         run: python3 scripts/validate-ai-config.py
       - name: Verify generated database baseline
@@ -56,7 +91,7 @@ jobs:
       group: quality-application-${{ github.ref }}
       cancel-in-progress: true
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.application == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -87,13 +122,144 @@ jobs:
         run: node scripts/lint-regressions.mjs
       - name: Production build
         run: pnpm build
-      - name: Browser and visual regression baseline
+      - name: Browser and visual regressions for the changed areas
+        if: needs.scope.outputs.browser == 'selected'
         env:
           VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        # One browser invocation owns this runner's report directories.
-        # Reuses build and JS dependencies. The pinned image supplies Chromium
-        # and fonts once; do not also run playwright install.
-        run: pnpm test:e2e:ci
+          SPECS: ${{ needs.scope.outputs.specs }}
+        # One browser invocation owns this runner's report directories. Reuses build
+        # and JS dependencies; the pinned image supplies Chromium and fonts once.
+        # Full runs use the sharded browser job below instead.
+        run: |
+          set -f
+          pnpm test:e2e:ci $SPECS
+      - name: Retain screenshot comparison gallery
+        id: visual-review
+        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review
+          path: work/visual-review/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Link screenshot review in Quality summary
+        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
+        env:
+          VISUAL_REVIEW_URL: ${{ steps.visual-review.outputs.artifact-url }}
+        run: node scripts/visual-review-reporter.mjs --ci-summary
+      - name: Retain browser report and failure traces
+        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-baseline
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  browser:
+    name: browser ${{ matrix.shard }}/4
+    concurrency:
+      group: quality-browser-${{ github.ref }}-${{ matrix.shard }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.browser == 'full'
+    strategy:
+      fail-fast: false # Every shard reports, so the merged report is complete.
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false # Reads the exact packageManager version in package.json.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      # Shards build the same commit in parallel rather than waiting for application.
+      - name: Production build
+        run: pnpm build
+      - name: Browser and visual regression shard
+        env:
+          VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DUTY_E2E_BLOB: "1"
+          SHARD: ${{ matrix.shard }}
+        # The pinned image supplies Chromium and fonts; do not also run playwright install.
+        run: pnpm test:e2e:ci "--shard=$SHARD/4"
+      - name: Retain shard report for merging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Retain shard screenshot gallery for merging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review-shard-${{ matrix.shard }}
+          path: work/visual-review/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  browser-report:
+    concurrency:
+      group: quality-browser-report-${{ github.ref }}
+      cancel-in-progress: true
+    needs: [scope, browser]
+    if: ${{ !cancelled() && needs.scope.outputs.browser == 'full' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false # Reads the exact packageManager version in package.json.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: visual-review-shard-*
+          path: work/visual-review-shards
+      - name: Merge shard reports into one browser report
+        run: pnpm exec playwright merge-reports --reporter html ./all-blob-reports
+      - name: Merge shard screenshot galleries
+        if: ${{ !cancelled() }}
+        run: node scripts/visual-review-reporter.mjs --merge-shards
       - name: Retain screenshot comparison gallery
         id: visual-review
         if: ${{ !cancelled() }}
@@ -108,14 +274,12 @@ jobs:
         env:
           VISUAL_REVIEW_URL: ${{ steps.visual-review.outputs.artifact-url }}
         run: node scripts/visual-review-reporter.mjs --ci-summary
-      - name: Retain browser report and failure traces
+      - name: Retain merged browser report and failure traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: browser-baseline
-          path: |
-            playwright-report/
-            test-results/
+          path: playwright-report/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -124,7 +288,7 @@ jobs:
       group: quality-database-${{ github.ref }}
       cancel-in-progress: true
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.database == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -184,30 +348,41 @@ jobs:
         if: always()
         run: supabase stop --project-id duty-scheduler --no-backup
 
-  # Preserve the existing branch-protection check. Fail closed on missing checks.
+  # Preserve the existing branch-protection check. Fail closed on missing checks:
+  # every selected job must succeed and every unselected job must be skipped.
   quality:
     name: quality
-    needs: [scope, application, database]
+    needs: [scope, application, browser, browser-report, database]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require selected checks
         env:
+          EVENT: ${{ github.event_name }}
           SCOPE: ${{ needs.scope.result }}
-          FULL: ${{ needs.scope.outputs.full }}
+          RUN_APPLICATION: ${{ needs.scope.outputs.application }}
+          RUN_DATABASE: ${{ needs.scope.outputs.database }}
+          RUN_BROWSER: ${{ needs.scope.outputs.browser }}
           APPLICATION: ${{ needs.application.result }}
+          BROWSER: ${{ needs.browser.result }}
+          BROWSER_REPORT: ${{ needs.browser-report.result }}
           DATABASE: ${{ needs.database.result }}
         run: |
           test "$SCOPE" = success
-          if [ "$FULL" = true ]; then
-            test "$APPLICATION" = success
-            test "$DATABASE" = success
-          else
-            test "$FULL" = false
-            test "$APPLICATION" = skipped
-            test "$DATABASE" = skipped
+          require() { if [ "$2" = true ]; then test "$1" = success; else test "$1" = skipped; fi; }
+          if [ "$EVENT" != pull_request ]; then
+            test "$RUN_APPLICATION" = true
+            test "$RUN_DATABASE" = true
+            test "$RUN_BROWSER" = full
           fi
+          case "$RUN_BROWSER" in full|selected|none) ;; *) exit 1 ;; esac
+          full=false
+          if [ "$RUN_BROWSER" = full ]; then full=true; fi
+          require "$APPLICATION" "$RUN_APPLICATION"
+          require "$DATABASE" "$RUN_DATABASE"
+          require "$BROWSER" "$full"
+          require "$BROWSER_REPORT" "$full"
 
   deploy-development:
     needs: quality
