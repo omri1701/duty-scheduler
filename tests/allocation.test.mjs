@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, validateGeneration} from '../lib/scheduling/index.ts';
 import {record, replay, sliceClaim} from '../lib/compensation/index.ts';
-import {proposeAllocation, editAllocation, compileAllocation, assessAllocation, persistedDraft} from '../lib/allocation/index.ts';
+import {proposeAllocation, editAllocation, compileAllocation, assessAllocation, persistedDraft, transferAllocation, classifyTransfer} from '../lib/allocation/index.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 const solver = await createHighsAdapter(loadHighs);
@@ -176,6 +176,28 @@ test('without an unprotected counterpart the requested edit stays pending, never
   assert.deepEqual(r.draft.transfers, []); assert.equal(r.balanced, false);
   assert.equal(r.draft.pending[0].deltaUnits, 2);
   assert.throws(() => edit(i, {...normal.draft, handEdited: ['nobody']}, 'e00', 1), /invalid-hand-edits/);
+});
+
+test('a dragged transfer is exact, protects both members and can be made permanent', () => {
+  const i = normalInput, d = normal.draft;
+  const r = transferAllocation(i, d, {id: 'drag/0', fromId: 'e03', toId: 'e07', units: 2, kind: 'temporary'});
+  assert.equal(r.balanced, true);
+  assert.equal(r.draft.targetsUnits.e03, d.targetsUnits.e03 - 2); assert.equal(r.draft.targetsUnits.e07, d.targetsUnits.e07 + 2);
+  assert.deepEqual(r.draft.transfers, [{id: 'drag/0', fromId: 'e03', toId: 'e07', units: 2, kind: 'temporary'}]);
+  assert.deepEqual(r.draft.handEdited, ['e03', 'e07']);
+  const temporary = compiled(i, r.draft).plan;
+  assert.deepEqual(temporary.intents.map(t => [t.fromId, t.toId, t.kind]), [['e03', 'e07', 'temporary']], 'temporary creates linked compensation');
+  const permanent = classifyTransfer(i, r.draft, 'drag/0', 'permanent');
+  assert.deepEqual(permanent.targetsUnits, r.draft.targetsUnits); assert.equal(permanent.transfers[0].kind, 'permanent');
+  assert.deepEqual(compiled(i, permanent).plan.intents.map(t => t.kind), ['permanent'], 'permanent creates no compensation claim');
+  assert.equal(r.draft.transfers[0].kind, 'temporary', 'source draft not mutated');
+  // Later automatic counterparts leave both dragged members alone.
+  const later = edit(i, r.draft, 'e00', 2, 'temporary', 'later');
+  assert.equal(later.draft.targetsUnits.e03, r.draft.targetsUnits.e03); assert.equal(later.draft.targetsUnits.e07, r.draft.targetsUnits.e07);
+  assert.throws(() => transferAllocation(i, d, {id: 'x/0', fromId: 'e03', toId: 'e07', units: d.targetsUnits.e03 + 2, kind: 'temporary'}), /below-locked/);
+  assert.throws(() => transferAllocation(i, r.draft, {id: 'drag/0', fromId: 'e03', toId: 'e07', units: 2, kind: 'temporary'}), /invalid-allocation-edit/);
+  assert.throws(() => transferAllocation(i, d, {id: 'self/0', fromId: 'e03', toId: 'e03', units: 2, kind: 'temporary'}), /invalid-allocation-edit/);
+  assert.throws(() => classifyTransfer(i, d, 'missing', 'permanent'), /invalid-allocation-edit/);
 });
 
 test('manual deferral reroutes through the creditor once, preserves source age and does not settle', () => {

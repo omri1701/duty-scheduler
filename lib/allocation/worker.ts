@@ -1,6 +1,6 @@
 import {loadSchedulingAdapter} from '../scheduling/solver/load.ts';
 import {proposeAllocation, assessAllocation} from './planner.ts';
-import {editAllocation} from './edits.ts';
+import {editAllocation, transferAllocation} from './edits.ts';
 import {compileAllocation} from './compile.ts';
 import {reviewAllocation} from './review.ts';
 import {context} from './model.ts';
@@ -20,6 +20,7 @@ scope.onmessage = async ({data}) => {
       const copied = data.kind === 'assess' && data.copied;
       let draft = copied ? {...data.draft, sourceKey: context(input).key} : reviewAllocation(input, data.draft);
       if (data.kind === 'edit') draft = editAllocation(adapter, input, draft, data.edit, settings).draft;
+      if (data.kind === 'transfer') draft = transferAllocation(input, draft, data.transfer).draft;
       const check = assessAllocation(adapter, input, draft, data.kind === 'assess' ? settings : {...settings, seconds: 0});
       scope.postMessage({type: 'result', value: {draft: copied ? data.draft : draft, check,
         ...(data.kind === 'compile' ? {compiled: compileAllocation(input, draft, data.assignments)} : {})}});
