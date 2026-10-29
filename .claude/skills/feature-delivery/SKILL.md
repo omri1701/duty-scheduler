@@ -16,4 +16,5 @@ the exact manual step.
 
 Return the PR link and a brief result, then STOP. No CI polling, waiting, run/log
 inspection or artifact retrieval; handle CI results only when the user supplies
-them in a follow-up. Required checks still gate merging.
+them or explicitly asks to check CI (one `gh pr checks` read, per AGENTS.md).
+Required checks still gate merging.
