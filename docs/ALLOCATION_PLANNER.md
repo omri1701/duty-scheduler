@@ -39,8 +39,9 @@ After proving minimum ordinary cost, retain all equivalent baseline vectors and:
 2. Maximize each projected unreserved obligation's repayment, oldest first,
    permitting partial units and continuing past an infeasible older claim.
 3. Minimize explicit temporary availability relief.
-4. Give equivalent baseline remainders newest first, then select temporary
-   counterparts in forward/wrapping saved seniority order.
+4. Give equivalent baseline remainders newest first. Automatic +/- counterparts
+   use the same order for Target and Permanent: a receiver has the fewest points,
+   newest first; a giver has the most points, senior first.
 
 Each objective is fixed only after proof. There is no weighted approximation of
 these priorities and no fixed monthly repayment cap. Creditor relief, debtor

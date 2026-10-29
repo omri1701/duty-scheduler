@@ -105,10 +105,10 @@ test('availability relief is explicit temporary intent; ordinary baseline remain
   assert.ok(p.intents.every(t => t.fromId === 'e00'));
 });
 
-test('temporary/permanent counterpart preferences, wrapping and whole-request precedence', () => {
+test('temporary/permanent counterpart preferences and whole-request precedence', () => {
   const d = normal.draft, i = normalInput;
   const temp = edit(i, d, 'e11', -2);
-  assert.deepEqual(temp.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e11', 'e00', 2]]);
+  assert.deepEqual(temp.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e11', 'e09', 2]]);
   const increase = edit(i, d, 'e00', 2, 'permanent');
   assert.equal(increase.draft.transfers[0].fromId, 'e10', 'highest target, senior tie');
   const decrease = edit(i, d, 'e00', -2, 'permanent');
@@ -118,6 +118,16 @@ test('temporary/permanent counterpart preferences, wrapping and whole-request pr
   assert.equal(total(p.intents.filter(t => t.kind === 'permanent').map(t => t.units)), 2);
   assert.equal(total(p.intents.filter(t => t.kind === 'temporary').map(t => t.units)), 2);
   assert.deepEqual(normal.draft, d, 'original proposal not mutated');
+});
+
+test('automatic Target counterparts follow the baseline remainder order, not the next senior', () => {
+  // 12 engineers, 26 points: 2 each, remainders to the newest (e10, e11 = 3).
+  const d = normal.draft, i = normalInput;
+  assert.deepEqual(Object.values(d.targetsUnits), [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]);
+  const minus = edit(i, d, 'e00', -2);
+  assert.deepEqual(minus.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e00', 'e09', 2]], 'newest member at base receives');
+  const plus = edit(i, d, 'e00', 2);
+  assert.deepEqual(plus.draft.transfers.map(t => [t.fromId, t.toId, t.units]), [['e10', 'e00', 2]], 'most senior 3-point member gives');
 });
 
 test('unplaceable edits preserve the requested limit; explicit controls consume pending provenance', () => {
@@ -138,7 +148,7 @@ test('unplaceable edits preserve the requested limit; explicit controls consume 
 });
 
 test('automatic counterparts never move hand-edited members; protection survives edits', () => {
-  // A=e01, B=e00 (old rule: B's nearest counterpart was A), E=e04, F=e05.
+  // A=e01, B=e00, E=e04, F=e05. Unprotected, B's point would go back to A (now lowest).
   const i = normalInput, d = normal.draft, set = {...d.targetsUnits};
   let r = edit(i, d, 'e01', -2, 'temporary', 'a'); set.e01 -= 2;
   assert.deepEqual(r.draft.handEdited, ['e01']);
@@ -150,8 +160,8 @@ test('automatic counterparts never move hand-edited members; protection survives
   assert.equal(r.balanced, true); assert.deepEqual(r.draft.pending, []);
   const hand = new Set(r.draft.handEdited);
   assert.ok(r.draft.transfers.every(t => hand.has(t.fromId) !== hand.has(t.toId)), 'each automatic leg has one unprotected side');
-  // C absorbed A and B automatically and stays re-adjustable for E and F.
-  assert.deepEqual(r.draft.transfers.map(t => [t.fromId, t.toId]), [['e01', 'e02'], ['e00', 'e02'], ['e02', 'e04'], ['e02', 'e05']]);
+  // e09/e08 absorbed A and B automatically and stay re-adjustable for E and F.
+  assert.deepEqual(r.draft.transfers.map(t => [t.fromId, t.toId]), [['e01', 'e09'], ['e00', 'e08'], ['e08', 'e04'], ['e09', 'e05']]);
   assert.deepEqual(persistedDraft(r.draft), Object.fromEntries(Object.entries(r.draft).filter(([k]) => k !== 'handEdited')));
   assert.equal(compiled(i, r.draft).confirmable, true);
   assert.deepEqual(normal.draft.handEdited, undefined, 'a new proposal starts unprotected');
@@ -170,10 +180,11 @@ test('without an unprotected counterpart the requested edit stays pending, never
 
 test('manual deferral reroutes through the creditor once, preserves source age and does not settle', () => {
   const i = owe(scenario(), 'e00', 'e11', 8, 'old'), before = structuredClone(i.events), r = proposal(i);
-  const changed = edit(i, r.draft, 'e00', -2), p = compiled(i, changed.draft).plan;
+  // The creditor is hand edited, so the lowered debtor point reaches a third party.
+  const changed = edit(i, {...r.draft, handEdited: ['e11']}, 'e00', -2), p = compiled(i, changed.draft).plan;
   assert.equal(total(p.repayments.map(p => p.units)), 4);
   assert.equal(total(p.deferred.map(p => p.units)), 4);
-  assert.deepEqual(p.intents.map(t => [t.fromId, t.toId, t.units, t.kind]), [['e11', 'e01', 2, 'temporary']]);
+  assert.deepEqual(p.intents.map(t => [t.fromId, t.toId, t.units, t.kind]), [['e11', 'e09', 2, 'temporary']]);
   assert.equal(p.intents[0].deferredClaim.path[0].lotId, 'old');
   for (const repayment of p.repayments) for (const a of repayment.claim.path) {
     for (const intent of p.intents) for (const claim of intent.normalizedDeferredClaims ?? []) for (const b of claim.path) {
@@ -186,11 +197,11 @@ test('manual deferral reroutes through the creditor once, preserves source age a
   }
   // Existing core independently checks the resulting debt network, without
   // creating both D->C and D->recipient for the same deferred work.
-  let history = send(i.events, {kind: 'claim', debtorId: 'e11', creditorId: 'e01', units: 2}, 'approved-burden');
+  let history = send(i.events, {kind: 'claim', debtorId: 'e11', creditorId: 'e09', units: 2}, 'approved-burden');
   history = send(history, {kind: 'adjust', mode: 'settle', claim: p.repayments[0].claim, units: 4}, 'completed-work');
-  assert.deepEqual(replay(history).net, {e00: -4, e01: 2, e02: 0, e03: 0, e04: 0, e05: 0, e06: 0, e07: 0, e08: 0, e09: 0, e10: 0, e11: 2});
+  assert.deepEqual(replay(history).net, {e00: -4, e01: 0, e02: 0, e03: 0, e04: 0, e05: 0, e06: 0, e07: 0, e08: 0, e09: 2, e10: 0, e11: 2});
   assert.deepEqual(i.events, before);
-  const permanent = compiled(i, edit(i, r.draft, 'e00', -2, 'permanent').draft).plan;
+  const permanent = compiled(i, edit(i, {...r.draft, handEdited: ['e11']}, 'e00', -2, 'permanent').draft).plan;
   assert.equal(total(permanent.repayments.map(p => p.units)), 4);
   assert.ok(permanent.intents.every(t => t.kind === 'permanent'));
 });
