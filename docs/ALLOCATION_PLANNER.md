@@ -39,8 +39,9 @@ After proving minimum ordinary cost, retain all equivalent baseline vectors and:
 2. Maximize each projected unreserved obligation's repayment, oldest first,
    permitting partial units and continuing past an infeasible older claim.
 3. Minimize explicit temporary availability relief.
-4. Give equivalent baseline remainders newest first, then select temporary
-   counterparts in forward/wrapping saved seniority order.
+4. Give equivalent baseline remainders newest first. Automatic +/- counterparts
+   use the same order for Target and Permanent: a receiver has the fewest points,
+   newest first; a giver has the most points, senior first.
 
 Each objective is fixed only after proof. There is no weighted approximation of
 these priorities and no fixed monthly repayment cap. Creditor relief, debtor
@@ -66,7 +67,15 @@ coverage proves partial necessity. A timeout never proves impossibility.
 
 `editAllocation` clones the draft, tries the whole change before half-point
 redistribution, refreshes donor/recipient ranking after each transfer and never
-crosses locked floors. Partial-month probes require the recipient to carry the
+crosses locked floors. The app only rearranges what it arranged itself: every
+member the manager changed by hand is recorded in the draft's local `handEdited`
+list, and automatic counterparts never take from or give to them. Members changed
+only automatically stay re-adjustable, ranked as before. The list survives later
+edits and Undo, resets with a new proposal, and is stripped before the checked
+RPC persists the allocation. `transferAllocation` records one exact manual
+transfer, such as a drag, without choosing a counterpart and protects both
+members. `classifyTransfer` only changes a transfer's kind, so Make permanent keeps
+targets and removes its future compensation. Partial-month probes require the recipient to carry the
 increment relative to the prior witness without degrading its coverage priorities.
 Unproved probes leave explicit pending edits; they are not labeled impossible.
 The requested target is preserved when redistribution cannot finish. Subsequent

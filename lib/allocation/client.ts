@@ -1,11 +1,12 @@
-import type {AllocationDraft, AllocationInput, Check, Kind} from './types.ts';
+import type {AllocationDraft, AllocationInput, Check, Kind, Transfer} from './types.ts';
 import type {PrimaryAssignments} from '../scheduling/validate.ts';
 import type {compileAllocation} from './compile.ts';
 
 export type AllocationOperation = {input: AllocationInput} & (
   {kind: 'propose'} | {kind: 'assess'; draft: AllocationDraft; copied?: boolean} |
   {kind: 'compile'; draft: AllocationDraft; assignments: PrimaryAssignments} |
-  {kind: 'edit'; draft: AllocationDraft; edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}}
+  {kind: 'edit'; draft: AllocationDraft; edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}} |
+  {kind: 'transfer'; draft: AllocationDraft; transfer: Transfer}
 );
 export type AllocationReply = {draft: AllocationDraft; check: Check; optimal?: boolean; compiled?: ReturnType<typeof compileAllocation>};
 
