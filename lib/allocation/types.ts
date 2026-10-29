@@ -22,6 +22,9 @@ export type AllocationDraft = {
   transfers: Transfer[];
   pending: Pending[];
   sourceKey: string;
+  /** Members the manager changed by hand. Automatic counterparts never move them.
+   * Local editing state only: it is stripped before the checked RPC persists. */
+  handEdited?: string[];
 };
 export type Stage = {name: string; status: string; objective: number | null; proved: boolean};
 export type Feasibility = 'complete' | 'partial' | 'unknown' | 'invalid';
