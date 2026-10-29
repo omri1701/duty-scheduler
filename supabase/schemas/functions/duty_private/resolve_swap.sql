@@ -43,12 +43,12 @@ begin
  if p_action='approve' then
   update public.duty_months set publication_sequence=publication_sequence+1 where month=r.month returning publication_sequence into next_version;
   insert into public.duty_publications(month,version,published_by) values(r.month,next_version,auth.uid()) returning id into publication;
-  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
+  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points,locked)
   select publication,d.day,d.end_day,case when d.id=a.id then r.other_id when d.id=b.id then r.requester_id else d.primary_id end,
    d.secondary_id,case when d.id in (a.id,b.id) then exists(
     select 1 from public.duty_constraints c where c.kind='no' and c.day>=d.day and c.day<d.end_day
     and c.member_id in (case when d.id=a.id then r.other_id else r.requester_id end,d.secondary_id)
-   ) else d.manager_override end,d.title,d.extra_points
+   ) else d.manager_override end,d.title,d.extra_points,d.locked
   from public.duty_assignments d where d.publication_id=current_publication;
   insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)
   select month,publication,allocation_id,allocation,

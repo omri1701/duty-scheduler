@@ -2,6 +2,7 @@
 // Only synthetic fixtures in an empty disposable LOCAL container; every case rolls back.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {canonicalDuties, handover} from '../../lib/scheduling/calendar.ts';
 import {replay} from '../../lib/compensation/index.ts';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
@@ -150,6 +151,56 @@ const lockViews=sql(locked);assert.deepEqual(lockViews[0].facts.locks,lockViews[
 assert.deepEqual(readGenerationContext(lockViews[0]).generationInput.targets,Object.fromEntries(Object.entries(totals).map(([id,units])=>[id,units/2])));
 assert.ok(!JSON.stringify(lockViews).includes('Private lock note'));
 console.log('PASS: exact availability approval publishes without a generic override; locks/approvals round-trip and private notes stay excluded');
+
+// The calendar can save a lock before the first confirmed allocation. All lock
+// changes use the same atomic, revision-checked schedule write as the primary.
+const manualPayload=(primary,locked,review=true)=>({team:[],months:{[month]:{status:'draft',deadline:'2027-11-24',generated:false}},
+ duties:[{day:lockedDuty.startDate,end_day:lockedDuty.endDate,primary_id:primary,secondary_id:ids[12],locked}],
+ ...(review?{lock_edits:[lockedDuty.id]}:{})});
+const edit=(payload,revision=rev)=>`select public.duty_save_schedule(${quote(payload)},${revision});`;
+const withEmergency=structuredClone(assignments);withEmergency[lockedDuty.id].secondary=ids[12];
+let calendarLocks=setup+edit(manualPayload(lockedEngineer,true))+refresh+`select v from context;`;
+calendarLocks+=failure(edit(manualPayload(ids[6],true,false)),'Explicitly review locks');
+calendarLocks+=failure(edit(manualPayload(ids[6],false),0),'changed|revision');
+calendarLocks+=`set local request.jwt.claim.sub='${ids[2]}';`+failure(edit(manualPayload(ids[6],false)),'Admin access required')+`set local request.jwt.claim.sub='${manager}';`;
+calendarLocks+=confirm(confirmedDraft,lock)+save(withEmergency)+refresh+save(withEmergency)+`select v from context;`;
+calendarLocks+=edit(manualPayload(ids[6],true))+refresh+`select v from context;`;
+calendarLocks+=edit(manualPayload(ids[6],false))+refresh+`select v from context;rollback;`;
+const calendarViews=sql(calendarLocks);
+assert.equal(calendarViews[0].facts.allocation,null);
+assert.deepEqual(calendarViews[0].facts.locks,lock);
+assert.deepEqual(calendarViews[1].facts.locks,lock);
+assert.deepEqual(calendarViews[2].facts.locks,[{dutyId:lockedDuty.id,engineer:ids[6]}]);
+assert.deepEqual(calendarViews[3].facts.locks,[]);
+for(const view of calendarViews)assert.equal(view.facts.duties.find(d=>d.id===lockedDuty.id).secondary,ids[12]);
+console.log('PASS: calendar locks before allocation, repeated generations, saved primary replacement, unlock, emergency preservation and atomic stale/unauthorized refusals');
+
+const otherLockedDuty=duties.find(d=>!d.weekendId&&assignments[d.id].primary===ids[6]);
+const otherLock={dutyId:otherLockedDuty.id,engineer:ids[6]},otherApproval={rule:'availability',dutyId:otherLockedDuty.id,engineer:ids[6],dates:[otherLockedDuty.startDate],reason:'Separate exact approval'};
+const scopedPayload=manualPayload(lockedEngineer,false);
+scopedPayload.duties.push({day:otherLockedDuty.startDate,end_day:otherLockedDuty.endDate,primary_id:ids[6],secondary_id:null,locked:true});
+let scopeEdits=setup+`reset role;
+insert into public.duty_assignments(day,end_day,primary_id) values('${lockedDuty.startDate}','${lockedDuty.endDate}','${lockedEngineer}'),('${otherLockedDuty.startDate}','${otherLockedDuty.endDate}','${ids[6]}');
+insert into public.duty_constraints(member_id,day,kind,note) values('${lockedEngineer}','${lockedDuty.startDate}','no','Private'),('${ids[6]}','${otherLockedDuty.startDate}','no','Private');
+set local role authenticated;`+refresh+confirm(confirmedDraft,[...lock,otherLock],[...approval,otherApproval]);
+scopeEdits+=edit(scopedPayload)+refresh+`select v from context;rollback;`;
+const [scopeView]=sql(scopeEdits);
+assert.deepEqual(scopeView.facts.locks,[otherLock]);assert.deepEqual(scopeView.facts.approvals,[otherApproval]);
+console.log('PASS: unlocking retires only the affected exact approval and preserves unrelated locked assignments/approvals');
+
+// Exercise the exact incremental upgrade with existing working/publication locks.
+const migration=readFileSync(new URL('../migrations/20261028204239_duty_editor_locks.sql',import.meta.url),'utf8');
+let upgrade=setup+`reset role;insert into public.duty_assignments(day,end_day,primary_id) values('${lockedDuty.startDate}','${lockedDuty.endDate}','${lockedEngineer}');set local role authenticated;`+refresh+confirm(confirmedDraft,lock)+save()+publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
+upgrade+=`select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});reset role;
+create temp table before_locks as select jsonb_agg(to_jsonb(a)-'locked' order by id) value from public.duty_assignments a;
+alter table public.duty_assignments drop column locked;
+`+migration+`
+do $$begin
+ if (select jsonb_agg(to_jsonb(a)-'locked' order by id) from public.duty_assignments a) is distinct from (select value from before_locks) then raise exception 'Upgrade changed duty history';end if;
+ if (select count(*) from public.duty_assignments where locked)<>2 then raise exception 'Legacy locks not backfilled';end if;
+end$$;rollback;`;
+sql(upgrade);
+console.log('PASS: incremental upgrade backfills draft and immutable publication locks without changing existing duty data');
 
 // Server debt validation, deferred repayment mixed route, post-normalization
 // source suffix and actual duty reservations. Nothing is earned on publication.

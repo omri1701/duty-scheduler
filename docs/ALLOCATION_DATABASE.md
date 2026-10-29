@@ -20,6 +20,22 @@ explicit primary locks, rule-specific approvals, captured accounting/calendar
 fingerprints, generation seed/metrics and publication ancestry. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
+`duty_assignments.locked` persists a primary lock even before the first allocation.
+The duty editor saves it atomically with the primary through `duty_save_schedule`;
+its optional `lock_edits` date list explicitly reviews the edited duty (both days
+for a weekend). Other writes still cannot remove or change locked work silently.
+Generation facts derive locks from the owned current duty rows, and schedule saves
+keep allocation lock metadata synchronized. Changing/unlocking a primary retires
+only approvals referring to the changed lock; an override boolean never grants a
+solver exception. Existing generation validation continues to reject conflicting
+locks, target floors and missing exact approvals. The Generate popup no longer
+edits locks or exceptions. Published/history copies retain duty lock flags.
+
+The additive `20261028204239_duty_editor_locks.sql` migration backfills flags from
+existing allocation locks without rewriting duty identities or primary/history
+data. Apply it through the normal database-first release process before the UI;
+this feature does not authorize hosted changes.
+
 Publish freezes the snapshot alongside the owned duties in the same transaction.
 Restore copies it into the draft. Cancel Draft deletes only its working snapshot.
 Deleting the last version first preserves its working snapshot. Approved swaps

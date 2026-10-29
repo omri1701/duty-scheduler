@@ -13,8 +13,8 @@ begin
  -- Deleting the final publication must not silently discard the only schedule.
  -- Keep an already-open draft, otherwise copy the version before deleting it.
  if replacement is null and exists(select 1 from public.duty_months where current_publication_id=v.id and status='published') then
-  insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
-  select day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments
+  insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points,locked)
+  select day,end_day,primary_id,secondary_id,manager_override,title,extra_points,locked from public.duty_assignments
   where publication_id=v.id and duty_private.duty_owner(day)=v.month;
   insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation)
   select month,null,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,p_publication,generation from public.duty_allocations where publication_id=p_publication;

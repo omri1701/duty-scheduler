@@ -19,12 +19,14 @@ export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]
  }
  return all.filter(b=>(b.start<end&&b.end>begin)||ownerMonth(b)===month);
 }
-export function normalizeWeekends(s:State):State{
+export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
  const assignments={...s.assignments};
  const splitWeekends=(s.splitWeekends??[]).filter(f=>{
   if(s.specials.some(sp=>overlap(sp,{start:f,end:addDays(f,2)})))return true;
   const a=assignments[f],b=assignments[addDays(f,1)];
-  if(!a?.primary||a.primary!==b?.primary||a.secondary!==b.secondary)return true;
+  // Only an explicit edit of this weekend can change a locked duty's shape.
+  if((a?.locked||b?.locked)&&f!==reviewedWeekend)return true;
+  if(!a?.primary||a.primary!==b?.primary||a.secondary!==b.secondary||!!a.locked!==!!b.locked)return true;
   assignments[f]={...a,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
  });
  return {...s,assignments,splitWeekends};
@@ -35,7 +37,7 @@ export function setWeekendAssignment(s:State,friday:string,scope:'all'|'fri'|'sa
  if(!alreadySplit)assignments[saturday]={...(assignments[friday]??{primary:''})};
  if(scope!=='sat')assignments[friday]={...assignment};
  if(scope!=='fri')assignments[saturday]={...assignment};
- return normalizeWeekends({...s,assignments,splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
+ return normalizeWeekends({...s,assignments,splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]},friday);
 }
 /** Expand the displayed weekend into two editable days without changing saved state. */
 export function weekendAssignments(s:State,friday:string):[Assignment,Assignment]{
@@ -45,7 +47,7 @@ export function weekendAssignments(s:State,friday:string):[Assignment,Assignment
 }
 /** Save both days atomically; never merge halfway through an edit. */
 export function setWeekendAssignments(s:State,friday:string,fri:Assignment,sat:Assignment):State{
- return normalizeWeekends({...s,assignments:{...s.assignments,[friday]:{...fri},[addDays(friday,1)]:{...sat}},splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
+ return normalizeWeekends({...s,assignments:{...s.assignments,[friday]:{...fri},[addDays(friday,1)]:{...sat}},splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]},friday);
 }
 export function weekendCounts(s:State,month:string){
  const bs=blocks(month,s.specials,s.splitWeekends).filter(b=>ownerMonth(b)===month&&b.weekendId);
@@ -144,6 +146,7 @@ export function swapDraft(s:State,month:string,from:string,to:string,allowOverri
  if(!a||!b||ownerMonth(a)!==month||ownerMonth(b)!==month)return{ok:false,reason:'other-month'};
  const x=s.assignments[from],y=s.assignments[to];
  if(!x?.primary||!y?.primary)return{ok:false,reason:'unassigned'};
+ if(x.locked||y.locked)return{ok:false,reason:'locked'};
  if(x.primary===y.primary)return{ok:false,reason:'same-person'};
  if(y.primary===x.secondary||x.primary===y.secondary)return{ok:false,reason:'duplicate'};
  if([x.primary,y.primary,x.secondary,y.secondary].filter(Boolean).some(id=>!s.team.some(p=>p.id===id&&p.active)))return{ok:false,reason:'inactive'};

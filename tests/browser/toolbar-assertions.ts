@@ -23,7 +23,8 @@ export async function assertToolbar(page: Page) {
       workflows:[...toolbar.querySelectorAll('.workflow-actions>button')].map(el=>({...rect(el),paddingStart:Number.parseFloat(getComputedStyle(el).paddingInlineStart),paddingEnd:Number.parseFloat(getComputedStyle(el).paddingInlineEnd)})),
       visibleLabels:labels.length, overflow:document.documentElement.scrollWidth > innerWidth};
   });
-  expect(evidence.hash, 'loaded stylesheet must match this source revision').toBe(await currentCssHash());
+  // The fingerprint is a quoted CSS string so minifiers cannot rewrite it.
+  expect(evidence.hash, 'loaded stylesheet must match this source revision').toBe(`"${await currentCssHash()}"`);
   expect(evidence.computed['.month-toolbar']?.display).toBe('grid');
   const desktop = evidence.containerWidth >= 960;
   expect(evidence.computed['.desktop-month-tools']?.display).toBe(desktop ? 'flex' : 'none');

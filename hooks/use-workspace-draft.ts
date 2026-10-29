@@ -44,7 +44,7 @@ export function useWorkspaceDraft({
     setSwapOverride(false);
     setSwap(selection);
   }
-  async function update(fn: (s: State) => State, draft = true, notifyError = true) {
+  async function update(fn: (s: State) => State, draft = true, notifyError = true, reviewedLocks?: string[]) {
     if (!isManager) return false;
     const s = state,
       n = prepareWorkspaceUpdate(s, fn(s), month, monthDetails, draft);
@@ -52,7 +52,7 @@ export function useWorkspaceDraft({
       const published = Object.keys(n.months).find(
         (m) => n.months[m].status === 'published' && s.months[m]?.status !== 'published',
       );
-      await remote.save(n, published, month);
+      await remote.save(n, published, month, reviewedLocks);
       return true;
     } catch (e) {
       if (!notifyError) throw e;
@@ -182,8 +182,8 @@ export function useWorkspaceDraft({
       setSwapSaving(false);
     }
   }
-  const saveDuty: (fn: Parameters<UpdateDraft>[0]) => Promise<void> = async (fn) => {
-    if (!(await update(fn))) return;
+  const saveDuty = async (fn: Parameters<UpdateDraft>[0], reviewedLocks?: string[]): Promise<void> => {
+    if (!(await update(fn, true, true, reviewedLocks))) return;
     setSelected(null);
     toast.success(t('Assignment saved to draft.', 'השיבוץ נשמר בטיוטה.'));
   };

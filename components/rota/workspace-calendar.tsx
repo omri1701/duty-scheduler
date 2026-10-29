@@ -1,6 +1,6 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
-import { Plus, Info } from 'lucide-react';
+import { Plus, Info, LockKeyhole } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
@@ -192,6 +192,7 @@ export function WorkspaceCalendar({
               aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
+                {calendarState.months[month]?.status === 'draft' && a?.locked && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}
                 {b?.kind === 'special' && (
                   <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
                 )}

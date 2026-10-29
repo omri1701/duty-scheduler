@@ -29,6 +29,7 @@ begin
   accounting_fingerprint=excluded.accounting_fingerprint,calendar_fingerprint=excluded.calendar_fingerprint,generation=null,
   allocation_id=case when duty_allocations.allocation=excluded.allocation then duty_allocations.allocation_id else gen_random_uuid() end,
   source_publication_id=case when duty_allocations.allocation=excluded.allocation then duty_allocations.source_publication_id end;
+ update public.duty_assignments a set locked=exists(select 1 from jsonb_array_elements(p_locks) l where l->>'dutyId'=a.day::text) where a.publication_id is null and duty_private.duty_owner(a.day)=p_month;
  update public.duty_workspace set revision=revision+1 where id;
  return duty_private.generation_context(p_month,(select revision from public.duty_workspace where id));
 end $$;

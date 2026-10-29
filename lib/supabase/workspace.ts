@@ -5,6 +5,22 @@ import {assertWritable, isReadOnly} from './write-policy.ts';
 
 type Scope = {client: DutyClient; id: string; snapshot: Snapshot | null; request: number; bootstrap: Promise<void> | null; read: {sequence: number; promise: Promise<void>} | null; save: Promise<unknown> | null};
 
+const missingDutyLocks = 'Duty locks are unavailable on this database. Required migration: 20261028204239_duty_editor_locks.sql. Use LOCAL with pending migrations applied.';
+function assertDutyLockSupport(snapshot: Snapshot) {
+  if (snapshot.assignments.some(row => typeof row.locked !== 'boolean')) throw Error(missingDutyLocks);
+}
+function verifyDutyLockSave(snapshot: Snapshot, state: Functions['duty_save_schedule']['Args']['p_state']) {
+  assertDutyLockSupport(snapshot);
+  for (const day of state.lock_edits ?? []) {
+    const expected = state.duties.find(row => row.day <= day && day < row.end_day);
+    const saved = snapshot.assignments.find(row => row.publication_id === null && row.day === expected?.day);
+    if (!expected || !saved || saved.end_day !== expected.end_day || saved.primary_id !== expected.primary_id ||
+      saved.secondary_id !== expected.secondary_id || saved.locked !== expected.locked) {
+      throw Error('The duty lock was not saved as requested. Refresh and review the assignment before retrying.');
+    }
+  }
+}
+
 async function read(client: DutyClient, token?: string) {
   const request = client.rpc('duty_load');
   if (token) request.setHeader('Authorization', `Bearer ${token}`);
@@ -93,6 +109,13 @@ export function createWorkspace(callbacks: {
     if (!current || current.snapshot?.revision == null) return Promise.reject(Error('Sign in with an approved account first.'));
     if (current.save) return Promise.reject(Error('Please wait for the current save.'));
     const revision = current.snapshot.revision;
+    const lockState = name === 'duty_save_schedule' ? (args as MutationArgs<'duty_save_schedule'>).p_state : undefined;
+    const reviewLocks = !!lockState?.lock_edits?.length;
+    // Older save_schedule versions accept unknown JSON fields and ignore them.
+    if (reviewLocks) {
+      try {assertDutyLockSupport(current.snapshot);}
+      catch (error) {callbacks.error(errorMessage(error, missingDutyLocks)); return Promise.reject(error);}
+    }
     current.request++; callbacks.saving(true); callbacks.error('');
     const save = (async () => {
       try {
@@ -101,6 +124,11 @@ export function createWorkspace(callbacks: {
         const {data, error} = await current.client.rpc(name, params);
         if (error) throw error;
         if (scope === current) await load(current);
+        if (reviewLocks) {
+          // An initially empty workspace cannot establish capability before Save.
+          if (scope !== current || !current.snapshot) throw Error('Your session changed. The duty edit has not been confirmed.');
+          verifyDutyLockSave(current.snapshot, lockState!);
+        }
         return data as Functions[N]['Returns'];
       } catch (error) {
         const message = errorMessage(error, 'Could not save. Please try again.');

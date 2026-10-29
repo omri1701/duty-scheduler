@@ -461,14 +461,6 @@
 .allocation-compensation strong{font-weight:550}
 .allocation-compensation p{display:flex;justify-content:space-between;margin:7px 0}
 .allocation-compensation small{display:block;color:#7a8873}
-.allocation-lock-list{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
-.allocation-lock-list label,.allocation-exception{display:flex;align-items:center;gap:10px;min-height:52px;cursor:pointer;border-bottom:1px solid #e8eddf}
-.allocation-lock-list label>span{flex:1}
-.allocation-lock-list small,.allocation-exception small{display:block;color:#829079;font-size:11px}
-.allocation-dialog input[type=checkbox]{width:18px;height:18px;accent-color:#36634b;flex-shrink:0}
-.allocation-exceptions{background:#fff7e9;padding:12px;border-radius:10px;margin-top:14px}
-.allocation-exceptions .field-label{font-size:12px}
-.allocation-exceptions input:not([type=checkbox]){min-width:0;width:100%;background:white}
 .allocation-dialog input:focus-visible,.allocation-dialog button:focus-visible,.allocation-dialog summary:focus-visible{outline:2px solid #4c7a5b;outline-offset:3px}
 .allocation-validation{display:flex;align-items:flex-start;gap:8px;background:#eef5e8;color:#547342;padding:12px;border-radius:9px;font-size:12px;line-height:1.65;margin:8px 0}
 .allocation-validation svg{flex-shrink:0;margin-top:2px}
@@ -524,7 +516,6 @@
  .allocation-readout{justify-content:flex-start;gap:6px;font-size:12px;padding-top:2px}
  .allocation-readout.generate{justify-content:flex-end;font-size:13px}
  .allocation-readout .allocation-mobile-label{font-size:11px}
- .allocation-lock-list{grid-template-columns:1fr}
  .allocation-footer{padding:13px 16px max(13px,env(safe-area-inset-bottom));gap:10px}
  .allocation-footer>div{font-size:12px}
  .allocation-footer small{max-width:120px;line-height:1.5}
@@ -534,3 +525,9 @@
  .allocation-result-grid{grid-template-columns:1fr 1fr;gap:12px}
 }
 @media(prefers-reduced-motion:reduce){.allocation-dialog *{animation:none!important;transition:none!important}}
+
+/* Duty lock controls share the existing editor and calendar. */
+.duty-dialog .duty-lock-toggle{position:absolute;top:8px;right:40px;width:32px;height:32px;color:#64766b}
+.duty-dialog .duty-lock-toggle[aria-pressed=true]{color:#174b42;background:#edf4e8}
+.duty-dialog [data-slot=dialog-header]{padding-right:64px}
+.duty-lock-indicator{display:inline-flex;color:#52665a;margin-inline-start:auto}
