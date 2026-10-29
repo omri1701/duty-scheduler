@@ -125,6 +125,8 @@ schema_paths = [
   "./schemas/functions/duty_private/rename_temporary_member.sql",
   "./schemas/functions/public/duty_add_temporary_member.sql",
   "./schemas/functions/public/duty_rename_temporary_member.sql",
+  "./schemas/functions/duty_private/balance.sql",
+  "./schemas/functions/public/duty_balance.sql",
   "./schemas/grants/functions.sql",
   "./schemas/grants/tables.sql",
 ]

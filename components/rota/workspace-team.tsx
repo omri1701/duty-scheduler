@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { TemporaryMemberDialog } from './temporary-member-dialog';
 import type { Member } from '@/lib/supabase/snapshot';
 import { Button } from '@/components/ui/button';
 import { TeamList } from '@/components/rota/team-list';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
+import type { Balance } from '@/lib/supabase/balance';
 import type { State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { Language, Translate, UpdateDraft } from './workspace-types';
@@ -30,6 +31,17 @@ export function WorkspaceTeam({
   const { active, monthTotals, historyTotals } = metrics;
   const [editing,setEditing]=useState<Member|null|undefined>(undefined);
   const temporaryMembers=remote.snapshot?.members.filter(m=>m.is_temporary)??[];
+  const [balance,setBalance]=useState<{revision:number;value:Balance|null}|null>(null);
+  const revision=remote.snapshot?.revision,load=remote.balance;
+  useEffect(()=>{
+    if(revision==null)return;
+    let alive=true;
+    // Every published change advances the revision. An older database without
+    // the read RPC simply shows no number.
+    load().then(value=>{if(alive)setBalance({revision,value})},()=>{if(alive)setBalance({revision,value:null})});
+    return()=>{alive=false};
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated each render; revision is the trigger.
+  },[revision]);
   return (
     <><section className="team-panel">
       <div className="section-heading">
@@ -44,6 +56,8 @@ export function WorkspaceTeam({
       {isManager&&!remote.readOnly&&<Button disabled={remote.saving} onClick={()=>setEditing(null)}>{t('Add Temporary Member','הוספת חבר זמני')}</Button>}
       <TeamList
         temporaryIds={temporaryMembers.map(m=>m.id)}
+        balance={balance?.value??null}
+        name={id=>remote.snapshot?.members.find(m=>m.id===id)?.name??t('Former teammate','חבר צוות לשעבר')}
         onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
         roles={remote.snapshot?.roles ?? []}
         onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
