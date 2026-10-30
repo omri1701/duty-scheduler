@@ -15,8 +15,8 @@ const part = (token: Token, amount: number, offset = 0): Token => ({...structure
 });
 const ref = (c: ClaimRef): ClaimRef => ({debtorId: c.debtorId, creditorId: c.creditorId, path: structuredClone(c.path)});
 
-/** Compile ONLY the supplied actual draft. Feasibility/optimization belongs to
- * assessAllocation; it cannot substitute a different schedule's capacity here. */
+/** Compile ONLY the supplied actual draft against Generate's actual assignments;
+ * it cannot substitute a different schedule's capacity here. */
 export function compileAllocation(input: AllocationInput, draft: AllocationDraft, assignments: PrimaryAssignments) {
   const c = context(input); validateDraft(c, draft);
   if (draft.pending.length || !validTargets(c, draft.targetsUnits)) return {check: null, plan: null,

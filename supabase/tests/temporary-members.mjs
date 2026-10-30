@@ -48,8 +48,7 @@ try {
  assert.equal(context.input.schedule.members.find(m=>m.id===testMember).eligible,false);
  assert.equal(context.input.schedule.members.filter(m=>m.eligible).length,13);
  for(const id of ids)assert.equal(context.input.schedule.members.find(m=>m.id===id).eligible,true);
- const solver=await createHighsAdapter(loadHighs),proposal=proposeAllocation(solver,context.input,{seconds:10,seed:17});
- assert.equal(proposal.check.feasibility,'complete');
+ const solver=await createHighsAdapter(loadHighs),proposal=proposeAllocation(context.input);
  assert.equal(proposal.draft.targetsUnits[testMember]??0,0);
  context=readGenerationContext(await json(`select public.duty_confirm_allocation('${month}',${q(proposal.draft)},'[]','[]',${context.revision},'${context.fingerprint}');`));
  const result=solveGeneration(solver,createGenerationRequest(context.generationInput,{now,seed:17,seconds:10}));
