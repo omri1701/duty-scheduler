@@ -4,7 +4,7 @@ import {PROJECTS} from '../lib/supabase/environment.ts';
 globalThis.window={location:{origin:'http://localhost:5173'},open:()=>{}};
 
 test('local password login uses verified Supabase Auth; hosted password login is unavailable',async t=>{
- for(const url of ['http://127.0.0.1:58321',PROJECTS.dev,PROJECTS.prod]){
+ for(const url of ['http://127.0.0.1:48321',PROJECTS.dev,PROJECTS.prod]){
   const mod=await import(`../lib/supabase/client.ts?login=${encodeURIComponent(url)}`);
   const mock=t.mock.method(globalThis,'fetch',async()=>Response.json({url,key:'sb_publishable_synthetic'}));
   const client=await mod.getSupabase();

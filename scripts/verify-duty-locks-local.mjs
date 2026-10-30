@@ -11,7 +11,7 @@ import {blocks, ownerMonth} from '../lib/rota/engine.ts';
 import {initialCalendarMonth, monthNext, calendarMonthLabel} from '../lib/rota/calendar-dates.ts';
 
 const env = await prepareLocal(), origin = 'http://127.0.0.1:5174';
-assert.equal(env.SUPABASE_URL, 'http://127.0.0.1:58321');
+assert.equal(env.SUPABASE_URL, 'http://127.0.0.1:48321');
 const sql = query => execFileSync('docker', ['exec', '-i', 'supabase_db_duty-scheduler-app', 'psql', '-U', 'postgres', '-XqAt', '-v', 'ON_ERROR_STOP=1'], {input: query, encoding: 'utf8'}).trim();
 assert.equal(sql("select exists(select 1 from supabase_migrations.schema_migrations where version='20261028204239');"), 't');
 const client = createClient(env.SUPABASE_URL, env.SUPABASE_PUBLISHABLE_KEY, {auth: {persistSession: false, autoRefreshToken: false}});

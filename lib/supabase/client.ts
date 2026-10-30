@@ -12,14 +12,17 @@ function getConnection(){
   if(typeof config!=='object'||config===null||!('url' in config)||!('key' in config))throw Error('Invalid connection configuration.');
   const {url,key}=config;
   if(typeof url!=='string'||typeof key!=='string')throw Error('Invalid connection configuration.');
-  let environment: Environment;
+  let environment: Environment, api=url;
   try {
    validatePublicKey(url,key);
    const deploymentOrigin = 'deploymentOrigin' in config && typeof config.deploymentOrigin === 'string' ? config.deploymentOrigin : undefined;
    const devOrigin = 'devOrigin' in config && typeof config.devOrigin === 'string' ? config.devOrigin : undefined;
-   environment=resolveEnvironment(url,window.location.origin,deploymentOrigin,devOrigin);
+   const localTunnel = 'localTunnel' in config && typeof config.localTunnel === 'string' ? config.localTunnel : undefined;
+   environment=resolveEnvironment(url,window.location.origin,deploymentOrigin,devOrigin,localTunnel);
+   // On the LOCAL phone tunnel, Next proxies the loopback API same-origin.
+   if(environment.target==='local'&&localTunnel!==undefined&&window.location.origin===localTunnel)api=window.location.origin;
   } catch {throw Error('Invalid connection configuration.');}
-  const client=createClient<Database>(url,key,{global:{fetch:guardedFetch(url,environment)},auth:{storageKey:environment.storageKey,flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
+  const client=createClient<Database>(api,key,{global:{fetch:guardedFetch(api,environment)},auth:{storageKey:environment.storageKey,flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
   registerEnvironment(client,environment);
   return {url,key,client,environment};
  }).catch(error=>{pending=undefined;throw error});
