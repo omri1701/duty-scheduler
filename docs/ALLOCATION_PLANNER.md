@@ -35,6 +35,16 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
    newest members. Availability and locks never change the baseline.
+   The database accepts only an exact, minimum-squared-cost partition of the
+   indivisible duty weights (`duty_private.allocation_baseline`). When duties
+   are lumpy (for example 14 days at +2 among 12 engineers: equal 4.5 each is
+   impossible), `fitPartition` in `lib/allocation/fit.ts` runs a small exact
+   search over duty counts, with no solver, and the larger shares go to the
+   newest members. The dialog then shows one note naming who gets more. The
+   search is capped; a pathological calendar shows a clear message
+   (`allocation-fit-limit`) instead of freezing. The database's own optimality
+   proof is slower: about 8 s locally for that 14-day case, which is the
+   hosted `authenticated` statement timeout.
 2. **Repayment.** Open projected obligations are repaid oldest first, in whole
    steps, capped by the debtor's availability ceiling (below) and by the
    creditor's locked floor. An older claim that does not fit is skipped and stays

@@ -1,20 +1,22 @@
 import {sliceClaim} from '../compensation/index.ts';
+import {canonicalDuties} from '../scheduling/calendar.ts';
+import {equalShares, fitPartition} from './fit.ts';
 import {ceilings, context, grain, type Context} from './model.ts';
 import type {AllocationInput, AllocationDraft, Transfer} from './types.ts';
 
 /** Synchronous proposal: plain arithmetic, no solver. Date placement and the
  * exact coverage check remain Generate's job.
- * 1. Equal ordinary shares; remainders go to the newest members.
+ * 1. Equal ordinary shares; remainders go to the newest members. When the
+ *    indivisible duties cannot split that way, the cheapest exact partition
+ *    is used instead, larger shares again to the newest members.
  * 2. Open obligations are repaid oldest first, capped by the debtor's
  *    availability ceiling and by the creditor's locked floor.
  * 3. Locks are floors: a member below them takes temporary work from the member
  *    with most points (most senior on ties). */
 export function proposeAllocation(input: AllocationInput) {
-  const c = context(input), g = grain(c), ceiling = ceilings(c), n = c.ids.length;
-  const share = Math.floor(c.total / (n * g)) * g;
-  const baseline = Object.fromEntries(c.ids.map(id => [id, share]));
-  let left = c.total - share * n;
-  for (const id of [...input.seniority].reverse()) {if (!left) break; const add = Math.min(g, left); baseline[id] += add; left -= add;}
+  const c = context(input), g = grain(c), ceiling = ceilings(c);
+  const shares = fitPartition(c.prepared.duties.map(d => d.units), c.ids.length);
+  const baseline = Object.fromEntries(c.ids.map(id => [id, shares[input.seniority.indexOf(id)]]));
   const targets = {...baseline}, repayments: AllocationDraft['repayments'] = [];
   for (const claim of c.candidates) {
     const room = Math.min(claim.units, ceiling[claim.debtorId] - targets[claim.debtorId], targets[claim.creditorId] - c.locked[claim.creditorId]);
@@ -42,6 +44,13 @@ export function proposeAllocation(input: AllocationInput) {
 /** Givers: most points first, most senior on ties. */
 export function givers(c: Context, seniority: readonly string[], targets: Record<string, number>) {
   return [...c.ids].sort((a, b) => targets[b] - targets[a] || seniority.indexOf(a) - seniority.indexOf(b));
+}
+
+/** Members whose ordinary share is above the plain equal split, because the
+ * month's duties are indivisible. Empty when the equal split stands. */
+export function unevenBaseline(input: AllocationInput, baseline: Record<string, number>) {
+  const plain = equalShares(canonicalDuties(input.schedule.month, input.schedule.calendar).map(d => d.units), input.seniority.length);
+  return input.seniority.flatMap((id, i) => (baseline[id] ?? 0) > plain[i] ? [{id, units: baseline[id]}] : []);
 }
 
 /** Per-member availability ceilings in units, for the live inline check. */

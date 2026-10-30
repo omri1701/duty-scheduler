@@ -5,7 +5,7 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {classifyTransfer, editAllocation, persistedDraft, transferAllocation} from '@/lib/allocation/edits';
-import {allocationCeilings, proposeAllocation} from '@/lib/allocation/planner';
+import {allocationCeilings, proposeAllocation, unevenBaseline} from '@/lib/allocation/planner';
 import {compileAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -90,6 +90,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
 
   const input = captured ? {...captured.input, schedule: {...captured.input.schedule, locks, approvals}} : null;
   const totals = input ? allocationTotals(input, draft, captured!.assignments) : null;
+  // Indivisible duties can make the ordinary baseline differ from an equal split.
+  const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
   // Live simple check: a target above what availability allows warns on its row.
   const ceilings = useMemo(() => {
     if (!captured) return null;
@@ -212,7 +214,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings,
-    locks, approvals, totals, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), refreshReview, confirm, cancel,
     propose: () => {if (input && phase === 'idle') {remember(); plan(() => proposeAllocation(input).draft);}},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

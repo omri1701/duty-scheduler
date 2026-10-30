@@ -41,12 +41,15 @@ Focused database verification (empty disposable LOCAL database only):
 ```powershell
 node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
 node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
+node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler
 ```
 
-The latter rolls back all fixtures, checks denied RPC/direct writes and private
+`temporary-members.mjs` rolls back all fixtures, checks denied RPC/direct writes and private
 notes, creates 12 members, changes constraints/status, runs the real allocation
 planner and HiGHS for November, saves/reloads/publishes, and checks retained history
-and compensation. It creates no fake identities for temporary engineers. Existing
+and compensation. It creates no fake identities for temporary engineers.
+`allocation-fit.mjs` checks that the browser-fitted baseline for a lumpy holiday
+month is accepted by `duty_confirm_allocation` and the equal split is refused. Existing
 data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
 These commands never target the populated `duty-scheduler-app` database.
 
