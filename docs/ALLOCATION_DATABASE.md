@@ -102,11 +102,15 @@ origins over already-published work; authoritative physical replacements and the
 existing audited manual accounting operations remain available. Compound reverse
 routes and ambiguous normalized deferrals likewise require review.
 
-Baseline validation is an exact branch-and-bound decision over owned canonical
-weights, independent of the scheduling solver and its proofs. Difficult weighted
-partitions can be expensive; database transaction/statement limits must fail the
-whole request rather than accept an unverified baseline. Large-team/pathological
-partition performance has not been established by the small differential oracle.
+Baseline validation is an exact decision over owned canonical weights,
+independent of the scheduling solver and its proofs. `allocation_fit` searches
+remaining duty-count vectors, so identical duties are never re-explored: lumpy
+12-engineer special months that took 8–60+ s in the original per-duty search now
+take milliseconds. Outside its exact integer domain (a non-positive weight, over 64
+duties, or n·total ≥ 2²⁵) the original search still decides. Database
+transaction/statement limits must fail the whole request rather than accept an
+unverified baseline. `supabase/tests/baseline-fit.mjs` checks both searches against
+an independent exhaustive oracle on small and realistic weight sets.
 
 ## Disposable local validation
 
@@ -116,6 +120,7 @@ Never pass a linked target or hosted connection string.
 ```sh
 node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
 node supabase/tests/generation.mjs supabase_db_duty-scheduler
+node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
 node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
 node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
 ```
