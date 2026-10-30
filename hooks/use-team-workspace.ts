@@ -13,6 +13,7 @@ import {generationContext, confirmAllocation, saveGeneration, type GenerationCon
 import type {AllocationDraft} from '@/lib/allocation/types';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {PrimaryAssignments} from '@/lib/scheduling/validate';
+import {balance as readBalance} from '@/lib/supabase/balance';
 
 export function useTeamWorkspace(){
  const [environment,setEnvironment]=useState<Environment|null>(null);
@@ -51,6 +52,8 @@ export function useTeamWorkspace(){
  const me=snapshot?.members.find(m=>m.id===user?.id);
  return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   refresh:()=>workspace.refresh(),
+  // Display-only projection; read where it is shown, never at startup.
+  balance:()=>client?readBalance(client):Promise.reject(Error('Not connected')),
   generationContext:(month:string,revision:number)=>workspace.captured(revision,c=>generationContext(c,month,revision),result=>result.revision),
   openGenerationMonth:(context:GenerationContext,s:State)=>workspace.captured(context.revision,async c=>{
    const {error}=await c.rpc('duty_save_schedule',{p_state:schedulePayload(s,context.input.schedule.month),p_publish:null,p_revision:context.revision});

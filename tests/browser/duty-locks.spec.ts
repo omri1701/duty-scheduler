@@ -101,7 +101,7 @@ test('saved locks survive reloads and repeated real generations; unlocking relea
   async function generate() {
     await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
     await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
-    const confirm = page.getByRole('button', {name: /^(Confirm & generate|Generate partial)$/});
+    const confirm = page.getByRole('button', {name: 'Confirm & generate', exact: true});
     await expect(confirm).toBeEnabled({timeout: 30_000});
     await confirm.click();
     await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});

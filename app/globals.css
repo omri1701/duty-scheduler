@@ -439,6 +439,7 @@
 .allocation-engineer:focus-visible{outline:2px solid #6f9a62;outline-offset:3px}
 .allocation-row.dragging{opacity:.55}
 .allocation-row.drop-target{background:#eef6e8;box-shadow:inset 0 0 0 2px #8fb47f}
+.allocation-row-warning{grid-column:1/-1;margin:6px 0 0;font-size:12px;color:#956223}
 .allocation-give{width:auto;min-width:220px;max-height:min(360px,60vh);overflow-y:auto;padding:6px;font-size:13px}
 .allocation-give p{padding:6px 10px 4px;font-size:11px;color:#72836b}
 .allocation-give button{display:flex;justify-content:space-between;gap:16px;width:100%;min-height:40px;padding:8px 10px;border-radius:6px;text-align:start}
@@ -470,13 +471,7 @@
 .allocation-details li{margin:6px 0}
 .allocation-details li strong{font-weight:500}
 .allocation-attention{color:#956223!important;background:#fcf3e4;padding:8px 10px;border-radius:6px}
-.allocation-compensation{background:#f2f6ee;border-radius:9px;padding:12px;margin-top:10px}
-.allocation-compensation strong{font-weight:550}
-.allocation-compensation p{display:flex;justify-content:space-between;margin:7px 0}
-.allocation-compensation small{display:block;color:#7a8873}
 .allocation-dialog input:focus-visible,.allocation-dialog button:focus-visible,.allocation-dialog summary:focus-visible{outline:2px solid #4c7a5b;outline-offset:3px}
-.allocation-validation{display:flex;align-items:flex-start;gap:8px;background:#eef5e8;color:#547342;padding:12px;border-radius:9px;font-size:12px;line-height:1.65;margin:8px 0}
-.allocation-validation svg{flex-shrink:0;margin-top:2px}
 .allocation-progress{display:flex;gap:12px;padding:20px 0;align-items:flex-start;font-size:13px}
 .allocation-progress svg{flex-shrink:0;margin-top:3px}
 .allocation-progress strong{font-weight:550}
@@ -544,3 +539,9 @@
 .duty-dialog .duty-lock-toggle[aria-pressed=true]{color:#174b42;background:#edf4e8}
 .duty-dialog [data-slot=dialog-header]{padding-right:64px}
 .duty-lock-indicator{display:inline-flex;color:#52665a;margin-inline-start:auto}
+.net-points button{display:block;width:100%;min-height:44px;background:none;border:0;padding:0;color:inherit;font:inherit;border-radius:6px}
+.net-points .owed strong{color:#386227}.net-points .owes strong{color:#a94c36}
+.net-breakdown{display:grid;gap:10px;font-size:13px;color:#405a49}
+.net-breakdown>div{display:grid;gap:2px}.net-breakdown p{display:flex;justify-content:space-between;gap:10px;font-weight:600}
+.net-breakdown small{display:block;font-size:12px;color:#6d7f66;overflow-wrap:anywhere}
+@media(max-width:600px){.team-row:has(.net-points){grid-template-columns:44px 28px minmax(0,1fr) 35px 35px 35px}.team-row:has(.net-points) .active-checkbox{grid-column:4/7}}

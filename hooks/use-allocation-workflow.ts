@@ -1,11 +1,13 @@
 'use client';
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
-import {createAllocationWorker, generationNow, schedulingSupported, type AllocationOperation} from '@/lib/allocation/client';
+import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
-import {classifyTransfer, persistedDraft} from '@/lib/allocation/edits';
-import type {AllocationDraft, Check, Kind} from '@/lib/allocation/types';
+import {classifyTransfer, editAllocation, persistedDraft, transferAllocation} from '@/lib/allocation/edits';
+import {allocationCeilings, proposeAllocation, unevenBaseline} from '@/lib/allocation/planner';
+import {compileAllocation} from '@/lib/allocation/compile';
+import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
 import {addDays} from '@/lib/rota/calendar-dates';
@@ -15,7 +17,7 @@ import type {GenerationContext} from '@/lib/supabase/generation';
 import {errorMessage} from '@/lib/supabase/rpc';
 import type {Translate} from '@/components/rota/workspace-types';
 
-type Phase = 'idle' | 'loading' | 'proposing' | 'editing' | 'checking' | 'confirming' | 'generating' | 'saving';
+type Phase = 'idle' | 'loading' | 'confirming' | 'generating' | 'saving';
 type Review = {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]};
 
 export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: Translate) {
@@ -23,7 +25,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   useEffect(() => {latest.current = remote;});
   const [open, setOpen] = useState(false), [phase, setPhase] = useState<Phase>('idle');
   const [captured, setCaptured] = useState<GenerationContext | null>(null), contextRef = useRef<GenerationContext | null>(null);
-  const [draft, setDraft] = useState<AllocationDraft | null>(null), [check, setCheck] = useState<Check | null>(null);
+  const [draft, setDraft] = useState<AllocationDraft | null>(null);
   const [locks, setLocks] = useState<Review['locks']>([]), [approvals, setApprovals] = useState<Approval[]>([]);
   const [history, setHistory] = useState<Review[]>([]), [step, setStep] = useState(2);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [reviewed, setReviewed] = useState(false);
@@ -58,7 +60,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     contextRef.current = null; opening.current = false;
     queueMicrotask(() => {
       setCaptured(null); setDraft(null); setOpen(false); setResult(null);
-      setHistory([]); setCheck(null); setReviewed(false); setError('');
+      setHistory([]); setReviewed(false); setError('');
     });
     const lifecycle = sequence, active = worker;
     return () => {lifecycle.current++; active.current?.terminate();};
@@ -66,7 +68,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   useEffect(() => {
     if (!remote.isAdmin || remote.readOnly || remote.saving || revision == null || rpc.current || contextRef.current?.revision === revision) return;
     if (contextRef.current) {
-      stop(); setReviewed(false); setResult(null); setCheck(null);
+      stop(); setReviewed(false); setResult(null);
       setHistory([]);
       setNotice(t('Team data changed. Review your retained targets against the refreshed month.', 'נתוני הצוות השתנו. יש לבדוק את היעדים שנשמרו מול החודש המעודכן.'));
     }
@@ -88,6 +90,13 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
 
   const input = captured ? {...captured.input, schedule: {...captured.input.schedule, locks, approvals}} : null;
   const totals = input ? allocationTotals(input, draft, captured!.assignments) : null;
+  // Indivisible duties can make the ordinary baseline differ from an equal split.
+  const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
+  // Live simple check: a target above what availability allows warns on its row.
+  const ceilings = useMemo(() => {
+    if (!captured) return null;
+    try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
+  }, [captured, locks, approvals]);
   let structural = '';
   if (draft && input) {
     try {
@@ -95,45 +104,43 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       if (draft.pending.length) structural = t('Finish the pending redistribution using Target or Permanent controls.', 'יש להשלים את החלוקה הממתינה באמצעות בקרי היעד או השינוי הקבוע.');
     } catch (e) {structural = errorMessage(e, 'Review allocation');}
   }
-  async function plan(operation: AllocationOperation, nextPhase: Phase) {
-    if (!schedulingSupported()) {setError(t('This browser cannot run the planner. Use a current browser with WebAssembly and Workers.', 'הדפדפן אינו תומך במתכנן. יש להשתמש בדפדפן עדכני שתומך ב־WebAssembly וב־Workers.')); return null;}
-    stop(); const id = sequence.current;
-    setPhase(nextPhase); setError('');
-    try {
-      const active = createAllocationWorker(); worker.current = active;
-      const reply = await active.run(operation);
-      if (id !== sequence.current) return null;
-      setDraft(reply.draft); setCheck(reply.check); setReviewed(true); setMoved(null);
-      return reply;
-    } catch (e) {if (id === sequence.current) fail(e); return null;}
-    finally {if (id === sequence.current) {worker.current = null; setPhase('idle');}}
+  /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
+  function plan(make: () => AllocationDraft) {
+    setError('');
+    try {const next = make(); setDraft(next); setReviewed(true); setMoved(null); return next;}
+    catch (e) {fail(e); return null;}
   }
+  // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
+  const review = (i: AllocationInput, saved: AllocationDraft, copied: boolean) =>
+    copied ? saved : reviewAllocation(i, saved);
   async function show() {
     if (opening.current) return; opening.current = true;
     setOpen(true); setStep(2); setHistory([]); setMoved(null); setError(''); setNotice('');
     const c = contextRef.current ?? await load();
-    if (!c) {opening.current = false; return;}
-    setDraft(c.allocation); setReviewed(false); setCheck(null);
-    setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
-    if (c.allocation) {
-      setDraft(c.allocation);
-      await plan({kind: 'assess', input: c.input, draft: c.allocation, copied: !!c.sourcePublicationId}, 'checking');
-    } else if (c.generationAllowed) await plan({kind: 'propose', input: c.input}, 'proposing');
     opening.current = false;
+    if (!c) return;
+    setDraft(c.allocation); setReviewed(false);
+    setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
+    if (c.allocation) plan(() => review(c.input, c.allocation!, !!c.sourcePublicationId));
+    else if (c.generationAllowed) plan(() => proposeAllocation(c.input).draft);
+    if (!schedulingSupported()) setError(unsupported());
   }
+  const unsupported = () => t('This browser cannot run the planner. Use a current browser with WebAssembly and Workers.', 'הדפדפן אינו תומך במתכנן. יש להשתמש בדפדפן עדכני שתומך ב־WebAssembly וב־Workers.');
   function remember() {if (draft) setHistory(h => [...h, {draft, locks, approvals}]);}
-  async function edit(engineer: string, deltaUnits: number, kind: Kind) {
+  function edit(engineer: string, deltaUnits: number, kind: Kind) {
     if (!input || !draft || phase !== 'idle') return;
     const previous = {draft, locks, approvals};
-    const reply = await plan({kind: 'edit', input, draft, edit: {id: crypto.randomUUID(), engineer, deltaUnits, kind}}, 'editing');
-    if (reply) {setHistory(h => [...h, previous]); setNotice(t('Targets updated. Counterpart changes are shown below.', 'היעדים עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));}
+    if (plan(() => editAllocation(input, draft, {id: crypto.randomUUID(), engineer, deltaUnits, kind}).draft)) {
+      setHistory(h => [...h, previous]); setNotice(t('Targets updated. Counterpart changes are shown below.', 'היעדים עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
+    }
   }
   /** Exact manual transfer of one point; temporary until made permanent. */
-  async function transfer(fromId: string, toId: string) {
+  function transfer(fromId: string, toId: string) {
     if (!input || !draft || phase !== 'idle' || fromId === toId) return;
     const previous = {draft, locks, approvals}, id = `${crypto.randomUUID()}/0`;
-    const reply = await plan({kind: 'transfer', input, draft, transfer: {id, fromId, toId, units: 2, kind: 'temporary'}}, 'editing');
-    if (reply) {setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');}
+    if (plan(() => transferAllocation(input, draft, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
+      setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');
+    }
   }
   function makePermanent() {
     if (!input || !draft || !moved || phase !== 'idle') return;
@@ -146,18 +153,19 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   function undo() {
     stop(); setPhase('idle'); const previous = history.at(-1); if (!previous) return;
     setDraft(previous.draft); setLocks(previous.locks); setApprovals(previous.approvals);
-    setHistory(h => h.slice(0, -1)); setMoved(null); setCheck(null); setReviewed(true); setError(''); setNotice(t('Last change undone.', 'השינוי האחרון בוטל.'));
+    setHistory(h => h.slice(0, -1)); setMoved(null); setReviewed(true); setError(''); setNotice(t('Last change undone.', 'השינוי האחרון בוטל.'));
   }
   async function refreshReview() {
     const old = draft, c = await load(); if (!c) return;
     setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
-    if (old) await plan({kind: 'assess', input: c.input, draft: old, copied: !!c.sourcePublicationId && JSON.stringify(persistedDraft(old)) === JSON.stringify(c.allocation)}, 'checking');
-    else if (c.allocation) {setDraft(c.allocation); await plan({kind: 'assess', input: c.input, draft: c.allocation, copied: !!c.sourcePublicationId}, 'checking');}
-    else await plan({kind: 'propose', input: c.input}, 'proposing');
+    if (old) plan(() => review(c.input, old, !!c.sourcePublicationId && JSON.stringify(persistedDraft(old)) === JSON.stringify(c.allocation)));
+    else if (c.allocation) plan(() => review(c.input, c.allocation!, !!c.sourcePublicationId));
+    else plan(() => proposeAllocation(c.input).draft);
   }
   async function confirm(generate = true) {
     if (!captured || !draft || !input || structural || !reviewed || phase !== 'idle' || rpc.current) return;
     if (generate && now() >= captured.coverageStartMs) {setClosed(true); return;}
+    if (generate && !schedulingSupported()) {setError(unsupported()); return;}
     stop(); const id = sequence.current;
     setError(''); setProgress(null); setPhase('confirming'); rpc.current = true;
     try {
@@ -184,11 +192,9 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       acceptGeneration(generated, confirmed.generationInput, now());
       // Compile against the actual returned assignments, never the allocation witness.
       // Copied publication intent is independently revalidated by the checked RPC.
-      if (!confirmed.sourcePublicationId) {
-        const compile = createAllocationWorker(); worker.current = compile;
-        const binding = await compile.run({kind: 'compile', input: confirmed.input,
-          draft: reviewAllocation(confirmed.input, draft), assignments: generated.assignments});
-        if (!binding.compiled?.confirmable) throw Error('Allocation requires review before saving.');
+      if (!confirmed.sourcePublicationId &&
+        !compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments).confirmable) {
+        throw Error('Allocation requires review before saving.');
       }
       if (id !== sequence.current) return;
       acceptGeneration(generated, confirmed.generationInput, now());
@@ -207,10 +213,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (rpc.current) return;
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, check,
-    locks, approvals, totals, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings,
+    locks, approvals, totals, uneven, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), refreshReview, confirm, cancel,
-    propose: async () => {if (input && phase === 'idle') {remember(); await plan({kind: 'propose', input}, 'proposing');}},
+    propose: () => {if (input && phase === 'idle') {remember(); plan(() => proposeAllocation(input).draft);}},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle',
   };

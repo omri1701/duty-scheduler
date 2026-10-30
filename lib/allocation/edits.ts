@@ -1,6 +1,5 @@
-import type {Settings, SolverAdapter} from '../scheduling/solver/highs-adapter.ts';
 import {assertCurrent} from './planner.ts';
-import {budget, checkTargets, context, sum, units, type Context} from './model.ts';
+import {context, sum, units, type Context} from './model.ts';
 import type {AllocationDraft, AllocationInput, Kind, Pending, Transfer} from './types.ts';
 
 export function validateDraft(c: Context, draft: AllocationDraft) {
@@ -82,18 +81,18 @@ export function classifyTransfer(input: AllocationInput, source: AllocationDraft
   return draft;
 }
 
-/** Applies one signed Target/Permanent edit, preserving the requested ceiling.
- * Returning pending work is intentional; it requires explicit counterpart edits.
+/** Applies one signed Target/Permanent edit synchronously, preserving the requested
+ * ceiling. Returning pending work is intentional; it requires explicit counterpart edits.
  * The app only rearranges what it arranged itself: automatic counterparts never
- * take from or give to a member the manager changed by hand. */
-export function editAllocation(adapter: SolverAdapter, input: AllocationInput, source: AllocationDraft,
-  edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}, settings: Partial<Settings> = {}) {
+ * take from or give to a member the manager changed by hand, and never cross a lock. */
+export function editAllocation(input: AllocationInput, source: AllocationDraft,
+  edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}) {
   const c = context(input); validateDraft(c, source);
   if (!edit.id?.trim() || source.transfers.some(t => t.id.startsWith(`${edit.id}/`)) ||
     source.pending.some(p => p.id.startsWith(`${edit.id}/`)) || !c.ids.includes(edit.engineer) ||
     !['temporary', 'permanent'].includes(edit.kind) || !Number.isSafeInteger(edit.deltaUnits) || !edit.deltaUnits) throw Error('invalid-allocation-edit');
   units(Math.abs(edit.deltaUnits));
-  const draft = structuredClone(source), work = budget(settings), diagnostics = [] as ReturnType<typeof checkTargets>['diagnostics'];
+  const draft = structuredClone(source), diagnostics: {code: string; certainty: 'fact'; engineer: string; units: number}[] = [];
   const next = draft.targetsUnits[edit.engineer] + edit.deltaUnits;
   if (next < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
   units(next); draft.targetsUnits[edit.engineer] = next;
@@ -102,8 +101,7 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   const transfer = (fromId: string, toId: string, amount: number, kind: Kind) => {
     const t: Transfer = {id: `${edit.id}/${serial++}`, fromId, toId, units: amount, kind}; draft.transfers.push(t);
   };
-  // Explicit counterpart controls can finish an earlier unbalanced edit, even
-  // when its knowingly partial target is unsuitable for automatic selection.
+  // Explicit counterpart controls can finish an earlier unbalanced edit.
   for (const p of draft.pending) {
     if (!remaining || p.kind !== edit.kind || Math.sign(p.deltaUnits) === Math.sign(remaining)) continue;
     const amount = Math.min(Math.abs(remaining), Math.abs(p.deltaUnits));
@@ -116,28 +114,14 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   draft.pending = draft.pending.filter(p => p.deltaUnits);
   const rank = (id: string) => input.seniority.indexOf(id);
   // Givers: most points, senior first. Receivers: fewest points, newest first,
-  // matching the baseline remainder order. Feasibility still decides in tryAmount.
+  // matching the baseline remainder order.
   const candidates = () => c.ids.filter(id => !handEdited.has(id)).sort((a, b) => {
     if (remaining > 0) return draft.targetsUnits[b] - draft.targetsUnits[a] || rank(a) - rank(b);
     return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
   });
   const tryAmount = (counterpart: string, amount: number) => {
-    const direction = Math.sign(remaining), current = {...draft.targetsUnits};
-    current[edit.engineer] -= remaining; // intermediate probe only; output keeps the requested limit
-    const candidate = {...current}; candidate[edit.engineer] += direction * amount; candidate[counterpart] -= direction * amount;
-    if (candidate[counterpart] < c.locked[counterpart]) return false;
-    const before = checkTargets(adapter, c, current, work);
-    const recipient = direction > 0 ? edit.engineer : counterpart;
-    const floor = (before.actualUnits[recipient] ?? current[recipient]) + amount;
-    const after = checkTargets(adapter, c, candidate, work, {[recipient]: floor});
-    const safe = after.feasibility === 'complete' || (before.feasibility === 'partial' &&
-      after.feasibility === 'partial' && after.coverage >= before.coverage &&
-      (after.coverage > before.coverage || after.special >= before.special) &&
-      (after.coverage > before.coverage || after.special > before.special || after.assignedUnits >= before.assignedUnits));
-    if (!safe) {
-      if (after.feasibility === 'unknown' || before.feasibility === 'unknown') diagnostics.push({code: 'counterpart-feasibility-unproved', certainty: 'unproved', engineer: counterpart});
-      return false;
-    }
+    const direction = Math.sign(remaining);
+    if (draft.targetsUnits[counterpart] - direction * amount < c.locked[counterpart]) return false;
     if (direction > 0) transfer(counterpart, edit.engineer, amount, edit.kind);
     else transfer(edit.engineer, counterpart, amount, edit.kind);
     draft.targetsUnits[counterpart] -= direction * amount; remaining -= direction * amount;
@@ -146,7 +130,7 @@ export function editAllocation(adapter: SolverAdapter, input: AllocationInput, s
   if (!draft.pending.length && remaining) {
     // Whole request first, then exact half-point units with ranking refreshed.
     for (const id of candidates()) if (tryAmount(id, Math.abs(remaining))) break;
-    while (remaining && work.next().seconds > 0) {
+    while (remaining) {
       let placed = false;
       for (const id of candidates()) if (tryAmount(id, 1)) {placed = true; break;}
       if (!placed) break;
