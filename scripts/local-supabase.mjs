@@ -16,7 +16,7 @@ export const LOCAL_TEMPORARY_MEMBERS=['Avi','Dana','Yossi','Noa','Eitan','Maya',
 export const missingTemporaryMembers=members=>LOCAL_TEMPORARY_MEMBERS.filter(name=>!members.some(m=>m.name===name));
 function cli(args,capture=false) {
   // pnpm scripts provide its executable path, avoiding shell quoting on Windows.
-  if (!process.env.npm_execpath) throw Error('Run via pnpm local:setup or pnpm local.');
+  if (!process.env.npm_execpath) throw Error('Run via pnpm local:setup or pnpm start:local.');
   const native=process.env.npm_execpath.endsWith('.exe');
   try {return execFileSync(native?process.env.npm_execpath:process.execPath,[...(native?[]:[process.env.npm_execpath]),'dlx','supabase@2.119.0',...args,'--workdir',directory],{cwd:root,encoding:'utf8',stdio:capture?['ignore','pipe','pipe']:['ignore','ignore','pipe']});}
   catch {throw Error('Local Supabase command failed. Check Docker Desktop and available ports 48320–48324; run the documented local CLI command for diagnostics.');}

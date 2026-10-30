@@ -35,7 +35,7 @@ async function main() {
   let env;
   if (mode === 'local') {
     const {prepareLocal} = await import('./local-supabase.mjs');
-    // Only the pnpm local launcher supplies the LOCAL tunnel origin.
+    // Only the pnpm start:local launcher supplies the LOCAL tunnel origin.
     env = {...await prepareLocal(),DUTY_LOCAL_TUNNEL_ORIGIN:process.env.DUTY_LOCAL_TUNNEL_ORIGIN};
   } else if (mode === 'dev') env = readDevelopmentEnv();
   else env = {...readEnv('.env.prod.local'),...process.env};

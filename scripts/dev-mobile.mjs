@@ -29,7 +29,7 @@ function start(command,args,options = {}) {
 }
 async function main() {
   const local = process.argv[2] === 'local';
-  if (!local && process.argv[2] !== 'dev') throw Error('Use pnpm local or pnpm dev.');
+  if (!local && process.argv[2] !== 'dev') throw Error('Use pnpm start:local or pnpm start:dev.');
   const development = readDevelopmentEnv();
   const config = resolve('work/ngrok/ngrok.yml');
   // LOCAL needs only the tunnel origin; DEV keeps its full DEV selection.
@@ -47,12 +47,12 @@ async function main() {
     server.listen(5173,'127.0.0.1',()=>server.close(accept));
   });
   if (local) {
-    // The existing `pnpm local` launcher (Docker setup, loopback API, CSS check),
+    // The existing `pnpm start:local` launcher (Docker setup, loopback API, CSS check),
     // plus the LOCAL-only same-origin Auth/REST proxy. Its output shows setup
     // progress; password sign-in puts no secrets in request URLs.
     start(process.execPath,['scripts/dev-environment.mjs','local'],{env:{...process.env,DUTY_DEV_ORIGIN:'',DUTY_LOCAL_TUNNEL_ORIGIN:origin}});
   } else {
-    // This is the existing `pnpm dev` launcher, with its loopback/DEV safeguards.
+    // This is the existing `pnpm start:dev` launcher, with its loopback/DEV safeguards.
     // Next dev logs request URLs, including OAuth callback codes. Keep its output
     // out of this mobile terminal; configuration readiness is verified below.
     start(process.execPath,['scripts/dev-environment.mjs','dev'],{env:{...process.env,...selected},stdio:'ignore'});
