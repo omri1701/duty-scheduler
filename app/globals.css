@@ -539,3 +539,9 @@
 .duty-dialog .duty-lock-toggle[aria-pressed=true]{color:#174b42;background:#edf4e8}
 .duty-dialog [data-slot=dialog-header]{padding-right:64px}
 .duty-lock-indicator{display:inline-flex;color:#52665a;margin-inline-start:auto}
+.net-points button{display:block;width:100%;min-height:44px;background:none;border:0;padding:0;color:inherit;font:inherit;border-radius:6px}
+.net-points .owed strong{color:#386227}.net-points .owes strong{color:#a94c36}
+.net-breakdown{display:grid;gap:10px;font-size:13px;color:#405a49}
+.net-breakdown>div{display:grid;gap:2px}.net-breakdown p{display:flex;justify-content:space-between;gap:10px;font-weight:600}
+.net-breakdown small{display:block;font-size:12px;color:#6d7f66;overflow-wrap:anywhere}
+@media(max-width:600px){.team-row:has(.net-points){grid-template-columns:44px 28px minmax(0,1fr) 35px 35px 35px}.team-row:has(.net-points) .active-checkbox{grid-column:4/7}}

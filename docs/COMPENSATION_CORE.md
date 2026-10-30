@@ -121,7 +121,17 @@ revision/fingerprint and atomically appends the missing event suffix. The single
 `duty_compensation_events` table stores sequence, source key, server milliseconds,
 actor, reason and operation. It has no balance columns or publication FKs.
 Audit events/reasons are manager-only; private availability notes never enter
-accounting snapshots. Member-visible summaries and UI are future work.
+accounting snapshots.
+
+`duty_balance()` is the read-only Team summary. It replays the ledger, simulates
+due work and then every published contribution to the end of time on a private
+copy (the same `compensation_reconcile(..., false)` used for `p_cutoff`), and
+returns only `{net, lines}`. Nothing is appended and the revision is unchanged.
+Admins receive every member; any other approved active member receives only
+their own net and relationships. Lines describe open actual claims by source
+lot (temporary intent date, published-change month, manual, correction, routed)
+plus repayments that settle only in the projection; reasons, events and private
+notes are never returned. `lib/supabase/balance.ts` validates the response.
 
 `duty_compensation(p_operation, p_source_key, p_reason, p_revision,
 p_fingerprint?, p_cutoff?)` accepts the five manual operations above or

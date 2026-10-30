@@ -6,6 +6,7 @@ import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/
 import type {AllocationDraft} from '../../lib/allocation/types';
 import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
+import type {Balance} from '../../lib/supabase/balance';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -44,6 +45,8 @@ export class Backend {
   authFailure = false;
   invalidated = false;
   failNextSave = false;
+  /** Display-only projection served by duty_balance; null serves zero for everyone. */
+  balance: Balance | null = null;
   googleEnabled = false;
   allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
   generationNow = Date.parse(NOW);
@@ -91,6 +94,13 @@ export class Backend {
       return null;
     }
     if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_balance') {
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
+      const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+      // Mirrors the database scope: members receive only their own row and relationships.
+      return canManage(this.raw, user) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+    }
     expect(p.p_revision).toBe(this.raw.revision);
     const admin = canManage(this.raw, user);
     if (name === 'duty_generation_context') {
