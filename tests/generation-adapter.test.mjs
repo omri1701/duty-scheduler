@@ -14,10 +14,10 @@ test('generation writes retain the captured revision and fingerprint, and never 
 });
 test('hand-edit protection is local editing state and never reaches the checked RPC',async()=>{
  const calls=[],client={rpc:async(...args)=>{calls.push(args);return {data:null,error:{message:'stop'}}}};
- const draft={baselineUnits:{},offeredUnits:{},targetsUnits:{},repayments:[],transfers:[],pending:[],sourceKey:'k',handEdited:['a']};
+ const draft={baselineUnits:{},offeredUnits:{},targetsUnits:{},repayments:[],changes:{},pairs:[],transfers:[],sourceKey:'k',hand:['a']};
  await assert.rejects(confirmAllocation(client,{revision:1,fingerprint:'f',input:{schedule:{month:'2027-12'}}},draft));
- assert.deepEqual(Object.keys(calls[0][1].p_allocation),['baselineUnits','offeredUnits','targetsUnits','repayments','transfers','pending','sourceKey']);
- assert.deepEqual(draft.handEdited,['a']);
+ assert.deepEqual(Object.keys(calls[0][1].p_allocation),['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','sourceKey']);
+ assert.deepEqual(draft.hand,['a']);
 });
 test('generation context and writes honor the existing read-only inspection guard',async()=>{
  const client={rpc:async()=>assert.fail('read-only client performed RPC')};registerEnvironment(client,{readOnly:true});

@@ -1,13 +1,25 @@
 import {assertCurrent} from './planner.ts';
+import {balanceChanges, deriveTransfers, handOf, isKind, KINDS, zeroChange, type Hand} from './derive.ts';
 import {context, sum, units, type Context} from './model.ts';
-import type {AllocationDraft, AllocationInput, Kind, Pending, Transfer} from './types.ts';
+import type {AllocationDraft, AllocationInput, Change, Kind, Pair} from './types.ts';
 
-export function validateDraft(c: Context, draft: AllocationDraft) {
+const signed = (v: unknown): v is number => Number.isSafeInteger(v) && Math.abs(v as number) <= 1e9;
+const changeShape = (v: unknown): v is Change => !!v && typeof v === 'object' && Object.keys(v).length === 2 &&
+  signed((v as Change).temporary) && signed((v as Change).permanent);
+
+/** The least permanent change a member may carry: a permanent reduction can
+ * take away neither the fair share (fair + Permanent >= 0) nor work already
+ * given away as planned relief (offered + Permanent >= 0). */
+export const permanentFloor = (draft: Pick<AllocationDraft, 'baselineUnits' | 'offeredUnits'>, id: string) =>
+  -Math.min(draft.baselineUnits[id], draft.offeredUnits[id]);
+
+export function validateDraft(c: Context, seniority: readonly string[], draft: AllocationDraft) {
   assertCurrent(c, draft);
   const table = (t: Record<string, number>) => {
-    if (Object.keys(t).length !== c.ids.length || c.ids.some(id => !Object.hasOwn(t, id))) throw Error('invalid-allocation-members');
+    if (!t || typeof t !== 'object' || Object.keys(t).length !== c.ids.length || c.ids.some(id => !Object.hasOwn(t, id))) throw Error('invalid-allocation-members');
     Object.values(t).forEach(units);
   };
+  if (!draft.changes || typeof draft.changes !== 'object' || !Array.isArray(draft.pairs) || !Array.isArray(draft.transfers)) throw Error('invalid-allocation-shape');
   table(draft.baselineUnits); table(draft.offeredUnits); table(draft.targetsUnits);
   if (sum(Object.values(draft.baselineUnits)) !== c.total) throw Error('invalid-baseline-total');
   const expected = {...draft.baselineUnits}, slices = new Map<string, {offset: number; units: number}[]>();
@@ -28,118 +40,97 @@ export function validateDraft(c: Context, draft: AllocationDraft) {
     expected[r.claim.debtorId] += r.units; expected[r.claim.creditorId] -= r.units;
   }
   if (c.ids.some(id => expected[id] !== draft.offeredUnits[id])) throw Error('invalid-offered-allocation');
+  if (Object.keys(draft.changes).length !== c.ids.length || c.ids.some(id => !changeShape(draft.changes[id]))) throw Error('invalid-allocation-changes');
+  for (const id of c.ids) {
+    if (draft.changes[id].permanent < permanentFloor(draft, id)) throw Error('permanent-below-fair-share');
+    if (draft.offeredUnits[id] + draft.changes[id].permanent + draft.changes[id].temporary !== draft.targetsUnits[id]) throw Error('unexplained-target-edit');
+  }
   const ids = new Set<string>();
-  const identity = (id: string, kind: Kind) => {
-    if (!id?.trim() || ids.has(id) || !['temporary', 'permanent'].includes(kind)) throw Error('invalid-transfer-identity');
-    ids.add(id);
-  };
-  for (const t of draft.transfers) {
-    identity(t.id, t.kind); units(t.units);
-    if (!t.units || t.fromId === t.toId || !c.ids.includes(t.fromId) || !c.ids.includes(t.toId)) throw Error('invalid-counterpart');
-    expected[t.fromId] -= t.units; expected[t.toId] += t.units;
+  for (const p of draft.pairs) {
+    if (!p || typeof p.id !== 'string' || !p.id.trim() || ids.has(p.id) || !isKind(p.kind) || p.fromId === p.toId ||
+      !c.ids.includes(p.fromId) || !c.ids.includes(p.toId) || !Number.isSafeInteger(p.units) || p.units <= 0) throw Error('invalid-allocation-pair');
+    ids.add(p.id); units(p.units);
   }
-  for (const p of draft.pending) {
-    identity(p.id, p.kind);
-    if (!c.ids.includes(p.engineer) || !Number.isSafeInteger(p.deltaUnits) || !p.deltaUnits) throw Error('invalid-pending-edit');
-    units(Math.abs(p.deltaUnits)); expected[p.engineer] += p.deltaUnits;
-  }
-  if (c.ids.some(id => expected[id] !== draft.targetsUnits[id])) throw Error('unexplained-target-edit');
-  if (draft.handEdited && (!Array.isArray(draft.handEdited) || new Set(draft.handEdited).size !== draft.handEdited.length ||
-    draft.handEdited.some(id => !c.ids.includes(id)))) throw Error('invalid-hand-edits');
+  if (JSON.stringify(draft.transfers) !== JSON.stringify(deriveTransfers(seniority, draft.changes, draft.pairs))) throw Error('invalid-derived-transfers');
+  if (draft.hand && (!Array.isArray(draft.hand) || new Set(draft.hand).size !== draft.hand.length ||
+    draft.hand.some(id => !c.ids.includes(id)))) throw Error('invalid-hand-edits');
 }
+
+/** Every change kind sums to zero: the automatic balance placed every hand change. */
+export const balanced = (draft: Pick<AllocationDraft, 'changes'>) =>
+  KINDS.every(kind => sum(Object.values(draft.changes).map(ch => ch[kind])) === 0);
+/** Units of each kind still without a counterpart (positive: more work to place). */
+export const unplacedChanges = (draft: Pick<AllocationDraft, 'changes'>): Change =>
+  ({temporary: 0 - sum(Object.values(draft.changes).map(ch => ch.temporary)), permanent: 0 - sum(Object.values(draft.changes).map(ch => ch.permanent))});
 
 /** The checked RPC accepts only the persisted allocation shape. */
 export function persistedDraft(source: AllocationDraft): AllocationDraft {
-  const draft = {...source}; delete draft.handEdited; return draft;
+  const draft = {...source}; delete draft.hand; return draft;
 }
 
-/** One exact manual transfer, such as dragging one member onto another. Both
- * members become hand edited; no counterpart is chosen automatically. */
-export function transferAllocation(input: AllocationInput, source: AllocationDraft, transfer: Transfer) {
-  const c = context(input); validateDraft(c, source);
-  const {id, fromId, toId, units: amount, kind} = transfer;
-  if (!id?.trim() || [...source.transfers, ...source.pending].some(t => t.id === id) || !c.ids.includes(fromId) ||
-    !c.ids.includes(toId) || fromId === toId || !['temporary', 'permanent'].includes(kind) ||
-    !Number.isSafeInteger(amount) || amount <= 0) throw Error('invalid-allocation-edit');
-  units(amount);
-  const draft = structuredClone(source);
-  draft.targetsUnits[fromId] -= amount; draft.targetsUnits[toId] += amount;
-  if (draft.targetsUnits[fromId] < c.locked[fromId]) throw Error('edit-below-locked-points');
-  draft.transfers.push({id, fromId, toId, units: amount, kind});
-  draft.handEdited = [...new Set([...draft.handEdited ?? [], fromId, toId])];
-  validateDraft(c, draft);
-  return {draft, balanced: !draft.pending.length && sum(Object.values(draft.targetsUnits)) === c.total};
-}
-
-/** Reclassifies one transfer, e.g. making a dragged temporary transfer permanent.
- * Targets are unchanged; only its publication compensation changes. */
-export function classifyTransfer(input: AllocationInput, source: AllocationDraft, id: string, kind: Kind) {
-  const c = context(input); validateDraft(c, source);
-  if (!source.transfers.some(t => t.id === id) || !['temporary', 'permanent'].includes(kind)) throw Error('invalid-allocation-edit');
-  const draft = {...structuredClone(source), transfers: source.transfers.map(t => t.id === id ? {...t, kind} : {...t})};
-  validateDraft(c, draft);
+/** Rebuild everything derived from the hand state: automatic balance, targets
+ * and the canonical transfer list. */
+export function rebuild(c: Context, input: AllocationInput, source: AllocationDraft, hand: Hand, pairs: Pair[]): AllocationDraft {
+  const {changes} = balanceChanges(c, input.seniority, source.offeredUnits, hand);
+  const targetsUnits = Object.fromEntries(c.ids.map(id => [id, source.offeredUnits[id] + changes[id].temporary + changes[id].permanent]));
+  const draft: AllocationDraft = {baselineUnits: {...source.baselineUnits}, offeredUnits: {...source.offeredUnits}, targetsUnits,
+    repayments: structuredClone(source.repayments), changes, pairs: structuredClone(pairs),
+    transfers: deriveTransfers(input.seniority, changes, pairs), sourceKey: source.sourceKey, hand: Object.keys(hand)};
+  validateDraft(c, input.seniority, draft);
   return draft;
 }
 
-/** Applies one signed Target/Permanent edit synchronously, preserving the requested
- * ceiling. Returning pending work is intentional; it requires explicit counterpart edits.
- * The app only rearranges what it arranged itself: automatic counterparts never
- * take from or give to a member the manager changed by hand, and never cross a lock. */
+/** One signed Temporary/Permanent change on a member. The member's net change
+ * of that kind becomes what was shown plus the delta, so a minus on a member
+ * who only holds an automatic point removes that point. The member is then
+ * hand edited: the automatic balance of both kinds is recomputed from scratch
+ * on the other members, never sticking on anyone edited by hand. */
 export function editAllocation(input: AllocationInput, source: AllocationDraft,
-  edit: {id: string; engineer: string; deltaUnits: number; kind: Kind}) {
-  const c = context(input); validateDraft(c, source);
-  if (!edit.id?.trim() || source.transfers.some(t => t.id.startsWith(`${edit.id}/`)) ||
-    source.pending.some(p => p.id.startsWith(`${edit.id}/`)) || !c.ids.includes(edit.engineer) ||
-    !['temporary', 'permanent'].includes(edit.kind) || !Number.isSafeInteger(edit.deltaUnits) || !edit.deltaUnits) throw Error('invalid-allocation-edit');
+  edit: {engineer: string; deltaUnits: number; kind: Kind}) {
+  const c = context(input); validateDraft(c, input.seniority, source);
+  if (!c.ids.includes(edit.engineer) || !isKind(edit.kind) || !Number.isSafeInteger(edit.deltaUnits) || !edit.deltaUnits) throw Error('invalid-allocation-edit');
   units(Math.abs(edit.deltaUnits));
-  const draft = structuredClone(source), diagnostics: {code: string; certainty: 'fact'; engineer: string; units: number}[] = [];
-  const next = draft.targetsUnits[edit.engineer] + edit.deltaUnits;
-  if (next < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
-  units(next); draft.targetsUnits[edit.engineer] = next;
-  const handEdited = new Set([...draft.handEdited ?? [], edit.engineer]); draft.handEdited = [...handEdited];
-  let remaining = edit.deltaUnits, serial = 0;
-  const transfer = (fromId: string, toId: string, amount: number, kind: Kind) => {
-    const t: Transfer = {id: `${edit.id}/${serial++}`, fromId, toId, units: amount, kind}; draft.transfers.push(t);
+  const hand = handOf(source), current = source.changes[edit.engineer];
+  const next = {...(hand[edit.engineer] ?? zeroChange()), [edit.kind]: current[edit.kind] + edit.deltaUnits};
+  if (next.permanent < permanentFloor(source, edit.engineer)) throw Error('permanent-below-fair-share');
+  if (source.offeredUnits[edit.engineer] + next.temporary + next.permanent < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
+  const draft = rebuild(c, input, source, {...hand, [edit.engineer]: next}, source.pairs);
+  return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
+}
+
+/** One exact manual transfer, such as dragging one member onto another: a
+ * temporary pair that routes derived debts from the giver to the receiver.
+ * Both members become hand edited; no counterpart is chosen automatically. */
+export function transferAllocation(input: AllocationInput, source: AllocationDraft, pair: Pair) {
+  const c = context(input); validateDraft(c, input.seniority, source);
+  const {id, fromId, toId, units: amount, kind} = pair;
+  if (!id?.trim() || source.pairs.some(p => p.id === id) || !c.ids.includes(fromId) || !c.ids.includes(toId) ||
+    fromId === toId || !isKind(kind) || !Number.isSafeInteger(amount) || amount <= 0) throw Error('invalid-allocation-edit');
+  units(amount);
+  const hand = handOf(source);
+  const from = {...(hand[fromId] ?? zeroChange()), [kind]: source.changes[fromId][kind] - amount};
+  const to = {...(hand[toId] ?? zeroChange()), [kind]: source.changes[toId][kind] + amount};
+  if (from.permanent < permanentFloor(source, fromId)) throw Error('permanent-below-fair-share');
+  if (source.offeredUnits[fromId] + from.temporary + from.permanent < c.locked[fromId]) throw Error('edit-below-locked-points');
+  const draft = rebuild(c, input, source, {...hand, [fromId]: from, [toId]: to}, [...source.pairs, {id, fromId, toId, units: amount, kind}]);
+  return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
+}
+
+/** Reclassifies one pair, e.g. making a dragged temporary point permanent. Both
+ * members' net changes move between the kinds; points are unchanged. */
+export function classifyTransfer(input: AllocationInput, source: AllocationDraft, id: string, kind: Kind) {
+  const c = context(input); validateDraft(c, input.seniority, source);
+  const pair = source.pairs.find(p => p.id === id);
+  if (!pair || !isKind(kind)) throw Error('invalid-allocation-edit');
+  if (pair.kind === kind) return structuredClone(source);
+  const hand = handOf(source), moved = (member: string, sign: number) => {
+    const change = {...(hand[member] ?? zeroChange())};
+    change[pair.kind] = source.changes[member][pair.kind] - sign * pair.units;
+    change[kind] = source.changes[member][kind] + sign * pair.units;
+    return change;
   };
-  // Explicit counterpart controls can finish an earlier unbalanced edit.
-  for (const p of draft.pending) {
-    if (!remaining || p.kind !== edit.kind || Math.sign(p.deltaUnits) === Math.sign(remaining)) continue;
-    const amount = Math.min(Math.abs(remaining), Math.abs(p.deltaUnits));
-    if (p.engineer !== edit.engineer) {
-      if (remaining > 0) transfer(p.engineer, edit.engineer, amount, p.kind);
-      else transfer(edit.engineer, p.engineer, amount, p.kind);
-    }
-    p.deltaUnits += Math.sign(remaining) * amount; remaining -= Math.sign(remaining) * amount;
-  }
-  draft.pending = draft.pending.filter(p => p.deltaUnits);
-  const rank = (id: string) => input.seniority.indexOf(id);
-  // Givers: most points, senior first. Receivers: fewest points, newest first,
-  // matching the baseline remainder order.
-  const candidates = () => c.ids.filter(id => !handEdited.has(id)).sort((a, b) => {
-    if (remaining > 0) return draft.targetsUnits[b] - draft.targetsUnits[a] || rank(a) - rank(b);
-    return draft.targetsUnits[a] - draft.targetsUnits[b] || rank(b) - rank(a);
-  });
-  const tryAmount = (counterpart: string, amount: number) => {
-    const direction = Math.sign(remaining);
-    if (draft.targetsUnits[counterpart] - direction * amount < c.locked[counterpart]) return false;
-    if (direction > 0) transfer(counterpart, edit.engineer, amount, edit.kind);
-    else transfer(edit.engineer, counterpart, amount, edit.kind);
-    draft.targetsUnits[counterpart] -= direction * amount; remaining -= direction * amount;
-    return true;
-  };
-  if (!draft.pending.length && remaining) {
-    // Whole request first, then exact half-point units with ranking refreshed.
-    for (const id of candidates()) if (tryAmount(id, Math.abs(remaining))) break;
-    while (remaining) {
-      let placed = false;
-      for (const id of candidates()) if (tryAmount(id, 1)) {placed = true; break;}
-      if (!placed) break;
-    }
-  }
-  if (remaining) {
-    const p: Pending = {id: `${edit.id}/${serial}`, engineer: edit.engineer, deltaUnits: remaining, kind: edit.kind}; draft.pending.push(p);
-    diagnostics.push({code: 'place-pending-counterpart-units', certainty: 'fact', engineer: edit.engineer, units: Math.abs(remaining)});
-  }
-  validateDraft(c, draft);
-  return {draft, diagnostics, balanced: !draft.pending.length && sum(Object.values(draft.targetsUnits)) === c.total};
+  const from = moved(pair.fromId, -1), to = moved(pair.toId, 1);
+  if (from.permanent < permanentFloor(source, pair.fromId)) throw Error('permanent-below-fair-share');
+  return rebuild(c, input, source, {...hand, [pair.fromId]: from, [pair.toId]: to},
+    source.pairs.map(p => p.id === id ? {...p, kind} : {...p}));
 }

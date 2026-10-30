@@ -2,7 +2,7 @@ import type {ClaimRef, ClaimSegment, CompensationEvent} from '../compensation/ty
 import type {GenerationInput, Diagnostic} from '../scheduling/types.ts';
 import type {PrimaryAssignments} from '../scheduling/validate.ts';
 
-/** Allocation amounts, including signed edits, are integer HALF-POINT units. */
+/** Allocation amounts, including signed changes, are integer HALF-POINT units. */
 export type AllocationInput = {
   schedule: Omit<GenerationInput, 'targets'>;
   seniority: readonly string[]; // saved order, senior first; exactly the participants
@@ -11,20 +11,27 @@ export type AllocationInput = {
 };
 export type Kind = 'temporary' | 'permanent';
 export type Repayment = {claim: ClaimSegment; units: number};
+/** One member's net change of each kind, signed. Points = offered + permanent + temporary. */
+export type Change = {temporary: number; permanent: number};
+/** An explicit routing preference from a drag: points given by one member to another. */
+export type Pair = {id: string; fromId: string; toId: string; units: number; kind: Kind};
+/** One canonical derived transfer. The checked RPC re-derives the list and requires it exactly. */
 export type Transfer = {id: string; fromId: string; toId: string; units: number; kind: Kind};
-export type Pending = {id: string; engineer: string; deltaUnits: number; kind: Kind};
 /** Preserve this snapshot; never recompute its baseline from later history. */
 export type AllocationDraft = {
   baselineUnits: Record<string, number>;
   offeredUnits: Record<string, number>;
   targetsUnits: Record<string, number>;
   repayments: Repayment[];
+  /** Net change per member: the manager's hand changes plus the automatic balance. */
+  changes: Record<string, Change>;
+  pairs: Pair[];
   transfers: Transfer[];
-  pending: Pending[];
   sourceKey: string;
-  /** Members the manager changed by hand. Automatic counterparts never move them.
-   * Local editing state only: it is stripped before the checked RPC persists. */
-  handEdited?: string[];
+  /** Members the manager changed by hand. The automatic balance never moves them.
+   * Local editing state only: it is stripped before the checked RPC persists.
+   * A reopened draft treats every member with a nonzero change as hand edited. */
+  hand?: string[];
 };
 export type Stage = {name: string; status: string; objective: number | null; proved: boolean};
 export type Feasibility = 'complete' | 'partial' | 'unknown' | 'invalid';
