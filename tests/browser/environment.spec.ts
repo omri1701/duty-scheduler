@@ -2,7 +2,7 @@ import {test,expect,duty} from './fixtures';
 import {PROJECTS} from '../../lib/supabase/environment';
 
 for(const {name,url,origin,badge} of [
- {name:'localhost LOCAL',url:'http://127.0.0.1:58321',origin:'http://localhost:8787',badge:'LOCAL'},
+ {name:'localhost LOCAL',url:'http://127.0.0.1:48321',origin:'http://localhost:8787',badge:'LOCAL'},
  {name:'localhost DEV',url:PROJECTS.dev,origin:'http://localhost:8787',badge:'DEV'},
  {name:'deployed DEV',url:PROJECTS.dev,origin:'https://duty-scheduler-dev.vercel.app',badge:'DEV'},
  {name:'localhost PROD',url:PROJECTS.prod,origin:'http://localhost:8787',badge:'PROD'},
@@ -40,7 +40,7 @@ for(const {name,url,origin,badge} of [
 }
 
 test('local password form authenticates and opens the real workspace controller',async({page,backend,openApp})=>{
- backend.url='http://127.0.0.1:58321';backend.runtimeOrigin='http://localhost:8787';
+ backend.url='http://127.0.0.1:48321';backend.runtimeOrigin='http://localhost:8787';
  await openApp('signed-out');
  await expect(page.getByRole('button',{name:'Continue with Google'})).toHaveCount(0);
  await page.getByLabel('Password',{exact:true}).fill('synthetic-password');

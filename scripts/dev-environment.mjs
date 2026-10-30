@@ -14,7 +14,8 @@ export function selectConfiguration(mode, env, productionConfirmed = false) {
   const key = mode === 'prod' ? env.SUPABASE_PROD_PUBLISHABLE_KEY : env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || connectionTarget(url) !== mode) throw Error(`Missing or mismatched ${mode.toUpperCase()} configuration.`);
   validatePublicKey(url,key);
-  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':'',DUTY_DEV_ORIGIN:mode==='dev'&&env.DUTY_DEV_ORIGIN?validateDevOrigin(env.DUTY_DEV_ORIGIN):''};
+  return {SUPABASE_URL:url,SUPABASE_PUBLISHABLE_KEY:key,DUTY_SUPABASE_TARGET:mode,DUTY_PRODUCTION_INSPECTION:mode==='prod'?'confirmed':'',DUTY_DEV_ORIGIN:mode==='dev'&&env.DUTY_DEV_ORIGIN?validateDevOrigin(env.DUTY_DEV_ORIGIN):'',
+    DUTY_LOCAL_TUNNEL_ORIGIN:mode==='local'&&env.DUTY_LOCAL_TUNNEL_ORIGIN?validateDevOrigin(env.DUTY_LOCAL_TUNNEL_ORIGIN):''};
 }
 function readEnv(file) {
   try {return parseEnv(readFileSync(file,'utf8'));}
@@ -22,13 +23,7 @@ function readEnv(file) {
 }
 export function readDevelopmentEnv() {return {...readEnv('.env.local'),...readEnv('.env.dev.local'),...process.env};}
 async function main() {
-  let mode = process.argv[2] ?? 'dev';
-  if (mode === 'select') {
-    if (!process.stdin.isTTY) throw Error('The selector requires an interactive terminal.');
-    const prompt = createInterface({input:process.stdin,output:process.stdout});
-    try {mode=(await prompt.question('Supabase target [dev/local/prod] (dev): ')).trim().toLowerCase()||'dev';}
-    finally {prompt.close();}
-  }
+  const mode = process.argv[2] ?? 'dev';
   let confirmed = false;
   if (mode === 'prod') {
     if (!process.stdin.isTTY) throw Error('Production inspection requires an interactive terminal; confirmation cannot be automated.');
@@ -40,7 +35,8 @@ async function main() {
   let env;
   if (mode === 'local') {
     const {prepareLocal} = await import('./local-supabase.mjs');
-    env = await prepareLocal();
+    // Only the pnpm start:local launcher supplies the LOCAL tunnel origin.
+    env = {...await prepareLocal(),DUTY_LOCAL_TUNNEL_ORIGIN:process.env.DUTY_LOCAL_TUNNEL_ORIGIN};
   } else if (mode === 'dev') env = readDevelopmentEnv();
   else env = {...readEnv('.env.prod.local'),...process.env};
   const selected = selectConfiguration(mode,env,confirmed);

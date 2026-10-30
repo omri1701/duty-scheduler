@@ -13,7 +13,7 @@ baseline migrations plus required reference rows, without operational data.
 ## Temporary members: local development
 
 On `feat/temporary-members`, stop the existing development server and run
-`pnpm install`, then `pnpm dev:local`. Docker Desktop must be running. This starts
+`pnpm install`, then `pnpm start:local`. Docker Desktop must be running. This starts
 the isolated LOCAL services and applies pending migrations while preserving local
 data. Open `http://localhost:5173`, verify the **LOCAL** badge, and sign in with
 the existing local admin credentials from the localhost setup section below.
@@ -32,17 +32,24 @@ Temporary members cannot gain an admin role, pass member authorization or sign i
 No Auth users/identities are created. Future account linking would need a separately
 reviewed identity migration; this feature provides no linking or claiming endpoint.
 
+New members (joining or temporary) get the next of 15 default colors by member
+count. Migration `20261029222841_member_palette_15.sql` appended `#dbb677`,
+`#f1c3ba` and `#a5dfac` to the original 12; existing members keep their colors.
+
 Focused database verification (empty disposable LOCAL database only):
 
 ```powershell
 node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
 node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
+node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler
 ```
 
-The latter rolls back all fixtures, checks denied RPC/direct writes and private
+`temporary-members.mjs` rolls back all fixtures, checks denied RPC/direct writes and private
 notes, creates 12 members, changes constraints/status, runs the real allocation
 planner and HiGHS for November, saves/reloads/publishes, and checks retained history
-and compensation. It creates no fake identities for temporary engineers. Existing
+and compensation. It creates no fake identities for temporary engineers.
+`allocation-fit.mjs` checks that the browser-fitted baseline for a lumpy holiday
+month is accepted by `duty_confirm_allocation` and the equal split is refused. Existing
 data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
 These commands never target the populated `duty-scheduler-app` database.
 
@@ -51,8 +58,8 @@ after merge into `develop`; this feature PR does not apply hosted migrations.
 
 ## Unmerged migrations in local development
 
-`pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.
-Use `pnpm dev:local` to test unmerged database features. It runs the same setup as
+`pnpm start:dev` connects to hosted **DEV**; it does not apply branch migrations there.
+Use `pnpm start:local` to test unmerged database features. It runs the same setup as
 `pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
 migrations with `supabase migration up --local`, preserving existing local data.
 Stop the existing development server before starting another on port 5173. Check
@@ -81,7 +88,7 @@ It requires unused synthetic far-future months, cleans only its own fixtures and
 refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
 swap eligibility with a transaction-local frozen clock and rolls everything back.
 
-With `pnpm dev:local` running, `pnpm test:runtime:local` checks the real served
+With `pnpm start:local` running, `pnpm test:runtime:local` checks the real served
 app through local password Auth and PostgREST, without backend interception. It
 checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
 CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
@@ -312,20 +319,23 @@ pnpm build
 
 Stop the running Next server before switching. All commands use native Next.js on
 `http://localhost:5173`, bind to loopback, and never rewrite `.env.local` or run
-hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
-`pnpm dev:select` optionally prompts for a target.
+hosted migrations. `pnpm start:local`, `pnpm start:dev` and `pnpm start:prod` pick the target; local and dev also
+open the ngrok phone link when it is configured (otherwise they run on the PC only).
 
 | Command | Target / behavior |
 |---|---|
-| `pnpm dev:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next. |
-| `pnpm dev:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
-| `pnpm dev:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
+| `pnpm start:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next and, if ngrok is configured, the phone link; see [phone testing against LOCAL](#phone-testing-against-local). |
+| `pnpm start:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
+| `pnpm start:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
 | `pnpm local:setup` | Starts/prepares and verifies local Auth, onboarding, workspace reads and denied direct table writes without starting Next. |
 | `pnpm local:reset` | **Discards only the isolated local app database**, replays the current branch and recreates synthetic accounts. Use after incompatible branch migration changes or to restore pending fixtures. |
 
 LOCAL requires Docker Desktop and the pinned CLI (`pnpm dlx supabase@2.119.0`).
 It uses ignored `work/local-supabase`, project `duty-scheduler-app`, ports
-58320?58324, and container `supabase_db_duty-scheduler-app`. This stack is separate
+48320–48324 (below Windows' dynamic/excluded range), and container
+`supabase_db_duty-scheduler-app`. A stack still running on the former ports
+58320–58324 is refused; stop it once, keeping its data, with
+`pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler-app`. This stack is separate
 from Quality's empty `duty-scheduler` SQL-test database. Auth/API/Studio/mail run;
 unneeded analytics, pooling, Realtime, Storage and Edge services are excluded.
 No hosted links, service-role keys, Google secrets or live data are copied.
@@ -341,7 +351,10 @@ hosted Google authentication and identity checks stay unchanged. Accounts:
 is `Duty-local-only-1701!`. Operator approval of the two fixtures runs only inside
 the exact local Docker container. No browser bypass or hosted bootstrap exists.
 You can approve the pending account normally; setup preserves that later approval.
-The fixtures do not create schedules. Sessions and PKCE verifiers use separate
+`pnpm local:reset` also adds ten fictional approved, active temporary members
+(Avi, Dana, Yossi, Noa, Eitan, Maya, Lior, Tamar, Omer, Shira, in seniority order)
+through the local admin's checked `duty_add_temporary_member` RPC, skipping
+existing names, for a 12-engineer LOCAL team. The fixtures do not create schedules. Sessions and PKCE verifiers use separate
 storage keys per actual Supabase URL/port; switching targets cannot reuse another
 project's session. Existing pre-selector sessions require a new login once.
 
@@ -418,7 +431,7 @@ hosted project. See [intentional manual previews](DEPLOYMENT.md#feature-branches
    so no localhost Supabase callback or local Google secret is needed. Ensure
    Google is enabled in Supabase and your account is an allowed test user if
    the Google app is in testing. See [Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
-4. Restart `pnpm dev` and open `http://localhost:5173`. In browser DevTools,
+4. Restart `pnpm start:dev` and open `http://localhost:5173`. In browser DevTools,
    confirm `/api/config` returns **200** and the new Frankfurt Development ref
    (do not copy its response into logs or chat), then choose **Continue with Google**
    using your real Development account; do not create hosted bootstrap test accounts.
@@ -444,8 +457,8 @@ Never paste the token into chat or commit the config.
 
 Set `DUTY_DEV_ORIGIN=https://<your-assigned-static-domain>` in ignored
 `.env.dev.local`. Use the free assigned domain from the ngrok dashboard, with no
-path, query, wildcard or nonstandard port. Run `pnpm dev:mobile`; it uses the
-existing `dev:dev` launcher, waits for DEV `/api/config`, then tunnels only
+path, query, wildcard or nonstandard port. Run `pnpm start:dev`; it uses the
+DEV launcher, waits for DEV `/api/config`, then tunnels only
 `http://localhost:5173`. Next.js remains bound to `127.0.0.1`. Ctrl+C stops both
 process trees. Keep Windows awake and the command running for IntelliJ hot reload.
 
@@ -472,6 +485,31 @@ Frankfurt DEV URL, and is disabled on Vercel and production builds. Only the
 configured ngrok hostname is added to Next.js `allowedDevOrigins`; application
 environment resolution still checks the exact HTTPS origin and DEV project.
 No database permissions or session verification rules change.
+
+### Phone testing against LOCAL
+
+`pnpm start:local` uses the same `DUTY_DEV_ORIGIN`, `work/ngrok/ngrok.yml`,
+port check and served-CSS check as `pnpm start:dev`, but starts the LOCAL
+launcher (Docker setup, current-branch migrations, test accounts). The phone
+cannot reach the LOCAL API on `127.0.0.1:48321`, so the same tunnel carries it:
+under `next dev` only, Next rewrites `/auth/v1/*` and `/rest/v1/*` on the tunnel
+origin to that loopback API, and the browser uses the tunnel origin as its
+Supabase URL. Nothing else is forwarded (no Studio, mail, database or admin tools).
+The launcher waits for LOCAL `/api/config` and a proxied Auth health check
+before starting ngrok.
+
+The proxy is enabled only by the launcher's own `DUTY_LOCAL_TUNNEL_ORIGIN`
+together with `next dev`, target `local`, an `http://127.0.0.1:<port>` API, no
+DEV tunnel origin, no Production confirmation and no Vercel variables. Otherwise
+the rewrites do not exist (fail closed); DEV/PROD and builds never get them. The
+browser receives only the LOCAL public key; no service/secret key is configured
+or forwarded, and RLS and checked RPCs are unchanged. Anyone with the ngrok URL
+can reach the LOCAL Auth/REST API while it runs, like the DEV tunnel, so use it
+only with fictional LOCAL data and stop it when done.
+
+Open the HTTPS URL on the phone, pass ngrok's browser interstitial if shown,
+confirm the LOCAL badge and sign in with a local test account and its password
+(above). Google sign-in is not available on LOCAL.
 
 For Vercel hosting, retain the standard Next.js preset and configure
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
@@ -567,7 +605,7 @@ These are LOCAL commands. Never pass `--linked`, a hosted URL or hosted credenti
 For full local services use `supabase start`; Next.js still runs on port 5173.
 On Windows, if Docker cannot bind the default ports, copy config/migrations to a
 disposable work directory, assign available API/DB/shadow/Studio/mail ports there
-(e.g. 58321/58322/58320/58323/58324), change the local project ID and use its actual
+(e.g. 48321/48322/48320/48323/48324), change the local project ID and use its actual
 `supabase_db_<id>` container. Keep hosted project links out of that directory.
 `tests/schema.sql` must pass before onboarding/fixtures. The canonical verification
 builds application objects in temporary LOCAL schemas, compares catalog/permission

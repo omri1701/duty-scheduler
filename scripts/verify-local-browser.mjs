@@ -12,7 +12,7 @@ import {blocks,ownerMonth,dayOf,addDays} from '../lib/rota/engine.ts';
 import {fromSnapshot,schedulePayload} from '../lib/supabase/snapshot.ts';
 const origin=process.env.DUTY_RUNTIME_URL??'http://localhost:5173',out='work/runtime-investigation/corrected';
 const config=await(await fetch(origin+'/api/config')).json();
-assert.equal(config.url,'http://127.0.0.1:58321','Refuse hosted databases');
+assert.equal(config.url,'http://127.0.0.1:48321','Refuse hosted databases');
 const client=createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
 const login=await client.auth.signInWithPassword({email:'admin@duty.local',password:LOCAL_PASSWORD});
 assert.ifError(login.error);

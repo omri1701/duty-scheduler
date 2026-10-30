@@ -270,6 +270,16 @@ unlocking; preserve secondary coverage.
 
 ## 5. Ordinary fairness and compensation-aware proposals
 
+> **Superseded for the allocation preview (decision 2026-10-30).** Plan the month
+> no longer solves. Its proposal is synchronous arithmetic: equal ordinary shares
+> with remainders newest first; open obligations repaid oldest first, capped by the
+> debtor's availability ceiling and the creditor's locked floor; locks as floors.
+> A simple per-member availability ceiling (available covered duties, no
+> back-to-back duties) warns inline and never blocks. Generate is the only solver
+> step and the exact check, and keeps partial results. The global-model proposal
+> and feasibility proofs described in sections 5–6 below are kept as the original
+> design record. Current behavior: [ALLOCATION_PLANNER.md](ALLOCATION_PLANNER.md).
+
 ### 5.1 Ordinary baseline
 
 Calculate a baseline `B[e]` in half-point units, summing to `P`, before adding
@@ -402,7 +412,10 @@ For the permanent operations, every counterpart transfer is also permanent.
 Never reduce a target below its locked points. Never mix the classifications
 of the two sides of one transfer.
 
-An automatically selected recipient must be able to accept the increment under
+*Superseded 2026-10-30:* automatic counterparts are now chosen by the ranking
+above, skipping hand-edited members and lock floors only, without a feasibility
+probe; the row's availability warning and Generate replace it. Originally:
+an automatically selected recipient must be able to accept the increment under
 global duties/weights/availability constraints. Prefer a full-feasible
 redistribution when one exists; when the month is already inherently partial,
 require evidence that the recipient can actually carry the proposed increment
@@ -794,11 +807,14 @@ the achieved amount or hide unfulfilled work.
   a time/scope restriction, separate from mathematical feasibility. Other actions
   retain their existing authorization and integrity checks.
 - Structural invalidity disables Generate with a specific repair message.
-- Complete-feasibility checks can run in the background while editing.
-- Within the open generation window, known complete infeasibility displays
-  “A partial schedule can be generated” and enables **Generate partial**.
-- Pending/UNKNOWN validation does not disable the action solely for lack of a
-  proof. The main action starts/continues the global optimization for those inputs.
+- No solver runs while editing (decision 2026-10-30; previously complete-feasibility
+  checks ran in the background and known infeasibility enabled **Generate partial**).
+  A row whose target exceeds its simple availability ceiling shows one short
+  inline warning; it never blocks.
+- **Confirm & generate** always runs the exact global optimization for the
+  confirmed targets and saves a partial result when full coverage is impossible.
+- Adjustments & compensation lists netted temporary relationships (debtor →
+  creditor, what is repaid this month and what carries forward), display only.
 - During an active generation/save, prevent duplicate submissions; offer Cancel
   while solving. Editing inputs cancels/invalidates the old request.
 - Timeout with a verified incumbent can produce a draft labeled with its actual
@@ -2126,7 +2142,7 @@ of the UI/server time gate.
 | U1 | Phone/desktop and English/Hebrew | One usable popup with required columns, senior-first order, RTL/LTR and keyboard/focus access. |
 | U2 | Open/reopen, + / − and step toggle | Step resets to 1 on each opening; 0.5 edits exact; counterpart/final target clear. |
 | U3 | Target 3, Locked 1, Assigned 2.5 | Generate request initially 2; final Target stays 3, assigned 2.5 and missing 0.5 shown. |
-| U4 | Wrong sum/lock floor versus proved complete infeasibility | Invalid inputs disable Generate; balanced infeasible input enables Generate partial with inline explanation. |
+| U4 | Wrong sum/lock floor versus proved complete infeasibility | Invalid inputs disable Generate; balanced infeasible input still generates and saves a partial result (no in-dialog proof since 2026-10-30). |
 | U5 | Pending/UNKNOWN, timeout incumbent, Cancel or stale result | Honest status; no false impossibility/optimum; cancelled/stale result not applied. |
 | U6 | Explicit unavailable-date lock and scoped exception | Unavailability retained; manager approval/lock visible; ordinary unlocked edits remain distinct. |
 | U7 | Partial output with uncovered combined weekend | Both uncovered dates marked, full block points and per-person deficits retained, Partial/Requires Manager Resolution visible. |
