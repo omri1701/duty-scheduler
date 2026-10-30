@@ -18,6 +18,9 @@ begin
  if old_meta.source_publication_id is null or old_meta.allocation IS DISTINCT FROM p_allocation then
   perform duty_private.allocation_compile(facts,p_allocation,checked->'actualUnits',projected);
   perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits');
+  -- Indivisible months credit exactly the fitted excess over the plain equal split;
+  -- the manager cannot add, enlarge, redirect or drop that system credit.
+  if coalesce(p_allocation->'uneven','[]'::jsonb)<>duty_private.allocation_uneven(facts,p_allocation->'baselineUnits') then raise exception 'invalid-uneven-credit'; end if;
   if old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
    and (select array_agg(key order by key) from jsonb_each(old_meta.allocation->'baselineUnits'))=(select array_agg(key order by key) from jsonb_each(p_allocation->'baselineUnits'))
    and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then raise exception 'Ordinary baseline is immutable. Classify target changes as transfers.'; end if;

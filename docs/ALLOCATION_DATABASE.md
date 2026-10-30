@@ -63,6 +63,18 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
   exact exception scopes. An independent canonical-weight partition search verifies
   minimum ordinary squared cost; the baseline cannot be inflated to manufacture
   creditor relief or changed later while the calendar/participants remain unchanged.
+  When that partition is uneven, `p_allocation.uneven` must equal exactly what
+  `duty_private.allocation_uneven(facts, baseline)` derives (the fitted excess over
+  the plain equal split, debtors with the fewest points most senior first,
+  creditors with the most points most senior first); a missing, inflated,
+  redirected or extra entry fails with `invalid-uneven-credit`, and ordinary
+  transfers may not use the reserved `uneven/` identity. The partition check
+  accepts any holder of each fitted share, so the credit follows whoever the
+  confirmed baseline makes carry the larger share; its total is invariant. `allocation_compile`
+  then carries that part of the creditor's own share for the debtor at confirm
+  and publication, so the published intent is an ordinary temporary claim and
+  `duty_balance` reports it as kind `uneven`. Snapshots saved before this check
+  simply have no credit; confirming them again requires a new proposal.
   Manager target deviations require explicit temporary/permanent counterparts.
 * `duty_save_generation(p_month, p_assignments, p_revision, p_fingerprint,
   p_seed)` accepts only a primary-assignment map and preserved secondaries. It

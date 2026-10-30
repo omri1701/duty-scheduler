@@ -15,6 +15,7 @@ const signed = (units: number) => `${units > 0 ? '+' : ''}${points(units)}`;
 export function allocationMessage(message: string, t: Translate) {
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
   if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way. Choose “Use a new proposal”, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');
+  if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needs a fresh proposal. Choose “Use a new proposal”, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דורש הצעה חדשה. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');
   if (/allocation-fit-limit/.test(message)) return t('This month’s duty points are too irregular to split automatically. Simplify the special ranges, then try again.', 'נקודות התורנויות בחודש זה אינן סדירות מכדי לחלק אותן אוטומטית. יש לפשט את טווחי הימים המיוחדים ולנסות שוב.');
   if (/statement timeout/.test(message)) return t('The server took too long to check this month’s split. Try again; if it repeats, simplify the special ranges.', 'בדיקת החלוקה החודשית בשרת ארכה זמן רב מדי. יש לנסות שוב; אם הבעיה חוזרת, יש לפשט את טווחי הימים המיוחדים.');
   if (/Ordinary baseline/.test(message)) return t('Keep the confirmed allocation and adjust Target or Permanent. The month weights and participating team have not changed.', 'יש לשמור על ההקצאה המאושרת ולערוך את היעד או השינוי הקבוע. משקלי החודש והצוות המשתתף לא השתנו.');
@@ -111,7 +112,8 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
         <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
         {pendingUnits > 0 && <p className="allocation-attention">{points(pendingUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
         {owed.length ? <ul>{owed.map(l => <li key={`${l.debtorId}>${l.creditorId}`}><strong>{name(l.debtorId)} {lang === 'he' ? '←' : '→'} {name(l.creditorId)}</strong> · <bdi>{points(l.units)}</bdi> · {[
-          l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, l.later && `${points(l.later)} ${t('later', 'בהמשך')}`].filter(Boolean).join(' · ')}</li>)}</ul>
+          l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, l.later && `${points(l.later)} ${t('later', 'בהמשך')}`,
+          l.reason === 'uneven' && t('uneven split', 'חלוקה לא שווה')].filter(Boolean).join(' · ')}</li>)}</ul>
           : <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}

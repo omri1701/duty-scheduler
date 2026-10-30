@@ -58,7 +58,7 @@ Auth/application state before any write. Google provider settings are configured
 separately; passwords, keys and OAuth secrets are not migration data.
 
 `tests/schema.sql` asserts zero users/identities and operational rows, exact required
-rows, 13 RLS-protected tables, 23 valid FKs, 81 functions, restricted grants and
+rows, 13 RLS-protected tables, 23 valid FKs, 82 functions, restricted grants and
 safe search paths. `tests/fingerprint.sql` compares all application columns,
 constraints, indexes, triggers, policies, function definitions and effective client
 permissions with the local installation. Neither reads private operational data.

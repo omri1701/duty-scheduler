@@ -129,7 +129,8 @@ copy (the same `compensation_reconcile(..., false)` used for `p_cutoff`), and
 returns only `{net, lines}`. Nothing is appended and the revision is unchanged.
 Admins receive every member; any other approved active member receives only
 their own net and relationships. Lines describe open actual claims by source
-lot (temporary intent date, published-change month, manual, correction, routed)
+lot (temporary intent date, uneven-month credit, published-change month, manual,
+correction, routed)
 plus repayments that settle only in the projection; reasons, events and private
 notes are never returned. `lib/supabase/balance.ts` validates the response.
 

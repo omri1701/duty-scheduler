@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
-import {record, replay, sliceClaim} from '../lib/compensation/index.ts';
+import {record, replay, sliceClaim, project} from '../lib/compensation/index.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, persistedDraft, transferAllocation, classifyTransfer,
-  fitPartition, equalShares, unevenBaseline} from '../lib/allocation/index.ts';
+  fitPartition, equalShares, unevenBaseline, unevenTransfers, bindAllocation} from '../lib/allocation/index.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -123,6 +123,89 @@ test('indivisible holiday duties fit the cheapest exact partition; extra goes to
 test('the exact fit is bounded and reports a clear limit instead of freezing', () => {
   assert.throws(() => fitPartition(weightsOf(holiday()), 12, 10), /allocation-fit-limit/);
   assert.ok(fitPartition(weightsOf(holiday(1)), 12).length === 12);
+});
+
+// Decision 2026-10-30: the people who carry more in an indivisible month are
+// compensated. The credit is system temporary work, not a baseline change.
+const pair = (k, units = 1) => ({id: `uneven/e0${k}/e${String(k + 6).padStart(2, '0')}`, fromId: `e0${k}`, toId: `e${String(k + 6).padStart(2, '0')}`, units});
+// Six members and seven +2 days: the only uneven month the solver covers completely.
+const sixHoliday = () => {
+  const i = scenario(); i.schedule.members = i.schedule.members.slice(0, 6); i.seniority = i.seniority.slice(0, 6);
+  i.events = send([], {kind: 'members', members: i.schedule.members.map(m => ({id: m.id, active: true}))}, 'members');
+  i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-08', extra: 2}]}; return i;
+};
+test('an uneven month credits each extra half point from the fewest-points members to those above the equal share', () => {
+  const i = holiday(), r = proposal(i);
+  assert.deepEqual(r.draft.uneven, [0, 1, 2, 3, 4, 5].map(k => pair(k)), 'six most senior (4 pts) each owe one of the six newest (5 pts) half a point');
+  assert.deepEqual(r.draft.targetsUnits, r.draft.baselineUnits, 'targets and the stored baseline are unchanged');
+  assert.deepEqual(normal.draft.uneven, [], 'a normal month creates no credit');
+  const six = sixHoliday(), s = proposal(six);
+  assert.deepEqual(six.seniority.map(id => s.draft.baselineUnits[id]), [12, 13, 13, 14, 14, 14]);
+  assert.deepEqual(s.draft.uneven, [{id: 'uneven/e00/e03', fromId: 'e00', toId: 'e03', units: 1}], 'the most senior 7-point member is owed by the 6-point member');
+  assert.deepEqual(unevenBaseline(six, s.draft.baselineUnits), [{id: 'e03', units: 14}], 'the inline note names the same creditor');
+  const p = compiled(six, s.draft);
+  assert.equal(p.check.feasibility, 'complete'); assert.equal(p.confirmable, true);
+  assert.deepEqual(p.plan.intents, [{fromId: 'e00', toId: 'e03', units: 1, kind: 'temporary', transferIds: ['uneven/e00/e03']}], 'publication intent: the creditor carries the debtor\'s half point');
+  assert.deepEqual(p.plan.funding.map(f => f.carrierId), ['e03']); assert.deepEqual(p.plan.repayments, []);
+});
+
+test('uneven credit ties: the remainder itself is never debt; equal points pick the most senior', () => {
+  const flat = Array(38).fill(1), ids = ['a', 'b', 'c', 'd']; // plain split 9, 9, 10, 10
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 9, b: 9, c: 9, d: 11}), [{id: 'uneven/a/d', fromId: 'a', toId: 'd', units: 1}], 'fewest points tie: most senior owes');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 8, b: 10, c: 10, d: 10}), [{id: 'uneven/a/b', fromId: 'a', toId: 'b', units: 1}], 'most points tie: most senior is owed');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 8, b: 8, c: 11, d: 11}).map(u => `${u.fromId}>${u.toId}:${u.units}`), ['a>c:1', 'b>d:1']);
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 10, b: 10, c: 9, d: 9}), [], 'a remainder given to senior members is the same split: no debt');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 7, b: 9, c: 9, d: 13}), [{id: 'uneven/a/d', fromId: 'a', toId: 'd', units: 2}, {id: 'uneven/b/d', fromId: 'b', toId: 'd', units: 1}], 'one creditor, two debtors, senior tie first');
+});
+
+test('uneven credit survives edits, protects the creditor\'s carried work from relief and cannot be forged by hand', () => {
+  const i = holiday(), r = proposal(i);
+  const e = edit(i, r.draft, 'e11', -2);
+  assert.deepEqual(e.draft.uneven, r.draft.uneven); assert.equal(compiled(i, e.draft).confirmable, true);
+  const dragged = transferAllocation(i, r.draft, {id: 'drag/0', fromId: 'e06', toId: 'e00', units: 2, kind: 'temporary'}).draft;
+  assert.equal(compiled(i, dragged).confirmable, true);
+  assert.throws(() => transferAllocation(i, r.draft, {id: 'uneven/e00/e07', fromId: 'e00', toId: 'e07', units: 2, kind: 'temporary'}), /invalid-transfer-identity/);
+  const forged = structuredClone(r.draft); forged.uneven.push({id: 'uneven/e01/e11', fromId: 'e01', toId: 'e11', units: 20});
+  assert.throws(() => compiled(i, forged), /uneven-credit-exceeds-share/);
+  const foreign = structuredClone(r.draft); foreign.uneven[0] = {...foreign.uneven[0], id: 'manual/0'};
+  assert.throws(() => compiled(i, foreign), /invalid-uneven-credit/);
+  // An old creditor with uneven credit keeps that half point: relief stops at 4.5 of its 5 points.
+  const owed = owe(holiday(), 'e00', 'e11', 20, 'old'), relief = proposal(owed);
+  invariant(owed, relief);
+  assert.equal(total(relief.draft.repayments.map(p => p.units)), 9);
+  assert.equal(relief.draft.targetsUnits.e11, 1);
+  assert.equal(compiled(owed, relief.draft).confirmable, true);
+  const greedy = structuredClone(relief.draft), [plan] = greedy.repayments;
+  plan.units = 10; plan.claim.units = 10; plan.claim.path[0].units = 10;
+  greedy.offeredUnits.e00 += 1; greedy.offeredUnits.e11 -= 1; greedy.targetsUnits.e00 += 1; greedy.targetsUnits.e11 -= 1;
+  assert.throws(() => compiled(owed, greedy), /repayment-exceeds-creditor-relief/, 'relief cannot consume work carried for the debtor');
+});
+
+test('uneven credit publishes as an ordinary temporary claim and a later half-point month repays it', async () => {
+  const i = sixHoliday(), r = proposal(i), assignments = generated(i, r.draft);
+  const bound = await bindAllocation(i, r.draft, assignments, {publicationId: 'november', sourceKey: 'publish/november', actor: 'manager'});
+  assert.equal(bound.bindable, true); assert.equal(bound.publishable, true);
+  assert.deepEqual(bound.publication.intents.flatMap(t => t.route.flatMap(l => l.counterparts)),
+    [{id: 'uneven/e00/e03', fromId: 'e00', toId: 'e03', units: 1, kind: 'temporary'}], 'recorded with the ordinary counterpart shape and its uneven identity');
+  for (const t of bound.publication.intents) for (const s of t.capacity) assert.equal(assignments[s.date].primary, t.toId);
+  const published = record(i.events, {sourceKey: 'publish/november', actor: 'manager', at: i.now,
+    operation: {kind: 'publication', month: '2026-11', beforeId: null, after: bound.publication}}).events;
+  assert.deepEqual(project(published, i.now, i.now).actual.net, {e00: -1, e01: 0, e02: 0, e03: 1, e04: 0, e05: 0});
+  // December has six +0.5 weekdays, so half-point duties exist and the month itself splits evenly.
+  const next = {...structuredClone(i), events: published, now: Date.parse('2026-11-20T10:00:00Z')};
+  next.schedule.month = '2026-12';
+  next.schedule.calendar = {specials: [{id: 'a', start: '2026-12-07', end: '2026-12-11', extra: 0.5}, {id: 'b', start: '2026-12-13', end: '2026-12-15', extra: 0.5}]};
+  const d = proposal(next); invariant(next, d);
+  assert.deepEqual(d.draft.uneven, []);
+  assert.deepEqual(d.draft.repayments.map(p => [p.claim.debtorId, p.claim.creditorId, p.units]), [['e00', 'e03', 1]]);
+  assert.equal(d.draft.targetsUnits.e00, d.draft.baselineUnits.e00 + 1); assert.equal(d.draft.targetsUnits.e03, d.draft.baselineUnits.e03 - 1);
+  const december = await bindAllocation(next, d.draft, generated(next, d.draft), {publicationId: 'december', sourceKey: 'publish/december', actor: 'manager'});
+  assert.equal(december.publishable, true); assert.equal(december.publication.reservations.length, 1);
+  const settled = record(published, {sourceKey: 'publish/december', actor: 'manager', at: next.now,
+    operation: {kind: 'publication', month: '2026-12', beforeId: null, after: december.publication}}).events;
+  const done = Date.parse('2027-01-05T10:00:00Z'), view = project(settled, done, done).actual;
+  assert.deepEqual(view.claims, []);
+  assert.deepEqual(view.net, {e00: 0, e01: 0, e02: 0, e03: 0, e04: 0, e05: 0}, 'repayment settles the uneven credit like any other temporary transfer');
 });
 
 test('repayment has no monthly cap beyond creditor relief and debtor availability', () => {

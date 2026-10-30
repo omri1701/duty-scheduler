@@ -16,6 +16,7 @@ export function NetBalance({memberId,memberName,balance,name,lang}:{memberId:str
   const when=l.date?' · '+shortDate(l.date,lang):l.month?' · '+calendarMonthLabel(l.month,lang):'';
   switch(l.kind){
    case 'temporary':return (l.units>0?t(`Covered ${counterpart}'s duty`,`כיסוי תורנות של ${counterpart}`):t(`${counterpart} covered a duty`,`תורנות כוסתה על ידי ${counterpart}`))+when+' · '+t('temporary','זמני');
+   case 'uneven':return t('Uneven monthly split','חלוקה חודשית לא שווה')+when+' · '+t('temporary','זמני');
    case 'repayment':return t('Repayment scheduled','החזר מתוכנן')+when;
    case 'change':return t('Published change','שינוי שפורסם')+when;
    case 'manual':return t('Manual adjustment','התאמה ידנית');

@@ -12,6 +12,11 @@ export type AllocationInput = {
 export type Kind = 'temporary' | 'permanent';
 export type Repayment = {claim: ClaimSegment; units: number};
 export type Transfer = {id: string; fromId: string; toId: string; units: number; kind: Kind};
+/** System credit for an indivisible month: `toId` carries `units` of ordinary
+ * work above the plain equal split for `fromId`, who has fewer points. Targets
+ * are unchanged; publication records it like a temporary transfer. IDs are
+ * `uneven/<fromId>/<toId>`; the checked database derives and verifies the set. */
+export type UnevenTransfer = {id: string; fromId: string; toId: string; units: number};
 export type Pending = {id: string; engineer: string; deltaUnits: number; kind: Kind};
 /** Preserve this snapshot; never recompute its baseline from later history. */
 export type AllocationDraft = {
@@ -22,6 +27,8 @@ export type AllocationDraft = {
   transfers: Transfer[];
   pending: Pending[];
   sourceKey: string;
+  /** Absent in snapshots saved before uneven months earned credit. */
+  uneven?: UnevenTransfer[];
   /** Members the manager changed by hand. Automatic counterparts never move them.
    * Local editing state only: it is stripped before the checked RPC persists. */
   handEdited?: string[];

@@ -244,6 +244,21 @@ test('permanent replacement of repayment capacity cancels the plan without a new
   assert.equal(reconcile(h, end('2026-11-04')).net.a, -2); invariant(h);
 });
 
+test('uneven-month credit is an ordinary routed temporary intent: one half-point lot, settled by a later reserved repayment', () => {
+  const counterpart = {id: 'uneven/a/c', fromId: 'a', toId: 'c', units: 1, kind: 'temporary'};
+  const credit = {id: 'allocation/x/intent/0', kind: 'temporary', fromId: 'a', toId: 'c', capacity: [{date: '2026-11-02', offset: 0, units: 1}],
+    route: [{fromId: 'a', toId: 'c', kind: 'temporary', transferIds: ['uneven/a/c'], counterparts: [counterpart]}]};
+  let h = publish(setup(), publication('nov', '2026-11', [duty('2026-11-02', 'c'), duty('2026-11-03', 'a')], [], [credit]));
+  assert.deepEqual(amounts(h), [['a', 'c', 1]]);
+  assert.equal(replay(h).lots[0].id, 'publish/nov/intent/allocation/x/intent/0/route/0');
+  const repayment = plan('repay', '2026-12-07', claims(h)[0], 1);
+  h = publish(h, publication('dec', '2026-12', [duty('2026-12-07', 'a')], [repayment]));
+  assert.deepEqual(amounts(h), [['a', 'c', 1]], 'reserved, not yet settled');
+  const settled = reconcile(h, end('2026-12-09'));
+  assert.deepEqual(settled.claims, []); assert.equal(settled.net.a, 0); assert.equal(settled.net.c, 0);
+  invariant(h);
+});
+
 test('explicit temporary/permanent intents are funded, exclusive and applied once; exemptions do not follow future replacements', () => {
   const temp = {id: 'temp', kind: 'temporary', fromId: 'a', toId: 'c', capacity: [{date: '2026-11-02', offset: 0, units: 2}]};
   const perm = {id: 'perm', kind: 'permanent', fromId: 'b', toId: 'c', capacity: [{date: '2026-11-04', offset: 0, units: 2}]};

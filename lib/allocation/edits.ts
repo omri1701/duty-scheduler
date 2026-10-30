@@ -29,8 +29,16 @@ export function validateDraft(c: Context, draft: AllocationDraft) {
   }
   if (c.ids.some(id => expected[id] !== draft.offeredUnits[id])) throw Error('invalid-offered-allocation');
   const ids = new Set<string>();
+  // System uneven-month credit is kept as given; the checked database derives
+  // the exact set from the baseline and refuses any other. Manual edits cannot
+  // borrow its reserved identity.
+  for (const u of draft.uneven ?? []) {
+    if (typeof u !== 'object' || u === null || Object.keys(u).length !== 4 || u.id !== `uneven/${u.fromId}/${u.toId}` ||
+      ids.has(u.id) || !c.ids.includes(u.fromId) || !c.ids.includes(u.toId) || u.fromId === u.toId || !units(u.units)) throw Error('invalid-uneven-credit');
+    ids.add(u.id);
+  }
   const identity = (id: string, kind: Kind) => {
-    if (!id?.trim() || ids.has(id) || !['temporary', 'permanent'].includes(kind)) throw Error('invalid-transfer-identity');
+    if (!id?.trim() || ids.has(id) || id.startsWith('uneven/') || !['temporary', 'permanent'].includes(kind)) throw Error('invalid-transfer-identity');
     ids.add(id);
   };
   for (const t of draft.transfers) {

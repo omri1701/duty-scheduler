@@ -1,7 +1,8 @@
 import type {AllocationDraft} from './types.ts';
 
-/** One netted temporary relationship, in half-point units. */
-export type NettedLine = {debtorId: string; creditorId: string; units: number; thisMonth: number; later: number};
+/** One netted temporary relationship, in half-point units. `reason` names a
+ * system credit: 'uneven' when this pair carries an indivisible month's extra. */
+export type NettedLine = {debtorId: string; creditorId: string; units: number; thisMonth: number; later: number; reason?: 'uneven'};
 
 type Flow = {debtorId: string; creditorId: string; units: number};
 
@@ -22,14 +23,15 @@ function settle(balance: Record<string, number>, rank: (id: string) => number): 
 
 /** Display only: who owes whom after this draft, with chains collapsed and
  * opposite directions cancelled. `opening` is the projected net at month opening
- * (positive: owed relief). Temporary transfers add work owed back to the member
- * who carried it; this month's repayments reduce what remains for later.
- * Permanent transfers and pending edits create no compensation. */
+ * (positive: owed relief). Temporary transfers and uneven-month credit add work
+ * owed back to the member who carries it; this month's repayments reduce what
+ * remains for later. Permanent transfers and pending edits create no compensation. */
 export function nettedCompensation(opening: Readonly<Record<string, number>>,
-  draft: Pick<AllocationDraft, 'transfers' | 'repayments'>, order: readonly string[]): NettedLine[] {
+  draft: Pick<AllocationDraft, 'transfers' | 'repayments' | 'uneven'>, order: readonly string[]): NettedLine[] {
   const total: Record<string, number> = {...opening};
   const add = (b: Record<string, number>, id: string, units: number) => {b[id] = (b[id] ?? 0) + units;};
   for (const t of draft.transfers) if (t.kind === 'temporary') {add(total, t.toId, t.units); add(total, t.fromId, -t.units);}
+  for (const u of draft.uneven ?? []) {add(total, u.toId, u.units); add(total, u.fromId, -u.units);}
   const later = {...total};
   for (const r of draft.repayments) {add(later, r.claim.debtorId, r.units); add(later, r.claim.creditorId, -r.units);}
   const rank = (id: string) => {const i = order.indexOf(id); return i < 0 ? order.length : i;};
@@ -44,5 +46,6 @@ export function nettedCompensation(opening: Readonly<Record<string, number>>,
     const line = lines.find(l => l.debtorId === f.debtorId && l.creditorId === f.creditorId);
     if (line) {line.units += f.units; line.later += f.units;} else lines.push({...f, thisMonth: 0, later: f.units});
   }
+  for (const line of lines) if ((draft.uneven ?? []).some(u => u.fromId === line.debtorId && u.toId === line.creditorId)) line.reason = 'uneven';
   return lines;
 }

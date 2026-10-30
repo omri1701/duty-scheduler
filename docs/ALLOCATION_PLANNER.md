@@ -42,9 +42,21 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    search over duty counts, with no solver, and the larger shares go to the
    newest members. The dialog then shows one note naming who gets more. The
    search is capped; a pathological calendar shows a clear message
-   (`allocation-fit-limit`) instead of freezing. The database's own optimality
-   proof is slower: about 8 s locally for that 14-day case, which is the
-   hosted `authenticated` statement timeout.
+   (`allocation-fit-limit`) instead of freezing.
+   **Uneven credit (decision 2026-10-30).** The people who carry more are
+   compensated: `unevenTransfers` records the fitted baseline's excess over the
+   plain equal split as system temporary transfers in `draft.uneven`
+   (`uneven/<debtor>/<creditor>`, half-point units). The baseline is compared
+   rank by rank with the sorted plain split, so a remainder given to a different
+   member never creates debt; only the fit's deviation does. Debtors are the
+   members with the fewest points, most senior first; creditors have the most
+   points, most senior first. In the 14-day case each of the six most senior
+   members owes half a point to one of the six newest. Targets and the stored
+   baseline are unchanged; compilation carries part of the creditor's own share
+   for the debtor, exactly as if the equal split had been transferred, so
+   publication creates the ordinary temporary claim and later repayment settles
+   it. Relief for an existing claim never consumes work carried this way. The
+   checked database derives the same list and refuses any other.
 2. **Repayment.** Open projected obligations are repaid oldest first, in whole
    steps, capped by the debtor's availability ceiling (below) and by the
    creditor's locked floor. An older claim that does not fit is skipped and stays
@@ -170,12 +182,15 @@ publication intent remains under the checked database lineage rules.
 
 "Adjustments & compensation" lists netted temporary relationships only
 (`nettedCompensation` in `lib/allocation/netting.ts`). It starts from the projected
-net at month opening, adds the draft's temporary transfers and subtracts this
-month's repayments, then pairs net debtors with net creditors. Chains collapse
-(A owes B and B owes C shows A → C), opposite directions cancel, and each line
-shows what is repaid this month and what carries forward. Permanent transfers and
-pending edits do not appear; pending edits show one short warning line. The list is
-display only: stored transfers, repayments, ledger and provenance are unchanged.
+net at month opening, adds the draft's temporary transfers and uneven-month credit
+and subtracts this month's repayments, then pairs net debtors with net creditors.
+Chains collapse (A owes B and B owes C shows A → C), opposite directions cancel,
+and each line shows what is repaid this month and what carries forward; a line
+that carries an indivisible month's extra says "uneven split" (`reason`). Permanent
+transfers and pending edits do not appear; pending edits show one short warning
+line. The list is display only: stored transfers, repayments, ledger and provenance
+are unchanged. The Team screen's net breakdown names the same credit as
+"Uneven monthly split" (`duty_balance` kind `uneven`).
 
 ## Focused verification
 

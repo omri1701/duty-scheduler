@@ -311,6 +311,17 @@ When availability requires default relief, represent it as explicit pending
 temporary counterpart transfers from B, shown inline for manager confirmation;
 do not redefine that engineer's ordinary share as zero and lose the future
 compensation. Ordinary remainder choices still create no debt.
+
+> **Decision 2026-10-30: uneven months are credited.** When the indivisible
+> duty weights force the exact minimum-cost partition above the plain equal
+> split (14 days at +2 among 12 engineers: six at 4 points and six at 5), the
+> extra half point is **temporary** compensation. The members with the fewest
+> points that month owe it, most senior first; those above the split receive
+> it, most points and most senior first. It is stored with the allocation as
+> system transfers (`uneven`), verified exactly by the database, published as an
+> ordinary temporary claim and repaid like any other. A remainder given to a
+> different member (same multiset as the plain split) still creates no debt.
+> See [ALLOCATION_PLANNER.md](ALLOCATION_PLANNER.md#proposal-decision-2026-10-30).
 Locks are final-target floors; do not redefine ordinary fair work as already
 locked workload and erase the ability to credit a locked repayment. If locks
 exceed the offered normal/compensation target, preserve them and require the

@@ -88,6 +88,10 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   const fourth = await page.locator('.allocation-row').nth(3).locator('.allocation-engineer strong').textContent();
   const note = page.getByRole('dialog').getByRole('note').filter({hasText: 'split evenly'});
   await expect(note).toHaveText(`This month’s duties can’t split evenly: ${fourth} gets 7 pts.`);
+  // The extra half point is credited: the 6-point member owes it, with the reason named.
+  const first = await page.locator('.allocation-row').first().locator('.allocation-engineer strong').textContent();
+  await page.getByRole('dialog').locator('summary').click();
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 later · uneven split`);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
@@ -95,6 +99,8 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
+  await dialog.locator('summary').click();
+  await expect(dialog.locator('.allocation-details li')).toHaveText(`${first} ← ${fourth} · 0.5 · 0.5 בהמשך · חלוקה לא שווה`);
 });
 
 const member = (page: import('@playwright/test').Page, name: string) => {
@@ -131,8 +137,9 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   await page.getByRole('button', {name: 'Save allocation only', exact: true}).click();
   await expect(page.getByText('Allocation and locks saved.', {exact: true})).toBeVisible();
   const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
-  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'offeredUnits', 'pending', 'repayments', 'sourceKey', 'targetsUnits', 'transfers']);
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'offeredUnits', 'pending', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
   expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
+  expect(saved.uneven).toEqual([]);
 });
 
 test('keyboard action on an engineer opens Give 1 point to… and transfers exactly one point', async ({page, backend, openApp}, info) => {
