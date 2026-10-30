@@ -119,6 +119,7 @@ schema_paths = [
   "./schemas/functions/public/duty_save_generation.sql",
   "./schemas/functions/duty_private/allocation_baseline.sql",
   "./schemas/functions/duty_private/allocation_better_baseline.sql",
+  "./schemas/functions/duty_private/allocation_fit.sql",
   "./schemas/functions/duty_private/allocation_partition.sql",
   "./schemas/functions/duty_private/allocation_rebind.sql",
   "./schemas/functions/duty_private/add_temporary_member.sql",

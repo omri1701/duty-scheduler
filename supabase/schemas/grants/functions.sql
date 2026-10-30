@@ -164,6 +164,8 @@ REVOKE ALL ON FUNCTION duty_private.allocation_baseline(f jsonb, baseline jsonb)
 
 REVOKE ALL ON FUNCTION duty_private.allocation_better_baseline(weights integer[], bins integer[], ceiling_cost bigint, quantum integer, total integer) FROM PUBLIC, anon, authenticated, service_role;
 
+REVOKE ALL ON FUNCTION duty_private.allocation_fit(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
+
 REVOKE ALL ON FUNCTION duty_private.allocation_partition(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.allocation_rebind(s jsonb, publication jsonb, source_publication uuid, allocation_id uuid, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
