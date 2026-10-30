@@ -13,7 +13,7 @@ baseline migrations plus required reference rows, without operational data.
 ## Temporary members: local development
 
 On `feat/temporary-members`, stop the existing development server and run
-`pnpm install`, then `pnpm dev:local`. Docker Desktop must be running. This starts
+`pnpm install`, then `pnpm local`. Docker Desktop must be running. This starts
 the isolated LOCAL services and applies pending migrations while preserving local
 data. Open `http://localhost:5173`, verify the **LOCAL** badge, and sign in with
 the existing local admin credentials from the localhost setup section below.
@@ -56,7 +56,7 @@ after merge into `develop`; this feature PR does not apply hosted migrations.
 ## Unmerged migrations in local development
 
 `pnpm dev` connects to hosted **DEV**; it does not apply branch migrations there.
-Use `pnpm dev:local` to test unmerged database features. It runs the same setup as
+Use `pnpm local` to test unmerged database features. It runs the same setup as
 `pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
 migrations with `supabase migration up --local`, preserving existing local data.
 Stop the existing development server before starting another on port 5173. Check
@@ -85,7 +85,7 @@ It requires unused synthetic far-future months, cleans only its own fixtures and
 refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
 swap eligibility with a transaction-local frozen clock and rolls everything back.
 
-With `pnpm dev:local` running, `pnpm test:runtime:local` checks the real served
+With `pnpm local` running, `pnpm test:runtime:local` checks the real served
 app through local password Auth and PostgREST, without backend interception. It
 checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
 CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
@@ -316,15 +316,14 @@ pnpm build
 
 Stop the running Next server before switching. All commands use native Next.js on
 `http://localhost:5173`, bind to loopback, and never rewrite `.env.local` or run
-hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
-`pnpm dev:select` optionally prompts for a target.
+hosted migrations. `pnpm local`, `pnpm dev` and `pnpm prod` pick the target; local and dev also
+open the ngrok phone link when it is configured (otherwise they run on the PC only).
 
 | Command | Target / behavior |
 |---|---|
-| `pnpm dev:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next. |
-| `pnpm dev:mobile:local` | Same LOCAL setup and app on a phone through your static ngrok origin; see [phone testing against LOCAL](#phone-testing-against-local). |
-| `pnpm dev:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
-| `pnpm dev:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
+| `pnpm local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next and, if ngrok is configured, the phone link; see [phone testing against LOCAL](#phone-testing-against-local). |
+| `pnpm dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
+| `pnpm prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
 | `pnpm local:setup` | Starts/prepares and verifies local Auth, onboarding, workspace reads and denied direct table writes without starting Next. |
 | `pnpm local:reset` | **Discards only the isolated local app database**, replays the current branch and recreates synthetic accounts. Use after incompatible branch migration changes or to restore pending fixtures. |
 
@@ -455,8 +454,8 @@ Never paste the token into chat or commit the config.
 
 Set `DUTY_DEV_ORIGIN=https://<your-assigned-static-domain>` in ignored
 `.env.dev.local`. Use the free assigned domain from the ngrok dashboard, with no
-path, query, wildcard or nonstandard port. Run `pnpm dev:mobile`; it uses the
-existing `dev:dev` launcher, waits for DEV `/api/config`, then tunnels only
+path, query, wildcard or nonstandard port. Run `pnpm dev`; it uses the
+DEV launcher, waits for DEV `/api/config`, then tunnels only
 `http://localhost:5173`. Next.js remains bound to `127.0.0.1`. Ctrl+C stops both
 process trees. Keep Windows awake and the command running for IntelliJ hot reload.
 
@@ -486,8 +485,8 @@ No database permissions or session verification rules change.
 
 ### Phone testing against LOCAL
 
-`pnpm dev:mobile:local` uses the same `DUTY_DEV_ORIGIN`, `work/ngrok/ngrok.yml`,
-port check and served-CSS check as `pnpm dev:mobile`, but starts the `dev:local`
+`pnpm local` uses the same `DUTY_DEV_ORIGIN`, `work/ngrok/ngrok.yml`,
+port check and served-CSS check as `pnpm dev`, but starts the LOCAL
 launcher (Docker setup, current-branch migrations, test accounts). The phone
 cannot reach the LOCAL API on `127.0.0.1:48321`, so the same tunnel carries it:
 under `next dev` only, Next rewrites `/auth/v1/*` and `/rest/v1/*` on the tunnel

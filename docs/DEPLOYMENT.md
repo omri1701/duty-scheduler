@@ -32,7 +32,7 @@ Production. Keep Development's localhost OAuth origin/redirect as documented in
 [Supabase setup](SUPABASE_SETUP.md#local-development-with-the-separate-development-project).
 Normal application/RPC access to shared Development remains subject to existing
 approval, RLS and revision checks; it grants no migration permission.
-`pnpm dev:prod` is an explicit, confirmed localhost inspection exception: it
+`pnpm prod` is an explicit, confirmed localhost inspection exception: it
 blocks team data writes and membership onboarding, adds a red warning/badge, and never
 changes hosted schemas, permissions or OAuth redirects. It does not grant
 database-enforced read-only access. See [the selector runbook](SUPABASE_SETUP.md#localhost-environment-selector).
@@ -40,7 +40,7 @@ database-enforced read-only access. See [the selector runbook](SUPABASE_SETUP.md
 Test new canonical SQL and incremental migrations on disposable LOCAL Supabase,
 using the existing `schemas/`, `reference-data/`, `migrations/` and SQL tests.
 When the feature requires unapplied database changes, test that path locally with
-`pnpm dev:local`, which starts an isolated Auth/API stack and uses its public key
+`pnpm local`, which starts an isolated Auth/API stack and uses its public key
 without changing the existing Development `.env.local`. Do not copy canonical schemas into
 another maintained tree or push unmerged migrations to shared Development.
 Only `develop` releases migrate hosted Development; only approved `master` releases

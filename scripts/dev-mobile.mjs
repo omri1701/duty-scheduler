@@ -29,14 +29,17 @@ function start(command,args,options = {}) {
 }
 async function main() {
   const local = process.argv[2] === 'local';
-  if (process.argv[2] && !local) throw Error('Use pnpm dev:mobile or pnpm dev:mobile:local.');
+  if (!local && process.argv[2] !== 'dev') throw Error('Use pnpm local or pnpm dev.');
   const development = readDevelopmentEnv();
-  // LOCAL needs only the tunnel origin; DEV keeps its full DEV selection.
-  const selected = local ? {} : selectConfiguration('dev',development);
-  const origin = local ? development.DUTY_DEV_ORIGIN && validateDevOrigin(development.DUTY_DEV_ORIGIN) : selected.DUTY_DEV_ORIGIN;
-  if (!origin) throw Error('Set DUTY_DEV_ORIGIN to your static HTTPS ngrok origin in ignored .env.dev.local.');
   const config = resolve('work/ngrok/ngrok.yml');
-  if (!existsSync(config)) throw Error('Authenticate ngrok locally with scripts/ngrok-auth.ps1 first (see Supabase setup).');
+  // LOCAL needs only the tunnel origin; DEV keeps its full DEV selection.
+  const origin = development.DUTY_DEV_ORIGIN && validateDevOrigin(development.DUTY_DEV_ORIGIN);
+  if (!origin || !existsSync(config)) {
+    console.log('No phone link: set DUTY_DEV_ORIGIN in .env.dev.local and run scripts/ngrok-auth.ps1. Running on this PC only.');
+    start(process.execPath,['scripts/dev-environment.mjs',local ? 'local' : 'dev']);
+    return;
+  }
+  const selected = local ? {} : selectConfiguration('dev',development);
   // Do not accidentally tunnel an unrelated server already occupying this port.
   await new Promise((accept,reject)=>{
     const server = createServer();
@@ -44,12 +47,12 @@ async function main() {
     server.listen(5173,'127.0.0.1',()=>server.close(accept));
   });
   if (local) {
-    // The existing pnpm dev:local launcher (Docker setup, loopback API, CSS check),
+    // The existing `pnpm local` launcher (Docker setup, loopback API, CSS check),
     // plus the LOCAL-only same-origin Auth/REST proxy. Its output shows setup
     // progress; password sign-in puts no secrets in request URLs.
     start(process.execPath,['scripts/dev-environment.mjs','local'],{env:{...process.env,DUTY_DEV_ORIGIN:'',DUTY_LOCAL_TUNNEL_ORIGIN:origin}});
   } else {
-    // This is the existing pnpm dev:dev launcher, with its loopback/DEV safeguards.
+    // This is the existing `pnpm dev` launcher, with its loopback/DEV safeguards.
     // Next dev logs request URLs, including OAuth callback codes. Keep its output
     // out of this mobile terminal; configuration readiness is verified below.
     start(process.execPath,['scripts/dev-environment.mjs','dev'],{env:{...process.env,...selected},stdio:'ignore'});

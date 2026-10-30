@@ -12,12 +12,9 @@ Requires Node 22.13+ (Node 24 recommended) and the pnpm version declared in pack
 
 ```sh
 pnpm install
-pnpm dev:dev   # default: Frankfurt Development, http://localhost:5173
-pnpm dev:mobile # same DEV app through your configured static HTTPS ngrok origin
-pnpm dev:local # Docker / Supabase CLI, current branch migrations + local test accounts
-pnpm dev:mobile:local # same LOCAL app on your phone through the same ngrok origin
-pnpm dev:prod  # explicit confirmation each run; application read-only inspection
-pnpm dev:select # optional interactive selector
+pnpm local # Docker / Supabase CLI, current branch migrations + test accounts; phone link via ngrok
+pnpm dev   # Frankfurt Development, http://localhost:5173; phone link via ngrok
+pnpm prod  # explicit confirmation each run; application read-only inspection, PC only
 ```
 
 `pnpm dev` is the Development default. Stop the server before switching targets;
@@ -56,7 +53,7 @@ Temporary engineers participate in the same fairness and compensation rules as
 regular engineers. Account linking is not available; do not create replacement
 members or rename them to an email as a linking workaround.
 
-For an unmerged branch, use `pnpm dev:local` and the local admin account described
+For an unmerged branch, use `pnpm local` and the local admin account described
 in [Supabase setup](docs/SUPABASE_SETUP.md#temporary-members-local-development).
 `pnpm dev` uses hosted Development, which needs the reviewed database-first release
 before these new RPCs are available.
@@ -306,7 +303,7 @@ reopened draft needs it. `toolbar-zoom.spec.ts` uses isolated Chromium tab zoom
 (100/125/150/200%), including the menu background, border, shadow, collision,
 stacking and Escape/focus behavior, in New/Published/Reopened states and RTL.
 For the real LOCAL app with Auth/PostgREST and no backend interception, use
-`pnpm test:runtime:local` after `pnpm dev:local`; see [the LOCAL verification
+`pnpm test:runtime:local` after `pnpm local`; see [the LOCAL verification
 procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).
 To smoke-test an accessible deployed DEV build with the same
 synthetic accounts and intercepted backend (no real member data or writes):
