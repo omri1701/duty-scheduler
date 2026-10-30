@@ -12,14 +12,12 @@ Requires Node 22.13+ (Node 24 recommended) and the pnpm version declared in pack
 
 ```sh
 pnpm install
-pnpm dev:dev   # default: Frankfurt Development, http://localhost:5173
-pnpm dev:mobile # same DEV app through your configured static HTTPS ngrok origin
-pnpm dev:local # Docker / Supabase CLI, current branch migrations + local test accounts
-pnpm dev:prod  # explicit confirmation each run; application read-only inspection
-pnpm dev:select # optional interactive selector
+pnpm start:local # Docker / Supabase CLI, current branch migrations + test accounts; phone link via ngrok
+pnpm start:dev   # Frankfurt Development, http://localhost:5173; phone link via ngrok
+pnpm start:prod  # explicit confirmation each run; application read-only inspection, PC only
 ```
 
-`pnpm dev` is the Development default. Stop the server before switching targets;
+`pnpm start:dev` is the Development default. Stop the server before switching targets;
 an occupied port 5173 now fails before LOCAL setup or any readiness check, so
 the launcher cannot accidentally validate an older server using another target.
 no command rewrites `.env.local`. See [local targets and setup](docs/SUPABASE_SETUP.md#localhost-environment-selector)
@@ -55,9 +53,9 @@ Temporary engineers participate in the same fairness and compensation rules as
 regular engineers. Account linking is not available; do not create replacement
 members or rename them to an email as a linking workaround.
 
-For an unmerged branch, use `pnpm dev:local` and the local admin account described
+For an unmerged branch, use `pnpm start:local` and the local admin account described
 in [Supabase setup](docs/SUPABASE_SETUP.md#temporary-members-local-development).
-`pnpm dev` uses hosted Development, which needs the reviewed database-first release
+`pnpm start:dev` uses hosted Development, which needs the reviewed database-first release
 before these new RPCs are available.
 
 ## Native Next.js runtime and Vercel deployment
@@ -113,7 +111,7 @@ private-fixture captures retain absolute bounds and full-page screenshots so
 role-dependent offsets and private-content changes remain visible. These checks
 do not promise identical total page height before team size and private data are known.
 
-`pnpm dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
+`pnpm start:dev` and `pnpm start` use port 5173 to retain the localhost OAuth redirect.
 `pnpm build` creates the standard `.next` output; `pnpm start` serves it with Node.
 The build also verifies the emitted stylesheets linked by the generated page,
 rejecting missing assets or CSS that lacks the responsive workspace styles.
@@ -305,7 +303,7 @@ reopened draft needs it. `toolbar-zoom.spec.ts` uses isolated Chromium tab zoom
 (100/125/150/200%), including the menu background, border, shadow, collision,
 stacking and Escape/focus behavior, in New/Published/Reopened states and RTL.
 For the real LOCAL app with Auth/PostgREST and no backend interception, use
-`pnpm test:runtime:local` after `pnpm dev:local`; see [the LOCAL verification
+`pnpm test:runtime:local` after `pnpm start:local`; see [the LOCAL verification
 procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).
 To smoke-test an accessible deployed DEV build with the same
 synthetic accounts and intercepted backend (no real member data or writes):
