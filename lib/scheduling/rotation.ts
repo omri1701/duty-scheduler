@@ -35,3 +35,35 @@ export function weekendRotation(history: PublishedMonth[], members: string[], mo
   const inProgress = [...seen].some(id => counts.get(id)! >= 1);
   return Object.fromEntries(members.map(id => [id, seen.has(id) ? counts.get(id)! : Math.max(counts.get(id)!, inProgress ? 1 : 0)]));
 }
+
+/**
+ * Cross-month weekday rotation state derived from the same published months: how many
+ * Sunday–Thursday duties each member has taken on each weekday (index 0 = Sunday … 4 =
+ * Thursday) in the current cycle. A cycle ends once every member seen in it has covered all
+ * five weekdays at least once; every count then drops by one. Members with no published duty
+ * in the current cycle join the next one: while the cycle is in progress they count one on
+ * every weekday (neutral for their own choice, never "due first" against the team). Weekend
+ * duties never count here. The month being generated is excluded. Lower counts receive that
+ * weekday first.
+ */
+export function weekdayRotation(history: PublishedMonth[], members: string[], month: string): Record<string, number[]> {
+  const ids = new Set(members);
+  if (ids.size !== members.length) throw new GenerationError('duplicate-member');
+  const counts = new Map(members.map(id => [id, [0, 0, 0, 0, 0]])), seen = new Set<string>();
+  const months = [...history].filter(m => m.month !== month).sort((a, b) => a.month.localeCompare(b.month));
+  if (new Set(months.map(m => m.month)).size !== months.length) throw new GenerationError('duplicate-history-month');
+  for (const m of months) {
+    for (const d of m.duties) {
+      if (!d.primary || !ids.has(d.primary)) continue;
+      seen.add(d.primary);
+      const dow = dayOf(d.startDate);
+      if (dow <= 4) counts.get(d.primary)![dow]++;
+    }
+    if (seen.size && [...seen].every(id => counts.get(id)!.every(n => n >= 1))) {
+      for (const id of members) counts.set(id, counts.get(id)!.map(n => Math.max(0, n - 1)));
+      seen.clear();
+    }
+  }
+  const inProgress = [...seen].some(id => counts.get(id)!.some(n => n >= 1));
+  return Object.fromEntries(members.map(id => [id, seen.has(id) ? counts.get(id)! : counts.get(id)!.map(n => Math.max(n, inProgress ? 1 : 0))]));
+}

@@ -10,7 +10,7 @@ import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
-import {weekendRotation} from '@/lib/scheduling/rotation';
+import {weekdayRotation, weekendRotation} from '@/lib/scheduling/rotation';
 import {publishedHistory} from '@/lib/supabase/snapshot';
 import {addDays} from '@/lib/rota/calendar-dates';
 import {acceptGeneration, type GenerationResult} from '@/lib/scheduling/generate';
@@ -197,11 +197,12 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       if (!generate) {setNotice(t('Allocation and locks saved.', 'ההקצאה והנעילות נשמרו.')); return;}
       if (!confirmed.generationInput || now() >= confirmed.coverageStartMs) throw Error('generation-window-closed');
       setPhase('generating');
-      // Weekend rotation state comes from the published months the workspace already
-      // holds; it is a soft objective, so the checked save does not revalidate it.
+      // Weekend and weekday rotation state comes from the published months the workspace
+      // already holds; both are soft objectives, so the checked save does not revalidate them.
       const eligible = confirmed.generationInput.members.filter(m => m.active && m.approved && m.eligible).map(m => m.id);
+      const history = latest.current.snapshot ? publishedHistory(latest.current.snapshot, month) : [];
       const generationInput: GenerationInput = {...confirmed.generationInput,
-        weekendRotation: weekendRotation(latest.current.snapshot ? publishedHistory(latest.current.snapshot, month) : [], eligible, month)};
+        weekendRotation: weekendRotation(history, eligible, month), weekdayRotation: weekdayRotation(history, eligible, month)};
       const active = createGenerationWorker(now); worker.current = active;
       const generated = await active.run(generationInput, {seconds: 30}, p => {
         if (id === sequence.current) setProgress(p.metrics.coverage);

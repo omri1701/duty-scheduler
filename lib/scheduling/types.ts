@@ -25,6 +25,8 @@ export type GenerationInput = {
   approvals?: Approval[];
   /** Weekend turns per member in the current rotation cycle (see rotation.ts); absent members count 0. */
   weekendRotation?: Record<string, number>;
+  /** Sunday–Thursday duties per weekday (index 0–4) per member in the current cycle (see rotation.ts); absent members count 0. */
+  weekdayRotation?: Record<string, number[]>;
 };
 export type CanonicalDuty = {
   id: string; ownerMonth: string; startDate: string; endDate: string; dates: string[];

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {weekendRotation} from '../lib/scheduling/rotation.ts';
+import {weekdayRotation, weekendRotation} from '../lib/scheduling/rotation.ts';
 import {publishedHistory} from '../lib/supabase/snapshot.ts';
 
 const members = ['a', 'b', 'c', 'd'];
@@ -70,4 +70,50 @@ test('published history reads only each month\'s current publication rows owned 
   ]);
   assert.deepEqual(publishedHistory(raw, '2026-11').map(m => m.month), ['2026-10']);
   assert.deepEqual(weekendRotation(publishedHistory(raw, '2026-12'), ['a', 'b', 'c', 'd'], '2026-12'), {a: 1, b: 0, c: 1, d: 1});
+  // Weekday rotation from the same rows: b's Thursday the 1st counts, weekends do not, d was absent.
+  assert.deepEqual(weekdayRotation(publishedHistory(raw, '2026-12'), ['a', 'b', 'c', 'd'], '2026-12'),
+    {a: [0, 0, 0, 0, 0], b: [0, 0, 0, 0, 1], c: [0, 0, 0, 0, 0], d: [1, 1, 1, 1, 1]});
+});
+
+const zeros = [0, 0, 0, 0, 0], ones = [1, 1, 1, 1, 1];
+/** One month whose Sunday–Thursday dates go to the listed members in order (weekday index = date index mod 5). */
+const weekdays = (m, owners, weekendOwners = []) => ({month: m, duties: [
+  ...owners.map((id, i) => ({startDate: days(m, dow => dow <= 4)[i], primary: id})),
+  ...weekendOwners.map((id, i) => ({startDate: days(m, dow => dow === 5)[i], primary: id})),
+]});
+
+test('weekday counts accumulate per weekday until everyone seen has covered all five, then drop by one', () => {
+  assert.deepEqual(weekdayRotation([], members, '2026-12'), {a: zeros, b: zeros, c: zeros, d: zeros});
+  // November 2026 starts on a Sunday: the first five weekday dates are Sunday–Thursday.
+  const november = weekdays('2026-11', ['a', 'a', 'b', 'b', 'c', 'a', 'a']);
+  assert.deepEqual(weekdayRotation([november], members, '2026-12'), {a: [2, 2, 0, 0, 0], b: [0, 0, 1, 1, 0], c: [0, 0, 0, 0, 1], d: ones});
+  // Everyone seen covers every weekday: counts drop by one and a's extra Sunday carries over.
+  const december = weekdays('2026-12', Array.from({length: 20}, (_, i) => ['a', 'b', 'c'][i % 3]));
+  const all = {a: [0, 0, 0, 0, 0], b: [0, 0, 0, 0, 0], c: [0, 0, 0, 0, 0]};
+  const state = weekdayRotation([november, december], members, '2027-01');
+  assert.deepEqual(Object.values(state).map(v => v.length), [5, 5, 5, 5]);
+  assert.ok(Object.keys(all).every(id => state[id].every(n => n >= 0)));
+  const total = id => state[id].reduce((n, v) => n + v, 0);
+  assert.equal(total('a') + total('b') + total('c'), 27 - 15); // 7 + 20 duties, five dropped per present member
+  assert.deepEqual(state.d, zeros); // a completed cycle starts the absent member level at zero
+  // Input order does not matter and the month being generated is excluded.
+  assert.deepEqual(weekdayRotation([december, november], members, '2027-01'), state);
+  assert.deepEqual(weekdayRotation([november, december], members, '2026-12'), weekdayRotation([november], members, '2026-12'));
+});
+
+test('weekend duties never count as weekdays; absent members join the cycle level with the team', () => {
+  const split = {month: '2026-11', duties: [{startDate: '2026-11-06', primary: 'a'}, {startDate: '2026-11-07', primary: 'a'},
+    {startDate: '2026-11-13', primary: 'b'}, {startDate: '2026-11-02', primary: 'c'}, {startDate: '2026-11-03', primary: 'left'}, {startDate: '2026-11-04', primary: null}]};
+  // a and b are present (weekend duties) but have no weekday counts; d is absent while c's Monday is in progress.
+  assert.deepEqual(weekdayRotation([split], members, '2026-12'), {a: zeros, b: zeros, c: [0, 1, 0, 0, 0], d: ones});
+  // A member away for the whole cycle so far counts one everywhere; a fresh cycle starts everyone at zero.
+  const away = [weekdays('2026-10', ['a', 'b', 'c', 'd']), weekdays('2026-11', ['a', 'b', 'c'])];
+  assert.deepEqual(weekdayRotation(away, members, '2026-12').d, [0, 0, 1, 0, 0]); // present in October (its fourth weekday date is a Tuesday): real counts
+  assert.deepEqual(weekdayRotation(away, [...members, 'e'], '2026-12').e, ones);
+  assert.deepEqual(weekdayRotation([], [...members, 'e'], '2026-12').e, zeros);
+});
+
+test('weekday rotation rejects duplicate months or members', () => {
+  assert.throws(() => weekdayRotation([weekdays('2026-10', ['a']), weekdays('2026-10', ['b'])], members, '2026-12'), /duplicate-history-month/);
+  assert.throws(() => weekdayRotation([], ['a', 'a'], '2026-12'), /duplicate-member/);
 });
