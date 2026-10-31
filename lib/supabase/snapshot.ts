@@ -1,4 +1,5 @@
 import {addDays,dayOf,blocks,ownerMonth,type State,type Special} from '../rota/engine.ts';
+import type {PublishedMonth} from '../scheduling/rotation.ts';
 export type Member={id:string;email:string|null;is_temporary?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
 export type Lookup={code:string;label:string};
 export type Role=Lookup&{can_manage:boolean};
@@ -56,6 +57,11 @@ export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:stri
  const byDay=new Map<string,DutyRow>();
  for(const row of rows){for(const [key,existing] of byDay)if(existing.day<row.end_day&&existing.end_day>row.day)byDay.delete(key);byDay.set(row.day,row)}
  return applyRows(state,[...byDay.values()]);
+}
+/** Current publications of every other month, for the cross-month weekend rotation. */
+export function publishedHistory(raw:Snapshot,exceptMonth?:string):PublishedMonth[]{
+ return raw.months.filter(m=>m.current_publication_id&&m.month!==exceptMonth).map(m=>({month:m.month,
+  duties:raw.assignments.filter(r=>r.publication_id===m.current_publication_id&&rowOwner(r)===m.month).map(r=>({startDate:r.day,primary:r.primary_id}))}));
 }
 export function schedulePayload(s:State,month?:string,publish=false,reviewedLocks?:string[]){
   const months=new Set(month?[month]:Object.keys(s.months));

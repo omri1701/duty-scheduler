@@ -4,7 +4,7 @@ import {checkProblem, type Problem} from './solver/problem.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export const CORE_VERSION = 'duty-generation-v1';
-export const MODEL_VERSION = 'highs-leximin-v2';
+export const MODEL_VERSION = 'highs-leximin-v4';
 /** Exact canonical serialization, not a lossy hash. Input arrays are sets of facts. */
 function canonicalKey(value: unknown, sets: boolean): string {
   if (Array.isArray(value)) {
@@ -48,6 +48,10 @@ export function prepareGeneration(source: GenerationInput) {
   }
   for (const [dutyId, id] of Object.entries(input.secondary ?? {})) {
     if (!indices.has(dutyId) || !memberIds.has(id)) fail('invalid-secondary', {dutyId, engineer: id});
+  }
+  for (const [id, turns] of Object.entries(input.weekendRotation ?? {})) {
+    if (!memberIds.has(id)) fail('unknown-rotation-member', {engineer: id});
+    if (!Number.isSafeInteger(turns) || turns < 0 || turns > 1e6) fail('invalid-rotation', {engineer: id});
   }
   const unavailable = (id: string, dutyId: string) => duties[indices.get(dutyId)!].dates.filter(d => input.constraints?.[id]?.[d] === 'no');
   const approvals = input.approvals ?? [];
@@ -99,6 +103,7 @@ export function prepareGeneration(source: GenerationInput) {
   unique(scopeKeys, 'duplicate-approval-scope');
   const diagnostics: Diagnostic[] = [], preferences: NonNullable<Problem['preferences']> = [];
   const problem: Problem = {targets, spacing: true, seededTies: true, preferences,
+    rotation: members.map(m => input.weekendRotation?.[m.id] ?? 0),
     boundaries: [...guards.values()].sort((a, b) => a.start - b.start || a.id.localeCompare(b.id)), exceptions,
     duties: duties.map((d, i) => {
       const locked = locks.get(d.id), secondary = input.secondary?.[d.id];
@@ -117,7 +122,8 @@ export function prepareGeneration(source: GenerationInput) {
         diagnostics.push({code: 'secondary-needs-publication-review', certainty: 'fact', dutyId: d.id, engineer: secondary});
       }
       return {start: d.start, end: d.end, days: d.dates.length, units: d.units, special: d.specialDates.length, eligible,
-        ...(d.weekendId ? {weekend: handover(d.weekendId)} : {}), ...(locked ? {lock: engineers.get(locked)!} : {})};
+        ...(d.weekendId ? {weekend: handover(d.weekendId)} : {weekday: dayOf(d.startDate)}),
+        ...(locked ? {lock: engineers.get(locked)!} : {})};
     })};
   try {checkProblem(problem);} catch (error) {fail('invalid-fixed-input', {reason: error instanceof Error ? error.message : String(error)});}
   // Cheap necessary conditions, explicitly separate from global feasibility.

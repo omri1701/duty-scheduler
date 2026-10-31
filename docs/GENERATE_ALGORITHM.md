@@ -1014,8 +1014,27 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 2 | Special/holiday coverage | At the same date coverage, maximize covered dates explicitly marked special/holiday. |
 | 3 | Minimum missing target points | At the same first two values, minimize total unmet primary points. Never exceed an individual's target. |
 | 4a | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
-| 4b | Overall gap distribution | Improve the remaining smallest gaps in order, preventing a fixed close pair from making all spacing decisions irrelevant. |
-| 5 | Ordinary secondary ties and seed | Prefer available “preferred” dates among equal higher outcomes; then seeded alternatives. |
+| 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend. |
+| 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
+| 7 | Overall gap distribution | Improve the remaining smallest gaps in order (the full sorted-gap leximin), preventing a fixed close pair from making all spacing decisions irrelevant. |
+| 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |
+| 9 | Seed | Seeded alternatives among schedules equal on every level above. |
+
+*Decision 2026-10-31 (revised the same day):* the rotation and weekday levels
+sit directly below the proved minimum gap and above the remaining gap
+distribution, because the owner wants both rules to hold with rare exceptions
+only. Below the full spacing vector they were nearly inert: with at most four
+Sunday–Thursday duties per member, two schedules with the same sorted gap vector
+always have the same repeat count (checked exhaustively for November 2026), and
+on an ordinary twelve-engineer month the spacing optimum places most pairs
+exactly two weeks apart, which is the same weekday; a one-day refinement of a
+non-minimal gap could also override "everyone gets a weekend before anyone gets a
+second". Measured on the ordinary fixture, the move keeps the minimum gap and
+removes every repeat: the sorted gap vector goes from `[11,11,12,12,13×9,14]` to
+`[11,11,12,12,12×5,14,14,14,14,15]` days. Rotation outranks weekday variety
+because it is a cross-month fairness commitment with memory. The order below the
+minimum gap is fixed in one place, the `early`/`late` stage lists in
+`lib/scheduling/solver/model.ts`.
 
 Required special/holiday input comes from configured Special Blocks/explicit
 existing calendar markers. Do not infer importance from extra-point magnitude
@@ -1079,6 +1098,34 @@ are not fixed, favored or imported as mandatory constraints.
 Never promise a different answer for a unique result or sacrifice higher
 coverage, special coverage, fulfilled points or spacing merely for variety.
 Randomness does not mutate compensation or targets.
+
+The seed objective is a random linear cost over every assignment variable, so
+every schedule that is equal on all higher levels is reachable by some seed
+(each 0/1 point is an extreme point of their convex hull). Variety is therefore
+bounded only by how many such equal schedules exist: with twelve engineers and
+two or three duties each, the spacing vector pins the date pattern and the seed
+mostly permutes interchangeable members; availability constraints and preferred
+dates break that symmetry and can leave a unique optimum, which the seed cannot
+and must not change.
+
+### 11.3 Weekend rotation state
+
+Rotation state is derived from the current publications of all other months,
+in chronological order, with no new table (`lib/scheduling/rotation.ts`).
+For each month, a member who is primary on any Friday or Saturday duty owned by
+that month takes one **turn** (either half of a split weekend counts; both halves
+in one month are still one turn), and a member with any primary duty is
+**present**. Turn counts accumulate per member. Once every member present in
+the current cycle has at least one turn, the cycle completes: every count drops
+by one (an exception's second turn carries over) and presence resets. The
+objective weight of a member is their count, except that a member not present in
+any month of the current cycle counts as one while the cycle is in progress
+(someone present already has a turn) and as zero otherwise: new or returning
+members join the next cycle level with the team, never due first. A skipped
+member keeps count zero and remains due in later months. Locked weekend duties
+count through the same weight. Secondary cover, working drafts and the month
+being generated are ignored. The state is a soft objective only: the checked
+database save does not revalidate it.
 
 ## 12. Validation, result states and proof
 
@@ -1230,8 +1277,12 @@ In order, maximize/minimize:
 1. `C = sum_d(c[d] × (1 − u[d]))`.
 2. `H = sum_d(h[d] × (1 − u[d]))`, fixing optimal C.
 3. `U = sum_e(m[e])`, fixing optimal C and H.
-4. The max-min/leximin spacing objectives from section 11, fixing C, H and U.
-5. Preferred-date and seeded tie-break objectives, fixing all higher quality.
+4. The maximum minimum gap from section 11 (threshold search), fixing C, H and U.
+5. Weekend rotation cost `sum_e(turns[e] × sum_w y[e,w])`, then same-weekday
+   repeats `sum_{e,wd} r[e,wd]` with continuous `r[e,wd] >= sum_{d on wd} x[e,d] − 1`,
+   each fixed once proved, with the minimum gap enforced by the successor flows.
+6. The sorted-gap leximin counts, then the preferred-date count, each fixed once proved.
+7. The seeded tie-break objective, fixing all higher quality.
 
 All coverage/point objectives have exact integer values. Use repeated solves
 with constraints fixing the proved previous objective values. Set integrality
@@ -2081,6 +2132,9 @@ of the UI/server time gate.
 | M16 | Locked zero gap plus two movable gap patterns | Minimum remains zero; secondary gap ordering chooses the better remaining small gaps. |
 | M17 | Structurally valid locks and no usable automatic edges | Locks plus all other u=1 form a valid partial incumbent; optional model is not reported infeasible. |
 | M18 | Variable number of assigned blocks at equal higher objectives | Successor gaps/padded comparison follow section 11; no off-month-only or unassigned-duty gap is scored. |
+| M19 | Equal minimum gap, one member with a weekend turn this cycle | The weekend goes to the member without a turn; a preferred weekend date, the gap distribution or the seed cannot override it; the minimum gap can. |
+| M20 | Equal minimum gap, choices differing in repeated weekdays | The lower repeat count is chosen and proved over a better gap distribution or a preferred date; the independent validator reports the count. |
+| M21 | Ordinary month, several seeds | Identical gap vectors, distinct schedules, and variation spread across the whole month rather than the last duties. |
 
 ### 18.2 Business-rule tests
 
