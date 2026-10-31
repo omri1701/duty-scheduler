@@ -527,25 +527,32 @@ test('floors: fair + Permanent and planned relief are never taken away permanent
   assert.throws(() => edit(j, r.draft, 'e11', -2), /edit-below-locked-points/);
 });
 
-test('ceiling: Permanent never exceeds the month total; mixed + Permanent / − Temporary stays allowed below it', () => {
+test('ceiling: fair share + Permanent never exceeds the month total; mixed + Permanent / − Temporary stays allowed below it', () => {
   const i = normalInput, d = normal.draft, month = total(Object.values(d.baselineUnits)), A = 'e00';
+  // 26 points this month and a fair share of 2: at most +24 permanent.
+  const ceiling = month - d.baselineUnits[A];
+  assert.equal(month, 52); assert.equal(ceiling, 48);
   // One mixed round is a legitimate plan: A works one more point for good and defers one.
   const once = edit(i, edit(i, d, A, 2, 'permanent').draft, A, -2);
   assert.ok(once.balanced); assert.deepEqual(once.draft.changes[A], {temporary: -2, permanent: 2});
   assert.equal(once.draft.targetsUnits[A], d.targetsUnits[A]);
-  // Repeating it used to climb without bound once the others reached their floors. It stops at the ceiling.
+  // Repeating it stays allowed and balanced up to +24, then the next + Permanent is refused.
   let x = d, rounds = 0, stop = null;
   while (!stop && rounds < 100) {
-    try {x = edit(i, edit(i, x, A, 2, 'permanent').draft, A, -2).draft; rounds++;} catch (e) {stop = e;}
+    try {
+      const r = edit(i, edit(i, x, A, 2, 'permanent').draft, A, -2);
+      assert.ok(r.balanced, `round ${rounds + 1} balanced`); x = r.draft; rounds++;
+    } catch (e) {stop = e;}
   }
   assert.match(stop?.message ?? '', /permanent-above-month-total/);
-  assert.equal(rounds, month / 2); assert.equal(x.changes[A].permanent, month);
-  assert.ok(Object.keys(x.changes).every(id => x.changes[id].permanent <= month));
+  assert.equal(rounds, 24); assert.equal(x.changes[A].permanent, ceiling);
+  assert.equal(x.targetsUnits[A], d.targetsUnits[A]); assert.equal(d.baselineUnits[A] + x.changes[A].permanent, month);
+  assert.ok(Object.keys(x.changes).every(id => x.baselineUnits[id] + x.changes[id].permanent <= month));
   // A whole-point step that overshoots by half a point is refused, never half applied.
   const half = edit(i, x, A, -1, 'permanent').draft;
-  assert.equal(half.changes[A].permanent, month - 1);
+  assert.equal(half.changes[A].permanent, ceiling - 1);
   assert.throws(() => edit(i, half, A, 2, 'permanent'), /permanent-above-month-total/);
-  assert.equal(edit(i, half, A, 1, 'permanent').draft.changes[A].permanent, month);
+  assert.equal(edit(i, half, A, 1, 'permanent').draft.changes[A].permanent, ceiling);
   // A permanent drag or Make permanent onto a member at the ceiling is refused too
   // (the giver first gets permanent room above its floor).
   const room = edit(i, x, 'e05', 2, 'permanent').draft;
@@ -554,13 +561,13 @@ test('ceiling: Permanent never exceeds the month total; mixed + Permanent / − 
   assert.throws(() => classifyTransfer(i, moved, moved.pairs.at(-1).id, 'permanent'), /permanent-above-month-total/);
   // Review refuses a stored change above the ceiling.
   const stored = structuredClone(persistedDraft(once.draft));
-  stored.changes[A].permanent = month + 2;
+  stored.changes[A].permanent = ceiling + 2;
   assert.throws(() => reviewAllocation(i, stored), /permanent-above-month-total/);
-  // The automatic balance never makes a permanent receiver pass the ceiling: what does not fit stays unplaced.
+  // The automatic balance never lifts a permanent receiver past its ceiling: what does not fit stays unplaced.
   const c = context(i), lone = 'e11', hand = Object.fromEntries(c.ids.filter(id => id !== lone).map(id => [id, {temporary: 0, permanent: 0}]));
   hand[A] = {temporary: 0, permanent: -(month + 2)};
-  const placed = balanceChanges(c, i.seniority, d.offeredUnits, hand);
-  assert.equal(placed.changes[lone].permanent, month); assert.equal(placed.unplaced.permanent, month + 2 - month);
+  const placed = balanceChanges(c, i.seniority, d.baselineUnits, d.offeredUnits, hand), loneCeiling = month - d.baselineUnits[lone];
+  assert.equal(placed.changes[lone].permanent, loneCeiling); assert.equal(placed.unplaced.permanent, month + 2 - loneCeiling);
 });
 
 test('a temporary change on a debtor defers newest repayment; a permanent change that keeps the points never consumes it', () => {

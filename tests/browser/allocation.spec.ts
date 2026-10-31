@@ -53,22 +53,25 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   for (const name of ['Refresh & review retained targets', 'Use a new proposal', 'Save allocation only']) await expect(page.getByRole('button', {name})).toHaveCount(0);
 });
 
-test('Permanent + stops at the month total with a note, and a step that would overshoot is disabled', async ({page, backend, openApp}) => {
+test('Permanent + stops when fair share + punishment reaches the month total, with a note; an overshooting step is disabled', async ({page, backend, openApp}) => {
   fresh(backend); await openApp(); await openPlan(page);
   const first = page.locator('.plan-row').first(), note = first.locator('[role=note][id^="plan-cap-"]');
   const increase = first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true});
+  // The month has 26 points: the max punishment is 26 minus Avery's fair share.
+  const fair = Number(await first.locator('output').textContent()), max = 26 - fair;
   await page.getByRole('button', {name: /^Permanent/}).click();
-  // The month has 26 points: 26 one-point punishments reach the ceiling.
-  for (let k = 0; k < 26; k++) await increase.click();
-  await expect(first.locator('.plan-chip.permanent')).toHaveText('+26 permanent');
+  for (let k = 0; k < max; k++) await increase.click();
+  await expect(first.locator('.plan-chip.permanent')).toHaveText(`+${max} permanent`);
+  await expect(first.locator('output')).toHaveText('26');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
   await expect(increase).toBeDisabled();
-  await expect(note).toHaveText('Punishment can’t exceed this month’s 26 points');
+  await expect(note).toHaveText(`Max punishment here is +${max} (26 points this month)`);
   await expect(increase).toHaveAttribute('aria-describedby', await note.getAttribute('id') ?? '');
   // Half a point below the ceiling: a whole-point step stays disabled, a half-point step applies.
   await page.getByRole('button', {name: '0.5', exact: true}).click();
   await expect(increase).toBeDisabled();
   await first.getByRole('button', {name: 'Decrease Permanent · Avery Admin', exact: true}).click();
-  await expect(first.locator('.plan-chip.permanent')).toHaveText('+25.5 permanent');
+  await expect(first.locator('.plan-chip.permanent')).toHaveText(`+${max - .5} permanent`);
   await expect(increase).toBeEnabled(); await expect(note).toHaveCount(0);
   await page.getByRole('button', {name: '1', exact: true}).click();
   await expect(increase).toBeDisabled(); await expect(note).toBeVisible();

@@ -1,11 +1,13 @@
--- Permanent ceiling (decision 2026-10-31): a member's net permanent change (a
--- punishment: the member does more and others are relieved for free) can't
--- exceed the month's total points. Repeating "+1 Permanent, -1 Temporary" on one
--- member is still allowed within it. lib/allocation/edits.ts permanentCeiling is
--- the client copy; allocation_compile (confirmation and publication) refuses a
--- larger change with permanent-above-month-total. Existing confirmed allocations
--- already satisfy it: their permanent changes balance to zero and every other
--- member's floor is at most its fair share, so no stored plan becomes invalid.
+-- Permanent ceiling (decision 2026-10-31): a member's fair share plus net
+-- permanent change (a punishment: the member does more and others are relieved
+-- for free) can't exceed the month's total points, so Permanent is at most the
+-- month total minus the member's fair share. Repeating "+1 Permanent, -1
+-- Temporary" on one member is still allowed within it. lib/allocation/edits.ts
+-- permanentCeiling is the client copy; allocation_compile (confirmation and
+-- publication) refuses a larger change with permanent-above-month-total.
+-- Existing confirmed allocations already satisfy it: their permanent changes
+-- balance to zero and every other member's floor is at most its fair share, so
+-- a member's gain is at most the others' fair shares (total - own fair share).
 CREATE OR REPLACE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
  LANGUAGE plpgsql STABLE SET search_path TO '' AS $$
 #variable_conflict use_column
@@ -39,7 +41,7 @@ begin
   temporary_total:=temporary_total+(change->>'temporary')::numeric::bigint; permanent_total:=permanent_total+(change->>'permanent')::numeric::bigint;
   if (change->>'permanent')::numeric::bigint< -least((draft->'baselineUnits'->>id)::numeric::bigint,(draft->'offeredUnits'->>id)::numeric::bigint) then raise exception 'permanent-below-fair-share'; end if;
   -- total holds the month's units: every table above was checked against them.
-  if (change->>'permanent')::numeric::bigint>total then raise exception 'permanent-above-month-total'; end if;
+  if (draft->'baselineUnits'->>id)::numeric::bigint+(change->>'permanent')::numeric::bigint>total then raise exception 'permanent-above-month-total'; end if;
   if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
   lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
  end loop;

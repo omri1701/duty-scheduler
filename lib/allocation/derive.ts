@@ -58,18 +58,19 @@ export type Hand = Readonly<Record<string, Change>>;
  * ranking after each step (receivers: fewest points, newest first; givers: most
  * points, senior first), never crossing a lock. A member already balancing the
  * other kind is chosen last, so one hand change of each kind lands on two
- * different members. A permanent receiver stays within the month's total
- * points. Whatever cannot be placed is returned as `unplaced` and
+ * different members. A permanent receiver's fair share plus its permanent
+ * change stays within the month's total points. Whatever cannot be placed is returned as `unplaced` and
  * blocks confirmation. */
-export function balanceChanges(c: Context, seniority: readonly string[], offered: Readonly<Record<string, number>>, hand: Hand) {
+export function balanceChanges(c: Context, seniority: readonly string[], baseline: Readonly<Record<string, number>>,
+  offered: Readonly<Record<string, number>>, hand: Hand) {
   const changes: Record<string, Change> = Object.fromEntries(c.ids.map(id => [id, hand[id] ? {...hand[id]} : zeroChange()]));
   const free = c.ids.filter(id => !hand[id]), g = grain(c), rank = (id: string) => seniority.indexOf(id);
   const full = (id: string) => offered[id] + changes[id].temporary + changes[id].permanent;
   const other = (id: string, kind: Kind) => changes[id][kind === 'temporary' ? 'permanent' : 'temporary'] ? 1 : 0;
   const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id])
     .sort((a, b) => other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
-  // A receiver never carries more permanent work than the month's total points.
-  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || changes[id].permanent + units <= c.total).sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
+  // A permanent receiver's fair share plus punishment never exceeds the month's total points.
+  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total).sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
   for (const id of seniority) {
     if (hand[id]) continue;
     while (full(id) < c.locked[id]) {

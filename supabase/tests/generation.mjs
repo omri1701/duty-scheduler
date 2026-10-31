@@ -335,11 +335,14 @@ floors+=failure(confirm(unexplained),'unexplained-target-edit');
 const belowFair=edited(ids[12],ids[8],'permanent',2,{[ids[12]]:{temporary:2},[ids[8]]:{temporary:-2}});
 assert.equal(belowFair.changes[ids[12]].permanent,-6);assert.equal(belowFair.targetsUnits[ids[12]],0);
 floors+=failure(confirm(belowFair),'permanent-below-fair-share');
-// The Permanent ceiling (decision 2026-10-31): no member's permanent change exceeds the month's total units.
-const monthUnits=duties.reduce((n,d)=>n+d.units,0),aboveTotal=structuredClone(confirmedDraft);
-aboveTotal.changes[ids[8]].permanent+=monthUnits+2;aboveTotal.changes[ids[8]].temporary-=monthUnits+2;aboveTotal.transfers=deriveTransfers(ids,aboveTotal.changes,aboveTotal.pairs);
-assert.equal(aboveTotal.targetsUnits[ids[8]],confirmedDraft.targetsUnits[ids[8]]);
-floors+=failure(confirm(aboveTotal),'permanent-above-month-total');
+// The Permanent ceiling (decision 2026-10-31): fair share + Permanent never exceeds the month's total units.
+// Exactly at the ceiling the per-member check passes (only the balance refuses this one-sided draft); one more unit is refused.
+const monthUnits=duties.reduce((n,d)=>n+d.units,0),punished=units=>{const d=structuredClone(confirmedDraft),c=d.changes[ids[8]],delta=units-c.permanent;
+ c.permanent+=delta;c.temporary-=delta;d.transfers=deriveTransfers(ids,d.changes,d.pairs);return d};
+const ceiling=monthUnits-confirmedDraft.baselineUnits[ids[8]];
+assert.equal(punished(ceiling+1).targetsUnits[ids[8]],confirmedDraft.targetsUnits[ids[8]]);
+floors+=failure(confirm(punished(ceiling)),'unbalanced-allocation-changes');
+floors+=failure(confirm(punished(ceiling+1)),'permanent-above-month-total');
 const unbalancedDraft=structuredClone(confirmedDraft);unbalancedDraft.changes[ids[8]].temporary+=2;unbalancedDraft.targetsUnits[ids[8]]+=2;unbalancedDraft.changes[ids[9]].temporary-=2;unbalancedDraft.targetsUnits[ids[9]]-=2;unbalancedDraft.changes[ids[9]].temporary=0;
 floors+=`reset role;`+failure(`select duty_private.allocation_compile((select v->'facts' from context)||'{"locks":[],"approvals":[]}'::jsonb,${quote(unbalancedDraft)},${quote(Object.fromEntries(ids.map(id=>[id,0])))},duty_private.compensation_state())`,'unexplained-target-edit|unbalanced-allocation-changes');
 floors+=`set local role authenticated;`;
@@ -358,7 +361,7 @@ const handLeak=structuredClone(confirmedDraft);handLeak.hand=[ids[8]];
 floors+=failure(confirm(handLeak),'invalid-confirmed-allocation');
 floors+=`rollback;`;
 sql(floors);
-console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share or above the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
+console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share or lifting it above the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
 
 // The relief floor: a creditor relieved this month cannot give that relief away permanently.
 let relief=setup+`create temp table debt(v jsonb);insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:debtor,creditorId:creditor,units:4})},'debt','Reviewed source',${rev});`+refresh;
