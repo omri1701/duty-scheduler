@@ -55,7 +55,7 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     const hand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
     const pairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
     const fits = Object.entries(hand).every(([id, ch]) => ch.permanent >= -Math.min(baseline[id], offered[id]) &&
-      offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
+      ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
     if (fits && Object.keys(hand).length) draft = build(hand, pairs);
   }
   return {draft, projection: c.projection};

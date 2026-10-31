@@ -6,6 +6,8 @@ import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
   retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
+import {balanceChanges} from '../lib/allocation/derive.ts';
+import {context} from '../lib/allocation/model.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -523,6 +525,42 @@ test('floors: fair + Permanent and planned relief are never taken away permanent
   const extra = edit(j, r.draft, 'e11', 2).draft;
   assert.throws(() => edit(j, extra, 'e11', -2, 'permanent'), /permanent-below-fair-share/);
   assert.throws(() => edit(j, r.draft, 'e11', -2), /edit-below-locked-points/);
+});
+
+test('ceiling: Permanent never exceeds the month total; mixed + Permanent / − Temporary stays allowed below it', () => {
+  const i = normalInput, d = normal.draft, month = total(Object.values(d.baselineUnits)), A = 'e00';
+  // One mixed round is a legitimate plan: A works one more point for good and defers one.
+  const once = edit(i, edit(i, d, A, 2, 'permanent').draft, A, -2);
+  assert.ok(once.balanced); assert.deepEqual(once.draft.changes[A], {temporary: -2, permanent: 2});
+  assert.equal(once.draft.targetsUnits[A], d.targetsUnits[A]);
+  // Repeating it used to climb without bound once the others reached their floors. It stops at the ceiling.
+  let x = d, rounds = 0, stop = null;
+  while (!stop && rounds < 100) {
+    try {x = edit(i, edit(i, x, A, 2, 'permanent').draft, A, -2).draft; rounds++;} catch (e) {stop = e;}
+  }
+  assert.match(stop?.message ?? '', /permanent-above-month-total/);
+  assert.equal(rounds, month / 2); assert.equal(x.changes[A].permanent, month);
+  assert.ok(Object.keys(x.changes).every(id => x.changes[id].permanent <= month));
+  // A whole-point step that overshoots by half a point is refused, never half applied.
+  const half = edit(i, x, A, -1, 'permanent').draft;
+  assert.equal(half.changes[A].permanent, month - 1);
+  assert.throws(() => edit(i, half, A, 2, 'permanent'), /permanent-above-month-total/);
+  assert.equal(edit(i, half, A, 1, 'permanent').draft.changes[A].permanent, month);
+  // A permanent drag or Make permanent onto a member at the ceiling is refused too
+  // (the giver first gets permanent room above its floor).
+  const room = edit(i, x, 'e05', 2, 'permanent').draft;
+  assert.throws(() => drag(i, room, 'e05', A, 2, 'permanent'), /permanent-above-month-total/);
+  const moved = drag(i, room, 'e05', A).draft;
+  assert.throws(() => classifyTransfer(i, moved, moved.pairs.at(-1).id, 'permanent'), /permanent-above-month-total/);
+  // Review refuses a stored change above the ceiling.
+  const stored = structuredClone(persistedDraft(once.draft));
+  stored.changes[A].permanent = month + 2;
+  assert.throws(() => reviewAllocation(i, stored), /permanent-above-month-total/);
+  // The automatic balance never makes a permanent receiver pass the ceiling: what does not fit stays unplaced.
+  const c = context(i), lone = 'e11', hand = Object.fromEntries(c.ids.filter(id => id !== lone).map(id => [id, {temporary: 0, permanent: 0}]));
+  hand[A] = {temporary: 0, permanent: -(month + 2)};
+  const placed = balanceChanges(c, i.seniority, d.offeredUnits, hand);
+  assert.equal(placed.changes[lone].permanent, month); assert.equal(placed.unplaced.permanent, month + 2 - month);
 });
 
 test('a temporary change on a debtor defers newest repayment; a permanent change that keeps the points never consumes it', () => {

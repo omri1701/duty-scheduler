@@ -58,7 +58,8 @@ export type Hand = Readonly<Record<string, Change>>;
  * ranking after each step (receivers: fewest points, newest first; givers: most
  * points, senior first), never crossing a lock. A member already balancing the
  * other kind is chosen last, so one hand change of each kind lands on two
- * different members. Whatever cannot be placed is returned as `unplaced` and
+ * different members. A permanent receiver stays within the month's total
+ * points. Whatever cannot be placed is returned as `unplaced` and
  * blocks confirmation. */
 export function balanceChanges(c: Context, seniority: readonly string[], offered: Readonly<Record<string, number>>, hand: Hand) {
   const changes: Record<string, Change> = Object.fromEntries(c.ids.map(id => [id, hand[id] ? {...hand[id]} : zeroChange()]));
@@ -67,7 +68,8 @@ export function balanceChanges(c: Context, seniority: readonly string[], offered
   const other = (id: string, kind: Kind) => changes[id][kind === 'temporary' ? 'permanent' : 'temporary'] ? 1 : 0;
   const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id])
     .sort((a, b) => other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
-  const receivers = (kind: Kind) => [...free].sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
+  // A receiver never carries more permanent work than the month's total points.
+  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || changes[id].permanent + units <= c.total).sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
   for (const id of seniority) {
     if (hand[id]) continue;
     while (full(id) < c.locked[id]) {
@@ -81,7 +83,7 @@ export function balanceChanges(c: Context, seniority: readonly string[], offered
     let remaining = 0 - c.ids.reduce((n, id) => n + (hand[id]?.[kind] ?? 0), 0);
     while (remaining) {
       const sign = Math.sign(remaining), units = Math.min(Math.abs(remaining), g);
-      const chosen = sign > 0 ? receivers(kind)[0] : givers(kind, units)[0];
+      const chosen = sign > 0 ? receivers(kind, units)[0] : givers(kind, units)[0];
       if (!chosen) break;
       changes[chosen][kind] += sign * units; remaining -= sign * units;
     }

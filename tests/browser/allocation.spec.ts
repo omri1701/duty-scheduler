@@ -53,6 +53,31 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   for (const name of ['Refresh & review retained targets', 'Use a new proposal', 'Save allocation only']) await expect(page.getByRole('button', {name})).toHaveCount(0);
 });
 
+test('Permanent + stops at the month total with a note, and a step that would overshoot is disabled', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const first = page.locator('.plan-row').first(), note = first.locator('[role=note][id^="plan-cap-"]');
+  const increase = first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true});
+  await page.getByRole('button', {name: /^Permanent/}).click();
+  // The month has 26 points: 26 one-point punishments reach the ceiling.
+  for (let k = 0; k < 26; k++) await increase.click();
+  await expect(first.locator('.plan-chip.permanent')).toHaveText('+26 permanent');
+  await expect(increase).toBeDisabled();
+  await expect(note).toHaveText('Punishment can’t exceed this month’s 26 points');
+  await expect(increase).toHaveAttribute('aria-describedby', await note.getAttribute('id') ?? '');
+  // Half a point below the ceiling: a whole-point step stays disabled, a half-point step applies.
+  await page.getByRole('button', {name: '0.5', exact: true}).click();
+  await expect(increase).toBeDisabled();
+  await first.getByRole('button', {name: 'Decrease Permanent · Avery Admin', exact: true}).click();
+  await expect(first.locator('.plan-chip.permanent')).toHaveText('+25.5 permanent');
+  await expect(increase).toBeEnabled(); await expect(note).toHaveCount(0);
+  await page.getByRole('button', {name: '1', exact: true}).click();
+  await expect(increase).toBeDisabled(); await expect(note).toBeVisible();
+  // Temporary + is never capped.
+  await page.getByRole('button', {name: /^Temporary/}).click();
+  await expect(first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true})).toBeEnabled();
+  await expect(note).toHaveCount(0);
+});
+
 test('Save stores the whole plan without generating; closing, reopening and reloading restore it exactly', async ({page, backend, openApp}) => {
   fresh(backend); await openApp(); await openPlan(page);
   const dialog = page.getByRole('dialog', {name: 'Plan the month'}), save = dialog.getByRole('button', {name: 'Save', exact: true});

@@ -24,6 +24,7 @@ export function allocationMessage(message: string, t: Translate) {
   if (/statement timeout/.test(message)) return t('The server took too long to check this month’s split. Try again; if it repeats, simplify the special ranges.', 'בדיקת החלוקה החודשית בשרת ארכה זמן רב מדי. יש לנסות שוב; אם הבעיה חוזרת, יש לפשט את טווחי הימים המיוחדים.');
   if (/Ordinary baseline/.test(message)) return t('Keep the confirmed allocation and adjust Temporary or Permanent. The month weights and participating team have not changed.', 'יש לשמור על ההקצאה המאושרת ולערוך את השינוי הזמני או הקבוע. משקלי החודש והצוות המשתתף לא השתנו.');
   if (/permanent-below-fair-share/.test(message)) return t('A permanent change can’t take away more than the engineer’s own share: the fair share, or work already given as relief.', 'שינוי קבוע אינו יכול להוריד יותר מהחלק של המהנדס עצמו: החלק ההוגן, או עבודה שכבר ניתנה כהקלה.');
+  if (/permanent-above-month-total/.test(message)) return t('A permanent change can’t exceed this month’s total points.', 'שינוי קבוע אינו יכול לעלות על סך הנקודות של החודש.');
   if (/unbalanced-allocation-changes/.test(message)) return t('Place the remaining points with the + and − controls.', 'יש לחלק את הנקודות שנותרו באמצעות לחצני + ו־−.');
   if (/invalid-allocation-shape|invalid-allocation-changes|invalid-derived-transfers|invalid-allocation-pair|invalid-hand-edits/.test(message)) return t('The saved allocation used an earlier format, so a new proposal replaced it. Check it, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
   if (/lineage|compound|ambiguous/.test(message)) return t('This month carries a published adjustment that needs review. Keep its original plan before changing transfers.', 'בחודש זה קיים שינוי שפורסם ודורש בדיקה. יש לשמור על התוכנית המקורית לפני שינוי העברות.');
@@ -58,6 +59,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   const canGive = (id: string) => {const r = f.totals?.rows.find(r => r.id === id); return !f.busy && !!r && r.target - 2 >= r.locked;};
   const give = (fromId: string, toId: string) => {setGiving(null); if (fromId !== toId && canGive(fromId)) void f.transfer(fromId, toId);};
   const {moved, dismissMoved} = f;
+  // Making a dragged point permanent adds it to the receiver's permanent change.
+  const receiver = moved && f.totals?.rows.find(r => r.id === moved.toId);
+  const canMakePermanent = !!receiver && receiver.permanent + 2 <= receiver.permanentMax;
   useEffect(() => {
     if (!moved) return;
     const timer = setTimeout(() => {if (!toastRef.current?.contains(document.activeElement)) dismissMoved();}, 8000);
@@ -105,6 +109,8 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           const permanent = kind === 'permanent';
           // Floors: points never below locked; a permanent reduction never beyond the member's own share.
           const floor = r.target - f.step < r.locked || (permanent && r.permanent - f.step < r.permanentMin);
+          // Ceiling: a permanent punishment never exceeds the month's total points.
+          const ceiling = permanent && r.permanent + f.step > r.permanentMax, capNote = `plan-cap-${r.id}`;
           return <div className={`plan-row${active === r.id ? ' active' : ''}${over === r.id ? ' drop-target' : ''}${dragging === r.id ? ' dragging' : ''}`} role="row" key={r.id} data-engineer={r.id}
             style={{'--member': member(r.id)?.color ?? '#c8d3c4'} as CSSProperties}
             onPointerEnter={e => {if (e.pointerType === 'mouse') setActive(r.id);}} onPointerLeave={e => {if (e.pointerType === 'mouse') setActive(a => a === r.id ? null : a);}}
@@ -139,8 +145,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
             <div className="plan-adjust" role="cell">
               <button type="button" disabled={f.busy || floor} aria-label={`${t('Decrease', 'הפחתת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, -f.step, kind)}><Minus size={16}/></button>
               <output className="plan-points" aria-live="polite" dir="ltr" aria-label={`${t('Points', 'נקודות')} · ${name(r.id)}`}>{points(r.target)}</output>
-              <button type="button" disabled={f.busy} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
+              <button type="button" disabled={f.busy || ceiling} aria-describedby={ceiling ? capNote : undefined} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
             </div>
+            {ceiling && <p className="allocation-row-warning" role="note" id={capNote}>{t(`Punishment can’t exceed this month’s ${points(r.permanentMax)} points`, `העונש לא יכול לעלות על ${points(r.permanentMax)} הנקודות של החודש`)}</p>}
             {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
           </div>;
         })}
@@ -161,7 +168,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
-      {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
+      {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy || !canMakePermanent} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
     </div>
     <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{f.closed ? t('Save targets and locks', 'שמירת יעדים ונעילות') : t('Save to continue later · confirm to generate', 'שמירה להמשך · אישור לשיבוץ')}</small></div>

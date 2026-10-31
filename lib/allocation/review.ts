@@ -1,5 +1,5 @@
 import {context} from './model.ts';
-import {permanentFloor, validateDraft} from './edits.ts';
+import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
 import {unevenTransfers} from './planner.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
@@ -31,15 +31,16 @@ export function changeOf(draft: Pick<AllocationDraft, 'changes' | 'transfers'> |
 }
 
 export function allocationTotals(input: AllocationInput, draft: AllocationDraft | null, assignments: PrimaryAssignments) {
-  const duties = canonicalDuties(input.schedule.month, input.schedule.calendar);
+  const duties = canonicalDuties(input.schedule.month, input.schedule.calendar), total = duties.reduce((n, d) => n + d.units, 0);
+  const permanentMax = permanentCeiling({total});
   const rows = input.seniority.map(id => {
     const assigned = duties.reduce((n, d) => n + (assignments[d.id]?.primary === id ? d.units : 0), 0);
     const locked = duties.reduce((n, d) => n + (input.schedule.locks?.some(l => l.dutyId === d.id && l.engineer === id) ? d.units : 0), 0);
     const {temporary, permanent} = changeOf(draft, id), target = draft?.targetsUnits[id] ?? 0;
     const permanentMin = draft?.baselineUnits && draft.offeredUnits ? permanentFloor(draft, id) : 0;
-    return {id, target, assigned, locked, temporary, permanent, permanentMin, generate: target - locked, missing: Math.max(0, target - assigned)};
+    return {id, target, assigned, locked, temporary, permanent, permanentMin, permanentMax, generate: target - locked, missing: Math.max(0, target - assigned)};
   });
-  return {rows, total: duties.reduce((n, d) => n + d.units, 0), configured: rows.reduce((n, r) => n + r.target, 0),
+  return {rows, total, configured: rows.reduce((n, r) => n + r.target, 0),
     uncovered: duties.filter(d => !assignments[d.id]?.primary).flatMap(d => d.dates)};
 }
 

@@ -12,6 +12,9 @@ const changeShape = (v: unknown): v is Change => !!v && typeof v === 'object' &&
  * given away as planned relief (offered + Permanent >= 0). */
 export const permanentFloor = (draft: Pick<AllocationDraft, 'baselineUnits' | 'offeredUnits'>, id: string) =>
   -Math.min(draft.baselineUnits[id], draft.offeredUnits[id]);
+/** The most permanent change a member may carry (decision 2026-10-31): a
+ * punishment never exceeds the month's total points. */
+export const permanentCeiling = (c: Pick<Context, 'total'>) => c.total;
 
 export function validateDraft(c: Context, seniority: readonly string[], draft: AllocationDraft) {
   assertCurrent(c, draft);
@@ -43,6 +46,7 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
   if (Object.keys(draft.changes).length !== c.ids.length || c.ids.some(id => !changeShape(draft.changes[id]))) throw Error('invalid-allocation-changes');
   for (const id of c.ids) {
     if (draft.changes[id].permanent < permanentFloor(draft, id)) throw Error('permanent-below-fair-share');
+    if (draft.changes[id].permanent > permanentCeiling(c)) throw Error('permanent-above-month-total');
     if (draft.offeredUnits[id] + draft.changes[id].permanent + draft.changes[id].temporary !== draft.targetsUnits[id]) throw Error('unexplained-target-edit');
   }
   const ids = new Set<string>();
@@ -109,6 +113,8 @@ export function editAllocation(input: AllocationInput, source: AllocationDraft,
   const hand = handOf(source), current = source.changes[edit.engineer];
   const next = {...(hand[edit.engineer] ?? zeroChange()), [edit.kind]: current[edit.kind] + edit.deltaUnits};
   if (next.permanent < permanentFloor(source, edit.engineer)) throw Error('permanent-below-fair-share');
+  // A whole step that would overshoot the ceiling is refused, never half applied.
+  if (next.permanent > permanentCeiling(c)) throw Error('permanent-above-month-total');
   if (source.offeredUnits[edit.engineer] + next.temporary + next.permanent < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
   const draft = rebuild(c, input, source, {...hand, [edit.engineer]: next}, source.pairs);
   return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
@@ -127,6 +133,7 @@ export function transferAllocation(input: AllocationInput, source: AllocationDra
   const from = {...(hand[fromId] ?? zeroChange()), [kind]: source.changes[fromId][kind] - amount};
   const to = {...(hand[toId] ?? zeroChange()), [kind]: source.changes[toId][kind] + amount};
   if (from.permanent < permanentFloor(source, fromId)) throw Error('permanent-below-fair-share');
+  if (to.permanent > permanentCeiling(c)) throw Error('permanent-above-month-total');
   if (source.offeredUnits[fromId] + from.temporary + from.permanent < c.locked[fromId]) throw Error('edit-below-locked-points');
   const draft = rebuild(c, input, source, {...hand, [fromId]: from, [toId]: to}, [...source.pairs, {id, fromId, toId, units: amount, kind}]);
   return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
@@ -147,6 +154,7 @@ export function classifyTransfer(input: AllocationInput, source: AllocationDraft
   };
   const from = moved(pair.fromId, -1), to = moved(pair.toId, 1);
   if (from.permanent < permanentFloor(source, pair.fromId)) throw Error('permanent-below-fair-share');
+  if (to.permanent > permanentCeiling(c)) throw Error('permanent-above-month-total');
   return rebuild(c, input, source, {...hand, [pair.fromId]: from, [pair.toId]: to},
     source.pairs.map(p => p.id === id ? {...p, kind} : {...p}));
 }

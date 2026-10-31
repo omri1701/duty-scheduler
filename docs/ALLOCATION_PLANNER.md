@@ -121,6 +121,20 @@ given away); Points ≥ Locked. The dialog disables a button at its floor; the
 library and the database refuse past it. Temporary credit is the positive net
 Temporary only, so a member is owed exactly the work above their planned load.
 
+**Ceiling.** A member's Permanent never exceeds the month's total points
+(`permanentCeiling`, decision 2026-10-31). Permanent + is a punishment: the member
+does more and the others are relieved for free. Mixing + Permanent and − Temporary
+on one member stays allowed (they work more for good and the others cover the
+deferred part now), but repeating that pair can no longer climb without bound. The
+library refuses an edit, drag or Make permanent that would pass the ceiling
+(`permanent-above-month-total`) and never applies part of a step: at one point below
+the ceiling a one-point step is refused, a half-point step still applies. The
+automatic balance never chooses a permanent receiver past it, and the dialog
+disables Permanent + at the ceiling with the note "Punishment can't exceed this
+month's N points". A balanced plan already stays below it (every other member's
+floor is at most their fair share), so the ceiling bounds the unplaced state while
+editing and is checked again by the database.
+
 `transferAllocation` records a drag as a pair, moving both members' nets by its
 units and protecting both. `classifyTransfer` switches a pair's kind, moving the
 nets between kinds, so Make permanent keeps points and removes its future
@@ -131,7 +145,7 @@ and round trips cancel in the nets. The checked RPC re-derives that list and
 requires it exactly. `hand` is local editing state, stripped before persisting;
 a reopened draft treats every member with a nonzero change as hand edited. A new
 proposal reapplies the retained hand changes and pairs of members still present
-when they fit the floors (`retainedChanges`); otherwise the plain proposal stands.
+when they fit the floors and the ceiling (`retainedChanges`); otherwise the plain proposal stands.
 It also keeps the confirmed ordinary baseline when that is still the same
 partition of the month's duties, so a seniority reorder after confirmation never
 forces a different baseline onto the next proposal (the database keeps a confirmed
