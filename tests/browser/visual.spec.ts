@@ -159,6 +159,25 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   await snapshot(page, `plan-month-dark-${lang}`);
 });
 
+// Non-weekend members (decision 2026-11-01): the Team setting, and the plan's note and kept-lock warning.
+for (const lang of ['en', 'he']) test(`non-weekend member ${lang}`, async ({page, openApp, backend}) => {
+  backend.raw.assignments = []; backend.raw.publications = [];
+  backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
+  backend.raw.members.find(m => m.id === ids.e)!.no_weekends = true;
+  backend.raw.assignments.push({id: 'locked-weekend', publication_id: null, day: '2026-11-06', end_day: '2026-11-08', primary_id: ids.e, secondary_id: null, title: '', extra_points: 0, points: 1, locked: true, manager_override: false});
+  await openApp();
+  const he = lang === 'he', dialog = page.getByRole('dialog');
+  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('tab').nth(2).click();
+  await snapshot(page, `team-no-weekends-${lang}`);
+  await page.getByRole('tab').first().click();
+  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  await page.mouse.move(0, 0);
+  await dialog.locator(`.plan-row[data-engineer="${ids.e}"]`).scrollIntoViewIfNeeded();
+  await snapshot(page, `plan-month-no-weekends-${lang}`);
+});
+
 /** A clipped reference: Generate's fresh seed varies the calendar, so only the
  * deterministic plan and toolbar areas are compared. */
 async function region(page: Page, name: string, clip: {x: number; y: number; width: number; height: number}) {

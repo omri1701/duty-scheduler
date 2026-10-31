@@ -56,6 +56,24 @@ These commands never target the populated `duty-scheduler-app` database.
 Hosted Development activation requires the normal reviewed database-first release
 after merge into `develop`; this feature PR does not apply hosted migrations.
 
+## Non-weekend members
+
+Migration `20261031230608_non_weekend_members.sql` adds `duty_members.no_weekends`
+(default false, so existing members are unchanged) and the admin-only checked RPC
+`duty_set_no_weekends(p_member, p_no_weekends, p_revision)`: approved members only,
+revision-checked, no direct table writes. The column is readable like the rest of the
+member row. Manager-only generation facts carry `noWeekends: true` for flagged
+members only, so other members' facts and fingerprints are unchanged, and
+`duty_private.save_generation` refuses Generate output that places such a member on
+a weekend not locked to them (`non-weekend-primary`). Publication and manual edits
+are unchanged. Focused checks (empty disposable LOCAL database only):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/non-weekend.sql
+node supabase/tests/generation.mjs supabase_db_duty-scheduler
+```
+
 ## Unmerged migrations in local development
 
 `pnpm start:dev` connects to hosted **DEV**; it does not apply branch migrations there.

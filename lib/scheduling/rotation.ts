@@ -1,5 +1,5 @@
 import {dayOf} from '../rota/calendar-dates.ts';
-import {GenerationError} from './types.ts';
+import {GenerationError, type Member} from './types.ts';
 
 /** One published month's primaries, as the current publication shows them. */
 export type PublishedMonth = {month: string; duties: {startDate: string; primary: string | null}[]};
@@ -66,4 +66,13 @@ export function weekdayRotation(history: PublishedMonth[], members: string[], mo
   }
   const inProgress = [...seen].some(id => counts.get(id)!.some(n => n >= 1));
   return Object.fromEntries(members.map(id => [id, seen.has(id) ? counts.get(id)! : counts.get(id)!.map(n => Math.max(n, inProgress ? 1 : 0))]));
+}
+
+/** Both rotation states for one Generate run, over the participating members. Non-weekend
+ * members never take a weekend, so they are left out of the weekend rotation: they never
+ * count as due and never hold a cycle open. The weekday rotation includes everyone. */
+export function generationRotations(history: PublishedMonth[], members: Member[], month: string) {
+  const eligible = members.filter(m => m.active && m.approved && m.eligible);
+  return {weekendRotation: weekendRotation(history, eligible.filter(m => !m.noWeekends).map(m => m.id), month),
+    weekdayRotation: weekdayRotation(history, eligible.map(m => m.id), month)};
 }

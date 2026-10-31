@@ -87,6 +87,17 @@ const weekends=structuredClone(partial);for(const d of duties.filter(d=>d.weeken
 test+=save(weekends);
 test+=failure(confirm(confirmedDraft,duties.filter(d=>d.weekendId).slice(0,2).map(d=>({dutyId:d.id,engineer:ids[5]})),[]),'weekend-cap');
 test+=save()+metricsCheck;
+// Non-weekend members (decision 2026-11-01): Generate's save refuses one on a weekend
+// the manager did not lock to them; a locked weekend is kept. Facts carry the flag only when set.
+const farWeekend=duties.filter(d=>d.weekendId)[1];assert.equal(assignments[farWeekend.id].primary,ids[1]);
+const facts='(select v->\'facts\'->\'members\' from context)';
+test+=`select public.duty_set_no_weekends('${ids[1]}',true,${rev});`+refresh;
+test+=`do $$begin if (select count(*) from jsonb_array_elements(${facts}) m where m ? 'noWeekends')<>1
+ or not ${facts} @> '[{"id":"${ids[1]}","noWeekends":true}]' then raise exception 'noWeekends facts';end if;end$$;`;
+test+=failure(save(),'non-weekend-primary');
+test+=confirm(confirmedDraft,[{dutyId:farWeekend.id,engineer:ids[1]}])+save();
+test+=`select public.duty_set_no_weekends('${ids[1]}',false,${rev});`+refresh+confirm()+save()+metricsCheck;
+test+=`do $$begin if exists(select 1 from jsonb_array_elements(${facts}) m where m ? 'noWeekends') then raise exception 'noWeekends cleared';end if;end$$;`;
 test+=`reset role;create function pg_temp.fail_ledger() returns trigger language plpgsql as $$begin if new.operation->>'kind'='publication' then raise exception 'Injected publication failure';end if;return new;end$$;
 create trigger generation_failure before insert on public.duty_compensation_events for each row execute function pg_temp.fail_ledger();set local role authenticated;`;
 test+=failure(publish,'Injected publication failure');
@@ -112,7 +123,7 @@ test=test.replace('select duty_private.compensation_view(duty_private.compensati
 // The legacy publish helper builds payload server-side only in this test.
 test=test.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
 const views=sql(test);for(const view of views)assert.deepEqual(ordered(view),ordered(replay(view.events)));
-console.log('PASS: generation authorization, independent schedule validation, partial saves, stale revisions, cutoff, publication copies and cancellation');
+console.log('PASS: generation authorization, independent schedule validation, non-weekend members, partial saves, stale revisions, cutoff, publication copies and cancellation');
 
 // Real first-publication routed accounting, including the Astra mixed chain.
 // The pass-through member must own a share to give permanently (fair + Permanent >= 0).

@@ -3,7 +3,9 @@ export type Calendar = {
   splitWeekends?: string[];
   specialDates?: string[];
 };
-export type Member = {id: string; active: boolean; approved: boolean; eligible: boolean};
+/** `noWeekends`: a standing admin setting. Generate never places the member on a weekend
+ * duty (either half of a split weekend included) unless the manager locked it to them. */
+export type Member = {id: string; active: boolean; approved: boolean; eligible: boolean; noWeekends?: boolean};
 export type Neighbor = {
   id: string; ownerMonth: string; start: string; end: string; engineer: string;
   source: 'published' | 'working';

@@ -10,6 +10,9 @@ CREATE TABLE public.duty_members (
     joined_at timestamp with time zone DEFAULT now() NOT NULL,
     is_temporary boolean DEFAULT false NOT NULL,
     auth_user_id uuid GENERATED ALWAYS AS (CASE WHEN is_temporary THEN NULL::uuid ELSE id END) STORED,
+    -- Standing admin setting: Generate never places this member on a weekend duty
+    -- (lib/scheduling/domain.ts, duty_private.generation_validate).
+    no_weekends boolean DEFAULT false NOT NULL,
     CONSTRAINT duty_members_identity_check CHECK ((is_temporary AND email IS NULL AND role = 'engineer' AND status = 'approved') OR (NOT is_temporary AND email IS NOT NULL)),
     CONSTRAINT duty_members_color_check CHECK ((color ~ '^#[0-9a-fA-F]{6}$'::text)),
     CONSTRAINT duty_members_name_check CHECK (((length(TRIM(BOTH FROM name)) >= 1) AND (length(TRIM(BOTH FROM name)) <= 80))),

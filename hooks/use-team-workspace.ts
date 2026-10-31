@@ -70,6 +70,7 @@ export function useTeamWorkspace(){
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),
   setRole:(person:string,role:string)=>workspace.mutate('duty_set_role',{p_member:person,p_role:role}).then(()=>{}),
+  setNoWeekends:(person:string,noWeekends:boolean)=>workspace.mutate('duty_set_no_weekends',{p_member:person,p_no_weekends:noWeekends}).then(()=>{}),
   restore:(publication:string)=>workspace.mutate('duty_restore_publication',{p_publication:publication}).then(()=>{}),
   cancelDraft:(month:string)=>workspace.mutate('duty_cancel_draft',{p_month:month}).then(()=>{}),
   deleteVersion:(publication:string)=>workspace.mutate('duty_delete_publication',{p_publication:publication}).then(()=>{}),

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { TeamList } from '@/components/rota/team-list';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import type { Balance } from '@/lib/supabase/balance';
-import type { State } from '@/lib/rota/engine';
+import { addDays, dayOf, type State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { Language, Translate, UpdateDraft } from './workspace-types';
 export function WorkspaceTeam({
@@ -61,6 +61,19 @@ export function WorkspaceTeam({
         onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
         roles={remote.snapshot?.roles ?? []}
         onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
+        noWeekendIds={remote.snapshot?.members.filter((m) => m.no_weekends).map((m) => m.id) ?? []}
+        onNoWeekends={(id, noWeekends) =>
+          remote
+            .setNoWeekends(id, noWeekends)
+            .then(() => {
+              // Locked weekends in an open draft are kept, never deleted.
+              const drafts = Object.keys(state.months).filter((m) => state.months[m].status === 'draft');
+              const locked = Object.entries(state.assignments).some(([day, a]) => a.primary === id && a.locked &&
+                [5, 6].includes(dayOf(day)) && drafts.includes((dayOf(day) === 6 ? addDays(day, -1) : day).slice(0, 7)));
+              if (noWeekends && locked) toast.warning(t('A locked weekend is kept. Unlock it in the calendar to free it.', 'סוף שבוע נעול נשמר. אפשר לבטל את הנעילה בלוח כדי לשחרר אותו.'));
+            })
+            .catch((e) => toast.error(e.message))
+        }
         selfId={meId}
         readOnly={remote.readOnly||!isManager}
         saving={remote.saving}

@@ -39,7 +39,8 @@ export function readGenerationContext(value: unknown) {
     f.duties.some(d => !object(d) || !string(d.id) || !string(d.startDate) || !string(d.endDate) || !integer(d.units) ||
       !nullableString(d.primary) || !nullableString(d.secondary) || !string(d.title) || typeof d.extra !== 'number' ||
       (d.saturdayExtra !== undefined && typeof d.saturdayExtra !== 'number') || !nullableString(d.weekendId)) ||
-    f.members.some(m => !object(m) || !string(m.id) || ['active', 'approved', 'eligible'].some(k => typeof m[k] !== 'boolean')) ||
+    f.members.some(m => !object(m) || !string(m.id) || ['active', 'approved', 'eligible'].some(k => typeof m[k] !== 'boolean') ||
+      (m.noWeekends !== undefined && m.noWeekends !== true)) ||
     f.neighbors.some(n => !object(n) || ['id', 'ownerMonth', 'start', 'end', 'engineer'].some(k => !string(n[k])) || !['published', 'working'].includes(String(n.source))) ||
     f.locks.some(l => !object(l) || !string(l.dutyId) || !string(l.engineer)) ||
     f.approvals.some(a => !object(a) || !string(a.reason) || !['availability', 'consecutive', 'boundary', 'weekends'].includes(String(a.rule)))) throw Error('Invalid generation facts');
