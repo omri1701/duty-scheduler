@@ -12,11 +12,13 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
 /** Synchronous proposal: plain arithmetic, no solver. Date placement and the
  * exact coverage check remain Generate's job.
  * One extra each, before anyone gets two (decision 2026-11-01):
- * 1. Open obligations are repaid newest member first, per creditor (creditors in
- *    the order of their oldest debt), each debtor from its own oldest debt, at
- *    most one point per debtor per month over all creditors, capped by the
- *    debtor's availability ceiling and by the creditor's relief (above its locks;
- *    work carried as uneven credit is never relief). The rest carries over.
+ * 1. Each creditor's relief (its share above its locks; work carried as uneven
+ *    credit is never relief) is repaid by its debtors in turns: one point at a
+ *    time to the debtor who has repaid least of its current debt to that creditor
+ *    (published repayment work counts), newest first on ties, from its own oldest
+ *    debt, within its availability ceiling. A second round starts only after every
+ *    debtor of that creditor has had one, and the turns carry on next month; a
+ *    single debtor repays as much as the relief allows. The rest carries over.
  * 2. Equal ordinary shares; the larger shares (remainders) go to the newest
  *    members who are not repaying this month, then, only if needed, to the newest
  *    repayers. When the indivisible duties cannot split equally, the cheapest
@@ -42,22 +44,43 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   const kept = retained?.baselineUnits;
   const keep = !!kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
     JSON.stringify(c.ids.map(id => kept[id]).sort((a, b) => a - b)) === JSON.stringify([...shares].sort((a, b) => a - b));
+  // Progress on today's debt: repayment work already published (pending, held or done)
+  // against the lots that still back a debtor's open debt to that creditor.
+  const progress = (debtorId: string, creditorId: string) => {
+    const open = new Set(c.candidates.filter(k => k.debtorId === debtorId && k.creditorId === creditorId).flatMap(k => k.path.map(p => p.lotId)));
+    return c.projection.actual.contributions.filter(k => k.status !== 'cancelled' && k.claim.debtorId === debtorId &&
+      k.claim.creditorId === creditorId && k.claim.path.some(p => open.has(p.lotId))).reduce((n, k) => n + k.capacity.units, 0);
+  };
   const repay = (baseline: Record<string, number>) => {
     const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
-    const offered = {...baseline}, repayments: AllocationDraft['repayments'] = [], extra: Record<string, number> = {};
-    const creditors = [...new Set(c.candidates.map(k => k.creditorId))];
-    for (const creditorId of creditors) for (const debtorId of newest) {
-      // Each debtor repays from its own oldest debt to this creditor, at most one point a month in all.
-      for (const claim of c.candidates.filter(k => k.creditorId === creditorId && k.debtorId === debtorId)) {
-        const room = Math.min(claim.units, 2 - (extra[debtorId] ?? 0), ceiling[debtorId] - offered[debtorId],
-          offered[creditorId] - c.locked[creditorId] - (carried[creditorId] ?? 0));
-        const amount = Math.floor(Math.max(0, room) / g) * g;
-        if (!amount) continue;
-        repayments.push({claim: {...claim, ...sliceClaim(claim, amount), units: amount}, units: amount});
-        offered[debtorId] += amount; offered[creditorId] -= amount; extra[debtorId] = (extra[debtorId] ?? 0) + amount;
+    const offered = {...baseline}, taken = new Map<string, number>(), order: string[] = [], repaying = new Set<string>();
+    for (const creditorId of [...new Set(c.candidates.map(k => k.creditorId))]) {
+      const claims = (id: string) => c.candidates.filter(k => k.debtorId === id && k.creditorId === creditorId);
+      const owed = (id: string) => claims(id).reduce((n, k) => n + k.units - (taken.get(k.id) ?? 0), 0);
+      const debtors = newest.filter(id => claims(id).length), turns = new Map(debtors.map(id => [id, progress(id, creditorId)]));
+      const stuck = new Set<string>();
+      // Turns: one point at a time to the debtor who has repaid least of this debt so far, newest
+      // first on ties, while the creditor keeps relief above its locks and the debtor still owes.
+      for (;;) {
+        const relief = offered[creditorId] - c.locked[creditorId] - (carried[creditorId] ?? 0);
+        const next = debtors.filter(id => !stuck.has(id) && owed(id) > 0)
+          .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
+        if (!next || relief < g) break;
+        let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
+        if (amount <= 0) {stuck.add(next); continue;}
+        offered[next] += amount; offered[creditorId] -= amount; turns.set(next, turns.get(next)! + amount); repaying.add(next);
+        for (const k of claims(next)) {
+          const part = Math.min(amount, k.units - (taken.get(k.id) ?? 0)); if (!part) continue;
+          if (!taken.has(k.id)) order.push(k.id);
+          taken.set(k.id, (taken.get(k.id) ?? 0) + part); amount -= part;
+        }
       }
     }
-    return {offered, repayments, repaying: new Set(Object.keys(extra))};
+    const repayments: AllocationDraft['repayments'] = order.map(id => {
+      const claim = c.candidates.find(k => k.id === id)!, units = taken.get(id)!;
+      return {claim: {...claim, ...sliceClaim(claim, units), units}, units};
+    });
+    return {offered, repayments, repaying};
   };
   // Who repays depends on the creditors' shares and the shares on who repays: settle both.
   let baseline = keep ? Object.fromEntries(c.ids.map(id => [id, kept![id]])) : arrange(new Set()), plan = repay(baseline);

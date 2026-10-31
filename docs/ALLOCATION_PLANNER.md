@@ -32,8 +32,9 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 
 **One extra each, before anyone gets two (decision 2026-11-01).** A member's
 extra point this month is either a larger ordinary share (a remainder) or a point
-of repayment. Nobody gets a second until every eligible member has one, which
-should be rare.
+of repayment. Nobody gets a second remainder until every eligible member has one
+extra, and among a creditor's debtors nobody repays a second point before every
+one of them has repaid one (2 below).
 
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
@@ -77,15 +78,21 @@ should be rare.
    proposals, edits and review recompute it from the baseline and the
    per-person changes under the current seniority, and the checked database
    derives the same list and refuses any other.
-2. **Repayment.** Each creditor's relief this month (its share above its locks,
-   never work carried as uneven credit) is repaid by its debtors **newest member
-   first**, each from its own oldest debt to that creditor, **at most one point
-   per debtor per month** over all creditors (creditors are served in the order
-   of their oldest debt), in duty steps and within the debtor's availability
-   ceiling (below). Only someone who owes a creditor repays it. The rest carries
-   over and is never forgiven: a debt of two points takes two months. In the
-   reported January, Shira and Omer repay Local Admin one point each, instead of
-   Tamar repaying both.
+2. **Repayment in turns.** Each creditor's relief this month (its share above its
+   locks, so it never goes below them or below 0, and never work carried as uneven
+   credit) is repaid by its own debtors **in turns**: one point at a time to the
+   debtor who has repaid least of its current debt to that creditor (repayment
+   work already published counts), **newest member first** on ties, each from its
+   own oldest debt, within its availability ceiling (below). A second round starts
+   only after every debtor of that creditor who still owes has had one, and the
+   turns carry on into the next month. Creditors are served in the order of their
+   oldest debt, each with its own turns. A single debtor repays as much as the
+   relief allows (A owes B two points: A +2, B −2 this month). The rest carries
+   over and is never forgiven. Examples: in the reported January, Shira and Omer
+   repay Local Admin one point each, instead of Tamar repaying both; B, C and D
+   owing A two points each, with A's share at three points, repay one point each
+   in November and again in December; with A's share at two, D and C repay in
+   November and B goes first in December.
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.

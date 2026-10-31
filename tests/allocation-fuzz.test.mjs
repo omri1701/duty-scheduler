@@ -2,7 +2,7 @@
 // FUZZ_SEQ, FUZZ_LEN and FUZZ_SEED widen it (the 2026-10-31 audit ran 520 x 25).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {proposeAllocation, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
+import {proposeAllocation, allocationCeilings, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
   nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor, permanentCeiling} from '../lib/allocation/index.ts';
 import {validateDraft, persistedDraft} from '../lib/allocation/edits.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
@@ -196,10 +196,17 @@ test('fuzz: per-person allocation sequences keep floors, conservation, canonical
   for (let s = 0; s < SEQ; s++) {
     const name = names[s % names.length], i = SCENARIOS[name](), c = context(i), prop = proposeAllocation(i);
     stats.sequences++;
-    // One extra each (decision 2026-11-01): a proposal repays at most one point per debtor a month.
-    const repaid = {};
-    for (const r of prop.draft.repayments) repaid[r.claim.debtorId] = (repaid[r.claim.debtorId] ?? 0) + r.units;
-    assert.ok(Object.values(repaid).every(u => u <= 2), `${name}: at most one point of repayment per debtor (${JSON.stringify(repaid)})`);
+    // Turns (decision 2026-11-01): a creditor's debtors repay one point at a time; nobody is more
+    // than one turn ahead of another debtor of the same creditor who still owes and has room.
+    const room = allocationCeilings(i), grainUnits = Math.min(...canonicalDuties(i.schedule.month, i.schedule.calendar).map(du => du.units));
+    for (const creditor of new Set(c.candidates.map(k => k.creditorId))) {
+      const paid = id => sum(prop.draft.repayments.filter(r => r.claim.debtorId === id && r.claim.creditorId === creditor).map(r => r.units));
+      const owes = id => sum(c.candidates.filter(k => k.debtorId === id && k.creditorId === creditor).map(k => k.units)) - paid(id);
+      const debtors = [...new Set(c.candidates.filter(k => k.creditorId === creditor).map(k => k.debtorId))];
+      for (const x of debtors) for (const y of debtors) if (paid(x) - paid(y) > 2) {
+        assert.ok(!owes(y) || room[y] - prop.draft.offeredUnits[y] < grainUnits, `${name}: ${y} skipped a turn to ${creditor} (${paid(x)} vs ${paid(y)})`);
+      }
+    }
     check(name, i, c, prop, prop.draft, []);
     let d = prop.draft; const history = [d], trail = [];
     for (let k = 0; k < LEN; k++) {

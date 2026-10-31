@@ -22,7 +22,7 @@ test('plan notes count back-to-back days per member; an approved fixed pair is n
 
 import loadHighs from 'highs';
 import {createHighsAdapter, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
-import {record, project} from '../lib/compensation/index.ts';
+import {record, project, sliceClaim} from '../lib/compensation/index.ts';
 import {proposeAllocation, transferAllocation, editAllocation, compileAllocation, planAllocation, bindAllocation, persistedDraft} from '../lib/allocation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {monthScenario} from './fixtures/generation.mjs';
@@ -122,11 +122,11 @@ function team(month, names, debts) {
 }
 const points = d => Object.fromEntries(Object.entries(d.targetsUnits).map(([id, u]) => [id, u / 2]));
 
-test('one extra each before anyone gets two: the January case repays newest first, one point each', () => {
+test('one extra each before anyone gets two: the January case repays in turns, newest first', () => {
   // The reported January (decision 2026-11-01): Local Admin's relief this month is two points.
-  // It was repaid by Tamar alone (her oldest debt, both points); now the newest debtors Shira and
-  // Omer repay one point each, and the two leftover points go newest first to members without
-  // a point extra: Tamar and Lior.
+  // It was repaid by Tamar alone (her oldest debt, both points); now Local Admin's debtors take
+  // turns, newest first: Shira and Omer repay one point each, and the two leftover points go
+  // newest first to members without a point extra, Tamar and Lior.
   const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
   const i = team('2027-01', names, [['Tamar', 'Local Admin', 4], ...names.slice(1).filter(n => n !== 'Tamar').map(n => [n, 'Local Admin', n === 'Shira' ? 6 : 4])]);
   const d = proposeAllocation(i).draft;
@@ -138,25 +138,77 @@ test('one extra each before anyone gets two: the January case repays newest firs
   assert.deepEqual(proposeAllocation(i, {hand: {}, pairs: [], baselineUnits: d.baselineUnits}).draft.targetsUnits, d.targetsUnits);
 });
 
+/** Publish a month's planned repayments as ledger reservations, one per duty-sized unit pair. */
+function publish(i, draft, month, at) {
+  const days = Array.from({length: 28}, (_, k) => `${month}-${String(k + 1).padStart(2, '0')}`), duties = [], reservations = [];
+  for (const r of draft.repayments) for (let off = 0; off < r.units; off += 2) {
+    const units = Math.min(2, r.units - off), date = days[duties.length];
+    duties.push({startDate: date, endDate: days[duties.length + 1], primaryId: r.claim.debtorId, units});
+    reservations.push({id: `${month}/${reservations.length}`, capacity: {date, offset: 0, units}, claim: sliceClaim(r.claim, units, off)});
+  }
+  i.events = send(i.events, {kind: 'publication', month, beforeId: null, after: {id: `pub-${month}`, month, duties, intents: [], reservations}}, `publish-${month}`, at);
+}
+const repaid = d => d.repayments.map(r => [r.claim.debtorId, r.claim.creditorId, r.units / 2]);
+
+test('turns: a single debtor repays as much as the relief allows; three debtors share four points 2/1/1', () => {
+  // A owes B two points and nobody else owes B: both points come back this month.
+  const names = Array.from({length: 12}, (_, k) => `m${String(k).padStart(2, '0')}`);
+  const single = proposeAllocation(team('2026-11', names, [['m05', 'm02', 4]])).draft;
+  assert.deepEqual(repaid(single), [['m05', 'm02', 2]]);
+  assert.equal(single.targetsUnits.m05 - single.baselineUnits.m05, 4); assert.equal(single.targetsUnits.m02, 0);
+  // Three debtors of one creditor relieved by four points: D (newest) twice, C and B once.
+  const i = team('2026-11', ['A', 'B', 'C', 'D'], [['B', 'A', 2], ['C', 'A', 2], ['D', 'A', 4]]), d = proposeAllocation(i).draft;
+  assert.deepEqual(repaid(d), [['D', 'A', 2], ['C', 'A', 1], ['B', 'A', 1]]);
+  assert.equal(planAllocation(i, d).confirmable, true);
+});
+
+test('turns carry over: B, C and D owe A two points each, cleared over two months', () => {
+  const names = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'B', 'C', 'D'];
+  const owing = [['B', 'A', 4], ['C', 'A', 4], ['D', 'A', 4]];
+  const december = i => ({...i, schedule: {...i.schedule, month: '2026-12', sourceRevision: 'team-2026-12'}});
+  // A's fair share is three points (A is newest, so A takes a remainder): A goes to 0, D, C and B +1.
+  const i = team('2026-11', [...names, 'A'], owing), first = proposeAllocation(i).draft;
+  assert.equal(first.baselineUnits.A, 6);
+  assert.deepEqual(repaid(first), [['D', 'A', 1], ['C', 'A', 1], ['B', 'A', 1]]);
+  assert.equal(first.targetsUnits.A, 0);
+  publish(i, first, '2026-11', 100);
+  const next = proposeAllocation(december(i)).draft;
+  assert.equal(next.baselineUnits.A, 6);
+  assert.deepEqual(repaid(next), [['D', 'A', 1], ['C', 'A', 1], ['B', 'A', 1]], 'the same again clears every debt');
+  // A's share is two points (A most senior): D and C repay in November, B goes first in December.
+  const j = team('2026-11', ['A', ...names], owing), november = proposeAllocation(j).draft;
+  assert.equal(november.baselineUnits.A, 4);
+  assert.deepEqual(repaid(november), [['D', 'A', 1], ['C', 'A', 1]]);
+  publish(j, november, '2026-11', 100);
+  const after = proposeAllocation(december(j)).draft;
+  assert.deepEqual(repaid(after), [['B', 'A', 1], ['D', 'A', 1]]);
+  // A never goes below its locks: a locked duty of A's leaves two points of relief.
+  const k = team('2026-11', [...names, 'A'], owing);
+  k.schedule.locks = [{dutyId: '2026-11-02', engineer: 'A'}];
+  const locked = proposeAllocation(k).draft;
+  assert.deepEqual(repaid(locked), [['D', 'A', 1], ['C', 'A', 1]]);
+  assert.equal(locked.targetsUnits.A, 2);
+  for (const draft of [first, next, november, after, locked]) assert.ok(Object.values(draft.targetsUnits).every(u => u >= 0));
+});
+
 test('a second extra point only when every member already has one', () => {
-  // Three members, two leftover points, two debtors: the creditor takes the first leftover,
-  // the newest repayer the second (more extras than members without one).
-  const i = team('2026-11', ['a', 'b', 'c'], [['b', 'a', 4], ['c', 'a', 4]]), d = proposeAllocation(i).draft;
-  // Extra points: a leftover share above the smallest, plus repayment work.
-  const low = Math.min(...Object.values(d.baselineUnits)), repaid = id => d.repayments.filter(r => r.claim.debtorId === id).reduce((n, r) => n + r.units, 0);
-  const extra = Object.fromEntries(['a', 'b', 'c'].map(id => [id, (d.baselineUnits[id] - low + repaid(id)) / 2]));
-  assert.deepEqual(d.repayments.map(r => [r.claim.debtorId, r.units / 2]), [['c', 1], ['b', 1]]);
+  // Three members, two leftover points, two one-point debtors: the creditor takes the first
+  // leftover, the newest repayer the second (more extras than members without one).
+  const i = team('2026-11', ['a', 'b', 'c'], [['b', 'a', 2], ['c', 'a', 2]]), d = proposeAllocation(i).draft;
+  const low = Math.min(...Object.values(d.baselineUnits)), paid = id => d.repayments.filter(r => r.claim.debtorId === id).reduce((n, r) => n + r.units, 0);
+  const extra = Object.fromEntries(['a', 'b', 'c'].map(id => [id, (d.baselineUnits[id] - low + paid(id)) / 2]));
+  assert.deepEqual(repaid(d), [['c', 'a', 1], ['b', 'a', 1]]);
   assert.ok(Object.values(extra).every(n => n >= 1), JSON.stringify(points(d)));
   assert.deepEqual(Object.entries(extra).filter(([, n]) => n === 2).map(([id]) => id), ['c']);
   assert.equal(planAllocation(i, d).confirmable, true);
 });
 
-test('several creditors: newest debtors first per creditor, one point per debtor in all', () => {
+test('several creditors: each creditor has its own turns, newest first', () => {
   const names = Array.from({length: 12}, (_, k) => `m${String(k).padStart(2, '0')}`);
   const i = team('2026-11', names, [['m09', 'm00', 4], ['m09', 'm01', 4], ['m10', 'm00', 4], ['m11', 'm01', 4]]);
   const d = proposeAllocation(i).draft;
-  // m00 has the oldest debt, so it is served first: m10 and m09 repay it; m09 has then used its
-  // point, so only m11 repays m01.
-  assert.deepEqual(d.repayments.map(r => [r.claim.debtorId, r.claim.creditorId, r.units / 2]), [['m10', 'm00', 1], ['m09', 'm00', 1], ['m11', 'm01', 1]]);
+  // m00 (the oldest debt) is relieved by m10 then m09, m01 by m11 then m09.
+  assert.deepEqual(repaid(d), [['m10', 'm00', 1], ['m09', 'm00', 1], ['m11', 'm01', 1], ['m09', 'm01', 1]]);
+  assert.deepEqual([d.targetsUnits.m00, d.targetsUnits.m01], [0, 0]);
   assert.equal(planAllocation(i, d).confirmable, true);
 });
