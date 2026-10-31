@@ -57,9 +57,16 @@ export async function bindAllocation(source: AllocationInput, allocation: Alloca
     const intents = [] as Publication['intents'][number][];
     for (const f of compiled.plan.funding) {
       const capacity = take(f.carrierId, f.units), first = f.route[0];
+      // Uneven-month credit is recorded with the same counterpart shape as a temporary transfer.
+      const counterpart = (id: string) => {
+        const transfer = draft.transfers.find(t => t.id === id), credit = (draft.uneven ?? []).find(u => u.id === id);
+        if (transfer) return transfer;
+        if (!credit) throw new CompensationError('unknown-counterpart');
+        return {id, fromId: credit.fromId, toId: credit.toId, units: credit.units, kind: 'temporary' as const};
+      };
       const route = f.route.map(({units, normalizedDeferredClaims, ...leg}) => {
         void units; void normalizedDeferredClaims;
-        return {...leg, counterparts: leg.transferIds.map(id => structuredClone(draft.transfers.find(t => t.id === id)!))};
+        return {...leg, counterparts: leg.transferIds.map(id => structuredClone(counterpart(id)))};
       });
       const data = {kind: first.kind, fromId: first.fromId, toId: f.carrierId, capacity, route};
       intents.push({id: await identity({scope, intent: data}), ...data});

@@ -1,7 +1,7 @@
-import {assertCurrent} from './planner.ts';
+import {assertCurrent, unevenTransfers} from './planner.ts';
 import {balanceChanges, deriveTransfers, handOf, isKind, KINDS, zeroChange, type Hand} from './derive.ts';
 import {context, sum, units, type Context} from './model.ts';
-import type {AllocationDraft, AllocationInput, Change, Kind, Pair} from './types.ts';
+import type {AllocationDraft, AllocationInput, Change, Kind, Pair, Transfer} from './types.ts';
 
 const signed = (v: unknown): v is number => Number.isSafeInteger(v) && Math.abs(v as number) <= 1e9;
 const changeShape = (v: unknown): v is Change => !!v && typeof v === 'object' && Object.keys(v).length === 2 &&
@@ -51,7 +51,21 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
       !c.ids.includes(p.fromId) || !c.ids.includes(p.toId) || !Number.isSafeInteger(p.units) || p.units <= 0) throw Error('invalid-allocation-pair');
     ids.add(p.id); units(p.units);
   }
-  if (JSON.stringify(draft.transfers) !== JSON.stringify(deriveTransfers(seniority, draft.changes, draft.pairs))) throw Error('invalid-derived-transfers');
+  // Field by field: a snapshot read back from PostgreSQL has its JSON keys reordered.
+  const canonical = (t: Transfer) => [t.id, t.fromId, t.toId, t.units, t.kind];
+  if (draft.transfers.some(t => !t || typeof t !== 'object' || Object.keys(t).length !== 5) ||
+    JSON.stringify(draft.transfers.map(canonical)) !== JSON.stringify(deriveTransfers(seniority, draft.changes, draft.pairs).map(canonical))) throw Error('invalid-derived-transfers');
+  // Uneven-month credit is derived too (proposals, edits and review compute it);
+  // like the baseline's optimality, its exact set is the checked RPC's decision.
+  // A snapshot without it carries none.
+  const uneven = draft.uneven ?? [];
+  if (!Array.isArray(uneven)) throw Error('invalid-uneven-credit');
+  const credits = new Set<string>();
+  for (const u of uneven) {
+    if (!u || typeof u !== 'object' || Object.keys(u).length !== 4 || u.id !== `uneven/${u.fromId}/${u.toId}` || credits.has(u.id) ||
+      !c.ids.includes(u.fromId) || !c.ids.includes(u.toId) || u.fromId === u.toId || !Number.isSafeInteger(u.units) || u.units <= 0) throw Error('invalid-uneven-credit');
+    credits.add(u.id); units(u.units);
+  }
   if (draft.hand && (!Array.isArray(draft.hand) || new Set(draft.hand).size !== draft.hand.length ||
     draft.hand.some(id => !c.ids.includes(id)))) throw Error('invalid-hand-edits');
 }
@@ -75,7 +89,9 @@ export function rebuild(c: Context, input: AllocationInput, source: AllocationDr
   const targetsUnits = Object.fromEntries(c.ids.map(id => [id, source.offeredUnits[id] + changes[id].temporary + changes[id].permanent]));
   const draft: AllocationDraft = {baselineUnits: {...source.baselineUnits}, offeredUnits: {...source.offeredUnits}, targetsUnits,
     repayments: structuredClone(source.repayments), changes, pairs: structuredClone(pairs),
-    transfers: deriveTransfers(input.seniority, changes, pairs), sourceKey: source.sourceKey, hand: Object.keys(hand)};
+    transfers: deriveTransfers(input.seniority, changes, pairs),
+    uneven: unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), source.baselineUnits, changes),
+    sourceKey: source.sourceKey, hand: Object.keys(hand)};
   validateDraft(c, input.seniority, draft);
   return draft;
 }

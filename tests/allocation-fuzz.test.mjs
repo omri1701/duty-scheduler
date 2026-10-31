@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {proposeAllocation, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
-  nettedCompensation, deriveTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor} from '../lib/allocation/index.ts';
+  nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor} from '../lib/allocation/index.ts';
 import {validateDraft} from '../lib/allocation/edits.ts';
 import {context} from '../lib/allocation/model.ts';
 import {canonicalDuties} from '../lib/scheduling/calendar.ts';
@@ -111,6 +111,16 @@ function check(name, i, c, prop, d, trail) {
     assert.equal(d.offeredUnits[id] + d.changes[id].temporary + d.changes[id].permanent, d.targetsUnits[id], `${where}: ${id} points`);
   }
   assert.deepEqual(d.transfers, deriveTransfers(ids, d.changes, d.pairs), `${where}: canonical transfers`);
+  // Uneven credit follows the real permanent load: never above the baseline's excess, never for a member at or below the split.
+  const weights = canonicalDuties(i.schedule.month, i.schedule.calendar).map(du => du.units);
+  assert.deepEqual(d.uneven, unevenTransfers(ids, weights, d.baselineUnits, d.changes), `${where}: canonical uneven credit`);
+  const plainCredit = unevenTransfers(ids, weights, d.baselineUnits);
+  for (const id of ids) {
+    const now = sum(d.uneven.filter(u => u.toId === id).map(u => u.units)), before = sum(plainCredit.filter(u => u.toId === id).map(u => u.units));
+    assert.ok(now <= Math.max(0, before - Math.max(0, -d.changes[id].permanent)), `${where}: ${id} credited only for extra still carried`);
+    const owes = sum(d.uneven.filter(u => u.fromId === id).map(u => u.units)), owed = sum(plainCredit.filter(u => u.fromId === id).map(u => u.units));
+    assert.ok(owes <= Math.max(0, owed - Math.max(0, d.changes[id].permanent)), `${where}: ${id} owes only while below the split`);
+  }
   for (const t of d.transfers) assert.ok(!d.transfers.some(o => o.kind === t.kind && o.fromId === t.toId && o.toId === t.fromId), `${where}: no mutual transfers`);
   // The per-person state alone determines the table: rebuilding it reproduces the draft.
   const again = proposeAllocation(i, retainedChanges(d)).draft;
@@ -124,6 +134,7 @@ function check(name, i, c, prop, d, trail) {
   const lines = nettedCompensation(prop.projection.projected.net, {transfers: planned.plan.intents, repayments: planned.plan.repayments}, ids);
   const pairs = new Set(lines.map(l => `${l.debtorId}>${l.creditorId}`));
   assert.ok(!lines.some(l => pairs.has(`${l.creditorId}>${l.debtorId}`)), `${where}: netted list has one direction per pair`);
+  assert.ok(!lines.some(l => lines.some(o => o.creditorId === l.debtorId)), `${where}: netted list ends every chain (no member both owes and is owed)`);
   assert.ok(lines.every(l => l.units === l.thisMonth + l.later && l.thisMonth >= 0 && l.later >= 0 && l.units > 0), `${where}: netted lines consistent`);
   assert.ok(sum(lines.map(l => l.thisMonth)) <= sum(planned.plan.repayments.map(r => r.units)) + sum(planned.plan.intents.map(t => t.units)), `${where}: this month bounded by the plan`);
   for (const [label, asg] of [['holes', holes(i)], ['greedy', greedy(i, d)]]) {
@@ -147,7 +158,9 @@ async function bindCheck(name, i, c, prop, d, trail) {
   stats.boundComplete++;
   // After all work completes: actual net = opening + compiled temporary intents - compiled repayments.
   const far = Date.parse(i.schedule.month + '-01T00:00:00Z') + 70 * 86400000;
-  const view = project(b.preview.events, far, far).actual.net, ids = i.seniority;
+  const actual = project(b.preview.events, far, far).actual, view = actual.net, ids = i.seniority;
+  // Halves and points alike net across people: a published ledger never leaves a member in the middle of a chain.
+  assert.ok(!actual.claims.some(c => actual.claims.some(o => c.creditorId === o.debtorId)), `${where}: published claims end every chain`);
   const later = Object.fromEntries(ids.map(id => [id, project(i.events, far, far).actual.net[id] ?? 0]));
   for (const t of compiledPlan.plan.intents) if (t.kind === 'temporary') {later[t.toId] += t.units; later[t.fromId] -= t.units;}
   for (const r of compiledPlan.plan.repayments) {later[r.claim.debtorId] += r.units; later[r.claim.creditorId] -= r.units;}

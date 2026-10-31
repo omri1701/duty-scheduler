@@ -120,6 +120,7 @@ schema_paths = [
   "./schemas/functions/duty_private/allocation_baseline.sql",
   "./schemas/functions/duty_private/allocation_better_baseline.sql",
   "./schemas/functions/duty_private/allocation_fit.sql",
+  "./schemas/functions/duty_private/allocation_uneven.sql",
   "./schemas/functions/duty_private/allocation_partition.sql",
   "./schemas/functions/duty_private/allocation_rebind.sql",
   "./schemas/functions/duty_private/allocation_transfers.sql",

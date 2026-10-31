@@ -17,6 +17,9 @@ begin
   select c->>'debtorId' debtor,c->>'creditorId' creditor,(c->>'units')::bigint units,
    case when jsonb_array_length(c->'path')>1 then 'routed'
     when lot ? 'correctionOf' then 'correction'
+    -- A server-compiled allocation intent leg whose first counterpart is system uneven-month credit.
+    when starts_with(lot->>'id',(lot->>'sourceKey')||'/intent/allocation/') and starts_with(coalesce(actual->'intents'->regexp_replace(substr(lot->>'id',length(lot->>'sourceKey')+9),'/route/[0-9]+$','')
+     ->'route'->(substring(lot->>'id' from '/route/([0-9]+)$')::integer)->'transferIds'->>0,''),'uneven/') then 'uneven'
     when starts_with(lot->>'id',(lot->>'sourceKey')||'/intent/') then 'temporary'
     when starts_with(lot->>'id',(lot->>'sourceKey')||'/transfer/') then 'change'
     when lot->>'sourceKey' like 'manual/%' then 'manual' else 'other' end kind,

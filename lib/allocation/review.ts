@@ -1,5 +1,6 @@
 import {context} from './model.ts';
 import {permanentFloor, validateDraft} from './edits.ts';
+import {unevenTransfers} from './planner.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
 import type {AllocationDraft, AllocationInput, Change} from './types.ts';
@@ -10,6 +11,12 @@ import type {PrimaryAssignments} from '../scheduling/validate.ts';
  * This never calculates a proposal or repairs/changes a manager target. */
 export function reviewAllocation(input: AllocationInput, saved: AllocationDraft) {
   const c = context(input), draft = {...structuredClone(saved), sourceKey: c.key};
+  // Uneven-month credit is derived, never chosen: it is refreshed with the source
+  // identity, so a seniority reorder after confirmation re-pairs the credit under
+  // the current order instead of trapping the month.
+  if (draft.changes && typeof draft.changes === 'object' && draft.baselineUnits && typeof draft.baselineUnits === 'object') {
+    draft.uneven = unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), draft.baselineUnits, draft.changes);
+  }
   validateDraft(c, input.seniority, draft);
   return draft;
 }

@@ -46,7 +46,9 @@ It is canonical serialization, not a cryptographic hash or an authorization toke
 
 Normalized segments retain exact source-lot slices and oldest contributing
 priority. Opposing/cycle cancellation and chain bypasses are derived explanations,
-not settlements. Gross lot `remaining` includes netted units; only normalized
+not settlements; they apply to half-point units exactly as to whole points, so
+halves net across people and a lone half is kept until a second half or a
+half-point duty repays it. Gross lot `remaining` includes netted units; only normalized
 claims are repayable. Settlement/reduction consumes the same amount on each path
 leg, leaving intermediary net positions unchanged.
 
@@ -129,7 +131,8 @@ copy (the same `compensation_reconcile(..., false)` used for `p_cutoff`), and
 returns only `{net, lines}`. Nothing is appended and the revision is unchanged.
 Admins receive every member; any other approved active member receives only
 their own net and relationships. Lines describe open actual claims by source
-lot (temporary intent date, published-change month, manual, correction, routed)
+lot (temporary intent date, uneven-month credit, published-change month, manual,
+correction, routed)
 plus repayments that settle only in the projection; reasons, events and private
 notes are never returned. `lib/supabase/balance.ts` validates the response.
 
