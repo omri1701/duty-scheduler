@@ -1,4 +1,4 @@
-import {test, expect, monthAction, duty, keyboardRequest, confirmRequest} from './fixtures';
+import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
@@ -7,10 +7,10 @@ import {existsSync} from 'node:fs';
 // headers/access states have their own new snapshots in environment.spec.ts.
 test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='https://duty-scheduler-prod.vercel.app';});
 
-async function snapshot(page: Page, name: string) {
+async function snapshot(page: Page, name: string, keepPointer = false) {
   test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
-  await page.mouse.move(0, 0);
+  if (!keepPointer) await page.mouse.move(0, 0);
   // With updateSnapshots:none Playwright reports missing references without an
   // actual attachment. Retain the candidate explicitly for the review gallery.
   if(!existsSync(test.info().snapshotPath(name+'.png'))) {
@@ -96,4 +96,40 @@ test('phone availability sheet and team in English and Hebrew', async ({page, op
     await page.getByRole('tab').nth(2).click();
     await snapshot(page, `team-${lang}`);
   }
+});
+
+for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page, openApp, backend}, info) => {
+  backend.raw.assignments = []; backend.raw.publications = [];
+  backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
+  // One locked duty, so the pie total and the hover details both show locked points.
+  backend.raw.assignments.push({id: 'locked', publication_id: null, day: '2026-11-10', end_day: '2026-11-11', primary_id: ids.admin, secondary_id: null, title: '', extra_points: 0, points: 1, locked: true, manager_override: false});
+  await openApp();
+  const he = lang === 'he', dialog = page.getByRole('dialog');
+  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  // Park the emulated mouse: a row opening under it would read as hovered.
+  await page.mouse.move(0, 0);
+  // The total names the locked points without an icon.
+  await expect(dialog.locator('.plan-pie-total small')).toHaveText(he ? '1 נעולות' : '1 locked');
+  await expect(dialog.locator('.plan-pie-center svg')).toHaveCount(0);
+  await snapshot(page, `plan-month-${lang}`);
+  // A temporary change shows its chip; the pie centre shows the slice in focus.
+  await dialog.getByRole('button', {name: `${he ? 'הפחתת זמני' : 'Decrease Temporary'} · Avery Admin`, exact: true}).click();
+  const slice = dialog.locator(`.plan-slice[data-engineer="${ids.admin}"]`);
+  if (info.project.name === 'mobile') await slice.tap(); else await slice.hover();
+  await expect(slice).toHaveClass(/active/);
+  // The hover details carry a small lock beside the locked points.
+  const lock = (await dialog.locator('.plan-pie-detail li.locked svg').boundingBox())!;
+  expect(lock.width).toBeLessThanOrEqual(10); expect(lock.height).toBeLessThanOrEqual(10);
+  await snapshot(page, `plan-month-pie-hover-${lang}`, true);
+  await dialog.getByRole('button', {name: he ? 'שמירה' : 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: he ? 'נשמר' : 'Saved', exact: true})).toBeDisabled();
+  await dialog.locator('.allocation-details summary').click();
+  await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = el.scrollHeight;});
+  await snapshot(page, `plan-month-details-${lang}`);
+  // The app has no dark theme of its own; this checks that the OS preference leaves the dialog intact.
+  await page.emulateMedia({colorScheme: 'dark'});
+  await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = 0;});
+  await snapshot(page, `plan-month-dark-${lang}`);
 });

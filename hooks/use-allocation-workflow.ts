@@ -24,6 +24,9 @@ type Phase = 'idle' | 'loading' | 'confirming' | 'generating' | 'saving';
 let pairSerial = 0;
 const pairId = () => `pair-${Date.now().toString(36)}-${(pairSerial++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 type Review = {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]};
+/** Failures that only a fresh proposal resolves: an earlier saved format, an
+ * ordinary baseline the duties cannot split into, or uneven-month credit. */
+const needsProposal = (message: string) => /invalid-ordinary-baseline|uneven-credit|invalid-allocation-(shape|changes|pair)|invalid-derived-transfers|invalid-hand-edits/.test(message);
 
 export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: Translate) {
   const latest = useRef(remote);
@@ -36,10 +39,14 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [reviewed, setReviewed] = useState(false);
   const [closed, setClosed] = useState(false), [progress, setProgress] = useState<number | null>(null);
   const [result, setResult] = useState<GenerationResult | null>(null);
+  // The authoritative month could not be read; the primary action becomes Try again.
+  const [retry, setRetry] = useState(false);
+  // The draft the last Save stored; Save reads "Saved" until the next change.
+  const [savedDraft, setSavedDraft] = useState<AllocationDraft | null>(null);
   // The latest manual drag transfer, offered once as "Make permanent".
   const [moved, setMoved] = useState<{id: string; fromId: string; toId: string} | null>(null);
   const sequence = useRef(0), worker = useRef<{terminate: () => void} | null>(null), rpc = useRef(false);
-  const receivedAt = useRef(0), opening = useRef(false);
+  const receivedAt = useRef(0), opening = useRef(false), draftRef = useRef<AllocationDraft | null>(null);
   const revision = remote.snapshot?.revision;
   function accept(context: GenerationContext) {
     contextRef.current = context; receivedAt.current = performance.now(); setCaptured(context);
@@ -48,7 +55,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const now = () => generationNow(contextRef.current?.actualAtMs ?? Date.now(), receivedAt.current, performance.now());
   function stop() {sequence.current++; worker.current?.terminate(); worker.current = null;}
   function fail(e: unknown) {
-    setError(errorMessage(e, t('Could not finish. Your saved draft is unchanged. Retry or refresh and review.', 'הפעולה לא הושלמה. הטיוטה השמורה נשמרה. אפשר לנסות שוב או לרענן ולבדוק.')));
+    setError(errorMessage(e, t('Could not finish. Your saved draft is unchanged. Try again.', 'הפעולה לא הושלמה. הטיוטה השמורה נשמרה. אפשר לנסות שוב.')));
   }
   async function load() {
     if (rpc.current || !latest.current.isAdmin || latest.current.readOnly || latest.current.snapshot?.revision == null) return null;
@@ -57,15 +64,15 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     try {
       const context = await latest.current.generationContext(month, latest.current.snapshot.revision);
       if (id !== sequence.current) return null;
-      accept(context); return context;
-    } catch (e) {if (id === sequence.current) fail(e); return null;}
+      accept(context); setRetry(false); return context;
+    } catch (e) {if (id === sequence.current) {fail(e); setRetry(true);} return null;}
     finally {rpc.current = false; if (id === sequence.current) setPhase('idle');}
   }
   useEffect(() => {
     contextRef.current = null; opening.current = false;
     queueMicrotask(() => {
       setCaptured(null); setDraft(null); setOpen(false); setResult(null);
-      setHistory([]); setReviewed(false); setError('');
+      setHistory([]); setReviewed(false); setError(''); setRetry(false);
     });
     const lifecycle = sequence, active = worker;
     return () => {lifecycle.current++; active.current?.terminate();};
@@ -75,7 +82,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (contextRef.current) {
       stop(); setReviewed(false); setResult(null);
       setHistory([]);
-      setNotice(t('Team data changed. Review your retained targets against the refreshed month.', 'נתוני הצוות השתנו. יש לבדוק את היעדים שנשמרו מול החודש המעודכן.'));
+      // An open plan is reviewed again at once against the refreshed month.
+      if (open) {
+        void refresh('', t('Team data changed, so the month was refreshed. Your targets are kept; check them before confirming.', 'נתוני הצוות השתנו והחודש רוענן. היעדים נשמרו; כדאי לבדוק אותם לפני האישור.')); return;
+      }
     }
     void load();
     // The accepted revision, rather than the render-created remote API, owns this read.
@@ -111,7 +121,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       prepareGeneration({...input.schedule, targets: Object.fromEntries(Object.entries(draft.targetsUnits).map(([id, u]) => [id, u / 2]))});
       // An unchanged copy of an earlier publication keeps its stored provenance;
       // the checked RPC revalidates it. Anything else needs the per-person shape.
-      if (!draft.changes) {if (!captured?.sourcePublicationId) structural = t('This saved allocation uses an earlier format. Choose “Use a new proposal”, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');}
+      if (!draft.changes) {if (!captured?.sourcePublicationId) structural = t('This saved allocation uses an earlier format. Generation has closed, so it can’t be replaced with a new proposal.', 'ההקצאה השמורה נשמרה בפורמט ישן. השיבוץ האוטומטי נסגר ולכן לא ניתן להחליף אותה בהצעה חדשה.');}
       else if (!balanced(draft)) structural = t('Place the remaining points with the Temporary or Permanent controls.', 'יש לחלק את הנקודות שנותרו באמצעות בקרי השינוי הזמני או הקבוע.');
     } catch (e) {structural = errorMessage(e, 'Review allocation');}
   }
@@ -127,6 +137,30 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
   const review = (i: AllocationInput, saved: AllocationDraft, copied: boolean) =>
     copied ? saved : reviewAllocation(i, saved);
+  /** Reviews a saved or retained allocation. One that no longer fits (an earlier
+   * format, a changed team, or a failure that needs fresh credit) is replaced by a
+   * new proposal keeping the per-person changes that still fit, while generation
+   * is open. `reason` is a failure the dialog already explains. */
+  function adopt(c: GenerationContext, saved: AllocationDraft | null, copied: boolean, reason = '') {
+    if (saved && !needsProposal(reason)) {
+      try {
+        const next = review(c.input, saved, copied);
+        if (next.changes || copied || !c.generationAllowed) return plan(() => next);
+      } catch (e) {if (!c.generationAllowed) {fail(e); return null;}}
+    }
+    if (!c.generationAllowed) return null;
+    const next = plan(() => proposeAllocation(c.input, retainedChanges(saved)).draft);
+    if (next && saved && !reason) setNotice(t('The saved allocation no longer fits this month, so a new proposal replaced it. Check it, then confirm.', 'ההקצאה השמורה אינה מתאימה עוד לחודש זה ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר.'));
+    return next;
+  }
+  /** Reads the month again and reviews the retained targets; no manual step. */
+  async function refresh(reason = '', notice = '') {
+    const old = draftRef.current, c = await load(); if (!c) return null;
+    if (notice) setNotice(notice);
+    setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
+    const copied = !!c.sourcePublicationId && (!old || JSON.stringify(persistedDraft(old)) === JSON.stringify(c.allocation));
+    return adopt(c, old ?? c.allocation, copied, reason);
+  }
   async function show() {
     if (opening.current) return; opening.current = true;
     setOpen(true); setStep(2); setHistory([]); setMoved(null); setError(''); setNotice('');
@@ -135,12 +169,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!c) return;
     setDraft(c.allocation); setReviewed(false);
     setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
-    if (c.allocation) plan(() => review(c.input, c.allocation!, !!c.sourcePublicationId));
-    else if (c.generationAllowed) plan(() => proposeAllocation(c.input).draft);
+    adopt(c, c.allocation, !!c.sourcePublicationId);
     if (!schedulingSupported()) setError(unsupported());
   }
   const unsupported = () => t('This browser cannot run the planner. Use a current browser with WebAssembly and Workers.', 'הדפדפן אינו תומך במתכנן. יש להשתמש בדפדפן עדכני שתומך ב־WebAssembly וב־Workers.');
-  function remember() {if (draft) setHistory(h => [...h, {draft, locks, approvals}]);}
   function edit(engineer: string, deltaUnits: number, kind: Kind) {
     if (!input || !draft || phase !== 'idle') return;
     const previous = {draft, locks, approvals};
@@ -169,19 +201,13 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     setDraft(previous.draft); setLocks(previous.locks); setApprovals(previous.approvals);
     setHistory(h => h.slice(0, -1)); setMoved(null); setReviewed(true); setError(''); setNotice(t('Last change undone.', 'השינוי האחרון בוטל.'));
   }
-  async function refreshReview() {
-    const old = draft, c = await load(); if (!c) return;
-    setLocks(c.input.schedule.locks ?? []); setApprovals(c.input.schedule.approvals ?? []);
-    if (old) plan(() => review(c.input, old, !!c.sourcePublicationId && JSON.stringify(persistedDraft(old)) === JSON.stringify(c.allocation)));
-    else if (c.allocation) plan(() => review(c.input, c.allocation!, !!c.sourcePublicationId));
-    else plan(() => proposeAllocation(c.input).draft);
-  }
   async function confirm(generate = true) {
     if (!captured || !draft || !input || structural || !reviewed || phase !== 'idle' || rpc.current) return;
     if (generate && now() >= captured.coverageStartMs) {setClosed(true); return;}
     if (generate && !schedulingSupported()) {setError(unsupported()); return;}
     stop(); const id = sequence.current;
     setError(''); setProgress(null); setPhase('confirming'); rpc.current = true;
+    let failure: unknown = null;
     try {
       let source = captured;
       if (!latest.current.snapshot?.months.some(m => m.month === month)) {
@@ -194,7 +220,15 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const confirmed = await latest.current.confirmAllocation(source, draft, locks, approvals);
       if (id !== sequence.current) return;
       accept(confirmed); rpc.current = false;
-      if (!generate) {setNotice(t('Allocation and locks saved.', 'ההקצאה והנעילות נשמרו.')); return;}
+      if (!generate) {
+        // The checked save moves the month to a new revision: review the plan against it,
+        // as reopening would, so later edits and the adjustments list stay current.
+        // Undo steps from before the save belong to the old revision.
+        let next = draft;
+        try {next = review(confirmed.input, draft, !!confirmed.sourcePublicationId);} catch {/* the checked save accepted it; reopening reviews it again */}
+        setDraft(next); setSavedDraft(next); setHistory([]);
+        setNotice(t('Saved. Close any time and continue from here later.', 'נשמר. אפשר לסגור ולהמשיך מכאן מאוחר יותר.')); return;
+      }
       if (!confirmed.generationInput || now() >= confirmed.coverageStartMs) throw Error('generation-window-closed');
       setPhase('generating');
       // Weekend and weekday rotation state comes from the published months the workspace
@@ -223,23 +257,28 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       if (id !== sequence.current) return;
       accept(saved); setResult(generated); setOpen(false); setNotice('');
       toast.success(generated.complete ? t('Draft ready. Review, then publish.', 'הטיוטה מוכנה לבדיקה ולפרסום.') : t('Partial draft saved. Review uncovered dates.', 'טיוטה חלקית נשמרה. יש לבדוק את התאריכים ללא כיסוי.'));
-    } catch (e) {if (id === sequence.current) {fail(e); setNotice(t('Your saved assignments are retained. Refresh and review before retrying.', 'השיבוצים השמורים נשמרו. יש לרענן ולבדוק לפני ניסיון נוסף.')); setReviewed(false);}}
+    } catch (e) {if (id === sequence.current) {failure = e; setReviewed(false);}}
     finally {
       rpc.current = false;
       if (id === sequence.current) {worker.current?.terminate(); worker.current = null; setPhase('idle');}
+    }
+    // Never retry the failed write: read the month again, review the retained
+    // targets (or a new proposal when only that resolves it), then explain.
+    if (failure) {
+      if (await refresh(errorMessage(failure, ''))) fail(failure);
     }
   }
   function cancel() {
     if (rpc.current) return;
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
+  useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
-    history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), refreshReview, confirm, cancel,
-    // A new proposal keeps the per-person changes of members still present when they fit.
-    propose: () => {if (input && phase === 'idle') {remember(); plan(() => proposeAllocation(input, retainedChanges(draft)).draft);}},
+    history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
+    retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
-    canConfirm: !!draft && reviewed && !structural && phase === 'idle',
+    canConfirm: !!draft && reviewed && !structural && phase === 'idle', saved: !!draft && draft === savedDraft,
   };
 }
 export type AllocationWorkflow = ReturnType<typeof useAllocationWorkflow>;

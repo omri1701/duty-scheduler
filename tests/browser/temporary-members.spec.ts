@@ -46,7 +46,7 @@ test('admin creates 12 temporary engineers, edits constraints/order/status and s
  await page.getByRole('tab').first().click();
  await page.getByRole('button',{name:'Generate month',exact:true}).click();
  await expect(page.getByRole('button',{name:'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
- await expect(page.locator('.allocation-row')).toHaveCount(13);
+ await expect(page.locator('.plan-row')).toHaveCount(13);
  await page.getByRole('button',{name:'Confirm & generate',exact:true}).click();
  await expect(page.getByRole('dialog')).toBeHidden({timeout:45_000});
  const context=readGenerationContext(backend.generationEnvelope(MONTH));

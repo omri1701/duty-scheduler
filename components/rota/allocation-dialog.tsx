@@ -1,44 +1,52 @@
 'use client';
-import {useEffect, useRef, useState} from 'react';
-import {LockKeyhole, Minus, Plus, RotateCcw, Sparkles} from 'lucide-react';
+import {useEffect, useRef, useState, type CSSProperties} from 'react';
+import {Check, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
+import {PlanPie} from './plan-pie';
+import './plan-month.css';
 import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
+import type {Kind} from '@/lib/allocation/types';
 import type {Language, Translate} from './workspace-types';
 import {nettedCompensation} from '@/lib/allocation/netting';
 import {loneHalf} from '@/lib/compensation';
 
 const points = (units: number) => String(units / 2);
-const signed = (units: number) => `${units > 0 ? '+' : ''}${points(units)}`;
+const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(units))}`;
 
 export function allocationMessage(message: string, t: Translate) {
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
-  if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way. Choose “Use a new proposal”, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');
-  if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needs a fresh proposal. Choose “Use a new proposal”, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דורש הצעה חדשה. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');
+  if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way, so a new proposal replaced it. Check it, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש ולכן הוחלפה ההקצאה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
+  if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needed a fresh proposal, so one replaced it. Check it, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דרש הצעה חדשה, והיא הוחלפה. כדאי לבדוק ולאשר שוב.');
   if (/allocation-fit-limit/.test(message)) return t('This month’s duty points are too irregular to split automatically. Simplify the special ranges, then try again.', 'נקודות התורנויות בחודש זה אינן סדירות מכדי לחלק אותן אוטומטית. יש לפשט את טווחי הימים המיוחדים ולנסות שוב.');
   if (/statement timeout/.test(message)) return t('The server took too long to check this month’s split. Try again; if it repeats, simplify the special ranges.', 'בדיקת החלוקה החודשית בשרת ארכה זמן רב מדי. יש לנסות שוב; אם הבעיה חוזרת, יש לפשט את טווחי הימים המיוחדים.');
   if (/Ordinary baseline/.test(message)) return t('Keep the confirmed allocation and adjust Temporary or Permanent. The month weights and participating team have not changed.', 'יש לשמור על ההקצאה המאושרת ולערוך את השינוי הזמני או הקבוע. משקלי החודש והצוות המשתתף לא השתנו.');
   if (/permanent-below-fair-share/.test(message)) return t('A permanent change can’t take away more than the engineer’s own share: the fair share, or work already given as relief.', 'שינוי קבוע אינו יכול להוריד יותר מהחלק של המהנדס עצמו: החלק ההוגן, או עבודה שכבר ניתנה כהקלה.');
-  if (/unbalanced-allocation-changes/.test(message)) return t('Place the remaining points with the Temporary or Permanent controls.', 'יש לחלק את הנקודות שנותרו באמצעות בקרי השינוי הזמני או הקבוע.');
-  if (/invalid-allocation-shape|invalid-allocation-changes|invalid-derived-transfers|invalid-allocation-pair|invalid-hand-edits/.test(message)) return t('This saved allocation uses an earlier format. Choose “Use a new proposal”, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');
+  if (/unbalanced-allocation-changes/.test(message)) return t('Place the remaining points with the + and − controls.', 'יש לחלק את הנקודות שנותרו באמצעות לחצני + ו־−.');
+  if (/invalid-allocation-shape|invalid-allocation-changes|invalid-derived-transfers|invalid-allocation-pair|invalid-hand-edits/.test(message)) return t('The saved allocation used an earlier format, so a new proposal replaced it. Check it, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
   if (/lineage|compound|ambiguous/.test(message)) return t('This month carries a published adjustment that needs review. Keep its original plan before changing transfers.', 'בחודש זה קיים שינוי שפורסם ודורש בדיקה. יש לשמור על התוכנית המקורית לפני שינוי העברות.');
   if (/target-total-mismatch|invalid-baseline-total/.test(message)) return t('Targets must add up to the required month total. Place the remaining points or undo.', 'סכום היעדים חייב להתאים לסך הנקודות לחודש. יש לחלק את הנקודות שנותרו או לבטל את השינוי.');
   if (/locked-points|lock.*target|target.*lock/.test(message)) return t('A target is below its locked points. Increase it or explicitly unlock duties.', 'יעד נמוך מהנקודות הנעולות. יש להגדיל אותו או לבטל נעילות במפורש.');
   if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
   if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
   if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
-  if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed. Refresh and review your retained targets before retrying.', 'נתוני הצוות השתנו. יש לרענן ולבדוק את היעדים שנשמרו לפני ניסיון נוסף.');
-  if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection and retry in a current browser. Your saved draft is retained.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
-  if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('This allocation needs a fresh review of team or compensation changes. Targets have been retained; request a new proposal explicitly if needed.', 'יש לבדוק שינויים בצוות או בפיצוי. היעדים נשמרו; ניתן לבקש הצעה חדשה במפורש.');
+  if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
+  if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection, then try again in a current browser. Your saved draft is kept.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
+  if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('Team or compensation changes needed a fresh review. The month was refreshed; check the targets, then confirm again.', 'שינויים בצוות או בפיצוי דרשו בדיקה מחדש. החודש רוענן; כדאי לבדוק את היעדים ולאשר שוב.');
   return message;
 }
 
 export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;
 }) {
-  const name = (id: string) => state.team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
+  const member = (id: string) => state.team.find(p => p.id === id);
+  const name = (id: string) => member(id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
+  // One kind for every +/− control: most changes are temporary (repaid later).
+  const [kind, setKind] = useState<Kind>('temporary');
+  // The member highlighted in the pie, from a slice or from that member's row.
+  const [active, setActive] = useState<string | null>(null);
   // Drag a member onto another to give one point. Long-press, right-click or a
   // keyboard action on the member opens the same choice as a list.
   const [dragging, setDragging] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
@@ -68,54 +76,76 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
     : f.phase === 'confirming' ? t('Confirming targets…', 'מאשר את היעדים…')
     : f.phase === 'generating' ? t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…')
     : t('Verifying and saving your draft…', 'מאמת ושומר את הטיוטה…');
+  const kindLabel = kind === 'permanent' ? t('Permanent', 'קבוע') : t('Temporary', 'זמני');
+  const rows = f.draft ? f.totals?.rows ?? [] : [];
+  const slices = rows.map(r => ({...r, name: name(r.id), color: member(r.id)?.color ?? '#c8d3c4'}));
   return <EditorDialog open={f.open} onClose={f.close} saving={f.saving} lang={lang} className="allocation-dialog"
     title={t('Plan the month', 'תכנון החודש')} description={`${monthLabel} · ${t('Set the points. We’ll find the dates.', 'קובעים נקודות. המתכנן מוצא את התאריכים.')}`}>
     <div className="allocation-scroll">
-      <div className="allocation-month-summary" aria-label={t('Monthly allocation total', 'סך ההקצאה החודשית')}>
-        <div><span className="eyebrow">{t('MONTHLY POINTS', 'נקודות חודשיות')}</span><div className="allocation-total"><strong>{f.totals ? points(f.totals.configured) : '—'}</strong><span>/ {f.totals ? points(f.totals.total) : '—'}</span></div><p>{t('allocated / required', 'הוקצו / נדרשות')}</p></div>
-        <div className="allocation-summary-detail"><LockKeyhole size={16}/><span>{f.totals ? points(f.totals.rows.reduce((n, r) => n + r.locked, 0)) : '—'} {t('locked points included', 'נקודות נעולות כלולות')}</span><small>{t('Primary duties only · emergency cover stays', 'תורנויות ראשיות בלבד · כיסוי החירום נשמר')}</small></div>
-      </div>
-      <div className="allocation-controls"><div className="allocation-step" role="group" aria-label={t('Point step', 'גודל צעד בנקודות')}><span>{t('Step', 'צעד')}</span>{[2, 1].map(step => <button key={step} aria-pressed={f.step === step} onClick={() => f.setStep(step)}>{points(step)}</button>)}</div><Button variant="ghost" size="sm" disabled={!f.history.length || f.saving} onClick={f.undo}><RotateCcw/>{t('Undo', 'ביטול שינוי')}</Button></div>
+      <section className="plan-hero" aria-label={t('Monthly allocation total', 'סך ההקצאה החודשית')}>
+        <PlanPie slices={slices} configured={f.totals?.configured ?? 0} total={f.totals?.total ?? 0} active={active} onActive={setActive} rtl={lang === 'he'} t={t}/>
+        <div className="plan-hero-side">
+          <p className="plan-hint">{t('Each slice is one person’s points. Point at a slice or a person for details.', 'כל פרוסה היא הנקודות של אדם אחד. מצביעים על פרוסה או על אדם כדי לראות פרטים.')}</p>
+          <div className="plan-kind" role="group" aria-label={t('Change type for + and −', 'סוג השינוי ב־+ ו־−')}>
+            {(['temporary', 'permanent'] as const).map(k => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>
+              <strong>{k === 'permanent' ? t('Permanent', 'קבוע') : t('Temporary', 'זמני')}</strong>
+              <small>{k === 'permanent' ? t('no repayment', 'ללא החזר') : t('repaid later', 'יוחזר בהמשך')}</small>
+            </button>)}
+          </div>
+          <div className="plan-tools">
+            <div className="allocation-step" role="group" aria-label={t('Point step', 'גודל צעד בנקודות')}><span>{t('Step', 'צעד')}</span>{[2, 1].map(step => <button key={step} type="button" aria-pressed={f.step === step} onClick={() => f.setStep(step)}>{points(step)}</button>)}</div>
+            <Button variant="ghost" size="sm" disabled={!f.history.length || f.saving} onClick={f.undo}><RotateCcw/>{t('Undo', 'ביטול שינוי')}</Button>
+          </div>
+        </div>
+      </section>
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
-      {f.draft && <div className="allocation-table" role="table" aria-label={t('Monthly point allocation', 'הקצאת נקודות חודשית')}>
-        <div className="allocation-table-head" role="row">{[t('Engineer', 'מהנדס'), t('Points', 'נקודות'), t('Temporary', 'זמני'), t('Permanent', 'קבוע'), t('Locked', 'נעול'), t('To schedule', 'לשיבוץ')].map(label => <span key={label} role="columnheader">{label}</span>)}</div>
-        {f.totals?.rows.map((r, index) => <div className={`allocation-row${over === r.id ? ' drop-target' : ''}${dragging === r.id ? ' dragging' : ''}`} role="row" key={r.id} data-engineer={r.id}
-          onDragOver={e => {if (dragging && dragging !== r.id) {e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(r.id);}}}
-          onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(o => o === r.id ? null : o);}}
-          onDrop={e => {e.preventDefault(); const from = dragging; setDragging(null); setOver(null); if (from) give(from, r.id);}}>
-          <Popover open={giving === r.id} onOpenChange={open => {if (!open) setGiving(null);}}><PopoverAnchor asChild>
-          <div className="allocation-engineer" role="rowheader" tabIndex={0} draggable={finePointer && canGive(r.id)} aria-haspopup="dialog" aria-expanded={giving === r.id}
-            title={t('Drag onto another engineer to give 1 point', 'גוררים אל מהנדס אחר כדי להעביר נקודה אחת')}
-            onDragStart={e => {e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.id); setDragging(r.id);}}
-            onDragEnd={() => {setDragging(null); setOver(null);}}
-            onKeyDown={e => {if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); if (canGive(r.id)) setGiving(r.id);}}}
-            onContextMenu={e => {e.preventDefault(); endPress(); if (canGive(r.id)) setGiving(r.id);}}
-            onPointerDown={e => {if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
-            onPointerMove={e => {if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress();}}
-            onPointerUp={endPress} onPointerCancel={endPress}>
-            <span className="allocation-rank">{String(index + 1).padStart(2, '0')}</span><span className="avatar small" style={{background: state.team.find(p => p.id === r.id)?.color}}>{name(r.id).split(' ').map(n => n[0]).join('').slice(0, 2)}</span><strong>{name(r.id)}</strong></div>
-          </PopoverAnchor><PopoverContent className="allocation-give" align="start" dir={lang === 'he' ? 'rtl' : 'ltr'}
-            onCloseAutoFocus={e => {e.preventDefault(); document.querySelector<HTMLElement>(`.allocation-row[data-engineer="${CSS.escape(r.id)}"] .allocation-engineer`)?.focus({preventScroll: true});}} aria-label={`${t('Give 1 point to…', 'העברת נקודה אחת אל…')} · ${name(r.id)}`}>
-            <p>{t('Give 1 point to…', 'העברת נקודה אחת אל…')}</p>
-            {f.totals?.rows.filter(o => o.id !== r.id).map(o => <button key={o.id} type="button" onClick={() => give(r.id, o.id)}>{name(o.id)}<bdi dir="ltr">{points(o.target)}</bdi></button>)}
-          </PopoverContent></Popover>
-          <div className="allocation-readout points" role="cell"><span className="allocation-mobile-label">{t('Points', 'נקודות')}</span><output className="allocation-points" aria-live="polite" dir="ltr" aria-label={`${t('Points', 'נקודות')} · ${name(r.id)}`}>{points(r.target)}</output></div>
-          {(['temporary', 'permanent'] as const).map(kind => {
-            const permanent = kind === 'permanent', label = permanent ? t('Permanent', 'קבוע') : t('Temporary', 'זמני');
-            // Floors: points never below locked; a permanent reduction never beyond the member's own share.
-            const floor = r.target - f.step < r.locked || (permanent && r.permanent - f.step < r.permanentMin);
-            return <div className={`allocation-point-cell${permanent ? ' permanent' : ''}`} role="cell" key={kind}><span className="allocation-mobile-label">{label}</span><div className="allocation-stepper" aria-label={`${label} · ${name(r.id)}`}>
-              <button disabled={f.busy || floor} aria-label={`${t('Decrease', 'הפחתת')} ${label} · ${name(r.id)}`} onClick={() => f.edit(r.id, -f.step, kind)}><Minus size={15}/></button>
-              <output aria-live="polite" dir="ltr">{signed(permanent ? r.permanent : r.temporary)}</output>
-              <button disabled={f.busy} aria-label={`${t('Increase', 'הגדלת')} ${label} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={15}/></button>
-            </div></div>;
-          })}
-          <div className="allocation-readout" role="cell"><span className="allocation-mobile-label">{t('Locked', 'נעול')}</span><LockKeyhole size={12}/><bdi>{points(r.locked)}</bdi></div>
-          <div className="allocation-readout generate" role="cell"><span className="allocation-mobile-label">{t('To schedule', 'לשיבוץ')}</span><bdi>{points(r.generate)}</bdi></div>
-          {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
-        </div>)}
+      {f.draft && <div className="plan-rows" role="table" aria-label={t('Monthly point allocation', 'הקצאת נקודות חודשית')}>
+        <div className="plan-sr" role="row"><span role="columnheader">{t('Engineer', 'מהנדס')}</span><span role="columnheader">{t('Points', 'נקודות')}</span></div>
+        {rows.map(r => {
+          const permanent = kind === 'permanent';
+          // Floors: points never below locked; a permanent reduction never beyond the member's own share.
+          const floor = r.target - f.step < r.locked || (permanent && r.permanent - f.step < r.permanentMin);
+          return <div className={`plan-row${active === r.id ? ' active' : ''}${over === r.id ? ' drop-target' : ''}${dragging === r.id ? ' dragging' : ''}`} role="row" key={r.id} data-engineer={r.id}
+            style={{'--member': member(r.id)?.color ?? '#c8d3c4'} as CSSProperties}
+            onPointerEnter={e => {if (e.pointerType === 'mouse') setActive(r.id);}} onPointerLeave={e => {if (e.pointerType === 'mouse') setActive(a => a === r.id ? null : a);}}
+            onFocus={() => setActive(r.id)} onBlur={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(a => a === r.id ? null : a);}}
+            onDragOver={e => {if (dragging && dragging !== r.id) {e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(r.id);}}}
+            onDragLeave={e => {if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(o => o === r.id ? null : o);}}
+            onDrop={e => {e.preventDefault(); const from = dragging; setDragging(null); setOver(null); if (from) give(from, r.id);}}>
+            <Popover open={giving === r.id} onOpenChange={open => {if (!open) setGiving(null);}}><PopoverAnchor asChild>
+            <div className="plan-member" role="rowheader" tabIndex={0} draggable={finePointer && canGive(r.id)} aria-haspopup="dialog" aria-expanded={giving === r.id}
+              title={t('Drag onto another engineer to give 1 point', 'גוררים אל מהנדס אחר כדי להעביר נקודה אחת')}
+              onDragStart={e => {e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.id); setDragging(r.id);}}
+              onDragEnd={() => {setDragging(null); setOver(null);}}
+              onKeyDown={e => {if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); if (canGive(r.id)) setGiving(r.id);}}}
+              onContextMenu={e => {e.preventDefault(); endPress(); if (canGive(r.id)) setGiving(r.id);}}
+              onPointerDown={e => {if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
+              onPointerMove={e => {if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress();}}
+              onPointerUp={endPress} onPointerCancel={endPress}>
+              <span className="avatar small" style={{background: member(r.id)?.color}}>{name(r.id).split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+              <span className="plan-member-text"><strong>{name(r.id)}</strong>
+                {!!(r.temporary || r.permanent || r.locked) && <span className="plan-chips">
+                  {!!r.temporary && <span className="plan-chip temporary"><bdi dir="ltr">{signed(r.temporary)}</bdi> {t('temporary', 'זמני')}</span>}
+                  {!!r.permanent && <span className="plan-chip permanent"><bdi dir="ltr">{signed(r.permanent)}</bdi> {t('permanent', 'קבוע')}</span>}
+                  {!!r.locked && <span className="plan-chip locked"><LockKeyhole size={10} aria-hidden="true"/><bdi dir="ltr">{points(r.locked)}</bdi> {t('locked', 'נעול')}</span>}
+                </span>}
+              </span>
+            </div>
+            </PopoverAnchor><PopoverContent className="allocation-give" align="start" dir={lang === 'he' ? 'rtl' : 'ltr'}
+              onCloseAutoFocus={e => {e.preventDefault(); document.querySelector<HTMLElement>(`.plan-row[data-engineer="${CSS.escape(r.id)}"] .plan-member`)?.focus({preventScroll: true});}} aria-label={`${t('Give 1 point to…', 'העברת נקודה אחת אל…')} · ${name(r.id)}`}>
+              <p>{t('Give 1 point to…', 'העברת נקודה אחת אל…')}</p>
+              {f.totals?.rows.filter(o => o.id !== r.id).map(o => <button key={o.id} type="button" onClick={() => give(r.id, o.id)}>{name(o.id)}<bdi dir="ltr">{points(o.target)}</bdi></button>)}
+            </PopoverContent></Popover>
+            <div className="plan-adjust" role="cell">
+              <button type="button" disabled={f.busy || floor} aria-label={`${t('Decrease', 'הפחתת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, -f.step, kind)}><Minus size={16}/></button>
+              <output className="plan-points" aria-live="polite" dir="ltr" aria-label={`${t('Points', 'נקודות')} · ${name(r.id)}`}>{points(r.target)}</output>
+              <button type="button" disabled={f.busy} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
+            </div>
+            {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
+          </div>;
+        })}
       </div>}
-      <p className="allocation-caption">{t('Points = fair share, plus any repayment, plus Permanent and Temporary. To schedule is Points minus Locked; it may require a partial schedule.', 'נקודות = החלק ההוגן, בתוספת החזרים, ובתוספת השינוי הקבוע והזמני. לשיבוץ = נקודות פחות נעול; ייתכן שיתקבל שיבוץ חלקי.')}</p>
+      <p className="allocation-caption">{t('Points = fair share, plus any repayment, plus the temporary and permanent changes. Locked duties count toward points.', 'נקודות = החלק ההוגן, בתוספת החזרים ובתוספת השינויים הזמניים והקבועים. תורנויות נעולות נספרות בנקודות.')}</p>
       {f.draft && <details className="allocation-details" open={unplacedUnits > 0}>
         <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
         {unplacedUnits > 0 && <p className="allocation-attention">{points(unplacedUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
@@ -133,8 +163,15 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
-      <div className="allocation-secondary-actions"><Button variant="ghost" size="sm" disabled={f.busy} onClick={f.refreshReview}>{t('Refresh & review retained targets', 'רענון ובדיקת היעדים שנשמרו')}</Button><Button variant="ghost" size="sm" disabled={f.busy || f.closed || !f.input} onClick={f.propose}>{t('Use a new proposal', 'שימוש בהצעה חדשה')}</Button>{!f.closed && <Button variant="ghost" size="sm" disabled={!f.canConfirm} onClick={() => f.confirm(false)}>{t('Save allocation only', 'שמירת ההקצאה בלבד')}</Button>}</div>
     </div>
-    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{t('Confirm targets · save as draft', 'אישור יעדים · שמירה כטיוטה')}</small></div>{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button> : <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>}</div>
+    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{f.closed ? t('Save targets and locks', 'שמירת יעדים ונעילות') : t('Save to continue later · confirm to generate', 'שמירה להמשך · אישור לשיבוץ')}</small></div>
+      <div className="plan-actions">{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
+      // A failed read of the month is the only state with nothing to confirm: retry it here.
+      : f.retry ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
+      : <>
+        {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
+        {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
+        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
+      </>}</div></div>
   </EditorDialog>;
 }
