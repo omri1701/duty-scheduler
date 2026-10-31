@@ -114,3 +114,77 @@ test('adjacent duties of one member render as one bar with one name, one title a
   await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('5 בנוב׳');
   await expect(page.getByRole('dialog').getByRole('combobox', {name: 'מהנדס ראשי', exact: true})).toBeVisible();
 });
+
+// Thu 5 → weekend 6–7 → Sun 8 → Mon 9, all Blair's, with someone else on 4 and 10 November: a streak across the row break.
+function crossingStreak(backend: Backend) {
+  for (const day of ['2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']) for (const r of rows(backend, day)) r.primary_id = ids.b;
+  for (const day of ['2026-11-04', '2026-11-10']) for (const r of rows(backend, day)) r.primary_id = ids.d;
+}
+const centre = (b: {x: number; width: number}) => b.x + b.width / 2;
+
+test('each row of a streak is one level bar with no join, its name centred once across the row', async ({page, backend, openApp}) => {
+  crossingStreak(backend);
+  await openApp();
+  const chip = (day: string) => duty(page, day).locator('.assignment-chip'), label = (day: string) => duty(page, day).locator('.streak-label');
+  await expect(label('2026-11-05')).toHaveText('Blair');
+  await expect(label('2026-11-08')).toHaveText('Blair');
+  for (const day of ['2026-11-06', '2026-11-09']) await expect(chip(day)).toHaveText('');
+  for (const lang of ['en', 'he'] as const) {
+    if (lang === 'he') {await page.getByRole('button', {name: 'Switch to Hebrew'}).click(); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
+    const rtl = await gridIsRtl(page);
+    const thu = await box(chip('2026-11-05')), weekend = await box(chip('2026-11-06')), sun = await box(chip('2026-11-08')), mon = await box(chip('2026-11-09'));
+    // Same top and height in every cell of a row segment, and as tall as a lone duty's bar; the joins meet edge to edge.
+    for (const [a, b] of [[thu, weekend], [sun, mon]]) {
+      expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(a.height - b.height)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(rtl ? b.x + b.width - a.x : a.x + a.width - b.x)).toBeLessThanOrEqual(0.5);
+    }
+    expect(Math.abs(thu.height - (await box(chip('2026-11-04'))).height)).toBeLessThanOrEqual(0.5);
+    // Thu–Fri–Sat: one name at the bar's centre, which is the Friday column; Sun–Mon: one name at their boundary.
+    const first = await box(label('2026-11-05')), second = await box(label('2026-11-08')), friday = await box(duty(page, '2026-11-06')), sunday = await box(duty(page, '2026-11-08'));
+    expect(Math.abs(centre(first) - (Math.min(thu.x, weekend.x) + Math.max(thu.x + thu.width, weekend.x + weekend.width)) / 2)).toBeLessThanOrEqual(1.5);
+    if (rtl) expect(centre(first)).toBeGreaterThan(friday.x + friday.width / 2); else expect(centre(first)).toBeLessThan(friday.x + friday.width / 2);
+    expect(Math.abs(centre(second) - (rtl ? sunday.x : sunday.x + sunday.width))).toBeLessThanOrEqual(1.5);
+    for (const name of [first, second]) {expect(name.y).toBeGreaterThanOrEqual(thu.y - 1); expect(name.height).toBeLessThanOrEqual(thu.height + 1);}
+    // The arrow and the notch point along the grid's own direction (desktop Hebrew keeps a left-to-right week).
+    const clip = (day: string) => chip(day).evaluate(e => getComputedStyle(e, '::before').clipPath);
+    expect(await clip('2026-11-06')).toContain(rtl ? '0px 50%' : '100% 50%');
+    expect(await clip('2026-11-08')).toContain(rtl ? 'calc(100% - 7px) 50%' : '7px 50%');
+  }
+  // The centred name lets taps through: tapping it over the Friday column edits the weekend, not Thursday.
+  const name = await box(label('2026-11-05'));
+  await page.mouse.click(centre(name), name.y + name.height / 2);
+  await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('6 בנוב׳');
+});
+
+test('the lock, the dates and the +extra never overlap on a locked holiday weekend, weekday or split weekend', async ({page, backend, openApp}, info) => {
+  splitHoliday(backend, true);
+  for (const day of ['2026-11-12', '2026-11-20']) for (const r of rows(backend, day)) r.locked = true;
+  await openApp();
+  const overlap = (a: {x: number; y: number; width: number; height: number}, b: typeof a) =>
+    a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
+  for (const lang of ['en', 'he'] as const) {
+    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
+      await page.setViewportSize({width, height: 900});
+      for (const day of ['2026-11-12', '2026-11-20', '2026-11-27', '2026-11-28']) {
+        const cell = duty(page, day), lock = cell.locator('.duty-lock-indicator'), badge = cell.locator('.tiny-badge');
+        await expect(lock).toBeVisible(); await expect(badge).toBeVisible();
+        const c = await box(cell), parts = await Promise.all([...await cell.locator('.day-number > span').all(), lock, badge].map(box));
+        for (const [i, a] of parts.entries()) {
+          expect(a.x, `${day} at ${width}px stays in its cell`).toBeGreaterThanOrEqual(c.x - 0.5);
+          expect(a.x + a.width).toBeLessThanOrEqual(c.x + c.width + 0.5);
+          for (const b of parts.slice(i + 1)) expect(overlap(a, b), `${day} at ${width}px in ${lang}`).toBe(false);
+        }
+        // The marks stay above the bar.
+        const bar = await box(cell.locator('.assignment-chip'));
+        for (const mark of parts) expect(mark.y + mark.height).toBeLessThanOrEqual(bar.y + 0.5);
+      }
+      // Every bar of a week with marks starts at the same height.
+      for (const week of [['2026-11-08', '2026-11-11', '2026-11-12', '2026-11-13'], ['2026-11-15', '2026-11-19', '2026-11-20'], ['2026-11-22', '2026-11-26', '2026-11-27', '2026-11-28']]) {
+        const tops = await Promise.all(week.map(day => box(duty(page, day).locator('.assignment-chip')).then(b => b.y)));
+        expect(Math.max(...tops) - Math.min(...tops), `${week[0]} week at ${width}px`).toBeLessThanOrEqual(0.5);
+      }
+    }
+  }
+});
