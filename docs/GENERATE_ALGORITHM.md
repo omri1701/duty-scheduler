@@ -321,6 +321,13 @@ compensation. Ordinary remainder choices still create no debt.
 > system transfers (`uneven`), verified exactly by the database, published as an
 > ordinary temporary claim and repaid like any other. A remainder given to a
 > different member (same multiset as the plain split) still creates no debt.
+> **Refinement 2026-10-31:** the credit follows the real permanent load. A
+> creditor is credited only for the extra it still carries after its net
+> permanent loss, and a debtor owes only while still below the split after its
+> net permanent gain; a Permanent −0.5 on a creditor that lands on its debtor
+> leaves both at the equal share and no debt. The pairing is derived under the
+> current seniority at every confirmation, so a reorder after confirming never
+> traps the month, and a new proposal keeps the confirmed baseline.
 > See [ALLOCATION_PLANNER.md](ALLOCATION_PLANNER.md#proposal-decision-2026-10-30).
 Locks are final-target floors; do not redefine ordinary fair work as already
 locked workload and erase the ability to credit a locked repayment. If locks
@@ -393,9 +400,18 @@ as “owes” to preserve the explicit pairwise model.
 
 ## 6. Temporary and permanent allocation adjustments
 
-The manager sees one final Target, a signed Permanent adjustment, Locked and
-Generate. Keep internal provenance without exposing several fairness counters.
-Temporary Target edits and Permanent edits can coexist.
+*Decision 2026-10-31:* the draft stores one net Temporary and one net Permanent
+change per member instead of a history of edits. Points = fair baseline (plus
+planned repayments) + Permanent + Temporary. The automatic counterparts of 6.1
+are recomputed from scratch from that state on every edit, across members
+without hand changes only, so the result is order independent; the floors are
+fair + Permanent ≥ 0, Permanent never below planned relief, and Points ≥ Locked;
+the transfer list is derived (drag pairs first, then netted) and the database
+re-derives and requires it. See [the planner](ALLOCATION_PLANNER.md).
+
+The manager sees Points, signed Temporary and Permanent changes, Locked and
+To schedule. Keep internal provenance without exposing several fairness counters.
+Temporary and Permanent changes can coexist.
 
 | Kind | Meaning | Ledger effect |
 |---|---|---|
@@ -435,7 +451,10 @@ UNKNOWN is not proof of a recipient's infeasibility.
 
 ### 6.2 No hidden edit rejection or silent limit increase
 
-If automatic redistribution cannot finish, retain the manager's requested limit
+*Since 2026-10-31 an unplaced change is simply the member's net change without a
+counterpart; it shows inline and blocks confirmation until another member's
+change or a drag balances it.* Originally:
+if automatic redistribution cannot finish, retain the manager's requested limit
 as a pending table edit and show the unbalanced monthly total inline. The manager
 can place the remaining nominal points explicitly with other Target controls,
 even where that final allocation knowingly requires partial output.
@@ -797,10 +816,11 @@ behavior.
 | Column | Meaning |
 |---|---|
 | Engineer | Name in saved seniority order. |
-| Target | Editable final monthly primary points, including all adjustments. |
-| Permanent | Signed intentional non-compensated change; already included in Target. |
+| Points | Final monthly primary points: fair share (plus repayment) + Permanent + Temporary. Display only. |
+| Temporary | Signed net compensated change (stepper). |
+| Permanent | Signed net intentional non-compensated change (stepper); already included in Points. |
 | Locked | Full points of fixed primary assignments owned by this month. |
-| Generate | Target minus Locked; remaining requested points, not a promise they are attainable. |
+| To schedule | Points minus Locked; remaining requested points, not a promise they are attainable. |
 
 Use + / − buttons, defaulting to 1 point every time the popup opens, with a
 small 0.5-point step toggle. Show configured total versus required month total.

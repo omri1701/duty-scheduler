@@ -1,9 +1,10 @@
 import {normalize, sliceClaim} from '../compensation/index.ts';
 import {compareClaims, segment} from '../compensation/normalize.ts';
 import type {ClaimRef, ClaimSegment} from '../compensation/types.ts';
+import type {Diagnostic} from '../scheduling/types.ts';
 import {validateGeneration, type PrimaryAssignments} from '../scheduling/validate.ts';
-import {context, sum, validTargets} from './model.ts';
-import {validateDraft} from './edits.ts';
+import {context, sum, validTargets, type Context} from './model.ts';
+import {balanced, validateDraft} from './edits.ts';
 import type {AllocationInput, AllocationDraft, CompiledPlan, Intent, Check} from './types.ts';
 
 type Token = {carrier: string; origin: string; units: number; claim?: ClaimSegment;
@@ -14,13 +15,14 @@ const part = (token: Token, amount: number, offset = 0): Token => ({...structure
     ...(p.deferredClaim ? {deferredClaim: sliceClaim(p.deferredClaim, amount, offset)} : {})})),
 });
 const ref = (c: ClaimRef): ClaimRef => ({debtorId: c.debtorId, creditorId: c.creditorId, path: structuredClone(c.path)});
+const unbalanced = () => ({check: null, plan: null, confirmable: false,
+  diagnostics: [{code: 'unbalanced-allocation-changes', certainty: 'fact' as const}]});
 
 /** Compile ONLY the supplied actual draft against Generate's actual assignments;
  * it cannot substitute a different schedule's capacity here. */
 export function compileAllocation(input: AllocationInput, draft: AllocationDraft, assignments: PrimaryAssignments) {
-  const c = context(input); validateDraft(c, draft);
-  if (draft.pending.length || !validTargets(c, draft.targetsUnits)) return {check: null, plan: null,
-    confirmable: false, diagnostics: [{code: 'finish-pending-allocation-edits', certainty: 'fact' as const}]};
+  const c = context(input); validateDraft(c, input.seniority, draft);
+  if (!balanced(draft) || !validTargets(c, draft.targetsUnits)) return unbalanced();
   const actual = structuredClone(assignments);
   const metrics = validateGeneration({...input.schedule,
     targets: Object.fromEntries(c.ids.map(id => [id, draft.targetsUnits[id] / 2]))}, actual);
@@ -32,6 +34,21 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
     code: 'unfunded-target', certainty: 'fact', engineer: id, units: draft.targetsUnits[id] - check.actualUnits[id]});
   for (const duty of c.prepared.duties) if (actual[duty.id].primary === null) check.diagnostics.push({
     code: 'uncovered-duty', certainty: 'fact', dutyId: duty.id, dates: duty.dates, units: duty.units});
+  const {plan, confirmable} = buildPlan(c, input, draft, check.actualUnits, check.diagnostics);
+  return {check, plan, confirmable, diagnostics: check.diagnostics};
+}
+
+/** The same plan as if every confirmed target were fully worked: what the draft
+ * really repays now and carries forward, for display before Generate. */
+export function planAllocation(input: AllocationInput, draft: AllocationDraft) {
+  const c = context(input); validateDraft(c, input.seniority, draft);
+  if (!balanced(draft) || !validTargets(c, draft.targetsUnits)) return unbalanced();
+  const diagnostics: Diagnostic[] = [];
+  const {plan, confirmable} = buildPlan(c, input, draft, draft.targetsUnits, diagnostics);
+  return {check: null, plan, confirmable, diagnostics};
+}
+
+function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, capacityUnits: Readonly<Record<string, number>>, diagnostics: Diagnostic[]) {
   const tokens: Token[] = c.ids.map(id => ({carrier: id, origin: id, units: draft.baselineUnits[id], trail: [], prior: []}));
   // Uneven-month credit: part of the creditor's own fitted share is carried for
   // the debtor, exactly as if the equal split had been transferred temporarily.
@@ -50,16 +67,21 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
     if (remaining) throw Error('repayment-exceeds-creditor-relief');
     tokens.push({carrier: r.claim.debtorId, origin: r.claim.creditorId, units: r.units, claim: structuredClone(r.claim), trail: [], prior: []});
   }
+  // A lowered target defers newest repayment first, and only as far as it was
+  // lowered: a change that keeps the target never consumes planned repayment work.
+  const lowered = Object.fromEntries(c.ids.map(id => [id, Math.max(0, draft.offeredUnits[id] - draft.targetsUnits[id])]));
   for (const transfer of draft.transfers) {
     let remaining = transfer.units;
-    // A lowered debtor limit defers newest repayment first, retaining oldest work.
-    const available = tokens.filter(t => t.units && t.carrier === transfer.fromId).sort((a, b) => {
-      if (!!a.claim !== !!b.claim) return a.claim ? -1 : 1;
-      return a.claim && b.claim ? -compareClaims(a.claim, b.claim) : 0;
-    });
-    for (const t of available) {
-      if (!remaining) break;
-      const take = Math.min(t.units, remaining), moved = part(t, take, t.units - take);
+    const owned = tokens.filter(t => t.units && t.carrier === transfer.fromId);
+    const claims = owned.filter(t => t.claim).sort((a, b) => -compareClaims(a.claim!, b.claim!));
+    const passes = [...claims.map(t => ({t, deferral: true})), ...owned.filter(t => !t.claim).map(t => ({t, deferral: false})),
+      ...claims.map(t => ({t, deferral: false}))];
+    for (const {t, deferral} of passes) {
+      if (!remaining || !t.units) continue;
+      const take = Math.min(t.units, remaining, deferral ? lowered[transfer.fromId] : remaining);
+      if (!take) continue;
+      if (deferral) lowered[transfer.fromId] -= take;
+      const moved = part(t, take, t.units - take);
       // Keep the oldest prefix on the original carrier.
       t.units -= take; if (t.claim && t.units) t.claim = {...t.claim, ...sliceClaim(t.claim, t.units), units: t.units};
       moved.carrier = transfer.toId;
@@ -82,7 +104,7 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
   const plan: CompiledPlan = {repayments: [], deferred: [], intents: [], funding: [], unfundedUnits: {}};
   const reserved: {claim: ClaimRef; units: number}[] = [];
   for (const id of c.ids) {
-    let capacity = check.actualUnits[id] ?? 0;
+    let capacity = capacityUnits[id] ?? 0;
     plan.unfundedUnits[id] = draft.targetsUnits[id] - capacity;
     const owned = tokens.filter(t => t.units && t.carrier === id);
     owned.sort((a, b) => priority(a) - priority(b) || ((a.claim ?? reverseClaim(a)) && (b.claim ?? reverseClaim(b)) ?
@@ -108,7 +130,7 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
       c.projection.projected.claims.some(c => c.debtorId === t.toId && c.creditorId === t.fromId));
     if (reverse.length && (funding.route.length !== 1 || reverse[0].toId !== funding.carrierId)) {
       provenanceReview = true;
-      check.diagnostics.push({code: 'review-compound-reverse-obligation', certainty: 'fact', units: funding.units});
+      diagnostics.push({code: 'review-compound-reverse-obligation', certainty: 'fact', units: funding.units});
       continue;
     }
     const intent = reverse[0]; if (!intent) continue;
@@ -132,7 +154,7 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
     }
     if (intent.units) {
       provenanceReview = true;
-      check.diagnostics.push({code: 'review-unavailable-reverse-obligation', certainty: 'fact', units: intent.units});
+      diagnostics.push({code: 'review-unavailable-reverse-obligation', certainty: 'fact', units: intent.units});
     }
   }
   plan.funding = plan.funding.filter(f => f.units);
@@ -173,7 +195,7 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
     // obligation. Keep its approved trail for review, never return a stale
     // source reference that overlaps a rebound repayment.
     provenanceReview = true;
-    check.diagnostics.push({code: 'review-normalized-deferral-route', certainty: 'fact', units: intent.units});
+    diagnostics.push({code: 'review-normalized-deferral-route', certainty: 'fact', units: intent.units});
   }
   const samePath = (a: ClaimRef, b: ClaimRef) => a.debtorId === b.debtorId && a.creditorId === b.creditorId &&
     a.path.length === b.path.length && a.path.every((s, i) => s.lotId === b.path[i].lotId);
@@ -193,7 +215,7 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
       remaining -= take; entry.units -= take;
       if (entry.units) entry.claim = sliceClaim(entry.claim, entry.units, take);
     }
-    if (remaining) check.diagnostics.push({code: 'repayment-deferred-after-normalization', certainty: 'fact',
+    if (remaining) diagnostics.push({code: 'repayment-deferred-after-normalization', certainty: 'fact',
       engineer: wanted.claim.debtorId, units: remaining});
   }
   // Each unreserved source slice remains outstanding, including permanent edits
@@ -208,5 +230,5 @@ export function compileAllocation(input: AllocationInput, draft: AllocationDraft
     }
     for (const [a, b] of ranges) plan.deferred.push({claim: sliceClaim(candidate, b - a, a), units: b - a});
   }
-  return {check, plan, confirmable: !provenanceReview, diagnostics: check.diagnostics};
+  return {plan, confirmable: !provenanceReview};
 }

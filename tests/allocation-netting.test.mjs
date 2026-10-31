@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {nettedCompensation} from '../lib/allocation/netting.ts';
 
 const order = ['a', 'b', 'c', 'd'];
-const temporary = (fromId, toId, units, kind = 'temporary') => ({id: `${fromId}-${toId}-${units}-${kind}`, fromId, toId, units, kind});
+const temporary = (fromId, toId, units, kind = 'temporary', transferIds = [`${kind}/${fromId}/${toId}`]) => ({fromId, toId, units, kind, transferIds});
+const uneven = (fromId, toId, units) => temporary(fromId, toId, units, 'temporary', [`uneven/${fromId}/${toId}`]);
 const repay = (debtorId, creditorId, units) => ({claim: {debtorId, creditorId, units, path: [], priority: {at: 0, sequence: 0, lotId: 'l'}}, units});
-const lines = (opening, transfers = [], repayments = [], uneven = []) => nettedCompensation(opening, {transfers, repayments, uneven}, order);
+const lines = (opening, transfers = [], repayments = []) => nettedCompensation(opening, {transfers, repayments}, order);
 
 test('a chain collapses: A owes B and B owes C shows A → C only', () => {
   // Opening: A owes B one point. This month B is relieved one point carried by C.
@@ -37,16 +38,19 @@ test('repayment against the net direction carries the full amount forward', () =
     [{debtorId: 'b', creditorId: 'a', units: 4, thisMonth: 0, later: 4}]);
 });
 
-test('uneven-month credit is owed back like a temporary transfer and names its reason', () => {
-  const credit = {id: 'uneven/a/c', fromId: 'a', toId: 'c', units: 1};
-  assert.deepEqual(lines({}, [], [], [credit]), [{debtorId: 'a', creditorId: 'c', units: 1, thisMonth: 0, later: 1, reason: 'uneven'}]);
-  // Opposite directions still cancel; a merged line keeps the reason only for the credited pair.
-  assert.deepEqual(lines({a: 1, c: -1}, [], [], [credit]), []);
-  assert.deepEqual(lines({}, [temporary('a', 'c', 2)], [], [credit]), [{debtorId: 'a', creditorId: 'c', units: 3, thisMonth: 0, later: 3, reason: 'uneven'}]);
-  assert.equal(lines({}, [temporary('b', 'd', 2)], [], [credit]).find(l => l.debtorId === 'b').reason, undefined);
-});
-
 test('ties follow the given order and totals balance', () => {
   const result = lines({a: -2, b: -2, c: 2, d: 2});
   assert.deepEqual(result.map(l => `${l.debtorId}>${l.creditorId}`), ['a>c', 'b>d']);
+});
+
+test('uneven-month credit is an ordinary temporary line with its reason; it cancels and merges like any other', () => {
+  // The compiled intent of an uneven credit carries the system counterpart id.
+  assert.deepEqual(lines({}, [uneven('a', 'c', 1)]), [{debtorId: 'a', creditorId: 'c', units: 1, thisMonth: 0, later: 1, reason: 'uneven'}]);
+  // The debtor's old claim on the creditor cancels the half point.
+  assert.deepEqual(lines({a: 1, c: -1}, [uneven('a', 'c', 1)]), []);
+  // A dragged point in the same direction merges into one line; the reason names the credit it includes.
+  assert.deepEqual(lines({}, [uneven('a', 'c', 1), temporary('a', 'c', 2)]),
+    [{debtorId: 'a', creditorId: 'c', units: 3, thisMonth: 0, later: 3, reason: 'uneven'}]);
+  // A collapsed chain through the creditor carries no reason of its own.
+  assert.deepEqual(lines({c: -2, d: 2}, [uneven('a', 'c', 2)]), [{debtorId: 'a', creditorId: 'd', units: 2, thisMonth: 0, later: 2}]);
 });

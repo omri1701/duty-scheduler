@@ -106,6 +106,7 @@
     "schemas/functions/duty_private/allocation_uneven.sql",
     "schemas/functions/duty_private/allocation_partition.sql",
     "schemas/functions/duty_private/allocation_rebind.sql",
+    "schemas/functions/duty_private/allocation_transfers.sql",
     "schemas/functions/duty_private/add_temporary_member.sql",
     "schemas/functions/duty_private/rename_temporary_member.sql",
     "schemas/functions/public/duty_add_temporary_member.sql",

@@ -15,9 +15,20 @@ reviewed source facts are compared before confirmation. Stale writes are never r
 
 `duty_allocations` holds one snapshot per owner/draft or publication, using the
 existing NULL-publication convention. It stores the original ordinary baseline,
-confirmed half-unit targets, repayment references, ordered counterpart transfers,
+confirmed half-unit targets, repayment references, one net temporary and one net
+permanent change per member, the drag pairs, the derived transfer list,
 explicit primary locks, rule-specific approvals, captured accounting/calendar
-fingerprints, generation seed/metrics and publication ancestry. Only managers can
+fingerprints, generation seed/metrics and publication ancestry. The
+`20261030230832_per_person_allocation_changes.sql` migration adds
+`duty_private.allocation_transfers`, replaces `allocation_compile` and
+`confirm_allocation`, and converts working drafts recorded as click histories
+(their transfers become routing pairs, their nets are recomputed); a draft the
+new rules cannot express keeps its shape and needs a new proposal, and published
+snapshots and restored copies are not touched. The
+`20261031103000_uneven_month_credit.sql` migration adds
+`duty_private.allocation_uneven` and the uneven-credit checks to
+`allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
+without touching stored rows. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
 `duty_assignments.locked` persists a primary lock even before the first allocation.
@@ -59,23 +70,37 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
 * `duty_confirm_allocation(p_month, p_allocation, p_locks, p_approvals,
   p_revision, p_fingerprint)` persists explicitly reviewed input for an open draft.
   It independently checks denomination, membership, nominal totals, actual source
-  claims, exclusive source intervals, counterpart conservation, locked floors and
-  exact exception scopes. An independent canonical-weight partition search verifies
-  minimum ordinary squared cost; the baseline cannot be inflated to manufacture
-  creditor relief or changed later while the calendar/participants remain unchanged.
-  When that partition is uneven, `p_allocation.uneven` must equal exactly what
-  `duty_private.allocation_uneven(facts, baseline)` derives (the fitted excess over
-  the plain equal split, debtors with the fewest points most senior first,
-  creditors with the most points most senior first); a missing, inflated,
-  redirected or extra entry fails with `invalid-uneven-credit`, and ordinary
-  transfers may not use the reserved `uneven/` identity. The partition check
-  accepts any holder of each fitted share, so the credit follows whoever the
-  confirmed baseline makes carry the larger share; its total is invariant. `allocation_compile`
-  then carries that part of the creditor's own share for the debtor at confirm
-  and publication, so the published intent is an ordinary temporary claim and
-  `duty_balance` reports it as kind `uneven`. Snapshots saved before this check
-  simply have no credit; confirming them again requires a new proposal.
-  Manager target deviations require explicit temporary/permanent counterparts.
+  claims, exclusive source intervals, the per-member changes (each kind balanced,
+  explaining every target exactly, fair + Permanent ≥ 0 and offered + Permanent
+  ≥ 0), counterpart conservation, locked floors and exact exception scopes, and
+  requires the transfer list to equal `duty_private.allocation_transfers` under the
+  current seniority: the same derivation as the browser (pairs first, then netted),
+  so no transfer list can show relief the per-person nets do not. When the
+  partition is uneven, `p_allocation.uneven` must equal exactly what
+  `duty_private.allocation_uneven(facts, baseline, changes)` derives: the fitted
+  excess over the plain equal split that each creditor still carries after its
+  net permanent loss, owed by the members still below the split after their net
+  permanent gain (debtors with the fewest points most senior first, creditors
+  with the most points most senior first), paired under the current seniority.
+  A missing, stale, inflated, redirected or extra entry fails with
+  `invalid-uneven-credit`, and ordinary transfers may not use the reserved
+  `uneven/` identity. The partition check accepts any holder of each fitted
+  share, so the credit follows whoever the confirmed baseline makes carry the
+  larger share; its total is invariant. `allocation_compile` then carries that
+  part of the creditor's own share for the debtor at confirm and publication, so
+  the published intent is an ordinary temporary claim and `duty_balance` reports
+  it as kind `uneven`. Publication applies the confirmed list as stored; only
+  confirm re-derives, so a seniority reorder after confirmation re-pairs the
+  credit on the next review instead of blocking the month, and the browser keeps
+  the confirmed baseline on a new proposal. Snapshots saved before this check
+  simply have no credit. Client publication metadata (a month without a
+  confirmed allocation) may not use the reserved `allocation/` intent ids or
+  `uneven/` counterparts, so nothing a manager authors can appear as system
+  credit. An independent
+  canonical-weight partition search verifies minimum ordinary squared cost; the
+  baseline cannot be inflated to manufacture creditor relief or changed later while
+  the calendar/participants remain unchanged. Manager point deviations are the
+  members' net temporary/permanent changes.
 * `duty_save_generation(p_month, p_assignments, p_revision, p_fingerprint,
   p_seed)` accepts only a primary-assignment map and preserved secondaries. It
   independently verifies every scheduling invariant and allocation budget. It
@@ -92,7 +117,10 @@ The existing read-only inspection guard applies, including context reconciliatio
 ## Accounting and lineage
 
 The server compiles allocation tokens from the saved baseline, real unreserved
-claims and ordered transfers. Drafts post no discretionary ledger events. Publish
+claims and the derived transfers. A transfer out of a member takes planned
+repayment tokens (newest first) only as far as that member's target was lowered;
+a change that keeps the target moves ordinary responsibility. Drafts post no
+discretionary ledger events. Publish
 binds compiled routes and repayments to disjoint real primary duty capacity, then
 uses the existing authoritative transition/normalization/reservation validator.
 A temporary A→B followed by permanent B→C charges A→B once, funded by C's work.
@@ -140,7 +168,9 @@ node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
 The generation fixture rolls back every synthetic case. It covers authorization,
 malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,
 rollback during publication, partial drafts, cutoff, copied/deleted lineage,
-exclusive source budgets, routed publication and exact TypeScript replay. Separate
+exclusive source budgets, routed publication, exact TypeScript replay, the
+per-person floors, refusal of a transfer list that differs from the derivation,
+SQL/TypeScript derivation parity on random states and the click-history conversion. Separate
 sessions exercise competing saves, demotion and cutoff during real lock waits.
 The existing fresh/upgrade, security, swap and compensation tests remain required;
 `scripts/database-upgrade.mjs` checks populated upgrade preservation and disposable

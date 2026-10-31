@@ -4,19 +4,30 @@
 -- (debtors: fewest points, most senior first; creditors: most points, most
 -- senior first); duty_confirm_allocation refuses any other set, allocation_compile
 -- carries the credit at confirm and publication, allocation_bind records it with
--- the ordinary counterpart shape, and duty_balance names it as kind 'uneven'.
--- Snapshots saved before this migration have no credit and stay valid.
+-- the ordinary counterpart shape, duty_balance names it as kind 'uneven', and
+-- compensation_publication refuses client metadata that borrows the reserved
+-- allocation/ and uneven/ identities.
+-- The credit follows the real permanent load (decision 2026-10-31): a creditor is
+-- credited only for the extra it still carries after its net permanent loss, a
+-- debtor owes only while still below the split after its net permanent gain, and
+-- the server derives the pairing under the current seniority, so a reorder after
+-- confirmation never traps the month. Snapshots saved before this migration have
+-- no credit and stay valid.
+
 -- System credit for an indivisible month (decision 2026-10-30): the fitted
 -- ordinary baseline's excess over the plain equal split, owed as temporary
 -- transfers. The baseline is compared rank by rank with the sorted plain split,
 -- so the remainder choice itself never creates debt; only the fit's deviation
 -- does. Among equal points the newest member takes the kinder plain share, so the
--- more senior one carries the difference. Debtors: fewest points, most senior
--- first. Creditors: most points, most senior first. Pure and deterministic; the
--- browser's unevenTransfers derives the same list and confirm refuses any other.
-CREATE FUNCTION duty_private.allocation_uneven(f jsonb, baseline jsonb) RETURNS jsonb
+-- more senior one carries the difference. A creditor is credited only for the
+-- extra it still carries after its net permanent loss, and a debtor owes only
+-- while it still sits below the split after its net permanent gain (decision
+-- 2026-10-31). Debtors: fewest points, most senior first. Creditors: most
+-- points, most senior first. Pure and deterministic; the browser's
+-- unevenTransfers derives the same list and confirm refuses any other.
+CREATE FUNCTION duty_private.allocation_uneven(f jsonb, baseline jsonb, changes jsonb) RETURNS jsonb
  LANGUAGE plpgsql IMMUTABLE SET search_path TO '' AS $$
-declare ids text[]; n integer; total bigint:=0; q bigint:=0; w bigint; share bigint; remainder integer; plain bigint[]:='{}'; points bigint[]:='{}';
+declare ids text[]; n integer; total bigint:=0; q bigint:=0; w bigint; share bigint; remainder integer; plain bigint[]:='{}'; points bigint[]:='{}'; perm bigint[]:='{}';
  excess bigint[]; deficit bigint[]; creditors integer[]; debtors integer[]; c integer; d integer; k integer; amount bigint; result jsonb:='[]';
 begin
  select array_agg(x order by i) into ids from jsonb_array_elements_text(f->'seniority') with ordinality a(x,i);
@@ -28,14 +39,15 @@ begin
  for k in 1..n loop
   plain[k]:=share+case when k>n-remainder then q else 0 end;
   points[k]:=duty_private.compensation_units(baseline->ids[k]);
+  perm[k]:=coalesce((changes->ids[k]->>'permanent')::numeric::bigint,0);
  end loop;
- select array_agg(greatest(0,points[i]-plain[n+1-rank]) order by i) into excess
+ select array_agg(greatest(0,points[i]-plain[n+1-rank]-greatest(0,-perm[i])) order by i) into excess
   from (select i,row_number() over (order by points[i] desc,i desc) rank from generate_series(1,n) i) r;
- select array_agg(greatest(0,plain[rank]-points[i]) order by i) into deficit
+ select array_agg(greatest(0,plain[rank]-points[i]-greatest(0,perm[i])) order by i) into deficit
   from (select i,row_number() over (order by points[i],i desc) rank from generate_series(1,n) i) r;
  select array_agg(i order by points[i] desc,i) into creditors from generate_series(1,n) i where excess[i]>0;
  select array_agg(i order by points[i],i) into debtors from generate_series(1,n) i where deficit[i]>0;
- if creditors is null then return result; end if;
+ if creditors is null or debtors is null then return result; end if;
  foreach c in array creditors loop
   foreach d in array debtors loop
    exit when excess[c]=0;
@@ -48,23 +60,29 @@ begin
  return result;
 end $$;
 
-REVOKE ALL ON FUNCTION duty_private.allocation_uneven(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.allocation_uneven(f jsonb, baseline jsonb, changes jsonb) FROM PUBLIC, anon, authenticated, service_role;
 
 -- Reconstruct allocation tokens from reviewed counterpart operations. All claim
 -- capacity comes from the server's projected ledger, excluding other reservations.
+-- One net temporary and one net permanent change per member must explain the
+-- targets exactly, balance to zero and respect the floors (a permanent change
+-- never takes away the fair share or work already given as planned relief).
+-- duty_confirm_allocation additionally requires the transfers to be the exact
+-- derivation of those changes and the recorded pairs.
 CREATE OR REPLACE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
  LANGUAGE plpgsql STABLE SET search_path TO '' AS $$
 #variable_conflict use_column
-declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_candidates(s); expected jsonb; table_value jsonb;
- tokens jsonb:='[]'; reserved jsonb:='[]'; funding jsonb:='[]'; used jsonb:='[]'; seen text[]:='{}';
- r jsonb; c jsonb; t jsonb; u jsonb; moved jsonb; transfer jsonb; route jsonb; leg jsonb; ref jsonb; ranges int8multirange; part int8range;
+declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_candidates(s); expected jsonb; table_value jsonb; change jsonb;
+ tokens jsonb:='[]'; reserved jsonb:='[]'; funding jsonb:='[]'; used jsonb:='[]'; seen text[]:='{}'; lowered jsonb:='{}';
+ r jsonb; c jsonb; t jsonb; moved jsonb; transfer jsonb; route jsonb; leg jsonb; ref jsonb; ranges int8multirange; part int8range; v numeric;
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
+ pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','transfers','pending','sourceKey','uneven']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
+  or (draft ? 'uneven' and jsonb_typeof(draft->'uneven') IS DISTINCT FROM 'array')
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
-  or jsonb_typeof(coalesce(draft->'uneven','[]')) IS DISTINCT FROM 'array'
-  or draft->'pending' IS DISTINCT FROM '[]'::jsonb then raise exception 'invalid-confirmed-allocation'; end if;
+  or jsonb_typeof(draft->'pairs') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'changes') IS DISTINCT FROM 'object' then raise exception 'invalid-confirmed-allocation'; end if;
  foreach name in array array['baselineUnits','offeredUnits','targetsUnits'] loop
   table_value:=draft->name;
   if jsonb_typeof(table_value) IS DISTINCT FROM 'object' or (select count(*) from jsonb_each(table_value))<>jsonb_array_length(ids)
@@ -72,22 +90,46 @@ begin
   total:=0; for id in select jsonb_array_elements_text(ids) loop total:=total+duty_private.compensation_units(table_value->id); end loop;
   if total<>(select sum((x->>'units')::bigint) from jsonb_array_elements(f->'duties') x) then raise exception 'invalid-allocation-total'; end if;
  end loop;
+ if (select count(*) from jsonb_each(draft->'changes'))<>jsonb_array_length(ids) or exists(select 1 from jsonb_each(draft->'changes') where not ids ? key) then raise exception 'invalid-allocation-changes'; end if;
+ for id in select jsonb_array_elements_text(ids) loop
+  change:=draft->'changes'->id;
+  if jsonb_typeof(change) IS DISTINCT FROM 'object' or change-array['temporary','permanent']<>'{}' then raise exception 'invalid-allocation-changes'; end if;
+  foreach name in array array['temporary','permanent'] loop
+   if jsonb_typeof(change->name) IS DISTINCT FROM 'number' then raise exception 'invalid-allocation-changes'; end if;
+   v:=(change->>name)::numeric;
+   if v<>trunc(v) or abs(v)>1000000000 then raise exception 'invalid-allocation-changes'; end if;
+  end loop;
+  temporary_total:=temporary_total+(change->>'temporary')::numeric::bigint; permanent_total:=permanent_total+(change->>'permanent')::numeric::bigint;
+  if (change->>'permanent')::numeric::bigint< -least((draft->'baselineUnits'->>id)::numeric::bigint,(draft->'offeredUnits'->>id)::numeric::bigint) then raise exception 'permanent-below-fair-share'; end if;
+  if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
+  lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
+ end loop;
+ if temporary_total<>0 or permanent_total<>0 then raise exception 'unbalanced-allocation-changes'; end if;
+ for r in select value from jsonb_array_elements(draft->'pairs') loop
+  if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['id','fromId','toId','units','kind']<>'{}' or jsonb_typeof(r->'id') IS DISTINCT FROM 'string'
+   or coalesce(btrim(r->>'id'),'')='' or r->>'id'=any(seen) or coalesce(r->>'kind','') not in ('temporary','permanent')
+   or not ids ? (r->>'fromId') or not ids ? (r->>'toId') or r->>'fromId'=r->>'toId' then raise exception 'invalid-allocation-pair'; end if;
+  perform duty_private.compensation_units(r->'units',true); seen:=array_append(seen,r->>'id');
+ end loop;
+ seen:='{}';
  expected:=draft->'baselineUnits';
  for id in select x from jsonb_array_elements_text(ids) x order by x COLLATE "C" loop
   tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',id,'origin',id,'units',expected->id,'claim',null,'trail','[]'::jsonb,'prior','[]'::jsonb));
  end loop;
- -- Uneven-month credit (verified by confirm_allocation against the baseline):
- -- part of the creditor's own fitted share is carried for the debtor, exactly as
- -- if the equal split had been transferred temporarily. Targets are unchanged.
- for u in select value from jsonb_array_elements(coalesce(draft->'uneven','[]')) loop
-  if jsonb_typeof(u) IS DISTINCT FROM 'object' or u-array['id','fromId','toId','units']<>'{}' or jsonb_typeof(u->'id') IS DISTINCT FROM 'string'
-   or u->>'id' IS DISTINCT FROM 'uneven/'||(u->>'fromId')||'/'||(u->>'toId') or u->>'id'=any(seen) or not ids ? (u->>'fromId') or not ids ? (u->>'toId') or u->>'fromId'=u->>'toId' then raise exception 'invalid-uneven-credit'; end if;
-  seen:=array_append(seen,u->>'id'); n:=duty_private.compensation_units(u->'units',true);
-  select ordinality::integer-1 into position from jsonb_array_elements(tokens) with ordinality
-   where value->>'carrier'=u->>'toId' and value->>'origin'=u->>'toId' and value->'claim'='null' and value->'trail'='[]'::jsonb and (value->>'units')::bigint>=n limit 1;
+ -- Uneven-month credit (decision 2026-10-30): part of the creditor's own fitted
+ -- share is carried for the debtor, exactly as if the equal split had been
+ -- transferred temporarily. Targets are unchanged. duty_confirm_allocation
+ -- requires the stored list to be exactly duty_private.allocation_uneven; a
+ -- snapshot saved before the credit existed carries none.
+ for r in select value from jsonb_array_elements(coalesce(draft->'uneven','[]'::jsonb)) loop
+  if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['id','fromId','toId','units']<>'{}' or r->>'id' IS DISTINCT FROM 'uneven/'||(r->>'fromId')||'/'||(r->>'toId')
+   or r->>'id'=any(seen) or not ids ? (r->>'fromId') or not ids ? (r->>'toId') or r->>'fromId'=r->>'toId' then raise exception 'invalid-uneven-credit'; end if;
+  seen:=array_append(seen,r->>'id'); n:=duty_private.compensation_units(r->'units',true);
+  select ordinality::integer-1 into position from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
+   where value->>'carrier'=r->>'toId' and value->>'origin'=r->>'toId' and value->'claim'='null' and value->'trail'='[]'::jsonb and (value->>'units')::bigint>=n limit 1;
   if position is null then raise exception 'uneven-credit-exceeds-share'; end if;
   tokens:=jsonb_set(tokens,array[position::text,'units'],to_jsonb((tokens->position->>'units')::bigint-n));
-  tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',u->'toId','origin',u->'fromId','units',n,'claim',null,'trail',jsonb_build_array(u->'id'),'prior','[]'::jsonb));
+  tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',r->'toId','origin',r->'fromId','units',n,'claim',null,'trail',jsonb_build_array(r->'id'),'prior','[]'::jsonb));
  end loop;
  for r in select value from jsonb_array_elements(draft->'repayments') loop
   if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['claim','units']<>'{}' then raise exception 'invalid-repayment-source'; end if;
@@ -118,27 +160,38 @@ begin
   seen:=array_append(seen,transfer->>'id'); remaining:=duty_private.compensation_units(transfer->'units',true);
   expected:=jsonb_set(expected,array[transfer->>'fromId'],to_jsonb((expected->>(transfer->>'fromId'))::bigint-remaining));
   expected:=jsonb_set(expected,array[transfer->>'toId'],to_jsonb((expected->>(transfer->>'toId'))::bigint+remaining));
-  -- Deferral consumes newest repayment tokens first, then ordinary responsibility.
-  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality
-   where value->>'carrier'=transfer->>'fromId' and (value->>'units')::bigint>0
-   order by (value->'claim'<>'null') desc,(value->'claim'->'priority'->>'at')::bigint desc,
-    (value->'claim'->'priority'->>'sequence')::bigint desc,value->'claim'->'priority'->>'lotId' COLLATE "C" desc,value->'claim'->>'id' COLLATE "C" desc,ordinality loop
+  -- A lowered target defers newest repayment first, and only as far as it was
+  -- lowered (pass 1); then ordinary responsibility moves (pass 2). Planned
+  -- repayment work never moves for a change that keeps the target (pass 3 is a
+  -- safety net for snapshots outside the floors).
+  for pass in 1..3 loop
+   for position in select ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
+    where value->>'carrier'=transfer->>'fromId' and (value->>'units')::bigint>0 and ((pass in (1,3) and value->'claim'<>'null') or (pass=2 and value->'claim'='null'))
+    order by (value->'claim'->'priority'->>'at')::bigint desc,(value->'claim'->'priority'->>'sequence')::bigint desc,
+     value->'claim'->'priority'->>'lotId' COLLATE "C" desc,value->'claim'->>'id' COLLATE "C" desc,ordinality loop
+    if remaining=0 then exit; end if;
+    t:=tokens->position;
+    take:=least(remaining,(t->>'units')::bigint);
+    if pass=1 then take:=least(take,(lowered->>(transfer->>'fromId'))::bigint); end if;
+    if take<=0 then continue; end if;
+    if pass=1 then lowered:=jsonb_set(lowered,array[transfer->>'fromId'],to_jsonb((lowered->>(transfer->>'fromId'))::bigint-take)); end if;
+    remaining:=remaining-take;
+    moved:=duty_private.allocation_part(t,take,(t->>'units')::bigint-take);
+    if (t->>'units')::bigint>take then tokens:=jsonb_set(tokens,array[position::text],duty_private.allocation_part(t,(t->>'units')::bigint-take));
+    else tokens:=jsonb_set(tokens,array[position::text,'units'],'0'); end if;
+    moved:=jsonb_set(moved,'{carrier}',transfer->'toId');
+    if transfer->>'kind'='permanent' then
+     if jsonb_array_length(moved->'trail')>0 and moved->>'origin'<>transfer->>'fromId' then
+      leg:=jsonb_build_object('fromId',moved->'origin','toId',transfer->'fromId','units',take,'kind','temporary','transferIds',moved->'trail');
+      if moved->'claim'<>'null' then leg:=leg||jsonb_build_object('deferredClaim',duty_private.compensation_slice(moved->'claim',take)); end if;
+      moved:=jsonb_set(moved,'{prior}',(moved->'prior')||jsonb_build_array(leg));
+     end if;
+     moved:=moved||jsonb_build_object('origin',transfer->'toId','claim',null,'trail','[]'::jsonb,'prior',(moved->'prior')||jsonb_build_array(
+      jsonb_build_object('fromId',transfer->'fromId','toId',transfer->'toId','kind','permanent','units',take,'transferIds',jsonb_build_array(transfer->'id'))));
+    else moved:=jsonb_set(moved,'{trail}',(moved->'trail')||jsonb_build_array(transfer->'id')); end if;
+    tokens:=tokens||jsonb_build_array(moved);
+   end loop;
    if remaining=0 then exit; end if;
-   take:=least(remaining,(t->>'units')::bigint); remaining:=remaining-take;
-   moved:=duty_private.allocation_part(t,take,(t->>'units')::bigint-take);
-   if (t->>'units')::bigint>take then tokens:=jsonb_set(tokens,array[position::text],duty_private.allocation_part(t,(t->>'units')::bigint-take));
-   else tokens:=jsonb_set(tokens,array[position::text,'units'],'0'); end if;
-   moved:=jsonb_set(moved,'{carrier}',transfer->'toId');
-   if transfer->>'kind'='permanent' then
-    if jsonb_array_length(moved->'trail')>0 and moved->>'origin'<>transfer->>'fromId' then
-     leg:=jsonb_build_object('fromId',moved->'origin','toId',transfer->'fromId','units',take,'kind','temporary','transferIds',moved->'trail');
-     if moved->'claim'<>'null' then leg:=leg||jsonb_build_object('deferredClaim',duty_private.compensation_slice(moved->'claim',take)); end if;
-     moved:=jsonb_set(moved,'{prior}',(moved->'prior')||jsonb_build_array(leg));
-    end if;
-    moved:=moved||jsonb_build_object('origin',transfer->'toId','claim',null,'trail','[]'::jsonb,'prior',(moved->'prior')||jsonb_build_array(
-     jsonb_build_object('fromId',transfer->'fromId','toId',transfer->'toId','kind','permanent','units',take,'transferIds',jsonb_build_array(transfer->'id'))));
-   else moved:=jsonb_set(moved,'{trail}',(moved->'trail')||jsonb_build_array(transfer->'id')); end if;
-   tokens:=tokens||jsonb_build_array(moved);
   end loop;
   if remaining<>0 then raise exception 'transfer-exceeds-source-target'; end if;
  end loop;
@@ -292,9 +345,14 @@ begin
  if old_meta.source_publication_id is null or old_meta.allocation IS DISTINCT FROM p_allocation then
   perform duty_private.allocation_compile(facts,p_allocation,checked->'actualUnits',projected);
   perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits');
-  -- Indivisible months credit exactly the fitted excess over the plain equal split;
-  -- the manager cannot add, enlarge, redirect or drop that system credit.
-  if coalesce(p_allocation->'uneven','[]'::jsonb)<>duty_private.allocation_uneven(facts,p_allocation->'baselineUnits') then raise exception 'invalid-uneven-credit'; end if;
+  -- The transfer list is derived, never chosen: the per-person changes and the
+  -- recorded pairs must give exactly this list under the current seniority.
+  if p_allocation->'transfers' IS DISTINCT FROM duty_private.allocation_transfers(facts->'seniority',p_allocation->'changes',p_allocation->'pairs') then raise exception 'invalid-derived-transfers'; end if;
+  -- Uneven-month credit is derived too: exactly the fitted baseline's excess over the
+  -- plain split that each creditor still carries after permanent changes, owed by the
+  -- members still below it, paired under the current seniority. A manager can neither
+  -- add, enlarge, redirect nor drop it.
+  if coalesce(p_allocation->'uneven','[]'::jsonb) IS DISTINCT FROM duty_private.allocation_uneven(facts,p_allocation->'baselineUnits',p_allocation->'changes') then raise exception 'invalid-uneven-credit'; end if;
   if old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
    and (select array_agg(key order by key) from jsonb_each(old_meta.allocation->'baselineUnits'))=(select array_agg(key order by key) from jsonb_each(p_allocation->'baselineUnits'))
    and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then raise exception 'Ordinary baseline is immutable. Classify target changes as transfers.'; end if;
@@ -361,4 +419,83 @@ begin
   from jsonb_array_elements(projected->'claims') c where m.key in (c->>'debtorId',c->>'creditorId')),0))
   from jsonb_each(projected->'members') m where manager or m.key=me),'{}');
  return jsonb_build_object('net',net,'lines',lines);
+end $$;
+
+CREATE OR REPLACE FUNCTION duty_private.compensation_publication(month text, publication uuid, metadata jsonb DEFAULT NULL, deleting boolean DEFAULT false) RETURNS void
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
+#variable_conflict use_column
+declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb;
+begin
+ perform 1 from public.duty_workspace where id for update;
+ s:=duty_private.compensation_state(); before_pub:=s->'publications'->month;
+ instant:=greatest(duty_private.compensation_now(),coalesce((s->'events'->-1->>'at')::bigint,0));
+ s:=duty_private.compensation_reconcile(s,instant);
+ -- Ordinary copies retain accounting metadata and contribution identities.
+ if before_pub->>'id'=publication::text then return; end if;
+ if before_pub is null and publication is null then return; end if;
+ after_pub:=duty_private.compensation_snapshot(publication);
+ if deleting and after_pub is not null then
+  select x->'operation'->'after' into known from jsonb_array_elements(s->'events') x where x->'operation'->>'kind'='publication' and x->'operation'->'after'->>'id'=publication::text limit 1;
+  -- Pre-cutover history was never committed in this ledger. For an unknown
+  -- version compare only this live transition; never replay its old origins.
+  if known is not null then after_pub:=known; end if;
+ end if;
+ if after_pub is not null and known is null then
+  atoms:=duty_private.compensation_atoms(after_pub); old_atoms:=duty_private.compensation_atoms(before_pub);
+  select coalesce(jsonb_agg(r order by r->>'id' COLLATE "C"),'[]') into reservations from jsonb_array_elements(coalesce(before_pub->'reservations','[]')) r
+   where atoms->(r->'capacity'->>'date')->>'primaryId'=old_atoms->(r->'capacity'->>'date')->>'primaryId'
+   and (r->'capacity'->>'offset')::bigint+(r->'capacity'->>'units')::bigint<=(atoms->(r->'capacity'->>'date')->>'units')::bigint
+   and ((atoms->(r->'capacity'->>'date')->>'endInstantMs')::bigint>instant
+    or atoms->(r->'capacity'->>'date')->'endInstantMs'=old_atoms->(r->'capacity'->>'date')->'endInstantMs');
+  after_pub:=after_pub||jsonb_build_object('reservations',reservations,'intents',coalesce(before_pub->'intents','[]'));
+  -- Existing rota RPCs permit historical manual edits. Keep already completed
+  -- accounting facts unchanged while recording the new physical version ID.
+  if before_pub is not null then
+   after_pub:=jsonb_set(after_pub,'{duties}',coalesce((select jsonb_agg(d order by d->>'startDate') from (
+    select d from jsonb_array_elements(before_pub->'duties') d where (extract(epoch from (((d->>'endDate')::date+time '09:00') at time zone 'Asia/Jerusalem'))*1000)::bigint<=instant
+    union all select d from jsonb_array_elements(after_pub->'duties') d where not exists(
+     select 1 from jsonb_array_elements(before_pub->'duties') old where (extract(epoch from (((old->>'endDate')::date+time '09:00') at time zone 'Asia/Jerusalem'))*1000)::bigint<=instant
+     and (d->>'startDate')::date<(old->>'endDate')::date and (old->>'startDate')::date<(d->>'endDate')::date)
+    -- A new combined weekend may overlap only a completed Friday. Preserve its
+    -- pending Saturday atom and its real Sunday handover instead of dropping it.
+    union all select jsonb_build_object('startDate',day::date,'endDate',day::date+1,'primaryId',d->'primaryId','units',1)
+    from jsonb_array_elements(after_pub->'duties') d cross join lateral generate_series((d->>'startDate')::date,(d->>'endDate')::date-1,interval '1 day') day
+    where (d->>'endDate')::date=(d->>'startDate')::date+2
+     and exists(select 1 from jsonb_array_elements(before_pub->'duties') old where (extract(epoch from (((old->>'endDate')::date+time '09:00') at time zone 'Asia/Jerusalem'))*1000)::bigint<=instant
+      and (d->>'startDate')::date<(old->>'endDate')::date and (old->>'startDate')::date<(d->>'endDate')::date)
+     and not exists(select 1 from jsonb_array_elements(before_pub->'duties') old where (extract(epoch from (((old->>'endDate')::date+time '09:00') at time zone 'Asia/Jerusalem'))*1000)::bigint<=instant
+      and day::date>=(old->>'startDate')::date and day::date<(old->>'endDate')::date)
+   ) a),'[]'));
+  end if;
+  select * into allocation from public.duty_allocations where publication_id=publication and duty_allocations.month=month;
+  if allocation.month is not null then
+   if metadata is not null then raise exception 'Allocation accounting is server-owned'; end if;
+   if allocation.source_publication_id is null then
+    if allocation.accounting_fingerprint<>md5((s->'events')::text) then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+    if before_pub is not null and allocation.allocation->'transfers'<>'[]' then raise exception 'Review published transfer lineage before changing allocation'; end if;
+    facts:=duty_private.generation_facts(month);
+    metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);
+   elsif allocation.origin<>'swap' then
+    metadata:=duty_private.allocation_rebind(s,after_pub,allocation.source_publication_id,allocation.allocation_id,instant);
+   end if;
+  end if;
+  -- Client metadata (a month without a confirmed allocation) cannot borrow the
+  -- identities the server reserves for compiled allocation intent and system
+  -- uneven-month credit, which duty_balance would otherwise label as such.
+  if allocation.month is null and metadata is not null and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(metadata->'intents')='array' then metadata->'intents' else '[]'::jsonb end) i
+   where jsonb_typeof(i)='object' and not coalesce(s->'intents' ? (i->>'id'),false) and (starts_with(coalesce(i->>'id',''),'allocation/')
+    or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(i->'route')='array' then i->'route' else '[]'::jsonb end) l where jsonb_typeof(l)='object'
+     and (exists(select 1 from jsonb_array_elements(case when jsonb_typeof(l->'transferIds')='array' then l->'transferIds' else '[]'::jsonb end) t where starts_with(coalesce(t#>>'{}',''),'uneven/'))
+      or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(l->'counterparts')='array' then l->'counterparts' else '[]'::jsonb end) c where starts_with(coalesce(c->>'id',''),'uneven/')))))) then raise exception 'invalid-intent'; end if;
+  if metadata is not null then
+   if jsonb_typeof(metadata) IS DISTINCT FROM 'object' or metadata - array['fingerprint','reservations','intents']<>'{}' then raise exception 'Invalid compensation metadata'; end if;
+   if metadata->>'fingerprint' is distinct from md5((s->'events')::text) then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+   after_pub:=after_pub||jsonb_build_object('reservations',coalesce(metadata->'reservations',reservations),'intents',coalesce(metadata->'intents',before_pub->'intents','[]'));
+  end if;
+ end if;
+ op:=jsonb_build_object('kind','publication','month',month,'beforeId',before_pub->'id','after',after_pub);
+ -- Unknown pre-cutover versions preserve completed facts below the ordinary
+ -- transition rules. Known deletion uses the core's terminal handling.
+ if deleting and (after_pub is null or known is not null) and before_pub is not null then op:=op||'{"mode":"delete"}'; end if;
+ perform duty_private.compensation_append(s,op,'publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1),instant,coalesce(auth.uid()::text,'system'));
 end $$;

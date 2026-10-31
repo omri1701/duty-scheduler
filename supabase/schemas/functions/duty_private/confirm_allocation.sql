@@ -18,9 +18,14 @@ begin
  if old_meta.source_publication_id is null or old_meta.allocation IS DISTINCT FROM p_allocation then
   perform duty_private.allocation_compile(facts,p_allocation,checked->'actualUnits',projected);
   perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits');
-  -- Indivisible months credit exactly the fitted excess over the plain equal split;
-  -- the manager cannot add, enlarge, redirect or drop that system credit.
-  if coalesce(p_allocation->'uneven','[]'::jsonb)<>duty_private.allocation_uneven(facts,p_allocation->'baselineUnits') then raise exception 'invalid-uneven-credit'; end if;
+  -- The transfer list is derived, never chosen: the per-person changes and the
+  -- recorded pairs must give exactly this list under the current seniority.
+  if p_allocation->'transfers' IS DISTINCT FROM duty_private.allocation_transfers(facts->'seniority',p_allocation->'changes',p_allocation->'pairs') then raise exception 'invalid-derived-transfers'; end if;
+  -- Uneven-month credit is derived too: exactly the fitted baseline's excess over the
+  -- plain split that each creditor still carries after permanent changes, owed by the
+  -- members still below it, paired under the current seniority. A manager can neither
+  -- add, enlarge, redirect nor drop it.
+  if coalesce(p_allocation->'uneven','[]'::jsonb) IS DISTINCT FROM duty_private.allocation_uneven(facts,p_allocation->'baselineUnits',p_allocation->'changes') then raise exception 'invalid-uneven-credit'; end if;
   if old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
    and (select array_agg(key order by key) from jsonb_each(old_meta.allocation->'baselineUnits'))=(select array_agg(key order by key) from jsonb_each(p_allocation->'baselineUnits'))
    and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then raise exception 'Ordinary baseline is immutable. Classify target changes as transfers.'; end if;

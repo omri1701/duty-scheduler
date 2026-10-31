@@ -30,7 +30,7 @@ try{
  insert into ${schema}.duty_members(id,email,name,role,status,active) values('${manager}','gen-race-manager@example.invalid','Manager','admin','approved',true),('${other}','gen-race-other@example.invalid','Other','admin','approved',true);
  insert into ${schema}.duty_months(month,deadline) values('2027-12','2027-11-24');commit;`);
  let captured=await context();const weights=captured.facts.duties.reduce((n,d)=>n+d.units,0),targets={[manager]:Math.ceil(weights/4)*2,[other]:Math.floor(weights/4)*2};
- const draft={baselineUnits:targets,offeredUnits:targets,targetsUnits:targets,repayments:[],transfers:[],pending:[],sourceKey:'race-confirmation'};
+ const draft={baselineUnits:targets,offeredUnits:targets,targetsUnits:targets,repayments:[],changes:{[manager]:{temporary:0,permanent:0},[other]:{temporary:0,permanent:0}},pairs:[],transfers:[],sourceKey:'race-confirmation'};
  captured=JSON.parse(await checked(auth(`select ${schema}.duty_confirm_allocation('2027-12',${quote(draft)},'[]','[]',${captured.revision},'${captured.fingerprint}')`)));
  const assignments=Object.fromEntries(captured.facts.duties.map(d=>[d.id,{primary:null}]));
  const save=(c,revision=c.revision)=>auth(`select ${schema}.duty_save_generation('2027-12',${quote(assignments)},${revision},'${c.fingerprint}',17)`);

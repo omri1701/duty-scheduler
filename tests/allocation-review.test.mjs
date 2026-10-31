@@ -11,7 +11,8 @@ function fixture() {
   const {input: {targets, ...schedule}, witness, now} = monthScenario('normal');
   const input = {schedule, now, events: [], seniority: schedule.members.map(m => m.id)};
   const baselineUnits = Object.fromEntries(Object.entries(targets).map(([id, p]) => [id, p * 2]));
-  const draft = {baselineUnits, offeredUnits: {...baselineUnits}, targetsUnits: {...baselineUnits}, repayments: [], transfers: [], pending: [], sourceKey: 'stored-review'};
+  const changes = Object.fromEntries(input.seniority.map(id => [id, {temporary: 0, permanent: 0}]));
+  const draft = {baselineUnits, offeredUnits: {...baselineUnits}, targetsUnits: {...baselineUnits}, repayments: [], changes, pairs: [], transfers: [], sourceKey: 'stored-review'};
   return {input, draft, witness};
 }
 
@@ -28,14 +29,14 @@ test('reviewing a new captured revision preserves every confirmed number and ori
   assert.throws(() => reviewAllocation(input, b), /invalid-allocation-members/);
 });
 
-test('pending target edits stay visible and cannot masquerade as structurally balanced targets', () => {
+test('an unplaced change stays visible and cannot masquerade as structurally balanced targets', () => {
   const {input, draft} = fixture(), id = input.seniority[0];
-  draft.targetsUnits[id] -= 1;
-  draft.pending.push({id: 'explicit-half-point', engineer: id, deltaUnits: -1, kind: 'temporary'});
+  draft.targetsUnits[id] -= 1; draft.changes[id].temporary -= 1;
   const reviewed = reviewAllocation(input, draft);
   const display = allocationTotals(input, reviewed, {});
   assert.equal(display.configured, display.total - 1);
   assert.equal(display.rows.find(r => r.id === id).target, draft.targetsUnits[id]);
+  assert.equal(display.rows.find(r => r.id === id).temporary, -1);
   assert.throws(() => prepareGeneration({...input.schedule, targets: Object.fromEntries(Object.entries(reviewed.targetsUnits).map(([id, u]) => [id, u / 2]))}), /target-total-mismatch/);
 });
 
