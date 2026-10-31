@@ -113,7 +113,8 @@ every edit: lock floors first, then each kind's hand total (permanent first) is
 placed on members without hand changes in duty steps, refreshing the ranking after
 each step: receivers have the fewest points, newest first; givers the most points,
 senior first; a member already balancing the other kind comes last; locks are
-never crossed. So the same per-person state gives the same table whatever the
+never crossed. Receivers take one step per round (decision 2026-10-31): a −2 gives
+one point to each of two members rather than two to one. So the same per-person state gives the same table whatever the
 click order, an automatic point never sticks on a member later edited by hand (a
 minus on a member holding only an automatic point removes it and the point moves
 on), and hand changes never cancel each other implicitly; a drag routes a specific
@@ -192,7 +193,11 @@ trail. Third-party deferral creates creditor-to-carrier intent, preserving the
 original debt rather than creating a second debtor shortfall. Permanent transfers
 remain exempt from new claims and do not settle/forgive the old debt. Temporary
 work that can repay an existing reverse obligation is classified as repayment,
-preventing premature opposing-claim cancellation on publication.
+preventing premature opposing-claim cancellation on publication. The same holds for
+a deferred repayment (decision 2026-10-31): when B's lowered target hands B's
+repayment to C over to D, and D owes C too, the point repays D's own oldest open
+debt to C. B's debt stays open, D's drops, nothing new is owed to D, and the units
+repaid to C are unchanged. Only when D's open debt runs out does the plan need review.
 
 Funded temporary intent is normalized in a pure preview before repayment source
 slices are selected. This matters because a chain bypass consumes the oldest

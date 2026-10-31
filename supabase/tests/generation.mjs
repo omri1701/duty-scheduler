@@ -7,6 +7,7 @@ import {canonicalDuties, handover} from '../../lib/scheduling/calendar.ts';
 import {replay} from '../../lib/compensation/index.ts';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
 import {deriveTransfers} from '../../lib/allocation/derive.ts';
+import {proposeAllocation, transferAllocation, planAllocation, persistedDraft, balanced} from '../../lib/allocation/index.ts';
 const container=process.argv[2];assert.match(container??'',/^supabase_db_[\w-]+$/);
 const ids=Array.from({length:13},(_,i)=>`73000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
 const manager=ids[0],month='2027-12',duties=canonicalDuties(month,{}),zero=()=>Object.fromEntries(ids.map(id=>[id,0]));
@@ -273,6 +274,65 @@ assert.equal(repaymentViews[1].lots.length,repaymentView.lots.length);
 const rebound=repaymentViews[1].contributions.filter(c=>c.status==='pending');assert.equal(rebound.reduce((n,c)=>n+c.capacity.units,0),2);
 assert.ok(rebound.every(c=>!repaymentView.contributions.some(old=>old.id===c.id)),'cancelled contribution IDs are never resurrected');
 console.log('PASS: deleting the final publication and republishing rebinds outstanding repayment with new exclusive IDs without replaying origins');
+
+// A deferred repayment handed to someone who owes the same creditor (decision 2026-10-31):
+// Tamar repays Local Admin 2 of her planned 4 points' units and hands 1 point to Lior, who owes
+// Local Admin too. That point is Lior's own repayment: no Tamar -> Lior debt, Tamar's debt
+// stays open, and the units repaid to Local Admin are unchanged. Refused before as
+// review-normalized-deferral-route when the generation was saved.
+{
+ const tamar=ids[5],owed=ids[6],lior=ids[7];
+ const sameRaw={...structuredClone(raw),baselineUnits:{...fair},offeredUnits:{...fair},targetsUnits:{...fair}};
+ sameRaw.offeredUnits[tamar]+=4;sameRaw.offeredUnits[owed]-=4;sameRaw.targetsUnits={...sameRaw.offeredUnits};
+ sameRaw.targetsUnits[tamar]-=2;sameRaw.targetsUnits[lior]+=2;
+ sameRaw.transfers=[{id:'defer-to-co-debtor',fromId:tamar,toId:lior,units:2,kind:'temporary'}];
+ const same=canonical(sameRaw);
+ let deferral=setup+`create temp table debt(v jsonb);
+insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:tamar,creditorId:owed,units:4})},'tamar-debt','Reviewed source',${rev});
+insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:lior,creditorId:owed,units:4})},'lior-debt','Reviewed source',${rev});`+refresh;
+ deferral+=`create temp table proposed(v jsonb);insert into proposed select jsonb_set(${quote(same)},'{repayments}',jsonb_build_array(jsonb_build_object('claim',
+  (select c from jsonb_array_elements(v->'actual'->'claims') c where c->>'debtorId'='${tamar}'),'units',4))) from context;
+update context set v=public.duty_confirm_allocation('${month}',(select v from proposed),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');`;
+ deferral+=save(arrangement(same.targetsUnits))+publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
+ deferral+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());rollback;`;
+ const [view]=sql(deferral);assert.deepEqual(ordered(view),ordered(replay(view.events)));
+ assert.deepEqual([view.net[tamar],view.net[lior],view.net[owed]],[-4,-4,8],'no Tamar -> Lior debt, nothing forgiven');
+ const reserved=Object.fromEntries([tamar,lior].map(id=>[id,view.contributions.filter(c=>c.claim.debtorId===id&&c.claim.creditorId===owed).reduce((n,c)=>n+c.capacity.units,0)]));
+ assert.deepEqual(reserved,{[tamar]:2,[lior]:2},'each repays one point of their own debt to Local Admin');
+ assert.equal(view.contributions.reduce((n,c)=>n+c.capacity.units,0),4,'the units repaid to Local Admin are unchanged');
+ console.log('PASS: a deferred repayment handed to someone who owes the same creditor is their own repayment; no new debt, none forgiven');
+}
+
+// Client equals database: random plans over shared debts (several members owe one creditor,
+// one of them half a point) compile to the same repayments and the same remaining intents in
+// lib/allocation and duty_private.allocation_compile, deferrals to co-debtors included.
+{
+ const owed=ids[6],debtors=[ids[5],ids[7],ids[8],ids[9],ids[10]];
+ const debts=setup+debtors.map((id,k)=>`select public.duty_compensation(${quote({kind:'claim',debtorId:id,creditorId:owed,units:k===4?1:4})},'parity-${k}','Reviewed source',${rev});`).join('')+refresh;
+ const view=sql(debts+`select v from context;rollback;`).at(-1),input=readGenerationContext(view).input;
+ let state=20261031;const next=()=>(state=(Math.imul(state,1103515245)+12345)>>>0)/2**32;
+ const base=proposeAllocation(input).draft,payers=[...new Set(base.repayments.map(r=>r.claim.debtorId))],drafts=[];
+ for(let k=0;k<40&&drafts.length<12;k++){
+  let d=base;
+  for(let step=0;step<1+Math.floor(next()*3);step++){
+   const fromId=payers[Math.floor(next()*payers.length)],pool=next()<.7?debtors:ids,toId=pool[Math.floor(next()*pool.length)];
+   if(fromId===toId)continue;
+   try{d=transferAllocation(input,d,{id:`p${k}-${step}`,fromId,toId,units:next()<.8?2:1,kind:next()<.85?'temporary':'permanent'}).draft;}catch{}
+  }
+  if(d!==base&&balanced(d)&&planAllocation(input,d).confirmable)drafts.push(d);
+ }
+ assert.ok(drafts.length>=8,'parity fixture plans');
+ const compiled=sql(debts+'reset role;'+drafts.map(d=>`select duty_private.allocation_compile((select v->'facts' from context)||'{"locks":[],"approvals":[]}'::jsonb,${quote(persistedDraft(d))},${quote(d.targetsUnits)},duty_private.compensation_state());`).join('')+'rollback;').slice(-drafts.length);
+ const tally=(rows,key)=>{const t={};for(const r of rows){const k=key(r);if(k)t[k[0]]=(t[k[0]]??0)+k[1];}return t;};
+ drafts.forEach((d,k)=>{
+  const plan=planAllocation(input,d).plan,db=compiled[k];
+  assert.deepEqual(tally(db.repayments,r=>[`${r.claim.debtorId}>${r.claim.creditorId}`,r.units]),tally(plan.repayments,r=>[`${r.claim.debtorId}>${r.claim.creditorId}`,r.units]),`plan ${k} repayments`);
+  const legs=f=>f.flatMap(x=>x.route.map(l=>({...l,units:x.units})));
+  assert.deepEqual(tally(legs(db.funding),l=>[`${l.fromId}>${l.toId}/${l.kind}/${l.deferredClaim?.debtorId??''}`,l.units]),
+   tally(legs(plan.funding),l=>[`${l.fromId}>${l.toId}/${l.kind}/${l.deferredClaim?.debtorId??''}`,l.units]),`plan ${k} intents`);
+ });
+ console.log(`PASS: ${drafts.length} random plans over shared debts compile identically in the client and the database`);
+}
 
 // Strict route shape checks on the legacy public publication boundary too.
 const intent={id:'reviewed-route',fromId:ids[5],toId:ids[6],kind:'temporary',capacity:[{date:duties.find(d=>assignments[d.id].primary===ids[6]).startDate,offset:0,units:2}],

@@ -124,9 +124,12 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   // A new temporary C->D burden can fund D's existing debt to C. Reserve that
   // debt oldest first instead of posting an opposing claim that would cancel it
   // immediately on publication, before any of the repayment work has completed.
+  // The same holds for a deferred repayment (decision 2026-10-31): when B's lowered
+  // target hands B's repayment to C over to D, and D owes C too, the point is D's
+  // own repayment to C. B's debt stays open, D's drops, nothing new is owed to D.
   let provenanceReview = false;
   for (const funding of plan.funding) {
-    const reverse = funding.route.filter(t => t.kind === 'temporary' && !t.deferredClaim &&
+    const reverse = funding.route.filter(t => t.kind === 'temporary' &&
       c.projection.projected.claims.some(c => c.debtorId === t.toId && c.creditorId === t.fromId));
     if (reverse.length && (funding.route.length !== 1 || reverse[0].toId !== funding.carrierId)) {
       provenanceReview = true;

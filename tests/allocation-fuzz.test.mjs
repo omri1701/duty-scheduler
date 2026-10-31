@@ -40,6 +40,8 @@ const SCENARIOS = {
   // Small teams like a local two-member workspace: one member can absorb only what the other has.
   two: () => shrink(base(), 2),
   'two-debt': () => owe(shrink(base(), 2), 'e00', 'e01', 4, 'old'),
+  // Several members owe one creditor (one of them half a point): deferrals land on co-debtors.
+  'co-debtors': () => owe(owe(owe(owe(base(), 'e10', 'e00', 6, 'oldest'), 'e07', 'e00', 4, 'second'), 'e08', 'e00', 3, 'half'), 'e09', 'e00', 4, 'young'),
   'three-half': () => {const i = shrink(base(), 3); i.schedule.calendar = {specials: [{id: 'h', start: '2026-11-02', end: '2026-11-06', extra: 1.5}]}; return owe(i, 'e02', 'e00', 1, 'half');},
 };
 function rng(seed) {let s = seed >>> 0; return () => {s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -143,6 +145,16 @@ function check(name, i, c, prop, d, trail) {
   }
   const planned = planAllocation(i, d);
   assert.ok(planned.plan, `${where}: a balanced draft always plans`);
+  // No orphan debt: every open debt is repaid this month or stays open, unit for unit, per pair.
+  const pairUnits = rows => rows.reduce((t, r) => {const k = `${r.claim.debtorId}>${r.claim.creditorId}`; t[k] = (t[k] ?? 0) + r.units; return t;}, {});
+  const open = pairUnits(c.candidates.map(claim => ({claim, units: claim.units}))), accounted = pairUnits([...planned.plan.repayments, ...planned.plan.deferred]);
+  for (const k of new Set([...Object.keys(open), ...Object.keys(accounted)])) assert.equal(accounted[k] ?? 0, open[k] ?? 0, `${where}: debt ${k} neither lost nor created`);
+  // A bookable plan never routes a deferred repayment through someone who owes the same creditor:
+  // that point is the receiver's own repayment (decision 2026-10-31).
+  if (planned.confirmable) for (const t of planned.plan.intents) if (t.deferredClaim) {
+    assert.ok(!c.candidates.some(k => k.debtorId === t.toId && k.creditorId === t.fromId), `${where}: deferral to a co-debtor booked as their repayment`);
+  }
+  if (planned.confirmable) stats.bookable = (stats.bookable ?? 0) + 1;
   const lines = nettedCompensation(prop.projection.projected.net, {transfers: planned.plan.intents, repayments: planned.plan.repayments}, ids);
   const pairs = new Set(lines.map(l => `${l.debtorId}>${l.creditorId}`));
   assert.ok(!lines.some(l => pairs.has(`${l.creditorId}>${l.debtorId}`)), `${where}: netted list has one direction per pair`);

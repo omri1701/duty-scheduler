@@ -142,7 +142,9 @@ uses the existing authoritative transition/normalization/reservation validator.
 A temporary A→B followed by permanent B→C charges A→B once, funded by C's work.
 Deferral retains the original source path and uses its available normalized suffix
 for retained repayment. Reverse burdens reserve existing obligations instead of
-netting them away before completion. Secondary coverage contributes no capacity.
+netting them away before completion; since `20261031213827_deferred_repayment_by_debtor`
+a deferred repayment handed to a member who owes the same creditor is one too, so it
+reserves that member's own debt instead of failing `review-normalized-deferral-route`. Secondary coverage contributes no capacity.
 
 Copied intent IDs never create another origin. Still-live unchanged reservations
 retain their IDs; restored or rearranged still-outstanding repayment can rebind

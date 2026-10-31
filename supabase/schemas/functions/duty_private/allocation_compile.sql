@@ -161,10 +161,12 @@ begin
    if jsonb_array_length(route)>0 then funding:=funding||jsonb_build_array(jsonb_build_object('carrierId',id,'units',take,'route',route)); end if;
   end loop;
  end loop;
- -- Reverse ordinary burdens repay existing debt; publication must not forgive
+ -- Reverse burdens repay existing debt; publication must not forgive
  -- it by immediately creating an opposing origin before any work completes.
+ -- A deferred repayment counts too (decision 2026-10-31): B's repayment to C
+ -- handed to D, who owes C, is D's own repayment to C; B's debt stays open.
  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(funding) with ordinality loop
-  for leg in select value from jsonb_array_elements(t->'route') where value->>'kind'='temporary' and not value ? 'deferredClaim' loop
+  for leg in select value from jsonb_array_elements(t->'route') where value->>'kind'='temporary' loop
    if not exists(select 1 from jsonb_array_elements(s->'claims') c where c->>'debtorId'=leg->>'toId' and c->>'creditorId'=leg->>'fromId') then continue; end if;
    if jsonb_array_length(t->'route')<>1 or leg->>'toId'<>t->>'carrierId' then raise exception 'review-compound-reverse-obligation'; end if;
    remaining:=(t->>'units')::bigint;
