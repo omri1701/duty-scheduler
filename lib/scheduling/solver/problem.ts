@@ -8,13 +8,15 @@ export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; bou
   preferences?: {duty: number; engineer: number; weight: number}[]; seededTies?: boolean;
   /** Weekend turns already taken in the current rotation cycle, per engineer. */
   rotation?: number[];
+  /** Sunday–Thursday duties already taken on each weekday (0–4) in the current cycle, per engineer. */
+  weekdays?: number[][];
   exceptions?: {consecutive?: [number, number][]; boundary?: {duty: number; boundary: string}[];
     weekends?: {engineer: number; weekends: number[]}[]}};
 /** Ordered objective facts: coverage, special, units, the minimum gap, weekend
- * rotation cost, same-weekday repeats, the whole ascending gap vector, then the
- * preferred-date count. */
+ * rotation cost, same-weekday repeats, cross-month weekday rotation cost, the
+ * preferred-date count, then (below the seed) the whole ascending gap vector. */
 export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
-  rotation: number; preferred: number; repeats: number};
+  rotation: number; preferred: number; repeats: number; weekdays: number};
 
 export function approvedPair(p: Problem, i: number, j: number) {
   return p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j) ?? false;
@@ -45,6 +47,8 @@ export function checkProblem(p: Problem) {
       (d.lock !== undefined && !d.eligible.includes(d.lock))) throw Error('Invalid normalized duty');
   }
   if (p.rotation !== undefined && (p.rotation.length !== p.targets.length || !p.rotation.every(integer))) throw Error('Invalid rotation state');
+  if (p.weekdays !== undefined && (p.weekdays.length !== p.targets.length ||
+    !p.weekdays.every(w => Array.isArray(w) && w.length === 5 && w.every(integer)))) throw Error('Invalid weekday rotation state');
   const total = p.targets.reduce((a, b) => a + b, 0);
   if (!Number.isSafeInteger(total) || total > 1e9 || total !== p.duties.reduce((a, d) => a + d.units, 0)) throw Error('Unbalanced/oversized targets');
   const preferences = new Set<string>();
@@ -87,7 +91,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   const used = p.targets.map(() => 0), weekends = p.targets.map(() => new Set<number>());
   const selected = p.targets.map(() => [] as number[]), gaps: number[] = [];
   const weekdays = p.targets.map(() => new Map<number, number>());
-  let coverage = 0, special = 0, preferred = 0;
+  let coverage = 0, special = 0, preferred = 0, weekdayCost = 0;
   assignment.forEach((e, i) => {
     const d = p.duties[i];
     if (d.lock !== undefined && d.lock !== e) throw Error('Missing lock');
@@ -108,7 +112,10 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     }
     selected[e].push(i);
     coverage += d.days; special += d.special;
-    if (d.weekday !== undefined) weekdays[e].set(d.weekday, (weekdays[e].get(d.weekday) ?? 0) + 1);
+    if (d.weekday !== undefined) {
+      weekdays[e].set(d.weekday, (weekdays[e].get(d.weekday) ?? 0) + 1);
+      weekdayCost += p.weekdays?.[e][d.weekday] ?? 0;
+    }
     preferred += p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0;
   });
   let rotation = 0, repeats = 0;
@@ -123,7 +130,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     if (after) gaps.push(after.start - p.duties[selected[e].at(-1)!].end);
   }
   return {coverage, special, units: used.reduce((a, b) => a + b, 0),
-    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats};
+    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays: weekdayCost};
 }
 
 export function decodeAssignment(p: Problem, values: Record<string, number>) {
@@ -145,14 +152,24 @@ export function binaryValues(values: Record<string, number>) {
     return [key, Math.abs(n) <= 1e-8 ? 0 : 1];
   }));
 }
-/** Lexicographic objective order; lower is better. Missing gaps pad with infinity:
- * coverage, special, units, minimum gap, rotation, repeats, sorted gaps, preferred. */
-export function compareMetrics(a: Metrics, b: Metrics, spacing = true) {
-  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []), m.rotation, m.repeats];
-  const av = [...head(a), ...(spacing ? a.gaps.map(g => -g) : [])];
-  const bv = [...head(b), ...(spacing ? b.gaps.map(g => -g) : [])];
+const lexicographic = (av: number[], bv: number[]) => {
   for (let i = 0; i < Math.max(av.length, bv.length); i++) {
     if ((av[i] ?? -Infinity) !== (bv[i] ?? -Infinity)) return (av[i] ?? -Infinity) < (bv[i] ?? -Infinity) ? -1 : 1;
   }
-  return a.preferred === b.preferred ? 0 : a.preferred > b.preferred ? -1 : 1;
+  return 0;
+};
+/** The quality levels above the seeded tie, lower is better: coverage, special, units,
+ * minimum gap, weekend rotation, repeats, weekday rotation, preferred. */
+export function compareQuality(a: Metrics, b: Metrics, spacing = true) {
+  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []),
+    m.rotation, m.repeats, m.weekdays, -m.preferred];
+  return lexicographic(head(a), head(b));
+}
+/** The sorted-gap leximin below the seed; missing gaps pad with infinity. */
+export function compareGaps(a: Metrics, b: Metrics) {
+  return lexicographic(a.gaps.map(g => -g), b.gaps.map(g => -g));
+}
+/** Lexicographic objective order without the seed: quality, then the gap vector. */
+export function compareMetrics(a: Metrics, b: Metrics, spacing = true) {
+  return compareQuality(a, b, spacing) || (spacing ? compareGaps(a, b) : 0);
 }

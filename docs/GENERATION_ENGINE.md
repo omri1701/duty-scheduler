@@ -12,9 +12,10 @@ independent of UI, storage and authorization; the application uses the checked
 revision, calendar specials/splits/marked dates, known member identities and
 explicit active/approved/eligible status, confirmed targets **in points**, date
 constraints, locks, secondary identities, neighboring commitments, scoped
-approvals with reasons and an optional `weekendRotation` map of weekend turns per
-member (derived from published months by `weekendRotation` in `rotation.ts`;
-the application builds it from the workspace snapshot with `publishedHistory`).
+approvals with reasons and the optional rotation maps `weekendRotation` (weekend
+turns per member) and `weekdayRotation` (five Sunday–Thursday counts per member),
+both derived from published months by `rotation.ts`; the application builds them
+from the workspace snapshot with `publishedHistory`.
 Every participating member needs a target, including zero.
 Targets must sum to the weight of all required owned duties. Invalid half steps,
 special ranges/weights, identities, fixed conflicts and lock floors are errors.
@@ -69,10 +70,13 @@ A wall-clock-limited unfinished search does not promise identical incumbents;
 use the recorded seed, node budget, package/runtime/environment and sufficient
 time for deterministic completed replay.
 
-Model `highs-leximin-v4` adds the weekend rotation, preferred-date and
-same-weekday levels to the verified metrics, places rotation and weekday variety
-directly below the proved minimum gap (v3 had them below the full gap vector,
-where they were nearly inert), and draws the seeded tie coefficients from a
+Model `highs-leximin-v5` adds the cross-month weekday rotation level to the
+verified metrics and moves the sorted-gap leximin below the seed, where it only
+breaks ties: above the seed (v4) it pushed every pair towards fourteen days, so
+consecutive months repeated the same weekday pattern. v4 had added the weekend
+rotation, preferred-date and same-weekday levels and placed rotation and weekday
+variety directly below the proved minimum gap (v3 had them below the full gap
+vector, where they were nearly inert). The seeded tie coefficients come from a
 32-bit hash mixer instead of a linear congruential generator, whose low bits
 alternated with each draw. Coefficients stay below 1,000: million-scale
 coefficients caused native floating-point objective drift on a six-engineer
@@ -103,19 +107,20 @@ Neighbors are constants, never returned as writable selected-month assignments.
 
 Optimization uses one optional-coverage MILP. It proves and fixes each priority
 before advancing: covered dates, marked special dates, assigned point units,
-maximum minimum elapsed gap, weekend rotation cost, same-weekday repeats, full
-sorted-gap leximin, preferred date count, then a seeded integer tie objective.
-The order below the minimum gap is fixed in one place (`early`/`late` in
-`solver/model.ts`).
+maximum minimum elapsed gap, weekend rotation cost, same-weekday repeats,
+cross-month weekday rotation cost, preferred date count, a seeded integer tie
+objective, then the full sorted-gap leximin as a tie-breaker. The order below
+the minimum gap is fixed in one place (the `quality` list in `solver/model.ts`).
 A combined weekend counts two dates. Missing gaps are padded with infinity;
 external-only pairs are omitted. Approved locked zero gaps remain in the
 objective. There is no average-gap or weighted-priority shortcut. Threshold/clique
 search, exact capacity cuts and continuous successor flows reuse the foundation
-from PR #31, with one disposable native model per run. The rotation cost reuses
-the weekend OR columns; repeat counters are continuous columns added only once
-spacing is proved. A nonnegative level whose incumbent is already zero is fixed
-by identity without a native solve. The independent validator recomputes all
-three new facts from source dates, constraints and the rotation map.
+from PR #31, with one disposable native model per run. The rotation costs reuse
+the weekend OR columns and the assignment columns; repeat counters are continuous
+columns added only once spacing is proved. A nonnegative level whose incumbent is
+already zero is fixed by identity without a native solve. The independent
+validator recomputes the rotation, repeat, weekday-rotation and preferred facts
+from source dates, constraints and the rotation maps.
 
 The default and maximum domain search budget is 30 seconds across all stages,
 including model construction. Solving stops early when finished. WASM loading,
@@ -157,49 +162,56 @@ pnpm exec tsc --noEmit
 pnpm exec eslint lib/scheduling lib/solver-spike tests/generation.test.mjs tests/rotation.test.mjs tests/fixtures/generation.mjs scripts/benchmark-generation.mjs
 pnpm build
 pnpm exec playwright test tests/browser/solver-spike.spec.ts --workers=1
-node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --scenarios=normal,availability,weighted,locked,boundary,tight,shared-shortage,small-team,larger-team,rotation --output=docs/benchmarks/generation-2026-10-31.jsonl
+node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --scenarios=normal,availability,weighted,locked,boundary,tight,shared-shortage,small-team,larger-team,rotation,weekday-rotation --output=docs/benchmarks/generation-2026-10-31-v5.jsonl
 ```
 
 Regression coverage includes real 12-engineer months, three years of owned
 coverage, cross-year combined/split specials, leap day, DST, shared capacity,
 availability/lock scope, fixed zero gaps, weekend shortages, emergency identity,
 both boundary sources, stale/late/altered results, Worker cancellation/restart,
-automatic seeds, deterministic completed replay, weekend rotation state from
-published months, the rotation and weekday levels against the exhaustive oracle,
-and seed variety across a whole ordinary month. An independent exhaustive
-oracle checks small real-month scenarios against the complete coverage/point/
-leximin/rotation/preferred/repeat objective vector; the retained solver tests
-enumerate varied weighted, partial, boundary and fixed-exception instances.
+automatic seeds, deterministic completed replay, weekend and weekday rotation
+state from published months, the rotation, weekday and weekday-rotation levels
+against the exhaustive oracle, seed variety of assignments and gap patterns
+across a whole ordinary month, and a simulated sequence of generated months in
+which every member covers all five weekdays within one cycle. An independent
+exhaustive oracle checks small real-month scenarios against the quality vector
+(coverage, special, units, minimum gap, rotation, repeats, weekday rotation,
+preferred); the retained solver tests, which run without seeded ties, also
+enumerate the full leximin on varied weighted, partial, boundary and
+fixed-exception instances.
 Existing application engine and snapshot regressions still exercise the legacy behavior.
 
-Recorded Node 23 / Windows x64 / Intel i9-10900KF results for model v4 (three
+Recorded Node 23 / Windows x64 / Intel i9-10900KF results for model v5 (three
 sequential runs per scenario, one fresh WASM instance per scenario; node limit
-1,000,000, seed 17; the first run of each scenario includes JIT warm-up):
+1,000,000, seed 17; the first run of each scenario includes JIT warm-up), with the
+v4 range of the same day for comparison:
 
-| Scenario | Engineers | End-to-end range | Outcome |
-|---|---:|---:|---|
-| Ordinary | 12 | 1.42–3.73 s | Complete, all objectives proved, 0 repeats |
-| Availability/preferences | 12 | 1.11–1.16 s | Complete, all objectives proved |
-| Weighted specials and splits | 12 | 1.27–1.29 s | Complete, all objectives proved |
-| Locks | 12 | 0.85–0.90 s | Complete, all objectives proved |
-| Live/working boundaries | 12 | 2.61–2.76 s | Complete, all objectives proved, 0 repeats |
-| Tight availability | 12 | 0.16–0.20 s | Complete, all objectives proved |
-| Shared opportunity shortage | 12 | 1.92–2.22 s | Optimal partial, 27/30 dates |
-| Five weekends, small team | 2 | 0.15–0.16 s | Optimal partial, 25/31 dates (11 unavoidable repeats) |
-| Larger team | 24 | 0.38–0.41 s | Complete, all objectives proved |
-| Weekend rotation state | 12 | 1.09–1.25 s | Complete, all objectives proved; one turn forced by the minimum gap |
+| Scenario | Engineers | v5 end-to-end | v4 end-to-end | Outcome |
+|---|---:|---:|---:|---|
+| Ordinary | 12 | 1.11–1.52 s | 1.42–3.73 s | Complete, all objectives proved, 0 repeats |
+| Availability/preferences | 12 | 0.96–1.02 s | 1.11–1.16 s | Complete, all objectives proved |
+| Weighted specials and splits | 12 | 1.25–1.32 s | 1.27–1.29 s | Complete, all objectives proved |
+| Locks | 12 | 0.84–0.88 s | 0.85–0.90 s | Complete, all objectives proved |
+| Live/working boundaries | 12 | 1.87–2.14 s | 2.61–2.76 s | Complete, all objectives proved, 0 repeats |
+| Tight availability | 12 | 0.14–0.15 s | 0.16–0.20 s | Complete, all objectives proved |
+| Shared opportunity shortage | 12 | 1.11–1.14 s | 1.92–2.22 s | Optimal partial, 27/30 dates |
+| Five weekends, small team | 2 | 0.15 s | 0.15–0.16 s | Optimal partial, 25/31 dates (11 unavoidable repeats) |
+| Larger team | 24 | 0.36–0.38 s | 0.38–0.41 s | Complete, all objectives proved |
+| Weekend rotation state | 12 | 6.29–6.67 s | 1.09–1.25 s | Complete, all objectives proved; one turn forced by the minimum gap |
+| Weekday rotation state | 12 | 1.80–2.18 s | — | Complete, all objectives proved; one covered weekday forced |
 
-The v2 record from 24 October 2026 on the same machine ranged from 0.6 s (locks)
-to 2.5 s (boundaries) for the twelve-engineer months; the same-weekday level adds
-one native solve of roughly 0.2–0.4 s (1.4 s on the JIT-cold first ordinary run)
-whenever the incumbent has repeats, and the rotation level is an identity when no
-weekend candidate has a turn. On the ordinary month the v4 order removes every
-same-weekday repeat while keeping the eleven-day minimum gap; the sorted gap
-vector moves from `[11,11,12,12,13×9,14]` to `[11,11,12,12,12×5,14,14,14,14,15]` days.
-Raw inputs are
+Below the seed the gap-count stages only confirm the incumbent, so most fixtures
+got faster (their LP relaxations are pinned by the fixed seed row). The weekend
+rotation fixture is the exception: its twelve-day count stage spends about three
+seconds at the LP root with the dense seed equality present, all stages still
+prove, and the total stays well inside the 30-second budget. The seed now varies
+the gap pattern: on the ordinary month twelve seeds give twelve different sorted
+gap vectors at the same eleven-day minimum with no repeat, where v4 gave
+`[11,11,12,12,12×5,14,14,14,14,15]` days for every seed. Raw inputs are
 reproducible through `tests/fixtures/generation.mjs`; hashes, settings, stage
-proofs and measurements are in the [benchmark record](benchmarks/generation-2026-10-31.jsonl)
-(the earlier [v2 record](benchmarks/generation-2026-10-24.jsonl) is kept). Every sample passed
+proofs and measurements are in the [v5 benchmark record](benchmarks/generation-2026-10-31-v5.jsonl)
+(the [v4](benchmarks/generation-2026-10-31.jsonl) and [v2](benchmarks/generation-2026-10-24.jsonl)
+records are kept). Every sample passed
 independent domain validation and disposed its native model. WASM linear memory
 ranged from about 20 to 61 MiB and stayed constant across each scenario's warm
 repeats. End-to-end measurements include conversion/final validation but exclude
