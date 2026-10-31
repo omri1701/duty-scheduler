@@ -134,6 +134,17 @@ permanent receiver past it, and the dialog disables Permanent + at the ceiling w
 the note "Max punishment here is +24 (26 points this month)". The database checks
 the same ceiling.
 
+**Month bounds** (audit 2026-10-31). The configured total never exceeds the month
+total: a change no one can absorb may leave points unplaced (fewer than the month
+has), but an edit or drag that would add points the month does not have is refused
+(`allocation-above-month-total`). Before, a two-member team could press + until
+77 / 26 points. No member's net Temporary exceeds the month total either way
+(`temporary-above-month-total`; the database checks it too). With these, every
+member's points stay between locked and the month total. `editOptions` reports which
++ and − the library accepts at the current step, and the dialog disables the rest,
+so a + no one can absorb is disabled with a screen-reader note ("No one else can
+take on less. Lower someone first, or drag a point.").
+
 `transferAllocation` records a drag as a pair, moving both members' nets by its
 units and protecting both. `classifyTransfer` switches a pair's kind, moving the
 nets between kinds, so Make permanent keeps points and removes its future

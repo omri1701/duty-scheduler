@@ -29,8 +29,10 @@ snapshots and restored copies are not touched. The
 `duty_private.allocation_uneven` and the uneven-credit checks to
 `allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
 without touching stored rows. The `20261031165238_permanent_month_cap.sql`
-migration adds the Permanent ceiling (fair + Permanent ≤ the month's total units) to
-`allocation_compile` (`permanent-above-month-total`); stored plans already satisfy it. Only managers can
+migration adds the Permanent ceiling (fair + Permanent ≤ the month's total units) and
+the Temporary bound (|Temporary| ≤ the month's total units) to `allocation_compile`
+(`permanent-above-month-total`, `temporary-above-month-total`); stored plans already
+satisfy both. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
 `duty_assignments.locked` persists a primary lock even before the first allocation.
@@ -74,7 +76,7 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
   It independently checks denomination, membership, nominal totals, actual source
   claims, exclusive source intervals, the per-member changes (each kind balanced,
   explaining every target exactly, fair + Permanent ≥ 0, offered + Permanent
-  ≥ 0 and fair + Permanent ≤ the month's total units), counterpart conservation, locked floors and exact exception scopes, and
+  ≥ 0, fair + Permanent ≤ the month's total units and |Temporary| ≤ the month's total units), counterpart conservation, locked floors and exact exception scopes, and
   requires the transfer list to equal `duty_private.allocation_transfers` under the
   current seniority: the same derivation as the browser (pairs first, then netted),
   so no transfer list can show relief the per-person nets do not. When the

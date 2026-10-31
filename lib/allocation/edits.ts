@@ -49,8 +49,12 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
   for (const id of c.ids) {
     if (draft.changes[id].permanent < permanentFloor(draft, id)) throw Error('permanent-below-fair-share');
     if (draft.changes[id].permanent > permanentCeiling(c.total, draft, id)) throw Error('permanent-above-month-total');
+    // No one owes, or is owed, more temporary work than the month holds.
+    if (Math.abs(draft.changes[id].temporary) > c.total) throw Error('temporary-above-month-total');
     if (draft.offeredUnits[id] + draft.changes[id].permanent + draft.changes[id].temporary !== draft.targetsUnits[id]) throw Error('unexplained-target-edit');
   }
+  // A change no one can absorb leaves points unplaced, never more points than the month has.
+  if (sum(c.ids.map(id => draft.targetsUnits[id])) > c.total) throw Error('allocation-above-month-total');
   const ids = new Set<string>();
   for (const p of draft.pairs) {
     if (!p || typeof p.id !== 'string' || !p.id.trim() || ids.has(p.id) || !isKind(p.kind) || p.fromId === p.toId ||
@@ -107,9 +111,25 @@ export function rebuild(c: Context, input: AllocationInput, source: AllocationDr
  * who only holds an automatic point removes that point. The member is then
  * hand edited: the automatic balance of both kinds is recomputed from scratch
  * on the other members, never sticking on anyone edited by hand. */
-export function editAllocation(input: AllocationInput, source: AllocationDraft,
-  edit: {engineer: string; deltaUnits: number; kind: Kind}) {
+export function editAllocation(input: AllocationInput, source: AllocationDraft, edit: Edit) {
   const c = context(input); validateDraft(c, input.seniority, source);
+  const draft = applyEdit(c, input, source, edit);
+  return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
+}
+
+/** Which + and − of one step the library accepts, per member and kind, so the
+ * dialog disables exactly the edits it would refuse (a floor, the ceiling, or a
+ * + that no one else can absorb). */
+export function editOptions(input: AllocationInput, source: AllocationDraft, step: number) {
+  const c = context(input); validateDraft(c, input.seniority, source);
+  const accepts = (edit: Edit) => {try {applyEdit(c, input, source, edit); return true;} catch {return false;}};
+  return Object.fromEntries(c.ids.map(id => [id, Object.fromEntries(KINDS.map(kind => [kind,
+    {up: accepts({engineer: id, deltaUnits: step, kind}), down: accepts({engineer: id, deltaUnits: -step, kind})}]))])) as
+    Record<string, Record<Kind, {up: boolean; down: boolean}>>;
+}
+
+type Edit = {engineer: string; deltaUnits: number; kind: Kind};
+function applyEdit(c: Context, input: AllocationInput, source: AllocationDraft, edit: Edit) {
   if (!c.ids.includes(edit.engineer) || !isKind(edit.kind) || !Number.isSafeInteger(edit.deltaUnits) || !edit.deltaUnits) throw Error('invalid-allocation-edit');
   units(Math.abs(edit.deltaUnits));
   const hand = handOf(source), current = source.changes[edit.engineer];
@@ -118,8 +138,7 @@ export function editAllocation(input: AllocationInput, source: AllocationDraft,
   // A whole step that would overshoot the ceiling is refused, never half applied.
   if (next.permanent > permanentCeiling(c.total, source, edit.engineer)) throw Error('permanent-above-month-total');
   if (source.offeredUnits[edit.engineer] + next.temporary + next.permanent < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
-  const draft = rebuild(c, input, source, {...hand, [edit.engineer]: next}, source.pairs);
-  return {draft, balanced: balanced(draft), unplaced: unplacedChanges(draft)};
+  return rebuild(c, input, source, {...hand, [edit.engineer]: next}, source.pairs);
 }
 
 /** One exact manual transfer, such as dragging one member onto another: a

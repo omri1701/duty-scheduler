@@ -343,6 +343,11 @@ const ceiling=monthUnits-confirmedDraft.baselineUnits[ids[8]];
 assert.equal(punished(ceiling+1).targetsUnits[ids[8]],confirmedDraft.targetsUnits[ids[8]]);
 floors+=failure(confirm(punished(ceiling)),'unbalanced-allocation-changes');
 floors+=failure(confirm(punished(ceiling+1)),'permanent-above-month-total');
+// No member owes or is owed more temporary work than the month holds (checked before the targets).
+const owing=units=>{const d=structuredClone(confirmedDraft);d.changes[ids[8]].temporary=units;d.transfers=deriveTransfers(ids,d.changes,d.pairs);return d};
+floors+=failure(confirm(owing(-monthUnits)),'unexplained-target-edit');
+floors+=failure(confirm(owing(-monthUnits-1)),'temporary-above-month-total');
+floors+=failure(confirm(owing(monthUnits+1)),'temporary-above-month-total');
 const unbalancedDraft=structuredClone(confirmedDraft);unbalancedDraft.changes[ids[8]].temporary+=2;unbalancedDraft.targetsUnits[ids[8]]+=2;unbalancedDraft.changes[ids[9]].temporary-=2;unbalancedDraft.targetsUnits[ids[9]]-=2;unbalancedDraft.changes[ids[9]].temporary=0;
 floors+=`reset role;`+failure(`select duty_private.allocation_compile((select v->'facts' from context)||'{"locks":[],"approvals":[]}'::jsonb,${quote(unbalancedDraft)},${quote(Object.fromEntries(ids.map(id=>[id,0])))},duty_private.compensation_state())`,'unexplained-target-edit|unbalanced-allocation-changes');
 floors+=`set local role authenticated;`;
@@ -361,7 +366,7 @@ const handLeak=structuredClone(confirmedDraft);handLeak.hand=[ids[8]];
 floors+=failure(confirm(handLeak),'invalid-confirmed-allocation');
 floors+=`rollback;`;
 sql(floors);
-console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share or lifting it above the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
+console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share or lifting it above the month total, a temporary change beyond the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
 
 // The relief floor: a creditor relieved this month cannot give that relief away permanently.
 let relief=setup+`create temp table debt(v jsonb);insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:debtor,creditorId:creditor,units:4})},'debt','Reviewed source',${rev});`+refresh;

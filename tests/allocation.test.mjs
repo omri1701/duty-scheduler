@@ -5,7 +5,7 @@ import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGener
 import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
-  retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
+  retainedChanges, editOptions, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
 import {balanceChanges} from '../lib/allocation/derive.ts';
 import {context} from '../lib/allocation/model.ts';
 import {monthScenario} from './fixtures/generation.mjs';
@@ -15,8 +15,8 @@ const solver = await createHighsAdapter(loadHighs);
 const total = xs => xs.reduce((a, b) => a + b, 0);
 const send = (h, operation, sourceKey, at = (h.at(-1)?.at ?? 0) + 1) => record(h,
   {operation, sourceKey, at, actor: 'manager', reason: 'Reviewed fixture'}).events;
-function scenario(kind = 'normal') {
-  const {input, now} = monthScenario(kind), schedule = structuredClone(input); delete schedule.targets;
+function scenario(kind = 'normal', count = 12) {
+  const {input, now} = monthScenario(kind, count), schedule = structuredClone(input); delete schedule.targets;
   return {schedule, now, seniority: schedule.members.map(m => m.id), events: send([], {
     kind: 'members', members: schedule.members.map(m => ({id: m.id, active: true})),
   }, 'members')};
@@ -463,14 +463,15 @@ test('hand-edited members keep their points exactly; automatic points move on to
   assert.deepEqual(normal.draft.hand, undefined, 'a new proposal starts unprotected');
 });
 
-test('without an untouched counterpart the requested change stays, visibly unplaced', () => {
+test('without an untouched counterpart a − stays, visibly unplaced; a + is refused (never more points than the month)', () => {
   const i = normalInput, ids = i.seniority;
   const draft = {...structuredClone(normal.draft), hand: ids.filter(id => id !== 'e00')};
-  const r = edit(i, draft, 'e00', 2);
-  assert.equal(r.draft.targetsUnits.e00, normal.draft.targetsUnits.e00 + 2, 'requested change kept');
+  const r = edit(i, draft, 'e00', -2);
+  assert.equal(r.draft.targetsUnits.e00, normal.draft.targetsUnits.e00 - 2, 'requested change kept');
   for (const id of ids.slice(1)) assert.equal(r.draft.targetsUnits[id], normal.draft.targetsUnits[id]);
   assert.deepEqual(r.draft.transfers, []); assert.equal(r.balanced, false);
-  assert.deepEqual(r.unplaced, {temporary: -2, permanent: 0});
+  assert.deepEqual(r.unplaced, {temporary: 2, permanent: 0});
+  assert.throws(() => edit(i, draft, 'e00', 2), /allocation-above-month-total/);
   assert.throws(() => edit(i, {...normal.draft, hand: ['nobody']}, 'e00', 1), /invalid-hand-edits/);
 });
 
@@ -553,12 +554,12 @@ test('ceiling: fair share + Permanent never exceeds the month total; mixed + Per
   assert.equal(half.changes[A].permanent, ceiling - 1);
   assert.throws(() => edit(i, half, A, 2, 'permanent'), /permanent-above-month-total/);
   assert.equal(edit(i, half, A, 1, 'permanent').draft.changes[A].permanent, ceiling);
-  // A permanent drag or Make permanent onto a member at the ceiling is refused too
-  // (the giver first gets permanent room above its floor).
-  const room = edit(i, x, 'e05', 2, 'permanent').draft;
-  assert.throws(() => drag(i, room, 'e05', A, 2, 'permanent'), /permanent-above-month-total/);
-  const moved = drag(i, room, 'e05', A).draft;
-  assert.throws(() => classifyTransfer(i, moved, moved.pairs.at(-1).id, 'permanent'), /permanent-above-month-total/);
+  // A permanent drag or Make permanent onto a member at the ceiling is refused too: at the
+  // ceiling every other member already sits on its floor, so the giver's floor refuses first.
+  assert.throws(() => drag(i, x, 'e05', A, 2, 'permanent'), /permanent-(above-month-total|below-fair-share)/);
+  // Even a temporary drag is refused here: e05 would become hand edited, its automatic
+  // permanent relief would need a new counterpart, and no one is left to absorb it.
+  assert.throws(() => drag(i, x, 'e05', A), /allocation-above-month-total/);
   // Review refuses a stored change above the ceiling.
   const stored = structuredClone(persistedDraft(once.draft));
   stored.changes[A].permanent = ceiling + 2;
@@ -568,6 +569,35 @@ test('ceiling: fair share + Permanent never exceeds the month total; mixed + Per
   hand[A] = {temporary: 0, permanent: -(month + 2)};
   const placed = balanceChanges(c, i.seniority, d.baselineUnits, d.offeredUnits, hand), loneCeiling = month - d.baselineUnits[lone];
   assert.equal(placed.changes[lone].permanent, loneCeiling); assert.equal(placed.unplaced.permanent, month + 2 - loneCeiling);
+});
+
+test('two members (audit 2026-10-31): a + no one can absorb is refused, so points, Temporary and Permanent stay within the month', () => {
+  const i = scenario('normal', 2), d = proposal(i).draft, month = total(Object.values(d.baselineUnits));
+  assert.equal(month, 52); assert.deepEqual(d.targetsUnits, {e00: 26, e01: 26});
+  // Shortest break before (audit): "+1 Temporary e00, +1 Temporary e01" left both hand edited at 27 / 26.
+  assert.throws(() => edit(i, edit(i, d, 'e00', 2).draft, 'e01', 2), /allocation-above-month-total/);
+  // Longest single-button break before: 14 × "+1 Temporary e00" reached 27 / 26 points (the user saw 77 / 26 after more presses).
+  let x = d, presses = 0, stop = null;
+  while (!stop && presses < 100) {try {x = edit(i, x, 'e00', 2).draft; presses++;} catch (e) {stop = e;}}
+  assert.match(stop?.message ?? '', /allocation-above-month-total/);
+  assert.equal(presses, 13); assert.deepEqual(x.targetsUnits, {e00: 52, e01: 0}); assert.ok(balanced(x));
+  // The dialog disables exactly what the library refuses: every + (e00 is hand edited, so no one is
+  // left to absorb a + on e01 either) and − on e01; − on e00 gives the points back.
+  const options = editOptions(i, x, 2);
+  assert.deepEqual(options.e00, {temporary: {up: false, down: true}, permanent: {up: false, down: true}});
+  assert.deepEqual(options.e01.temporary, {up: false, down: false});
+  assert.deepEqual(edit(i, x, 'e00', -2).draft.targetsUnits, {e00: 50, e01: 2});
+  // The user's mix (+P then +T on one member) stops at the month total too.
+  let y = d;
+  for (let k = 0; k < 40; k++) for (const kind of ['permanent', 'temporary']) {try {y = edit(i, y, 'e00', 2, kind).draft;} catch {/* refused at a bound */}}
+  assert.ok(total(Object.values(y.targetsUnits)) <= month && y.targetsUnits.e00 <= month);
+  assert.ok(y.baselineUnits.e00 + y.changes.e00.permanent <= month && Math.abs(y.changes.e00.temporary) <= month);
+  // + Permanent / − Temporary within the ceiling stays allowed: the other member covers the deferred part.
+  const mixed = edit(i, edit(i, d, 'e00', 2, 'permanent').draft, 'e00', -2);
+  assert.ok(mixed.balanced); assert.deepEqual(mixed.draft.changes.e00, {temporary: -2, permanent: 2});
+  // A stored change beyond the month total is refused on review, whatever its kind.
+  const deferred = structuredClone(persistedDraft(d)); deferred.changes.e00.temporary = -(month + 2);
+  assert.throws(() => reviewAllocation(i, deferred), /temporary-above-month-total/);
 });
 
 test('a temporary change on a debtor defers newest repayment; a permanent change that keeps the points never consumes it', () => {

@@ -75,10 +75,33 @@ test('Permanent + stops when fair share + punishment reaches the month total, wi
   await expect(increase).toBeEnabled(); await expect(note).toHaveCount(0);
   await page.getByRole('button', {name: '1', exact: true}).click();
   await expect(increase).toBeDisabled(); await expect(note).toBeVisible();
-  // Temporary + is never capped.
+  // Temporary + has no punishment note, but everyone else is at zero, so no one can absorb it either.
   await page.getByRole('button', {name: /^Temporary/}).click();
-  await expect(first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true})).toBeEnabled();
   await expect(note).toHaveCount(0);
+  const temporary = first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true});
+  await expect(temporary).toBeDisabled(); await expect(temporary).toHaveAttribute('aria-describedby', 'plan-no-counterpart');
+});
+
+test('two members: + stops when the other member has nothing left, so the plan never exceeds 26 / 26 pts', async ({page, backend, openApp}) => {
+  fresh(backend, 2); await openApp(); await openPlan(page);
+  const first = page.locator('.plan-row').first(), points = first.locator('output');
+  const increase = first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true});
+  const fair = Number(await points.textContent());
+  for (let k = 0; k < 26 - fair; k++) await increase.click();
+  await expect(points).toHaveText('26');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  // The other member is at zero: + is disabled for both kinds and says why to screen readers.
+  await expect(increase).toBeDisabled();
+  await expect(increase).toHaveAttribute('aria-describedby', 'plan-no-counterpart');
+  await expect(page.locator('#plan-no-counterpart')).toHaveText('No one else can take on less. Lower someone first, or drag a point.');
+  await page.getByRole('button', {name: /^Permanent/}).click();
+  await expect(first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true})).toBeDisabled();
+  // − gives a point back to the other member.
+  await page.getByRole('button', {name: /^Temporary/}).click();
+  await first.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(points).toHaveText('25');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  await expect(increase).toBeEnabled();
 });
 
 test('Save stores the whole plan without generating; closing, reopening and reloading restore it exactly', async ({page, backend, openApp}) => {

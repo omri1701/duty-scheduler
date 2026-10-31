@@ -3,7 +3,8 @@
 -- One net temporary and one net permanent change per member must explain the
 -- targets exactly, balance to zero and respect the floors (a permanent change
 -- never takes away the fair share or work already given as planned relief) and
--- the ceiling (fair share + permanent change never exceeds the month's total points).
+-- the ceilings (fair share + permanent change never exceeds the month's total
+-- points, and no one owes or is owed more temporary work than the month holds).
 -- duty_confirm_allocation additionally requires the transfers to be the exact
 -- derivation of those changes and the recorded pairs.
 CREATE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
@@ -40,6 +41,7 @@ begin
   if (change->>'permanent')::numeric::bigint< -least((draft->'baselineUnits'->>id)::numeric::bigint,(draft->'offeredUnits'->>id)::numeric::bigint) then raise exception 'permanent-below-fair-share'; end if;
   -- total holds the month's units: every table above was checked against them.
   if (draft->'baselineUnits'->>id)::numeric::bigint+(change->>'permanent')::numeric::bigint>total then raise exception 'permanent-above-month-total'; end if;
+  if abs((change->>'temporary')::numeric::bigint)>total then raise exception 'temporary-above-month-total'; end if;
   if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
   lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
  end loop;
