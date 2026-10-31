@@ -212,3 +212,24 @@ test('weekend bars centre the name: plain, locked holiday, a weekend ending a st
     }
   }
 });
+
+test('single-day pills centre the name too: plain, with a second member, "(you)" and a locked holiday weekday', async ({page, backend, openApp}, info) => {
+  for (const r of rows(backend, '2026-11-12')) r.locked = true;
+  // Tuesday 17 is the signed-in admin's, between two other members, so it stays a single day.
+  for (const [day, id] of [['2026-11-16', ids.a], ['2026-11-17', ids.admin], ['2026-11-18', ids.b]]) for (const r of rows(backend, day)) r.primary_id = id;
+  await openApp();
+  await expect(duty(page, '2026-11-17').locator('.assignment-chip small')).toContainText('(you)');
+  for (const lang of ['en', 'he'] as const) {
+    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
+      await page.setViewportSize({width, height: 900});
+      for (const day of ['2026-11-02', '2026-11-03', '2026-11-12', '2026-11-17']) {
+        const chip = duty(page, day).locator('.assignment-chip'), name = chip.locator('> span:last-child');
+        await expect(name).not.toHaveText('');
+        const bar = await box(chip), text = await box(name);
+        expect(Math.abs(centre(text) - centre(bar)), `${day} at ${width}px in ${lang}`).toBeLessThanOrEqual(1.5);
+        expect(text.x).toBeGreaterThanOrEqual(bar.x - 0.5); expect(text.x + text.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+      }
+    }
+  }
+});
