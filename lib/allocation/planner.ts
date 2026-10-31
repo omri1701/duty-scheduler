@@ -15,13 +15,19 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
 
 /** Synchronous proposal: plain arithmetic, no solver. Date placement and the
  * exact coverage check remain Generate's job.
- * 1. Equal ordinary shares; remainders go to the newest members. When the
- *    indivisible duties cannot split that way, the cheapest exact partition
- *    is used instead, larger shares again to the newest members, and the
- *    extra above the plain split is temporary credit (`uneven`).
- * 2. Open obligations are repaid oldest first, capped by the debtor's
- *    availability ceiling and by the creditor's locked floor; work carried as
- *    uneven credit is never relief.
+ * One extra each, before anyone gets two (decision 2026-11-01):
+ * 1. Each creditor's relief (its share above its locks; work carried as uneven
+ *    credit is never relief) is repaid by its debtors in turns: one point at a
+ *    time to the debtor who has repaid least of its current debt to that creditor
+ *    (published repayment work counts), newest first on ties, from its own oldest
+ *    debt, within its availability ceiling. A second round starts only after every
+ *    debtor of that creditor has had one, and the turns carry on next month; a
+ *    single debtor repays as much as the relief allows. The rest carries over.
+ * 2. Equal ordinary shares; the larger shares (remainders) go to the newest
+ *    members who are not repaying this month, then, only if needed, to the newest
+ *    repayers. When the indivisible duties cannot split equally, the cheapest
+ *    exact partition is used the same way, and the extra above the plain split is
+ *    temporary credit (`uneven`).
  * 3. Locks are floors: a member below them takes temporary work from the member
  *    with most points (most senior on ties), as part of the automatic balance.
  * 4. Each non-weekend member the manager has not edited gets +1 Permanent
@@ -35,22 +41,63 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
 export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   const c = context(input), g = grain(c), ceiling = ceilings(c), weights = c.prepared.duties.map(d => d.units);
   const shares = fitPartition(weights, c.ids.length);
-  let baseline = Object.fromEntries(c.ids.map(id => [id, shares[input.seniority.indexOf(id)]]));
+  const newest = [...input.seniority].reverse();
+  // Larger shares newest first, members repaying this month last.
+  const arrange = (repaying: ReadonlySet<string>) => {
+    const order = [...newest.filter(id => !repaying.has(id)), ...newest.filter(id => repaying.has(id))];
+    const descending = [...shares].sort((a, b) => b - a);
+    const share = new Map(order.map((id, k) => [id, descending[k]]));
+    return Object.fromEntries(c.ids.map(id => [id, share.get(id)!]));
+  };
   const kept = retained?.baselineUnits;
-  if (kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
-    JSON.stringify(c.ids.map(id => kept[id]).sort((a, b) => a - b)) === JSON.stringify([...shares].sort((a, b) => a - b))) {
-    baseline = Object.fromEntries(c.ids.map(id => [id, kept[id]]));
+  const keep = !!kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
+    JSON.stringify(c.ids.map(id => kept[id]).sort((a, b) => a - b)) === JSON.stringify([...shares].sort((a, b) => a - b));
+  // Progress on today's debt: repayment work already published (pending, held or done)
+  // against the lots that still back a debtor's open debt to that creditor.
+  const progress = (debtorId: string, creditorId: string) => {
+    const open = new Set(c.candidates.filter(k => k.debtorId === debtorId && k.creditorId === creditorId).flatMap(k => k.path.map(p => p.lotId)));
+    return c.projection.actual.contributions.filter(k => k.status !== 'cancelled' && k.claim.debtorId === debtorId &&
+      k.claim.creditorId === creditorId && k.claim.path.some(p => open.has(p.lotId))).reduce((n, k) => n + k.capacity.units, 0);
+  };
+  const repay = (baseline: Record<string, number>) => {
+    const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
+    const offered = {...baseline}, taken = new Map<string, number>(), order: string[] = [], repaying = new Set<string>();
+    for (const creditorId of [...new Set(c.candidates.map(k => k.creditorId))]) {
+      const claims = (id: string) => c.candidates.filter(k => k.debtorId === id && k.creditorId === creditorId);
+      const owed = (id: string) => claims(id).reduce((n, k) => n + k.units - (taken.get(k.id) ?? 0), 0);
+      const debtors = newest.filter(id => claims(id).length), turns = new Map(debtors.map(id => [id, progress(id, creditorId)]));
+      const stuck = new Set<string>();
+      // Turns: one point at a time to the debtor who has repaid least of this debt so far, newest
+      // first on ties, while the creditor keeps relief above its locks and the debtor still owes.
+      for (;;) {
+        const relief = offered[creditorId] - c.locked[creditorId] - (carried[creditorId] ?? 0);
+        const next = debtors.filter(id => !stuck.has(id) && owed(id) > 0)
+          .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
+        if (!next || relief < g) break;
+        let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
+        if (amount <= 0) {stuck.add(next); continue;}
+        offered[next] += amount; offered[creditorId] -= amount; turns.set(next, turns.get(next)! + amount); repaying.add(next);
+        for (const k of claims(next)) {
+          const part = Math.min(amount, k.units - (taken.get(k.id) ?? 0)); if (!part) continue;
+          if (!taken.has(k.id)) order.push(k.id);
+          taken.set(k.id, (taken.get(k.id) ?? 0) + part); amount -= part;
+        }
+      }
+    }
+    const repayments: AllocationDraft['repayments'] = order.map(id => {
+      const claim = c.candidates.find(k => k.id === id)!, units = taken.get(id)!;
+      return {claim: {...claim, ...sliceClaim(claim, units), units}, units};
+    });
+    return {offered, repayments, repaying};
+  };
+  // Who repays depends on the creditors' shares and the shares on who repays: settle both.
+  let baseline = keep ? Object.fromEntries(c.ids.map(id => [id, kept![id]])) : arrange(new Set()), plan = repay(baseline);
+  for (let round = 0; !keep && round < c.ids.length; round++) {
+    const next = arrange(plan.repaying);
+    if (c.ids.every(id => next[id] === baseline[id])) break;
+    baseline = next; plan = repay(baseline);
   }
-  const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
-  const offered = {...baseline}, repayments: AllocationDraft['repayments'] = [];
-  for (const claim of c.candidates) {
-    const room = Math.min(claim.units, ceiling[claim.debtorId] - offered[claim.debtorId],
-      offered[claim.creditorId] - c.locked[claim.creditorId] - (carried[claim.creditorId] ?? 0));
-    const amount = Math.floor(Math.max(0, room) / g) * g;
-    if (!amount) continue;
-    repayments.push({claim: {...claim, ...sliceClaim(claim, amount), units: amount}, units: amount});
-    offered[claim.debtorId] += amount; offered[claim.creditorId] -= amount;
-  }
+  const {offered, repayments} = plan;
   const build = (hand: Hand, pairs: Pair[]): AllocationDraft => {
     const {changes} = balanceChanges(c, input.seniority, baseline, offered, hand);
     const targets = Object.fromEntries(c.ids.map(id => [id, offered[id] + changes[id].temporary + changes[id].permanent]));

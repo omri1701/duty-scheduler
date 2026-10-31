@@ -30,9 +30,18 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 
 `proposeAllocation(input)` is plain, deterministic arithmetic:
 
+**One extra each, before anyone gets two (decision 2026-11-01).** A member's
+extra point this month is either a larger ordinary share (a remainder) or a point
+of repayment. Nobody gets a second remainder until every eligible member has one
+extra, and among a creditor's debtors nobody repays a second point before every
+one of them has repaid one (2 below).
+
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
-   newest members. Availability and locks never change the baseline.
+   newest members who are not repaying this month, and only then, newest first,
+   to repayers. Availability and locks never change the baseline. Who repays
+   depends on the creditors' shares and the reverse, so the proposal settles both
+   (a creditor's own remainder adds to its relief).
    The database accepts only an exact, minimum-squared-cost partition of the
    indivisible duty weights (`duty_private.allocation_baseline`). Weights follow
    the canonical calendar: a weekday is 1 + extra, a holiday weekend touched by a
@@ -42,7 +51,7 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    weekends split by hand: equal 4.5 each is impossible), `fitPartition` in
    `lib/allocation/fit.ts` runs a small exact
    search over duty counts, with no solver, and the larger shares go to the
-   newest members. The dialog then shows one note naming who gets more. The
+   same members as remainders. The dialog then shows one note naming who gets more. The
    search is capped; a pathological calendar shows a clear message
    (`allocation-fit-limit`) instead of freezing. The database's own optimality
    proof is slower: about 8 s locally for that 14-day case, which is the
@@ -69,10 +78,21 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    proposals, edits and review recompute it from the baseline and the
    per-person changes under the current seniority, and the checked database
    derives the same list and refuses any other.
-2. **Repayment.** Open projected obligations are repaid oldest first, in whole
-   steps, capped by the debtor's availability ceiling (below) and by the
-   creditor's locked floor. An older claim that does not fit is skipped and stays
-   open; a younger one may still progress. There is no fixed monthly cap.
+2. **Repayment in turns.** Each creditor's relief this month (its share above its
+   locks, so it never goes below them or below 0, and never work carried as uneven
+   credit) is repaid by its own debtors **in turns**: one point at a time to the
+   debtor who has repaid least of its current debt to that creditor (repayment
+   work already published counts), **newest member first** on ties, each from its
+   own oldest debt, within its availability ceiling (below). A second round starts
+   only after every debtor of that creditor who still owes has had one, and the
+   turns carry on into the next month. Creditors are served in the order of their
+   oldest debt, each with its own turns. A single debtor repays as much as the
+   relief allows (A owes B two points: A +2, B −2 this month). The rest carries
+   over and is never forgiven. Examples: in the reported January, Shira and Omer
+   repay Local Admin one point each, instead of Tamar repaying both; B, C and D
+   owing A two points each, with A's share at three points, repay one point each
+   in November and again in December; with A's share at two, D and C repay in
+   November and B goes first in December.
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.
