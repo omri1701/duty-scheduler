@@ -25,7 +25,7 @@ fingerprints, generation seed/metrics and publication ancestry. The
 (their transfers become routing pairs, their nets are recomputed); a draft the
 new rules cannot express keeps its shape and needs a new proposal, and published
 snapshots and restored copies are not touched. The
-`20261031103000_uneven_month_credit.sql` migration adds
+`20261031033000_uneven_month_credit.sql` migration adds
 `duty_private.allocation_uneven` and the uneven-credit checks to
 `allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
 without touching stored rows. Only managers can
