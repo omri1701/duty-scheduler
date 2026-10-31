@@ -1,4 +1,4 @@
-import {approvedPair} from '../scheduling/solver/problem.ts';
+import {approvedPair, boundaryBlocked} from '../scheduling/solver/problem.ts';
 import {prepareGeneration, inputKey, snapshotKey} from '../scheduling/domain.ts';
 import {canonicalDuties, coverageStart} from '../scheduling/calendar.ts';
 import {project} from '../compensation/index.ts';
@@ -40,15 +40,27 @@ export function grain(c: Context) {
   return c.prepared.duties.reduce((g, d) => gcd(g, d.units), 0) || 2;
 }
 
-/** A simple availability ceiling, never a feasibility proof: the most units of
- * duties a member may take (available, not locked to someone else), without two
- * back-to-back duties unless approved. Own locked points always fit. */
+/** The hard availability ceiling, never a feasibility proof: the units of every duty a
+ * member may take (available, not locked to someone else, not touching their own duty
+ * in a neighbouring month). Generate fills such a target with back-to-back duties and
+ * extra weekends as a last resort. Own locked points always fit. */
+export function availability(c: Context): Record<string, number> {
+  const {problem} = c.prepared;
+  return Object.fromEntries(c.ids.map((id, e) => [id, Math.max(c.locked[id], sum(problem.duties.map((d, i) =>
+    d.eligible.includes(e) && (d.lock === undefined || d.lock === e) && !boundaryBlocked(problem, e, i) ? d.units : 0)))]));
+}
+export const availableCeilings = (input: AllocationInput) => availability(context(input));
+
+/** The spaced ceiling, never a feasibility proof: the most units of duties a member may
+ * take (available, not locked to someone else) without two back-to-back duties unless
+ * approved. Automatic repayments stay within it; a target above it needs back-to-back
+ * days. Own locked points always fit. */
 export function ceilings(c: Context): Record<string, number> {
   const {duties} = c.prepared.problem;
   return Object.fromEntries(c.ids.map((id, e) => {
     let take = 0, skip = 0, previous = -1; // best totals with/without the previous duty taken
     duties.forEach((d, i) => {
-      if (!d.eligible.includes(e) || (d.lock !== undefined && d.lock !== e)) return;
+      if (!d.eligible.includes(e) || (d.lock !== undefined && d.lock !== e) || boundaryBlocked(c.prepared.problem, e, i)) return;
       const best = Math.max(take, skip);
       const joined = previous >= 0 && duties[previous].end === d.start && !approvedPair(c.prepared.problem, previous, i);
       [take, skip] = [(joined ? skip : best) + d.units, best]; previous = i;

@@ -12,11 +12,12 @@ export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; bou
   weekdays?: number[][];
   exceptions?: {consecutive?: [number, number][]; boundary?: {duty: number; boundary: string}[];
     weekends?: {engineer: number; weekends: number[]}[]}};
-/** Ordered objective facts: coverage, special, units, the minimum gap, weekend
- * rotation cost, same-weekday repeats, cross-month weekday rotation cost, the
- * preferred-date count, then (below the seed) the whole ascending gap vector. */
+/** Ordered objective facts: coverage, special, units, extra weekends, unapproved
+ * back-to-back pairs, the minimum gap, weekend rotation cost, same-weekday repeats,
+ * cross-month weekday rotation cost, the preferred-date count, then (below the seed)
+ * the whole ascending gap vector. Back-to-back duties (gap 0) are not spacing gaps. */
 export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
-  rotation: number; preferred: number; repeats: number; weekdays: number};
+  rotation: number; preferred: number; repeats: number; weekdays: number; extraWeekends: number; adjacent: number};
 
 export function approvedPair(p: Problem, i: number, j: number) {
   return p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j) ?? false;
@@ -24,6 +25,22 @@ export function approvedPair(p: Problem, i: number, j: number) {
 export function approvedBoundary(p: Problem, i: number, b: Boundary) {
   return p.exceptions?.boundary?.some(a => a.duty === i && a.boundary === b.id) ?? false;
 }
+/** A neighbouring month's duty of the same engineer overlapping or touching duty i, unless approved. */
+export function boundaryBlocked(p: Problem, e: number, i: number) {
+  const d = p.duties[i];
+  return (p.boundaries ?? []).some(b => b.engineer === e && d.start <= b.end && b.start <= d.end &&
+    !(d.lock === e && approvedBoundary(p, i, b)));
+}
+/** Weekends an engineer holds without penalty: one, or every approved locked weekend. */
+export function weekendAllowance(p: Problem, e: number) {
+  return p.exceptions?.weekends?.find(a => a.engineer === e)?.weekends.length ?? 1;
+}
+/** Extra-weekend cost: k weekends above the allowance cost 1 + 2 + … + k, so the
+ * extra weekends spread across members (2/2 costs 2, 3/1 costs 3, 4/0 costs 6). */
+export const extraWeekendCost = (weekends: number, allowance: number) => {
+  const extra = Math.max(0, weekends - allowance);
+  return extra * (extra + 1) / 2;
+};
 export function anchors(p: Problem, e: number) {
   const bindings = (p.boundaries ?? []).filter(b => b.engineer === e);
   return {
@@ -82,7 +99,11 @@ export function checkProblem(p: Problem) {
       a.weekends.some(w => !integer(w) || !locked.has(w))) throw Error('Invalid locked-weekend approval');
     weekendEngineers.add(a.engineer);
   }
-  validateAssignment(p, p.duties.map(d => d.lock ?? null));
+  // Generate may choose back-to-back duties or extra weekends as a last resort, but
+  // fixed duties still need the manager's exact approval for either.
+  const fixed = validateAssignment(p, p.duties.map(d => d.lock ?? null));
+  if (fixed.adjacent) throw Error('Unapproved consecutive fixed duties');
+  if (fixed.extraWeekends) throw Error('Weekend cap exceeded by fixed duties');
 }
 
 /** Independent of model construction, threshold search, flow variables and HiGHS. */
@@ -91,7 +112,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   const used = p.targets.map(() => 0), weekends = p.targets.map(() => new Set<number>());
   const selected = p.targets.map(() => [] as number[]), gaps: number[] = [];
   const weekdays = p.targets.map(() => new Map<number, number>());
-  let coverage = 0, special = 0, preferred = 0, weekdayCost = 0;
+  let coverage = 0, special = 0, preferred = 0, weekdayCost = 0, adjacent = 0;
   assignment.forEach((e, i) => {
     const d = p.duties[i];
     if (d.lock !== undefined && d.lock !== e) throw Error('Missing lock');
@@ -107,8 +128,10 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     const previous = selected[e].at(-1);
     if (previous !== undefined) {
       const gap = d.start - p.duties[previous].end;
-      if (gap < 0 || (gap === 0 && !approvedPair(p, previous, i))) throw Error('Consecutive/overlapping duties');
-      gaps.push(gap);
+      if (gap < 0) throw Error('Overlapping duties');
+      // Back-to-back is a last resort counted on its own level; approved pairs are free.
+      if (gap === 0 && !approvedPair(p, previous, i)) adjacent++;
+      if (gap > 0) gaps.push(gap);
     }
     selected[e].push(i);
     coverage += d.days; special += d.special;
@@ -118,19 +141,20 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     }
     preferred += p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0;
   });
-  let rotation = 0, repeats = 0;
+  let rotation = 0, repeats = 0, extraWeekends = 0;
   for (let e = 0; e < used.length; e++) {
     if (weekends[e].size) rotation += p.rotation?.[e] ?? 0;
     for (const n of weekdays[e].values()) repeats += Math.max(0, n - 1);
-    const approval = p.exceptions?.weekends?.find(a => a.engineer === e);
-    if (approval ? [...weekends[e]].some(w => !approval.weekends.includes(w)) : weekends[e].size > 1) throw Error('Weekend cap exceeded');
+    extraWeekends += extraWeekendCost(weekends[e].size, weekendAllowance(p, e));
     if (!selected[e].length) continue; // No external-anchor-to-anchor gap.
+    // Only an approved locked handover touches a boundary; like an approved pair it is no gap.
     const {before, after} = anchors(p, e);
-    if (before) gaps.push(p.duties[selected[e][0]].start - before.end);
-    if (after) gaps.push(after.start - p.duties[selected[e].at(-1)!].end);
+    if (before && p.duties[selected[e][0]].start > before.end) gaps.push(p.duties[selected[e][0]].start - before.end);
+    if (after && after.start > p.duties[selected[e].at(-1)!].end) gaps.push(after.start - p.duties[selected[e].at(-1)!].end);
   }
   return {coverage, special, units: used.reduce((a, b) => a + b, 0),
-    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays: weekdayCost};
+    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays: weekdayCost,
+    extraWeekends, adjacent};
 }
 
 export function decodeAssignment(p: Problem, values: Record<string, number>) {
@@ -159,9 +183,11 @@ const lexicographic = (av: number[], bv: number[]) => {
   return 0;
 };
 /** The quality levels above the seeded tie, lower is better: coverage, special, units,
- * minimum gap, weekend rotation, repeats, weekday rotation, preferred. */
+ * extra weekends, back-to-back pairs, minimum gap, weekend rotation, repeats, weekday
+ * rotation, preferred. */
 export function compareQuality(a: Metrics, b: Metrics, spacing = true) {
-  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []),
+  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent,
+    ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []),
     m.rotation, m.repeats, m.weekdays, -m.preferred];
   return lexicographic(head(a), head(b));
 }

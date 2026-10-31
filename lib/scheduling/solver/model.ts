@@ -1,9 +1,11 @@
-import {anchors, approvedBoundary, approvedPair, binaryValues, checkProblem, compareGaps, compareQuality,
-  decodeAssignment, validateAssignment, type Metrics, type Problem} from './problem.ts';
+import {anchors, approvedPair, binaryValues, boundaryBlocked, checkProblem, compareGaps, compareQuality,
+  decodeAssignment, validateAssignment, weekendAllowance, type Metrics, type Problem} from './problem.ts';
 import type {Column, Row, Settings, SolverAdapter, SolverResult, Term} from './highs-adapter.ts';
 import {defaultSettings} from './settings.ts';
 
 type Stage = {name: string; terms: Term[]};
+/** What the proved extra-weekend and back-to-back levels still allow in later rows. */
+type Slack = {adjacent: boolean; weekends: boolean};
 type ProofStage = Omit<SolverResult, 'values'> & {name: string; proved: boolean; evidence?: string};
 export type Progress = {stage: string; assignment: (number | null)[]; metrics: Metrics; provedPrefix: string[]};
 const x = (e: number, i: number) => `x_${e}_${i}`;
@@ -11,9 +13,13 @@ const minimum = (m: Metrics) => m.gaps[0] ?? Infinity;
 const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : name === 'special' ? -m.special :
   name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : name === 'rotation' ? m.rotation :
   name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : name === 'weekdays' ? m.weekdays :
+  name === 'extra-weekends' ? m.extraWeekends : name === 'adjacent' ? m.adjacent :
   m.gaps.filter(g => g === Number(name.slice(4))).length;
+/** Counter stages minimize continuous columns bounded below by their counts (r, z and b columns). */
+const counters = new Set(['repeats', 'extra-weekends', 'adjacent']);
+const counter = (column: string) => /^[rzb]_/.test(column);
 /** Stages whose objective is a nonnegative sum of nonnegative columns: an incumbent at zero is optimal. */
-const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'repeats' || name === 'weekdays';
+const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'weekdays' || counters.has(name);
 /** 32-bit hash mixer (splitmix-style); every output bit depends on the whole state. */
 function mixer(seed: number) {
   let state = seed >>> 0;
@@ -25,7 +31,9 @@ function mixer(seed: number) {
   };
 }
 
-/** Assignment/coverage model only. No successor columns or path constraints. */
+/** Assignment/coverage model only. No successor columns or path constraints. Extra
+ * weekends and unapproved back-to-back pairs are allowed here; their own counter
+ * stages (buildSlack) minimize them before any spacing level. */
 export function buildModel(p: Problem, freeTargets = false) {
   checkProblem(p);
   // Allocation planning supplies its own variable target ceilings. Validate the
@@ -37,9 +45,7 @@ export function buildModel(p: Problem, freeTargets = false) {
   for (const [i, d] of p.duties.entries()) {
     rows.push({terms: d.eligible.map(e => [1, x(e, i)]), upper: 1});
     for (const e of d.eligible) {
-      const boundaryConflict = (p.boundaries ?? []).some(b => b.engineer === e && d.start <= b.end && b.start <= d.end &&
-        !(d.lock === e && approvedBoundary(p, i, b)));
-      const allowed = !boundaryConflict && d.units <= p.targets[e] && (d.lock === undefined || d.lock === e);
+      const allowed = !boundaryBlocked(p, e, i) && d.units <= p.targets[e] && (d.lock === undefined || d.lock === e);
       columns.push({name: x(e, i), binary: true, lower: d.lock === e ? 1 : 0, upper: allowed ? 1 : 0});
       if (allowed) ids[e].push(i);
       coverage.push([-d.days, x(e, i)]);
@@ -56,28 +62,25 @@ export function buildModel(p: Problem, freeTargets = false) {
       const w = p.duties[i].weekend;
       if (w !== undefined) weekends.set(w, [...(weekends.get(w) ?? []), i]);
     }
-    const ys: Term[] = [], approval = p.exceptions?.weekends?.find(a => a.engineer === e);
     for (const [w, ds] of weekends) {
       const y = `w_${e}_${w}`;
-      columns.push({name: y, upper: approval && !approval.weekends.includes(w) ? 0 : 1}); ys.push([1, y]);
+      columns.push({name: y});
       // Weekend rotation: a weekend for an engineer who already had turns this cycle costs their count.
       if (p.rotation?.[e]) rotation.push([p.rotation[e], y]);
       for (const i of ds) rows.push({terms: [[1, x(e, i)], [-1, y]], upper: 0});
       rows.push({terms: [[1, y], ...ds.map(i => [-1, x(e, i)] as Term)], upper: 0});
     }
-    if (!approval) rows.push({terms: ys, upper: 1});
+    // Back-to-back duties are no spacing gap; the adjacent stage counts them.
     for (const [a, i] of ids[e].entries()) for (const j of ids[e].slice(a + 1)) {
-      const gap = p.duties[j].start - p.duties[i].end, terms: Term[] = [[1, x(e, i)], [1, x(e, j)]];
-      if (gap === 0 && !approvedPair(p, i, j)) rows.push({terms, upper: 1});
-      else if (p.duties[i].units + p.duties[j].units <= p.targets[e]) gaps.add(gap);
+      const gap = p.duties[j].start - p.duties[i].end;
+      if (gap > 0 && p.duties[i].units + p.duties[j].units <= p.targets[e]) gaps.add(gap);
     }
     const {before, after} = anchors(p, e);
     for (const i of ids[e]) {
-      if (before) gaps.add(p.duties[i].start - before.end);
-      if (after) gaps.add(after.start - p.duties[i].end);
+      if (before && p.duties[i].start > before.end) gaps.add(p.duties[i].start - before.end);
+      if (after && after.start > p.duties[i].end) gaps.add(after.start - p.duties[i].end);
     }
   }
-  rows.push(...capacityRows(p, ids, 0));
   return {columns, rows, gaps: [...gaps].sort((a, b) => a - b), ids, rotation, weekdays, stages: [{name: 'coverage', terms: coverage},
     {name: 'special', terms: special}, {name: 'units', terms: units}] as Stage[]};
 }
@@ -103,8 +106,35 @@ function buildRepeats(p: Problem, ids: number[][]) {
   return {columns, rows, stage: {name: 'repeats', terms} as Stage};
 }
 
+/** Extra weekends: z[e,k] >= (weekends of e) - k for every k from the allowance up, so the
+ * sum is 1 + 2 + … + (extra weekends) and extra weekends spread across members.
+ * Back-to-back: b[e,i] >= x[e,i] + x[e,next] - 1 for each unapproved adjacent pair.
+ * Continuous columns suffice: binary x makes both minima integral. A proved zero
+ * bounds the columns at 0, which restores the hard one-weekend and no-adjacency rows. */
+function buildSlack(p: Problem, ids: number[][]) {
+  const weekends = {columns: [] as Column[], rows: [] as Row[], stage: {name: 'extra-weekends', terms: [] as Term[]}};
+  const adjacent = {columns: [] as Column[], rows: [] as Row[], stage: {name: 'adjacent', terms: [] as Term[]}};
+  for (let e = 0; e < p.targets.length; e++) {
+    const ys = [...new Set(ids[e].flatMap(i => p.duties[i].weekend === undefined ? [] : [p.duties[i].weekend!]))]
+      .map(w => [-1, `w_${e}_${w}`] as Term);
+    for (let k = weekendAllowance(p, e); k < ys.length; k++) {
+      const z = `z_${e}_${k}`;
+      weekends.columns.push({name: z, upper: ys.length - k}); weekends.stage.terms.push([1, z]);
+      weekends.rows.push({terms: [[1, z], ...ys], lower: -k});
+    }
+    for (const [a, i] of ids[e].entries()) {
+      const j = ids[e][a + 1];
+      if (j === undefined || p.duties[j].start !== p.duties[i].end || approvedPair(p, i, j)) continue;
+      const b = `b_${e}_${i}`;
+      adjacent.columns.push({name: b}); adjacent.stage.terms.push([1, b]);
+      adjacent.rows.push({terms: [[1, x(e, i)], [1, x(e, j)], [-1, b]], upper: 1});
+    }
+  }
+  return [weekends, adjacent];
+}
+
 /** With binary x, acyclic unit flow through every selected node has a unique integral path. */
-function buildFlows(p: Problem, ids: number[][], gapFloor: number) {
+function buildFlows(p: Problem, ids: number[][], gapFloor: number, slack: Slack) {
   const columns: Column[] = [], rows: Row[] = [], gaps = new Map<number, Term[]>();
   for (let e = 0; e < p.targets.length; e++) {
     if (!ids[e].length) continue;
@@ -113,10 +143,11 @@ function buildFlows(p: Problem, ids: number[][], gapFloor: number) {
     const incoming = new Map(ids[e].map(i => [i, [] as Term[]]));
     const outgoing = new Map(ids[e].map(i => [i, [] as Term[]]));
     const source: Term[] = [], sink: Term[] = [];
+    // A back-to-back arc (gap 0) is no spacing gap: neither floored nor counted.
     const arc = (name: string, from: Term[], to: Term[], gap?: number) => {
-      if (gap !== undefined && gap < gapFloor) return;
+      if (gap !== undefined && gap > 0 && gap < gapFloor) return;
       columns.push({name}); from.push([1, name]); to.push([1, name]);
-      if (gap !== undefined) gaps.set(gap, [...(gaps.get(gap) ?? []), [1, name]]);
+      if (gap) gaps.set(gap, [...(gaps.get(gap) ?? []), [1, name]]);
     };
     if (!locked.length) arc(`empty_${e}`, source, sink); // No anchor-to-anchor score.
     const {before, after} = anchors(p, e);
@@ -127,7 +158,7 @@ function buildFlows(p: Problem, ids: number[][], gapFloor: number) {
         const gap = p.duties[j].start - p.duties[i].end;
         const required = lockedUnits + (p.duties[i].lock === e ? 0 : p.duties[i].units) +
           (p.duties[j].lock === e ? 0 : p.duties[j].units);
-        if ((gap === 0 && !approvedPair(p, i, j)) || locked.some(k => i < k && k < j) || required > p.targets[e]) continue;
+        if ((gap === 0 && !slack.adjacent && !approvedPair(p, i, j)) || locked.some(k => i < k && k < j) || required > p.targets[e]) continue;
         arc(`a_${e}_${i}_${j}`, outgoing.get(i)!, incoming.get(j)!, gap);
       }
     }
@@ -137,16 +168,18 @@ function buildFlows(p: Problem, ids: number[][], gapFloor: number) {
         {terms: [...outgoing.get(i)!, [-1, x(e, i)]], lower: 0, upper: 0});
     }
   }
-  rows.push(...capacityRows(p, ids, gapFloor));
+  rows.push(...capacityRows(p, ids, gapFloor, slack));
   return {columns, rows, stages: [...gaps].sort(([a], [b]) => a - b).map(([g, terms]) => ({name: `gap:${g}`, terms}))};
 }
 
 /** Valid per-engineer capacity cuts. Integer point totals and weekend use are
  * strongly coupled (e.g. one half-weekend cannot fill an even ordinary target).
  * A small weighted-interval DP computes maxima with/without a weekend. It does
- * not choose the schedule. Large synthetic targets simply omit this optional cut. */
-function capacityRows(p: Problem, ids: number[][], g: number): Row[] {
+ * not choose the schedule. Large synthetic targets simply omit this optional cut,
+ * and so does a month whose proved level still needs extra weekends. */
+function capacityRows(p: Problem, ids: number[][], g: number, slack: Slack): Row[] {
   const rows: Row[] = [];
+  if (slack.weekends) return rows;
   for (let e = 0; e < ids.length; e++) {
     if (p.targets[e] > 4096 || p.exceptions?.weekends?.some(a => a.engineer === e)) continue;
     const locked = ids[e].filter(i => p.duties[i].lock === e), {before, after} = anchors(p, e);
@@ -162,13 +195,14 @@ function capacityRows(p: Problem, ids: number[][], g: number): Row[] {
         if (!current.has(w)) current.set(w, new Set());
         current.get(w)!.add(total);
       };
-      if (!locked.some(k => k < i) && (!before || d.start - before.end >= g)) append(-1, 0);
+      // Floors apply to real gaps only; touching an anchor needs an approval (see ids).
+      if (!locked.some(k => k < i) && (!before || d.start === before.end || d.start - before.end >= g)) append(-1, 0);
       for (let b = 0; b < a; b++) {
         const j = ids[e][b], gap = d.start - p.duties[j].end;
-        if (gap < g || (gap === 0 && !approvedPair(p, j, i)) || locked.some(k => j < k && k < i)) continue;
+        if ((gap > 0 && gap < g) || (gap === 0 && !slack.adjacent && !approvedPair(p, j, i)) || locked.some(k => j < k && k < i)) continue;
         for (const [w, totals] of states[b]) for (const units of totals) append(w, units);
       }
-      if (locked.some(k => k > i) || (after && after.start - d.end < g)) continue;
+      if (locked.some(k => k > i) || (after && after.start !== d.end && after.start - d.end < g)) continue;
       for (const [w, totals] of current) for (const units of totals) {
         if (w === -1) without = Math.max(without, units);
         else withWeekend = Math.max(withWeekend, units);
@@ -187,25 +221,37 @@ function capacityRows(p: Problem, ids: number[][], g: number): Row[] {
 }
 
 /** Expanded intervals [start,end+g) form an interval graph. Maximal cliques
- * enforce all threshold conflicts and strengthen the pairwise LP relaxation. */
-function thresholdRows(p: Problem, ids: number[][], g: number): Row[] {
+ * enforce all threshold conflicts and strengthen the pairwise LP relaxation.
+ * A back-to-back pair (approved, or any while the proved adjacent level is above
+ * zero) is no spacing gap, so such an engineer instead gets one row per close pair:
+ * both duties only with another of theirs in between. */
+function thresholdRows(p: Problem, ids: number[][], g: number, slack: Slack): Row[] {
   const rows: Row[] = [];
   for (let e = 0; e < ids.length; e++) {
-    let right = 0, previousRight = -1;
-    for (let a = 0; a < ids[e].length; a++) {
-      right = Math.max(right, a + 1);
-      while (right < ids[e].length && p.duties[ids[e][right]].start < p.duties[ids[e][a]].end + g) right++;
-      if (right - a > 1 && right !== previousRight) {
-        rows.push({terms: ids[e].slice(a, right).map(i => [1, x(e, i)]), upper: 1});
-        previousRight = right;
+    if (slack.adjacent || p.exceptions?.consecutive?.some(([i]) => p.duties[i].lock === e)) {
+      for (const [a, i] of ids[e].entries()) for (let b = a + 1; b < ids[e].length; b++) {
+        const j = ids[e][b], gap = p.duties[j].start - p.duties[i].end;
+        if (gap >= g) break;
+        if (gap > 0) rows.push({terms: [[1, x(e, i)], [1, x(e, j)], ...ids[e].slice(a + 1, b).map(k => [-1, x(e, k)] as Term)], upper: 1});
+      }
+    } else {
+      let right = 0, previousRight = -1;
+      for (let a = 0; a < ids[e].length; a++) {
+        right = Math.max(right, a + 1);
+        while (right < ids[e].length && p.duties[ids[e][right]].start < p.duties[ids[e][a]].end + g) right++;
+        if (right - a > 1 && right !== previousRight) {
+          rows.push({terms: ids[e].slice(a, right).map(i => [1, x(e, i)]), upper: 1});
+          previousRight = right;
+        }
       }
     }
     const {before, after} = anchors(p, e);
-    const blocked = ids[e].filter(i => (before && p.duties[i].start - before.end < g) ||
-      (after && after.start - p.duties[i].end < g));
+    const close = (gap: number) => gap > 0 && gap < g;
+    const blocked = ids[e].filter(i => (before && close(p.duties[i].start - before.end)) ||
+      (after && close(after.start - p.duties[i].end)));
     if (blocked.length) rows.push({terms: blocked.map(i => [1, x(e, i)]), upper: 0});
   }
-  rows.push(...capacityRows(p, ids, g));
+  rows.push(...capacityRows(p, ids, g, slack));
   return rows;
 }
 
@@ -273,14 +319,17 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   };
   const candidate = (result: SolverResult, terms: Term[], name?: string, floor?: number) => {
     if (!result.values) return null;
-    // Repeat counters are the only non-binary columns; everything else must be exactly 0/1.
-    const raw = result.values, values = binaryValues(Object.fromEntries(Object.entries(raw).filter(([k]) => !k.startsWith('r_'))));
+    // Counter columns are the only non-binary ones; everything else must be exactly 0/1.
+    const raw = result.values, values = binaryValues(Object.fromEntries(Object.entries(raw).filter(([k]) => !counter(k))));
     const a = decodeAssignment(p, values), m = validateAssignment(p, a);
     for (const stage of stages) if (stage.proved && objective(stage.name, m, a) !== stage.objective) throw Error('Prior objective degraded');
     if (floor !== undefined && minimum(m) < floor) throw Error('Threshold violated');
-    const value = terms.reduce((n, [c, v]) => n + c * (v.startsWith('r_') ? Math.round(raw[v]) : values[v]), 0);
+    // A counter is only bounded below by its count: a solution may carry slack above it
+    // (never below), and the exact count is the validated one.
+    const bounded = name !== undefined && counters.has(name);
+    const value = bounded ? objective(name, m, a) : terms.reduce((n, [c, v]) => n + c * values[v], 0);
     if (!Number.isSafeInteger(value) || (name && value !== objective(name, m, a)) || result.objective === null ||
-      Math.abs(value - result.objective) > 1e-7) throw Error('Objective mismatch');
+      (bounded ? value - result.objective > 1e-7 + 1e-8 * terms.length : Math.abs(value - result.objective) > 1e-7)) throw Error('Objective mismatch');
     // Hierarchy order: the quality levels, the seeded tie, then the sorted-gap leximin.
     const comparison = compareQuality(m, metrics, p.spacing) || Math.sign(seedCost(a) - seedCost(assignment)) ||
       (p.spacing ? compareGaps(m, metrics) : 0);
@@ -315,25 +364,42 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   };
   try {
     session.addColumns(base.columns); session.addRows(base.rows);
-    let coverageProved = true;
+    let headProved = true;
     for (const stage of base.stages) {
       if (stage.name !== 'coverage' && metrics.coverage === p.duties.reduce((n, d) => n + d.days, 0)) {
         identity(stage.name, score(stage.name, metrics), 'Full coverage and target conservation');
-      } else if (!optimize(stage)) {coverageProved = false; break;}
+      } else if (!optimize(stage)) {headProved = false; break;}
     }
-    if (coverageProved && !p.spacing) finished = true;
-    if (coverageProved && p.spacing) {
+    // Last resorts, directly below the targets: extra weekends, then unapproved back-to-back
+    // pairs. A proved zero restores the hard rule; otherwise later rows must allow them.
+    const slack: Slack = {adjacent: false, weekends: false};
+    if (headProved) for (const level of buildSlack(p, base.ids)) {
+      if (level.stage.terms.length) {
+        session.addColumns(level.columns); session.addRows(level.rows);
+        columns += level.columns.length; rows += level.rows.length;
+      }
+      if (!optimize(level.stage)) {headProved = false; break;}
+      if (level.stage.name === 'adjacent') slack.adjacent = metrics.adjacent > 0;
+      else slack.weekends = metrics.extraWeekends > 0;
+    }
+    if (headProved) {
+      const cuts = capacityRows(p, base.ids, 0, slack);
+      session.addRows(cuts); rows += cuts.length;
+    }
+    if (headProved && !p.spacing) finished = true;
+    if (headProved && p.spacing) {
       const levels = base.gaps.concat(Infinity);
       const fixedMinimum = minimum(validateAssignment(p, p.duties.map(d => d.lock ?? null)));
-      // Inserting duties between fixed intervals cannot improve their minimum gap.
+      // Inserting duties between fixed intervals cannot improve their minimum gap, unless
+      // back-to-back duties may fill the whole space between them (no gap remains).
       let lo = levels.indexOf(minimum(metrics));
-      let hi = fixedMinimum === Infinity ? levels.length : levels.indexOf(fixedMinimum) + 1;
+      let hi = fixedMinimum === Infinity || slack.adjacent ? levels.length : levels.indexOf(fixedMinimum) + 1;
       if (lo < 0) throw Error('Missing incumbent gap threshold');
       let thresholdCount = 0, offset = rows;
       while (hi - lo > 1) {
         const mid = Math.floor((lo + hi) / 2), floor = levels[mid];
         session.deleteRows(offset, thresholdCount);
-        const constraints = thresholdRows(p, base.ids, floor);
+        const constraints = thresholdRows(p, base.ids, floor, slack);
         offset = session.addRows(constraints); thresholdCount = constraints.length;
         peakRows = Math.max(peakRows, rows + thresholdCount);
         const result = run([], minimum(metrics) >= floor);
@@ -355,14 +421,14 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
         if (floor === Infinity) {
           // A gap-free witness alone is insufficient once secondary objectives
           // run: they must also preserve the vacuous infinite minimum.
-          const constraints = thresholdRows(p, base.ids, floor);
+          const constraints = thresholdRows(p, base.ids, floor, slack);
           session.addRows(constraints); rows += constraints.length;
           finished = true;
         }
         else {
           // The flows enforce the proved minimum gap while the quality levels and the
           // seed are solved; the gap-count (leximin) stages follow them as tie-breakers.
-          const flows = buildFlows(p, base.ids, floor);
+          const flows = buildFlows(p, base.ids, floor, slack);
           session.addColumns(flows.columns); session.addRows(flows.rows);
           columns += flows.columns.length; rows += flows.rows.length;
           qualityDone = true; finished = runQuality();

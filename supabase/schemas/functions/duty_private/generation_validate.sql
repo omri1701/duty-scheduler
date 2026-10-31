@@ -4,7 +4,7 @@ CREATE FUNCTION duty_private.generation_validate(f jsonb, targets jsonb, assignm
  LANGUAGE plpgsql STABLE SET search_path TO '' AS $$
 #variable_conflict use_column
 declare d jsonb; a jsonb; l jsonb; approval jsonb; n jsonb; previous jsonb; m jsonb; denied jsonb;
- ids jsonb:=f->'seniority'; totals jsonb:='{}'; weekends jsonb; fixed_weekends jsonb; k text; engineer text;
+ ids jsonb:=f->'seniority'; totals jsonb:='{}'; fixed_weekends jsonb; k text; engineer text;
  total bigint:=0; assigned bigint:=0; amount bigint; scopes text[]:='{}'; scope text; locked_points bigint;
 begin
  if jsonb_typeof(targets) IS DISTINCT FROM 'object' or jsonb_typeof(assignments) IS DISTINCT FROM 'object'
@@ -77,14 +77,18 @@ begin
      where v->>'rule'='boundary' and v->>'dutyId'=d->>'id' and reviewed-array['id','source']=n-array['id','source']) then raise exception 'neighbor-conflict'; end if;
   end loop;
  end loop;
+ -- Generate may assign extra weekends and back-to-back duties as a last resort.
+ -- Fixed (locked) duties still need the manager's exact approval for either.
  for k in select jsonb_array_elements_text(ids) loop
-  select coalesce(jsonb_agg(w order by w),'[]') into weekends from (select distinct d->'weekendId' w from jsonb_array_elements(f->'duties') d
-   where assignments->(d->>'id')->>'primary'=k and d->>'weekendId' is not null) q;
+  select coalesce(jsonb_agg(w order by w),'[]') into fixed_weekends from (select distinct d->'weekendId' w from jsonb_array_elements(f->'duties') d
+   join jsonb_array_elements(f->'locks') l on l->>'dutyId'=d->>'id' where l->>'engineer'=k and d->>'weekendId' is not null) q;
   select v into approval from jsonb_array_elements(f->'approvals') v where v->>'rule'='weekends' and v->>'engineer'=k;
-  if (approval is null and jsonb_array_length(weekends)>1) or (approval is not null and not (approval->'weekends') @> weekends) then raise exception 'weekend-cap'; end if;
+  if approval is null and jsonb_array_length(fixed_weekends)>1 then raise exception 'weekend-cap'; end if;
   previous:=null;
   for d in select value from jsonb_array_elements(f->'duties') where assignments->(value->>'id')->>'primary'=k order by value->>'startDate' loop
-   if previous->>'endDate'=d->>'startDate' and not exists(select 1 from jsonb_array_elements(f->'approvals') v where v->>'rule'='consecutive' and v->'duties'=jsonb_build_array(previous->'id',d->'id')) then raise exception 'consecutive-primary'; end if;
+   if previous->>'endDate'=d->>'startDate'
+    and (f->'locks') @> jsonb_build_array(jsonb_build_object('dutyId',previous->'id','engineer',k),jsonb_build_object('dutyId',d->'id','engineer',k))
+    and not exists(select 1 from jsonb_array_elements(f->'approvals') v where v->>'rule'='consecutive' and v->'duties'=jsonb_build_array(previous->'id',d->'id')) then raise exception 'consecutive-primary'; end if;
    previous:=d;
   end loop;
  end loop;

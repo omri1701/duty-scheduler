@@ -77,10 +77,14 @@ const exceeded=structuredClone(partial);
 // Explicitly use a zero-target eligible engineer for a forged extra assignment.
 exceeded[duties[0].id]={primary:ids[12]};
 test+=failure(save(exceeded),'target-exceeded');
+// Generate's last resorts (decision 2026-10-31): a back-to-back pair and a second weekend save.
+// Locking them is a manager's fixed decision and still needs the exact approval.
 const adjacent=structuredClone(partial);adjacent[duties[0].id]={primary:ids[5]};adjacent[duties[1].id]={primary:ids[5]};
-test+=failure(save(adjacent),'consecutive-primary');
+test+=save(adjacent);
+test+=failure(confirm(confirmedDraft,[0,1].map(i=>({dutyId:duties[i].id,engineer:ids[5]})),[]),'consecutive-primary');
 const weekends=structuredClone(partial);for(const d of duties.filter(d=>d.weekendId).slice(0,2))weekends[d.id]={primary:ids[5]};
-test+=failure(save(weekends),'weekend-cap');
+test+=save(weekends);
+test+=failure(confirm(confirmedDraft,duties.filter(d=>d.weekendId).slice(0,2).map(d=>({dutyId:d.id,engineer:ids[5]})),[]),'weekend-cap');
 test+=save()+metricsCheck;
 test+=`reset role;create function pg_temp.fail_ledger() returns trigger language plpgsql as $$begin if new.operation->>'kind'='publication' then raise exception 'Injected publication failure';end if;return new;end$$;
 create trigger generation_failure before insert on public.duty_compensation_events for each row execute function pg_temp.fail_ledger();set local role authenticated;`;

@@ -10,7 +10,7 @@ const solver = await createHighsAdapter(loadHighs);
 const duty = (day, units = 2, eligible = [0, 1], extra = {}) =>
   ({start: day * 1440, end: (day + 1) * 1440, units, days: 1, special: 0, eligible, ...extra});
 // Without seeded ties the seed stage is empty, so the full hierarchy ends with the sorted-gap leximin.
-const key = m => [-m.coverage, -m.special, -m.units, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, m.weekdays, -m.preferred, ...m.gaps.map(g => -g)];
+const key = m => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, m.weekdays, -m.preferred, ...m.gaps.map(g => -g)];
 function compare(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const diff = (a[i] ?? -Infinity) - (b[i] ?? -Infinity);
@@ -37,7 +37,7 @@ function enumerate(p) {
 // Test oracle deliberately does not call the domain validator or model helpers.
 function referenceMetrics(p, a) {
   const totals = p.targets.map(() => 0), gaps = [];
-  let coverage = 0, special = 0;
+  let coverage = 0, special = 0, extraWeekends = 0, adjacent = 0;
   p.duties.forEach((d, i) => {
     const e = a[i];
     if (d.lock !== undefined && e !== d.lock) throw Error('lock');
@@ -54,17 +54,22 @@ function referenceMetrics(p, a) {
     const indices = a.flatMap((owner, i) => owner === e ? [i] : []);
     const weekends = new Set(indices.map(i => p.duties[i].weekend).filter(w => w !== undefined));
     const approved = p.exceptions?.weekends?.find(v => v.engineer === e);
-    if (approved ? [...weekends].some(w => !approved.weekends.includes(w)) : weekends.size > 1) throw Error('weekend');
+    // Extra weekends and back-to-back pairs are counted last resorts; touching duties are no gap.
+    const extra = Math.max(0, weekends.size - (approved ? approved.weekends.length : 1));
+    extraWeekends += extra * (extra + 1) / 2;
     for (let k = 1; k < indices.length; k++) {
       const i = indices[k - 1], j = indices[k], gap = p.duties[j].start - p.duties[i].end;
-      if (gap <= 0 && !p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j)) throw Error('adjacency');
-      gaps.push(gap);
+      if (gap < 0) throw Error('overlap');
+      if (gap > 0) gaps.push(gap);
+      else if (!p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j)) adjacent++;
     }
     if (!indices.length) continue;
     const previous = (p.boundaries ?? []).filter(b => b.engineer === e && b.end <= p.duties[0].start);
     const following = (p.boundaries ?? []).filter(b => b.engineer === e && b.start >= p.duties.at(-1).end);
-    if (previous.length) gaps.push(p.duties[indices[0]].start - Math.max(...previous.map(b => b.end)));
-    if (following.length) gaps.push(Math.min(...following.map(b => b.start)) - p.duties[indices.at(-1)].end);
+    const first = previous.length ? p.duties[indices[0]].start - Math.max(...previous.map(b => b.end)) : 0;
+    const last = following.length ? Math.min(...following.map(b => b.start)) - p.duties[indices.at(-1)].end : 0;
+    if (first > 0) gaps.push(first);
+    if (last > 0) gaps.push(last);
   }
   let rotation = 0, preferred = 0, repeats = 0, weekdays = 0;
   for (let e = 0; e < totals.length; e++) {
@@ -79,7 +84,8 @@ function referenceMetrics(p, a) {
     preferred += indices.reduce((n, i) => n + (p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0), 0);
   }
   return {coverage, special, units: totals.reduce((a, b) => a + b, 0),
-    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays};
+    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays,
+    extraWeekends, adjacent};
 }
 
 test('binary MIP, exact units, locks, eligibility, split weekend identity and partial coverage', () => {
@@ -220,21 +226,26 @@ test('coverage has no successor columns, native model and verified starts are re
 });
 
 test('threshold UNKNOWN preserves an honest interval and never starts refinement', () => {
-  let calls = 0;
+  // The first threshold probe (the first run without an objective) returns UNKNOWN.
+  let objective = [], failed = false;
   const fake = {...solver, createSession() {
     const native = solver.createSession();
-    return {...native, run(settings, start) {
-      if (++calls !== 2) return native.run(settings, start);
+    return {...native, setObjective(terms) {objective = terms; native.setObjective(terms);}, run(settings, start) {
+      if (failed || objective.length) return native.run(settings, start);
+      failed = true;
       return {status: 'unknown', statusCode: 15, values: null, objective: null, bound: -Infinity,
         gap: Infinity, nodes: 0, elapsedMs: 0, memoryBytes: solver.memoryBytes};
     }};
   }};
   const r = solveProblem(fake, monthFixture('spacing'));
+  assert.equal(failed, true);
   assert.equal(r.minimumGap.proved, false);
   assert.equal(r.thresholds[0].feasible, null);
+  assert.equal(r.thresholds.length, 1);
   assert.equal(r.allStagesProved, false);
-  assert.equal(r.columns, r.baseColumns);
-  assert.deepEqual(r.provedPrefix, ['coverage', 'special', 'units']);
+  // No refinement: no successor flows and no level below the minimum gap.
+  assert.deepEqual(r.provedPrefix, ['coverage', 'special', 'units', 'extra-weekends', 'adjacent']);
+  assert.ok(r.stages.every(s => !['rotation', 'repeats', 'seed'].includes(s.name) && !s.name.startsWith('gap:')));
   assert.equal(solver.activeModels, 0);
 });
 
@@ -271,8 +282,10 @@ test('boundary union, fixed zero gaps, scoped weekend exceptions and partial pat
     assert.deepEqual(r.metrics, referenceMetrics(p, r.assignment));
     assert.equal(r.minimumGap.proved, true);
   }
+  // The approved fixed pair costs nothing and is no spacing gap.
   const r = solveProblem(solver, {...cases[1], spacing: true});
-  assert.equal(r.metrics.gaps[0], 0);
+  assert.equal(r.metrics.adjacent, 0);
+  assert.equal(r.metrics.gaps[0], 6 * 1440);
   assert.ok(r.stages.some(s => s.name.startsWith('gap:') && s.proved));
 });
 

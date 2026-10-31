@@ -355,6 +355,24 @@ test('availability is a live ceiling, not an automatic change; the baseline rema
   assert.ok(p.intents.every(t => t.fromId === 'e00' && t.kind === 'temporary'));
 });
 
+test('the hard availability ceiling counts every available duty; back-to-back days only lower the spaced one', async () => {
+  const {availableCeilings} = await import('../lib/allocation/model.ts');
+  const i = scenario(), total = canonicalDuties(i.schedule.month, {}).reduce((n, d) => n + d.units, 0);
+  // Everyone may take the whole month: Generate fills a target of 25 points with back-to-back days.
+  assert.ok(Object.values(availableCeilings(i)).every(units => units === total));
+  assert.ok(Object.values(allocationCeilings(i)).every(units => units < total / 2 + 2), 'spaced: about half the month');
+  // Three back-to-back days: all three fit availability, two fit without a back-to-back pair.
+  i.schedule.constraints.e00 = Object.fromEntries(canonicalDuties(i.schedule.month, {}).flatMap(d =>
+    ['2026-11-01', '2026-11-02', '2026-11-03'].includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
+  assert.equal(availableCeilings(i).e00, 6);
+  assert.equal(allocationCeilings(i).e00, 4);
+  // A duty locked to someone else and a handover into the neighbouring month are not available.
+  i.schedule.locks = [{dutyId: '2026-11-02', engineer: 'e01'}];
+  i.schedule.neighbors = [{id: 'oct', ownerMonth: '2026-10', start: '2026-10-31', end: '2026-11-01', engineer: 'e00', source: 'published'}];
+  i.schedule.constraints.e01 = {};
+  assert.equal(availableCeilings(i).e00, 2);
+});
+
 test('automatic counterparts: receivers fewest points newest first, givers most points senior first, one member per kind', () => {
   const d = normal.draft, i = normalInput;
   const temp = edit(i, d, 'e11', -2);
@@ -640,18 +658,22 @@ test('a new proposal keeps the per-person changes of members still present when 
 });
 
 test('partial months retain all required nominal points; Generate keeps the partial result', () => {
-  for (const kind of ['small-team', 'weighted', 'boundary']) {
+  // A two-member month is complete now (extra weekends and back-to-back days are last
+  // resorts); shared availability shortages still leave a partial month.
+  for (const kind of ['shared-shortage', 'small-team', 'weighted', 'boundary']) {
     const i = scenario(kind), r = proposal(i); invariant(i, r);
     const p = compiled(i, r.draft);
     assert.equal(p.confirmable, true, kind);
-    assert.equal(p.check.feasibility, kind === 'small-team' ? 'partial' : 'complete', kind);
-    if (kind === 'small-team') assert.ok(total(Object.values(r.draft.targetsUnits)) > p.check.assignedUnits);
+    assert.equal(p.check.feasibility, kind === 'shared-shortage' ? 'partial' : 'complete', kind);
+    if (kind === 'shared-shortage') assert.ok(total(Object.values(r.draft.targetsUnits)) > p.check.assignedUnits);
   }
 });
 
 test('partial compilation accounts only against the supplied feasibility witness', () => {
   const i = scenario();
   i.schedule.members = i.schedule.members.slice(0, 3); i.seniority = i.seniority.slice(0, 3);
+  // Nobody can cover the 10th, so the month stays partial.
+  for (const m of i.schedule.members) i.schedule.constraints[m.id] = {'2026-11-10': 'no'};
   owe(i, 'e00', 'e02', 2, 'old');
   const r = proposal(i), assignments = generated(i, r.draft), p = compiled(i, r.draft, assignments); invariant(i, r);
   assert.equal(p.check.feasibility, 'partial');

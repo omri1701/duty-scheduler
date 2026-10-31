@@ -17,7 +17,7 @@ import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation
 
 const input = {schedule, seniority, events, now}; // schedule omits confirmed targets
 const proposal = proposeAllocation(input);
-const ceilings = allocationCeilings(input); // live inline availability check
+const ceilings = allocationCeilings(input); // spaced ceiling: no back-to-back duties
 const edited = editAllocation(input, proposal.draft, {engineer: seniority[0], deltaUnits: -2, kind: 'temporary'});
 // Actual generated/manually reviewed assignments, including null primary holes.
 const final = compileAllocation(input, edited.draft, actualDraftAssignments);
@@ -80,12 +80,16 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
 
-**Availability ceiling.** `allocationCeilings` gives each member the most units of
-duties they may take: covered duties they are available for and that are not
-locked to someone else, with no two back-to-back duties unless approved, and never
-below their own locked points. It ignores weekend caps, neighbors and shared
-capacity, so it is a live hint, not a proof. The dialog recomputes it on every
-change and shows one short warning on a row whose target exceeds it. It never
+**Availability ceilings.** `availableCeilings` (`lib/allocation/model.ts`) gives each
+member the units of every duty they may take: covered duties they are available
+for, not locked to someone else and not touching their own duty in a neighbouring
+month, never below their own locked points. Generate fills such a target with
+back-to-back duties and extra weekends as a last resort, so this is the hard
+ceiling. `allocationCeilings` is the spaced ceiling: the same duties without two
+back-to-back duties unless approved; automatic repayments stay within it. Both
+ignore shared capacity, so they are live hints, not proofs. The dialog recomputes
+them on every change; above the hard ceiling a row warns "Availability allows
+about N", between the two it notes "This needs some back-to-back days". Neither
 blocks; Generate remains the exact check.
 
 ### Superseded: solver-proven allocation preview

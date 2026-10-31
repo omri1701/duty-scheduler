@@ -65,6 +65,7 @@
 .plan-adjust button:disabled{opacity:.3;background:transparent;box-shadow:none}
 .plan-points{min-width:44px;text-align:center;font-size:22px;font-weight:700;letter-spacing:-.5px;color:var(--plan-ink)}
 .plan-row .allocation-row-warning{flex-basis:100%;margin:0;padding-inline-start:39px}
+.plan-row .allocation-row-note{flex-basis:100%;margin:0;padding-inline-start:39px;font-size:12px;color:var(--plan-muted)}
 
 .allocation-dialog .allocation-attention{margin-top:12px;border-radius:10px}
 .allocation-dialog .allocation-details{margin-top:12px;padding:6px 16px;border:1px solid var(--plan-line);border-radius:14px;background:var(--plan-card)}

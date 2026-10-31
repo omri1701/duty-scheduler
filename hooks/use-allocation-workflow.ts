@@ -6,6 +6,7 @@ import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {availableCeilings} from '@/lib/allocation/model';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -107,10 +108,15 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const totals = input ? allocationTotals(input, draft, captured!.assignments) : null;
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
+  // Above the spaced ceiling a target still fits availability but needs back-to-back days.
+  const spaced = useMemo(() => {
+    if (!captured) return null;
+    try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
+  }, [captured, locks, approvals]);
   // Live simple check: a target above what availability allows warns on its row.
   const ceilings = useMemo(() => {
     if (!captured) return null;
-    try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
+    try {return availableCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
   }, [captured, locks, approvals]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
@@ -273,7 +279,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},

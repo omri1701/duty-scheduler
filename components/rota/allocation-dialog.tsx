@@ -142,6 +142,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
               <button type="button" disabled={f.busy} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
             </div>
             {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
+            {f.ceilings && f.spaced && r.target <= f.ceilings[r.id] && r.target > f.spaced[r.id] && <p className="allocation-row-note" role="note">{t('This needs some back-to-back days', 'יידרשו כמה תורנויות רצופות')}</p>}
           </div>;
         })}
       </div>}

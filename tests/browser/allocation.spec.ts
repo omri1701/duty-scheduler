@@ -137,11 +137,15 @@ for (const [width, lang] of [[320, 'he'], [375, 'en'], [1440, 'en']] as const) {
 test('opening the plan runs no Worker; a target above availability warns on its row without blocking', async ({page, backend, openApp}) => {
   fresh(backend);
   backend.raw.constraints = Array.from({length: 30}, (_, i) => ({member_id: ids.a, day: `2026-11-${String(i + 1).padStart(2, '0')}`, kind: 'no' as const, note: 'Synthetic vacation'}));
+  // Blair is available only for 1–5 November: five points fit, but only three without back-to-back days.
+  backend.raw.constraints.push(...Array.from({length: 25}, (_, i) => ({member_id: ids.b, day: `2026-11-${String(i + 6).padStart(2, '0')}`, kind: 'no' as const, note: 'Synthetic vacation'})));
   let workers = 0; page.on('worker', () => {workers++;});
   await openApp(); await openPlan(page);
-  const alex = member(page, 'Alex Atlas');
+  const alex = member(page, 'Alex Atlas'), blair = member(page, 'Blair Birch');
   await expect(alex.row.getByRole('note')).toHaveText('Availability allows about 0');
   await expect(page.locator('.allocation-row-warning')).toHaveCount(1);
+  expect(await targetOf(blair)).toBeGreaterThan(3);
+  await expect(blair.row.getByRole('note')).toHaveText('This needs some back-to-back days');
   await alex.row.getByRole('button', {name: 'Decrease Temporary · Alex Atlas', exact: true}).click();
   await expect(alex.target).toHaveText('3');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
@@ -269,6 +273,8 @@ test('long-press opens Give 1 point to… in Hebrew RTL on touch', async ({page,
 test('real generation Worker saves a verified partial, retains targets and emergency cover, and blocks publication', async ({page, backend, openApp}) => {
   fresh(backend, 2);
   backend.raw.assignments.push({id: 'emergency', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: null, secondary_id: ids.a, title: '', extra_points: 0, points: 1, manager_override: false});
+  // Two members now cover every other date (extra weekends and back-to-back days are last resorts); nobody can take the 18th.
+  backend.raw.constraints.push(...[ids.admin, ids.a].map(member_id => ({member_id, day: '2026-11-18', kind: 'no' as const, note: 'Synthetic vacation'})));
   await openApp(); await openPlan(page);
   const targets = await page.locator('.plan-row output').allTextContents();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
