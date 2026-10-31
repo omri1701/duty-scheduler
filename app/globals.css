@@ -547,20 +547,40 @@
 .date-marks{display:inline-flex;align-items:center;gap:4px;margin-inline-start:auto}
 .calendar-grid .combined-weekend .date-line{position:relative}
 .calendar-grid .combined-weekend .date-marks{position:absolute;top:0;inset-inline-end:0;margin:0}
-/* A holiday marks only its own dates inside a combined weekend. */
+/* A holiday marks only its own dates inside a combined weekend; mirrored only where the grid itself runs right-to-left (see the streak note below). */
 .calendar-grid .combined-weekend.special.holiday-friday:not(.holiday-saturday){background:linear-gradient(to right,#fff2d4 50%,#edf4f0 50%)}
 .calendar-grid .combined-weekend.special.holiday-saturday:not(.holiday-friday){background:linear-gradient(to right,#edf4f0 50%,#fff2d4 50%)}
-.calendar-grid:dir(rtl) .combined-weekend.special.holiday-friday:not(.holiday-saturday){background:linear-gradient(to left,#fff2d4 50%,#edf4f0 50%)}
-.calendar-grid:dir(rtl) .combined-weekend.special.holiday-saturday:not(.holiday-friday){background:linear-gradient(to left,#edf4f0 50%,#fff2d4 50%)}
-/* Streaks: adjacent duties of one member read as one bar; across the Saturday→Sunday row break the bar ends with an arrow and resumes with a notch. Mirroring follows the grid's own direction (the desktop week stays left-to-right in Hebrew; the phone grid flips). */
+.main-tabs[dir=rtl] .calendar-grid .combined-weekend.special.holiday-friday:not(.holiday-saturday){background:linear-gradient(to left,#fff2d4 50%,#edf4f0 50%)}
+.main-tabs[dir=rtl] .calendar-grid .combined-weekend.special.holiday-saturday:not(.holiday-friday){background:linear-gradient(to left,#edf4f0 50%,#fff2d4 50%)}
+/* Streaks: adjacent duties of one member read as one bar; across the Saturday→Sunday row break the bar ends with an arrow and resumes with a notch. Mirroring follows the grid's own direction: the desktop week stays left-to-right in Hebrew and only the phone tabs carry dir=rtl (:dir() is lowered to :lang() by the CSS build, so it cannot tell them apart). */
 .calendar-grid .streak-start:not(.streak-break-after),.calendar-grid .streak-middle:not(.streak-break-after){border-inline-end-color:transparent}
-.calendar-grid .streak-start .assignment-chip,.calendar-grid .streak-middle .assignment-chip{margin-inline-end:calc(-1 * var(--calendar-day-inset) - 1px);border-start-end-radius:0;border-end-end-radius:0;max-width:none}
-.calendar-grid .streak-middle .assignment-chip,.calendar-grid .streak-end .assignment-chip{margin-inline-start:calc(-1 * var(--calendar-day-inset));border-start-start-radius:0;border-end-start-radius:0;max-width:none}
-.calendar-grid .streak-break-after .assignment-chip{margin-inline-end:0;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,0 100%)}
-.calendar-grid .streak-break-before .assignment-chip{margin-inline-start:0;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,7px 50%)}
-.calendar-grid:dir(rtl) .streak-break-after .assignment-chip{clip-path:polygon(100% 0,7px 0,0 50%,7px 100%,100% 100%)}
-.calendar-grid:dir(rtl) .streak-break-before .assignment-chip{clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
-.streak-continued{display:inline-block;min-height:1em}
+/* Every chip of a bar holds only a one-line placeholder, so all are the same height; joined edges meet with no border or radius. */
+.calendar-grid .streak-start .assignment-chip,.calendar-grid .streak-middle .assignment-chip,.calendar-grid .streak-end .assignment-chip{position:relative;max-width:none;border-inline-width:0!important}
+.calendar-grid .streak-start:not(.streak-break-after) .assignment-chip,.calendar-grid .streak-middle:not(.streak-break-after) .assignment-chip{margin-inline-end:calc(-1 * var(--calendar-day-inset) - 1px);border-start-end-radius:0;border-end-end-radius:0}
+.calendar-grid .streak-middle:not(.streak-break-before) .assignment-chip,.calendar-grid .streak-end:not(.streak-break-before) .assignment-chip{margin-inline-start:calc(-1 * var(--calendar-day-inset));border-start-start-radius:0;border-end-start-radius:0}
+.calendar-grid .streak-break-after .assignment-chip{border-start-end-radius:0;border-end-end-radius:0}
+.calendar-grid .streak-break-before .assignment-chip{border-start-start-radius:0;border-end-start-radius:0}
+/* The arrow and notch clip only the painted bar, so the centred name can run on across the segment. */
+.calendar-grid .streak-break-after .assignment-chip,.calendar-grid .streak-break-before .assignment-chip{background:none!important;border-color:transparent!important;isolation:isolate}
+.calendar-grid .streak-break-after .assignment-chip::before,.calendar-grid .streak-break-before .assignment-chip::before{content:"";position:absolute;inset:-1px 0;z-index:-1;border-radius:inherit;background:var(--chip-color)}
+.calendar-grid .streak-break-after .assignment-chip::before{clip-path:polygon(0 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,0 100%)}
+.calendar-grid .streak-break-before .assignment-chip::before{clip-path:polygon(0 0,100% 0,100% 100%,0 100%,7px 50%)}
+.main-tabs[dir=rtl] .calendar-grid .streak-break-after .assignment-chip::before{clip-path:polygon(100% 0,7px 0,0 50%,7px 100%,100% 100%)}
+.main-tabs[dir=rtl] .calendar-grid .streak-break-before .assignment-chip::before{clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
+.streak-continued{display:inline-block}.streak-continued::before{content:"\200b"}
+/* One name per row segment, centred across the segment's columns (--streak-span cell widths) and painted over the later cells it crosses; taps fall through to the date underneath. */
+.calendar-grid .streak-label-cell{position:relative;z-index:1}
+.calendar-grid .assignment-chip>.streak-label{position:absolute;inset-inline-start:0;top:50%;transform:translateY(-50%);width:calc(var(--streak-span) * (100% + var(--calendar-day-inset)) - 2 * var(--calendar-day-inset) - 1px);padding-inline:4px;text-align:center;white-space:nowrap;pointer-events:none}
+/* A weekend bar, combined or a hand-split half, centres the name across its own width (a streak segment centres its label above). */
+.calendar-grid .weekend .assignment-chip{justify-content:center;text-align:center}
+@media(max-width:600px){
+ .calendar-grid .assignment-chip>.streak-label{white-space:normal}
+ /* A week with a lock or a +extra puts them on a line of their own under the dates, at the inline end, so nothing overlaps a date at any width and the bars of the week stay level. */
+ .calendar-grid .marks-week .date-line{min-height:32px;align-content:flex-start;row-gap:2px}
+ .calendar-grid .marks-week .date-marks,.calendar-grid .marks-week.combined-weekend .date-marks{position:static;flex-basis:100%;grid-column:1/-1;justify-content:flex-end;height:12px;margin:0;gap:2px;padding-inline-end:1px}
+ .calendar-grid .duty-lock-indicator svg{width:10px;height:10px}
+ .calendar-grid .marks-week .tiny-badge{line-height:12px}
+}
 .net-points button{display:block;width:100%;min-height:44px;background:none;border:0;padding:0;color:inherit;font:inherit;border-radius:6px}
 .net-points .owed strong{color:#386227}.net-points .owes strong{color:#a94c36}
 .net-breakdown{display:grid;gap:10px;font-size:13px;color:#405a49}

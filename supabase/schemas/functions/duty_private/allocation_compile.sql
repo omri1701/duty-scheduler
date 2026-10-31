@@ -2,7 +2,9 @@
 -- capacity comes from the server's projected ledger, excluding other reservations.
 -- One net temporary and one net permanent change per member must explain the
 -- targets exactly, balance to zero and respect the floors (a permanent change
--- never takes away the fair share or work already given as planned relief).
+-- never takes away the fair share or work already given as planned relief) and
+-- the ceilings (fair share + permanent change never exceeds the month's total
+-- points, and no one owes or is owed more temporary work than the month holds).
 -- duty_confirm_allocation additionally requires the transfers to be the exact
 -- derivation of those changes and the recorded pairs.
 CREATE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
@@ -14,11 +16,16 @@ declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_c
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
  pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','sourceKey']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','hand','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
   or (draft ? 'uneven' and jsonb_typeof(draft->'uneven') IS DISTINCT FROM 'array')
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
   or jsonb_typeof(draft->'pairs') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'changes') IS DISTINCT FROM 'object' then raise exception 'invalid-confirmed-allocation'; end if;
+ -- Members the manager edited by hand: editing state the browser reopens with, so
+ -- automatic points keep flowing the same way. Absent in plans saved before it existed.
+ if draft ? 'hand' and (jsonb_typeof(draft->'hand') IS DISTINCT FROM 'array'
+  or exists(select 1 from jsonb_array_elements(draft->'hand') h where jsonb_typeof(h) IS DISTINCT FROM 'string' or not ids ? (h#>>'{}'))
+  or (select count(*) from jsonb_array_elements(draft->'hand'))<>(select count(distinct h) from jsonb_array_elements(draft->'hand') h)) then raise exception 'invalid-hand-edits'; end if;
  foreach name in array array['baselineUnits','offeredUnits','targetsUnits'] loop
   table_value:=draft->name;
   if jsonb_typeof(table_value) IS DISTINCT FROM 'object' or (select count(*) from jsonb_each(table_value))<>jsonb_array_length(ids)
@@ -37,6 +44,9 @@ begin
   end loop;
   temporary_total:=temporary_total+(change->>'temporary')::numeric::bigint; permanent_total:=permanent_total+(change->>'permanent')::numeric::bigint;
   if (change->>'permanent')::numeric::bigint< -least((draft->'baselineUnits'->>id)::numeric::bigint,(draft->'offeredUnits'->>id)::numeric::bigint) then raise exception 'permanent-below-fair-share'; end if;
+  -- total holds the month's units: every table above was checked against them.
+  if (draft->'baselineUnits'->>id)::numeric::bigint+(change->>'permanent')::numeric::bigint>total then raise exception 'permanent-above-month-total'; end if;
+  if abs((change->>'temporary')::numeric::bigint)>total then raise exception 'temporary-above-month-total'; end if;
   if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
   lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
  end loop;

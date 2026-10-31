@@ -4,7 +4,7 @@ import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
-import {balanced, classifyTransfer, editAllocation, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
+import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings} from '@/lib/allocation/model';
 import {generatedNotes} from '@/lib/allocation/outcome';
@@ -125,6 +125,12 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!captured || !open) return null;
     try {return availableCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
   }, [captured, locks, approvals, open]);
+  // Which + / − the library accepts at the current step: the dialog disables the rest,
+  // so a + that no one can absorb never adds points the month does not have.
+  const options = useMemo(() => {
+    if (!captured || !draft?.changes) return null;
+    try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft, step);} catch {return null;}
+  }, [captured, locks, approvals, draft, step]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
@@ -288,7 +294,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
