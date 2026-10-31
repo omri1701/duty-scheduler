@@ -53,6 +53,34 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   for (const name of ['Refresh & review retained targets', 'Use a new proposal', 'Save allocation only']) await expect(page.getByRole('button', {name})).toHaveCount(0);
 });
 
+test('Save stores the whole plan without generating; closing, reopening and reloading restore it exactly', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'}), save = dialog.getByRole('button', {name: 'Save', exact: true});
+  await dialog.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await dialog.getByRole('button', {name: /^Permanent/}).click();
+  await dialog.getByRole('button', {name: 'Increase Permanent · Blair Birch', exact: true}).click();
+  const plan = async () => ({targets: await dialog.locator('.plan-row output').allTextContents(),
+    chips: await dialog.locator('.plan-row').evaluateAll(rows => rows.map(r => r.querySelector('.plan-chips')?.textContent ?? '')),
+    owed: await dialog.locator('.allocation-details li').allTextContents()});
+  const before = await plan();
+  expect(before.chips.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+  await save.click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  await expect(dialog.getByRole('status').filter({hasText: 'Saved. Close any time'})).toBeVisible();
+  expect(backend.calls.filter(c => c.name === 'duty_confirm_allocation')).toHaveLength(1);
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await openPlan(page);
+  expect(await plan()).toEqual(before);
+  // The server copy restores the same plan after a reload.
+  await page.reload(); await openPlan(page);
+  expect(await plan()).toEqual(before);
+  // Any change makes Save available again.
+  await expect(save).toBeEnabled();
+  await dialog.getByRole('button', {name: 'Increase Temporary · Alex Atlas', exact: true}).click();
+  await expect(save).toBeEnabled();
+});
+
 test('the pie shows one slice per member and the details of the slice or row in focus', async ({page, backend, openApp}, info) => {
   fresh(backend); await openApp(); await openPlan(page);
   const dialog = page.getByRole('dialog', {name: 'Plan the month'}), center = dialog.locator('.plan-pie-center');
@@ -398,6 +426,7 @@ test('a cutoff crossed with the popup open cancels planning and never changes as
   const before = structuredClone(backend.raw.assignments);
   await openApp(); await page.getByRole('button', {name: 'Generate month', exact: true}).click();
   await expect(page.getByRole('dialog')).toContainText('Monthly coverage has started', {timeout: 10_000});
+  await expect(page.getByRole('button', {name: 'Save', exact: true})).toHaveCount(0);
   expect(backend.raw.assignments).toEqual(before);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
 });

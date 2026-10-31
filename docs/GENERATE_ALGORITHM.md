@@ -858,7 +858,9 @@ the achieved amount or hide unfulfilled work.
   retained targets automatically (never retrying the write); a saved allocation
   only a new proposal can repair (earlier format, unsplittable ordinary
   baseline, uneven-month credit) is replaced by one with a short notice. There
-  are no separate refresh, new-proposal or save-only actions.
+  are no separate refresh or new-proposal actions. **Save** beside the main
+  action stores the plan through the same checked confirmation without
+  generating; reopening restores it.
 
 Partial output is prominently **Partial / Requires Manager Resolution**.
 A complete result can say “All duties covered”; “Optimal” is only appropriate

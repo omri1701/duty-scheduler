@@ -121,6 +121,8 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   const lock = (await dialog.locator('.plan-pie-detail li.locked svg').boundingBox())!;
   expect(lock.width).toBeLessThanOrEqual(10); expect(lock.height).toBeLessThanOrEqual(10);
   await snapshot(page, `plan-month-pie-hover-${lang}`, true);
+  await dialog.getByRole('button', {name: he ? 'שמירה' : 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: he ? 'נשמר' : 'Saved', exact: true})).toBeDisabled();
   await dialog.locator('.allocation-details summary').click();
   await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = el.scrollHeight;});
   await snapshot(page, `plan-month-details-${lang}`);

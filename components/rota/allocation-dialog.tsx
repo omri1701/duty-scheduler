@@ -1,6 +1,6 @@
 'use client';
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Sparkles} from 'lucide-react';
+import {Check, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
@@ -164,9 +164,14 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
     </div>
-    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{t('Confirm targets · save as draft', 'אישור יעדים · שמירה כטיוטה')}</small></div>{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
+    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{f.closed ? t('Save targets and locks', 'שמירת יעדים ונעילות') : t('Save to continue later · confirm to generate', 'שמירה להמשך · אישור לשיבוץ')}</small></div>
+      <div className="plan-actions">{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
       // A failed read of the month is the only state with nothing to confirm: retry it here.
       : f.retry ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
-      : <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>}</div>
+      : <>
+        {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
+        {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
+        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
+      </>}</div></div>
   </EditorDialog>;
 }

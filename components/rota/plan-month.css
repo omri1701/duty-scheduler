@@ -73,6 +73,10 @@
 .allocation-dialog .allocation-details ul{padding-inline-start:4px;list-style:none}
 .allocation-dialog .allocation-details li{padding:6px 10px;border-radius:9px;background:var(--plan-soft)}
 
+.plan-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.allocation-dialog .plan-save{background:#fff;border-color:var(--plan-line);color:var(--plan-ink)}
+.allocation-dialog .plan-save.saved:disabled{opacity:1;color:var(--plan-permanent);border-color:var(--plan-permanent-soft);background:var(--plan-permanent-soft)}
+
 @keyframes plan-pie-in{from{opacity:0;transform:rotate(-100deg) scale(.7)}}
 @keyframes plan-pop{from{opacity:0;transform:scale(.85)}}
 
@@ -86,5 +90,8 @@
   .plan-row{padding-inline-end:8px}
   .plan-adjust button{width:40px;height:40px}
   .plan-points{min-width:38px}
+  .plan-actions{gap:6px}
+  .allocation-dialog .allocation-footer button{padding-inline:11px}
 }
+@media(max-width:380px){.allocation-dialog .allocation-footer small{display:none}}
 @media(prefers-reduced-motion:reduce){.plan-pie>svg,.plan-pie-detail,.plan-chip{animation:none}}

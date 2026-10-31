@@ -41,6 +41,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const [result, setResult] = useState<GenerationResult | null>(null);
   // The authoritative month could not be read; the primary action becomes Try again.
   const [retry, setRetry] = useState(false);
+  // The draft the last Save stored; Save reads "Saved" until the next change.
+  const [savedDraft, setSavedDraft] = useState<AllocationDraft | null>(null);
   // The latest manual drag transfer, offered once as "Make permanent".
   const [moved, setMoved] = useState<{id: string; fromId: string; toId: string} | null>(null);
   const sequence = useRef(0), worker = useRef<{terminate: () => void} | null>(null), rpc = useRef(false);
@@ -218,7 +220,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const confirmed = await latest.current.confirmAllocation(source, draft, locks, approvals);
       if (id !== sequence.current) return;
       accept(confirmed); rpc.current = false;
-      if (!generate) {setNotice(t('Allocation and locks saved.', 'ההקצאה והנעילות נשמרו.')); return;}
+      if (!generate) {setSavedDraft(draft); setNotice(t('Saved. Close any time and continue from here later.', 'נשמר. אפשר לסגור ולהמשיך מכאן מאוחר יותר.')); return;}
       if (!confirmed.generationInput || now() >= confirmed.coverageStartMs) throw Error('generation-window-closed');
       setPhase('generating');
       // Weekend and weekday rotation state comes from the published months the workspace
@@ -268,7 +270,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
-    canConfirm: !!draft && reviewed && !structural && phase === 'idle',
+    canConfirm: !!draft && reviewed && !structural && phase === 'idle', saved: !!draft && draft === savedDraft,
   };
 }
 export type AllocationWorkflow = ReturnType<typeof useAllocationWorkflow>;
