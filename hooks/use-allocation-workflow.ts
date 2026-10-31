@@ -7,7 +7,7 @@ import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings} from '@/lib/allocation/model';
-import {generatedNotes} from '@/lib/allocation/outcome';
+import {chainedDeferrals, generatedNotes} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -147,6 +147,11 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   // The plan as if every point were worked: what is really repaid now and later.
   let planned: ReturnType<typeof planAllocation> | null = null;
   if (draft?.changes && input && !structural) {try {planned = planAllocation(input, draft);} catch {planned = null;}}
+  // A plan the ledger cannot book (a repayment put off through others who owe the same
+  // person) is caught here, before Generate, and named in the plan; Save stays available.
+  const unbookable = planned && !planned.confirmable;
+  let deferrals: ReturnType<typeof chainedDeferrals> = [];
+  if (unbookable && input && draft) {try {deferrals = chainedDeferrals(input, draft);} catch {deferrals = [];}}
   /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
   function plan(make: () => AllocationDraft) {
     setError('');
@@ -224,6 +229,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!captured || !draft || !input || structural || !reviewed || phase !== 'idle' || rpc.current) return;
     if (generate && now() >= captured.coverageStartMs) {setClosed(true); return;}
     if (generate && !schedulingSupported()) {setError(unsupported()); return;}
+    if (generate && unbookable) return; // The plan names the change to make; nothing is solved.
     stop(); const id = sequence.current;
     setError(''); setProgress(null); setPhase('confirming'); rpc.current = true;
     let failure: unknown = null;
@@ -276,7 +282,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       // Copied publication intent is independently revalidated by the checked RPC.
       if (!confirmed.sourcePublicationId &&
         !compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments).confirmable) {
-        throw Error('Allocation requires review before saving.');
+        throw Error(t('This plan can’t be booked as it is. Check the notes in the plan, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. כדאי לבדוק את ההערות בתוכנית ולנסות שוב.'));
       }
       if (id !== sequence.current) return;
       acceptGeneration(generated, generationInput, now());
@@ -304,7 +310,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options,
-    locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, planned, unbookable, deferrals, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

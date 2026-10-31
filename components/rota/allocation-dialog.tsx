@@ -108,6 +108,12 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       </section>
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
       {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
+      {f.unbookable && <p className="allocation-attention" role="note">{f.deferrals.length ? f.deferrals.map(d => {
+        const via = d.via.map(name).join(t(' and ', ' ו־')), owed = name(d.creditorId);
+        return t(`${name(d.debtorId)}’s repayment to ${owed} would pass through ${via}, who owe ${owed} too. Give the points to ${owed}, or make the change Permanent.`,
+          `ההחזר של ${name(d.debtorId)} ל־${owed} יעבור דרך ${via}, שגם חייבים ל־${owed}. אפשר לתת את הנקודות ל־${owed} או להפוך את השינוי לקבוע.`);
+      }).join(' ') : t('This plan can’t be booked as it is: a repayment would pass through someone else’s debt. Give the points to the person owed, or make the change Permanent.',
+        'לא ניתן לרשום את התוכנית כפי שהיא: החזר יעבור דרך חוב של מישהו אחר. אפשר לתת את הנקודות למי שחייבים לו או להפוך את השינוי לקבוע.')}</p>}
       {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       <p className="plan-sr" id="plan-no-counterpart">{t('No one else can take on less. Drag a point instead.', 'אין מי שיכול לקבל פחות. אפשר לגרור נקודה במקום.')}</p>
@@ -192,7 +198,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       : <>
         {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
         {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
-        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
+        <Button disabled={!f.canConfirm || (!f.closed && (!f.captured?.generationAllowed || !!f.unbookable))} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
       </>}</div></div>
   </EditorDialog>;
 }
