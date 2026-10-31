@@ -813,16 +813,18 @@ Use one compact, mobile-first popup before solving. Sort engineers most senior
 first. Preserve English LTR, Hebrew RTL, keyboard access, labels and modal focus
 behavior.
 
-| Column | Meaning |
+| Value | Meaning |
 |---|---|
 | Engineer | Name in saved seniority order. |
-| Points | Final monthly primary points: fair share (plus repayment) + Permanent + Temporary. Display only. |
-| Temporary | Signed net compensated change (stepper). |
-| Permanent | Signed net intentional non-compensated change (stepper); already included in Points. |
-| Locked | Full points of fixed primary assignments owned by this month. |
-| To schedule | Points minus Locked; remaining requested points, not a promise they are attainable. |
+| Points | Final monthly primary points: fair share (plus repayment) + Permanent + Temporary. The one number per engineer, with − / +. |
+| Temporary | Signed net compensated change; a chip beside the name when non-zero. |
+| Permanent | Signed net intentional non-compensated change; already included in Points; a chip when non-zero. |
+| Locked | Full points of fixed primary assignments owned by this month; a chip when non-zero. |
 
-Use + / − buttons, defaulting to 1 point every time the popup opens, with a
+A donut pie of everyone's Points leads the popup (UI decision 2026-10-31); its
+centre shows the month total or the details of the slice or engineer in focus.
+One Temporary/Permanent switch sets the kind every − / + changes. Use + / −
+buttons, defaulting to 1 point every time the popup opens, with a
 small 0.5-point step toggle. Show configured total versus required month total.
 Keep temporary/permanent and counterpart effects concise and inline.
 Do not add another popup just to explain adjustments, validation or conflicts.
@@ -851,7 +853,12 @@ the achieved amount or hide unfulfilled work.
 - Timeout with a verified incumbent can produce a draft labeled with its actual
   coverage and “Best found; search limit reached.” Never claim proven optimality.
 - No verified result, a runtime failure, cancellation or a stale source leaves
-  the accepted draft unchanged and provides a clear retry message.
+  the accepted draft unchanged and provides a clear retry message. After a
+  failed confirmation or save the popup re-reads the month and reviews the
+  retained targets automatically (never retrying the write); a saved allocation
+  only a new proposal can repair (earlier format, unsplittable ordinary
+  baseline, uneven-month credit) is replaced by one with a short notice. There
+  are no separate refresh, new-proposal or save-only actions.
 
 Partial output is prominently **Partial / Requires Manager Resolution**.
 A complete result can say “All duties covered”; “Optimal” is only appropriate

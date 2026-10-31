@@ -1,0 +1,88 @@
+/* Plan the month: pie hero, one number per person, adjustments. Scoped to the
+   allocation dialog; app/globals.css keeps the dialog shell, footer and toast. */
+.allocation-dialog{--plan-ink:#23402f;--plan-muted:#6d7f68;--plan-line:#dfe8db;--plan-card:#fff;--plan-soft:#f1f5ed;--plan-surface:#fbfcfa;
+  --plan-temporary:#b0661c;--plan-temporary-soft:#fcf0e1;--plan-permanent:#2f6a43;--plan-permanent-soft:#e3f0df;--plan-spring:cubic-bezier(.2,.9,.25,1.2)}
+
+.allocation-dialog .plan-hero{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:28px;padding:18px 24px;border:1px solid var(--plan-line);border-radius:18px;
+  background:radial-gradient(circle at 18% 50%,#fff 0,#fff 28%,transparent 62%),linear-gradient(120deg,#eef5e8,#f7f8ef 60%,#fbf4ea)}
+.plan-pie{position:relative;margin:0;width:232px;aspect-ratio:1}
+.plan-pie svg{display:block;width:100%;height:100%;overflow:visible;animation:plan-pie-in .9s var(--plan-spring) both;touch-action:manipulation}
+.plan-pie-track{fill:none;stroke:#e6ede1}
+.plan-slice{stroke:var(--plan-surface);stroke-width:1.5;stroke-linejoin:round;cursor:pointer;transition:transform .35s var(--plan-spring),opacity .25s,filter .25s}
+.plan-slice.dim{opacity:.35}
+.plan-slice.active{filter:drop-shadow(0 4px 7px #1d3b2b40)}
+.plan-pie-center{position:absolute;inset:20%;display:grid;place-items:center;text-align:center;pointer-events:none;color:var(--plan-ink)}
+.plan-pie-detail{display:flex;flex-direction:column;align-items:center;gap:2px;max-width:100%;animation:plan-pop .3s var(--plan-spring)}
+.plan-pie-detail>strong{font-size:46px;line-height:1;font-weight:700;letter-spacing:-2px;font-variant-numeric:tabular-nums}
+.plan-pie-detail>strong.off{color:var(--plan-temporary)}
+.plan-pie-detail>span{font-size:12px;color:var(--plan-muted)}
+.plan-pie-detail small{display:flex;align-items:center;gap:3px;margin-top:4px;font-size:11px;color:var(--plan-muted)}
+.plan-pie-name{display:flex;align-items:center;gap:5px;max-width:100%;font-size:12px!important;font-weight:600;color:var(--plan-ink)!important;margin-bottom:3px}
+.plan-pie-name i{width:9px;height:9px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px #23402f22}
+.plan-pie-detail ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--plan-muted)}
+.plan-pie-detail li{display:flex;align-items:center;justify-content:center;gap:3px}
+.plan-pie-detail li.temporary{color:var(--plan-temporary)}
+.plan-pie-detail li.permanent{color:var(--plan-permanent)}
+.plan-pie-detail bdi{font-weight:650;font-variant-numeric:tabular-nums}
+
+.plan-hero-side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.plan-hint{font-size:13px;line-height:1.6;color:var(--plan-muted)}
+.plan-kind{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:14px;background:#ffffffb3;border:1px solid var(--plan-line)}
+.plan-kind button{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:48px;padding:6px 8px;border-radius:10px;color:var(--plan-muted);transition:background .2s,color .2s,box-shadow .2s}
+.plan-kind button strong{font-size:14px;font-weight:650}
+.plan-kind button small{font-size:11px}
+.plan-kind button[aria-pressed=true]{background:var(--plan-temporary-soft);color:var(--plan-temporary);box-shadow:inset 0 0 0 1.5px currentColor}
+.plan-kind button:last-child[aria-pressed=true]{background:var(--plan-permanent-soft);color:var(--plan-permanent)}
+.plan-tools{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.allocation-dialog .plan-tools .allocation-step button{min-width:40px;border-radius:9px}
+
+.plan-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.plan-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.plan-row{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0;padding:10px 10px 10px 12px;padding-inline-start:18px;border:1px solid var(--plan-line);border-radius:14px;background:var(--plan-card);
+  font-variant-numeric:tabular-nums;transition:border-color .2s,box-shadow .25s,transform .25s var(--plan-spring)}
+.plan-row::before{content:'';position:absolute;inset-block:12px;inset-inline-start:7px;width:4px;border-radius:4px;background:var(--member);transition:inset .25s var(--plan-spring)}
+.plan-row.active{border-color:color-mix(in srgb,var(--member) 65%,#23402f);box-shadow:0 8px 22px -12px color-mix(in srgb,var(--member) 80%,#23402f)}
+.plan-row.active::before{inset-block:6px}
+.plan-row.dragging{opacity:.55}
+.plan-row.drop-target{background:#eef6e8;box-shadow:inset 0 0 0 2px #8fb47f}
+.plan-member{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border-radius:10px;user-select:none;-webkit-touch-callout:none}
+.plan-member[draggable=true]{cursor:grab}
+.allocation-dialog .plan-member:focus-visible{outline:2px solid #4c7a5b;outline-offset:3px}
+.plan-member .avatar{color:#294b3c}
+.plan-member-text{display:flex;flex-direction:column;gap:4px;min-width:0}
+.plan-member-text strong{font-size:14px;font-weight:600;color:var(--plan-ink);overflow-wrap:anywhere;line-height:1.3}
+.plan-chips{display:flex;flex-wrap:wrap;gap:4px}
+.plan-chip{display:inline-flex;align-items:center;gap:3px;padding:3px 7px;border-radius:999px;background:var(--plan-soft);color:var(--plan-muted);font-size:11px;line-height:1.1;white-space:nowrap;animation:plan-pop .3s var(--plan-spring)}
+.plan-chip bdi{font-weight:650}
+.plan-chip.temporary{background:var(--plan-temporary-soft);color:var(--plan-temporary)}
+.plan-chip.permanent{background:var(--plan-permanent-soft);color:var(--plan-permanent)}
+.plan-adjust{display:flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:var(--plan-soft);direction:ltr;flex-shrink:0}
+.plan-adjust button{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#fff;color:#3f6448;box-shadow:0 1px 2px #1d3b2b26;transition:transform .15s var(--plan-spring),background .15s}
+.plan-adjust button:hover:not(:disabled){background:#e9f2e3}
+.plan-adjust button:active:not(:disabled){transform:scale(.88)}
+.plan-adjust button:disabled{opacity:.3;background:transparent;box-shadow:none}
+.plan-points{min-width:44px;text-align:center;font-size:22px;font-weight:700;letter-spacing:-.5px;color:var(--plan-ink)}
+.plan-row .allocation-row-warning{flex-basis:100%;margin:0;padding-inline-start:39px}
+
+.allocation-dialog .allocation-attention{margin-top:12px;border-radius:10px}
+.allocation-dialog .allocation-details{margin-top:12px;padding:6px 16px;border:1px solid var(--plan-line);border-radius:14px;background:var(--plan-card)}
+.allocation-dialog .allocation-details summary{min-height:40px;color:var(--plan-ink)}
+.allocation-dialog .allocation-details summary>span{background:var(--plan-temporary-soft);color:var(--plan-temporary);font-weight:650}
+.allocation-dialog .allocation-details ul{padding-inline-start:4px;list-style:none}
+.allocation-dialog .allocation-details li{padding:6px 10px;border-radius:9px;background:var(--plan-soft)}
+
+@keyframes plan-pie-in{from{opacity:0;transform:rotate(-100deg) scale(.7)}}
+@keyframes plan-pop{from{opacity:0;transform:scale(.85)}}
+
+@media(max-width:600px){
+  .allocation-dialog .plan-hero{grid-template-columns:1fr;justify-items:center;gap:14px;padding:16px 14px}
+  .plan-pie{width:min(212px,70vw)}
+  .plan-pie-detail>strong{font-size:38px}
+  .plan-hero-side{width:100%;gap:10px}
+  .plan-hint{text-align:center;font-size:12px}
+  .plan-rows{grid-template-columns:minmax(0,1fr)}
+  .plan-row{padding-inline-end:8px}
+  .plan-adjust button{width:40px;height:40px}
+  .plan-points{min-width:38px}
+}
+@media(prefers-reduced-motion:reduce){.plan-pie svg,.plan-pie-detail,.plan-chip{animation:none}}
