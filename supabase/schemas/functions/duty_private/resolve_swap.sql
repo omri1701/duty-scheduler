@@ -3,16 +3,20 @@ CREATE FUNCTION duty_private.resolve_swap(p_request uuid, p_action text, p_revis
     SET search_path TO ''
     AS $$
 declare r public.duty_swap_requests; a public.duty_assignments; b public.duty_assignments;
- current_publication uuid; publication uuid; next_version integer; reason text:=trim(coalesce(p_override_reason,''));
+ current_publication uuid; publication uuid; next_version integer; reason text:=trim(coalesce(p_override_reason,'')); side text; next_status text;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
  select * into r from public.duty_swap_requests where id=p_request for update;
  if r.id is null then raise exception 'Request not found' using errcode='42501'; end if;
  if p_action='cancel' then
-  if r.requester_id<>auth.uid() then raise exception 'Only the requester can cancel' using errcode='42501'; end if;
+  if coalesce(r.proposed_by,r.requester_id)<>auth.uid() then raise exception 'Only the person who started the request can cancel' using errcode='42501'; end if;
  elsif p_action in ('accept','decline') then
-  if r.other_id<>auth.uid() then raise exception 'Only the current counterpart can respond' using errcode='42501'; end if;
+  -- Each party answers only for their own side. A requester who asked for the
+  -- swap consented by sending it; one an admin proposed it for must accept too.
+  if r.other_id<>auth.uid() and (r.requester_id<>auth.uid() or r.proposed_by is null) then
+   raise exception 'Only the current counterpart can respond' using errcode='42501';
+  end if;
  elsif p_action in ('approve','reject') then
   if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
  else raise exception 'Invalid swap action'; end if;
@@ -25,11 +29,18 @@ begin
   return 'invalidated';
  end if;
  if p_action in ('accept','decline') then
-  if r.other_id<>auth.uid() then raise exception 'The counterpart changed. Refresh first.' using errcode='40001'; end if;
+  if r.other_id=auth.uid() then side:='other';
+  elsif r.requester_id=auth.uid() and r.proposed_by is not null then side:='requester';
+  else raise exception 'The counterpart changed. Refresh first.' using errcode='40001'; end if;
   if r.status<>'awaiting_engineer' then raise exception 'Engineer consent already recorded'; end if;
- elsif p_action in ('approve','reject') then
-  if r.status<>'awaiting_admin' or r.accepted_by is distinct from r.other_id then
-   raise exception 'The current engineer must accept before admin review';
+  if (side='other' and r.accepted_by is not null) or (side='requester' and r.requester_accepted_at is not null) then
+   raise exception 'Your answer is already recorded';
+  end if;
+ elsif p_action='approve' then
+  -- Every swap ends with an explicit admin approval after both members accepted,
+  -- even one an admin started or takes part in.
+  if r.status<>'awaiting_admin' or r.accepted_by is distinct from r.other_id or (r.proposed_by is not null and r.requester_accepted_at is null) then
+   raise exception 'Both engineers must accept before admin review';
   end if;
  end if;
  if p_action in ('accept','approve') then
@@ -58,12 +69,14 @@ begin
     and not (v->>'rule'='consecutive' and ((v->'duties') ? a.day::text or (v->'duties') ? b.day::text))
     and not (v->>'rule'='weekends' and v->>'engineer' in (r.requester_id::text,r.other_id::text))),accounting_fingerprint,calendar_fingerprint,current_publication,generation,'swap' from public.duty_allocations where publication_id=current_publication;
  end if;
+ next_status:=case p_action when 'accept' then case when (side='other' and (r.proposed_by is null or r.requester_accepted_at is not null))
+   or (side='requester' and r.accepted_by is not null) then 'awaiting_admin' else 'awaiting_engineer' end
+  when 'decline' then 'declined' when 'approve' then 'approved' when 'reject' then 'rejected' else 'cancelled' end;
  -- Finalize before the publication trigger revalidates all other pending requests.
- update public.duty_swap_requests set
-  status=case p_action when 'accept' then 'awaiting_admin' when 'decline' then 'declined'
-   when 'approve' then 'approved' when 'reject' then 'rejected' else 'cancelled' end,
-  accepted_by=case when p_action='accept' then auth.uid() else accepted_by end,
-  accepted_at=case when p_action='accept' then now() else accepted_at end,
+ update public.duty_swap_requests set status=next_status,
+  accepted_by=case when p_action='accept' and side='other' then auth.uid() else accepted_by end,
+  accepted_at=case when p_action='accept' and side='other' then now() else accepted_at end,
+  requester_accepted_at=case when p_action='accept' and side='requester' then now() else requester_accepted_at end,
   resolved_at=case when p_action='accept' then null else now() end,
   resolved_by=case when p_action='accept' then null else auth.uid() end,
   result_publication_id=publication,override_reason=case when p_action='approve' then reason else '' end where id=r.id;

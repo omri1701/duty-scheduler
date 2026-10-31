@@ -191,3 +191,9 @@ GRANT EXECUTE ON FUNCTION duty_private.balance() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.duty_balance() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_balance() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) TO authenticated;

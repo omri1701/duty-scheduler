@@ -67,7 +67,7 @@ export function WorkspaceCalendar({
     keyboardSource,
     dragFrom,
     dragOver,
-    ownPublishedDays,
+    swapSourceDays,
     publishedDuty,
     requestTarget,
     dragContainer,
@@ -121,10 +121,15 @@ export function WorkspaceCalendar({
                   'Choose another engineer’s duty · Escape cancels',
                   'בחרו תורנות של מהנדס אחר · Escape לביטול',
                 )
-              : t(
-                  'Drag your duty · On mobile, hold first · Or select two dates',
-                  'גררו תורנות שלכם · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים',
-                )
+              : isManager
+                ? t(
+                    'Drag a duty onto another to propose a swap · On mobile, hold first · Or select two dates',
+                    'גררו תורנות אל תורנות אחרת כדי להציע החלפה · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים',
+                  )
+                : t(
+                    'Drag your duty · On mobile, hold first · Or select two dates',
+                    'גררו תורנות שלכם · בנייד, לחצו ארוכות תחילה · או בחרו שני תאריכים',
+                  )
             : t('Tap to edit · Hold & drag to swap', 'לחצו לעריכה · לחיצה ארוכה וגרירה להחלפה')}
         </span>
       </>} notices={<>
@@ -201,13 +206,13 @@ export function WorkspaceCalendar({
                   : '',
                 (
                   requesting
-                    ? b && ownPublishedDays.has(b.id)
+                    ? b && swapSourceDays.has(b.id)
                     : monthDetails.status === 'draft' && a?.primary
                 )
                   ? 'can-swap'
                   : '',
               ].join(' ')}
-              aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
+              aria-label={`${b && swapSourceDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}

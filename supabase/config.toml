@@ -130,6 +130,8 @@ schema_paths = [
   "./schemas/functions/public/duty_rename_temporary_member.sql",
   "./schemas/functions/duty_private/balance.sql",
   "./schemas/functions/public/duty_balance.sql",
+  "./schemas/functions/duty_private/swap_availability.sql",
+  "./schemas/functions/public/duty_swap_availability.sql",
   "./schemas/grants/functions.sql",
   "./schemas/grants/tables.sql",
 ]

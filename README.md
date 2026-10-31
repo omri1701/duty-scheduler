@@ -159,7 +159,7 @@ show Whole team / My duties; engineers see no filter on an unpublished month.
 Managers reopen a published month to edit a draft, with independent Draft / Published
 and My duties controls. Special Block appears only in Draft. Cancel Draft requires
 confirmation and atomically deletes the working draft, returning to the current publication without creating a version or copying working rows.
-Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
+Managers use the request workflow in Published (their own duty, or a proposal between any two members) and direct swaps in Draft.
 Schedule and Constraints share the same visible Sunday–Saturday rows. When the
 first is Saturday, both omit the entire first row and start on Sunday the 2nd.
 Both halves of a weekend belong to Friday's month, which includes the cross-month
@@ -279,11 +279,13 @@ states, disabled Google provider and synthetic PKCE handoff, month navigation,
 empty generation, draft editing/publication, constraints,
 history restore/deletion confirmation, split-weekend edits, keyboard dialogs,
 desktop drag and simulated mobile long press, published
-swap consent/decline/cancel/admin review, changed-counterpart consent, invalidation,
+swap consent/decline/cancel/admin review, admin proposals and admin-as-party swaps,
+availability alerts at request, consent and approval, changed-counterpart consent, invalidation,
 Hebrew and RTL, profile reopening, availability reset when editing closes, and
 team pointer/touch reorder announcements. Visuals
 cover access, pending approval, admin draft, duty editor, history, engineer
-publication, availability and swap confirmation/requests, including desktop/mobile
+publication, availability, swap confirmation/requests, availability alerts and the admin
+proposal/approval summary, including desktop/mobile
 English and Hebrew calendars, phone availability sheets and Team. Responsive
 cases check both roles and languages across six widths; touch-only cases skip
 desktop. Linux and Windows keep separate visual references.
@@ -400,7 +402,7 @@ them. CI must compare committed images, never regenerate them automatically.
 - Shared monthly drafts, varied regeneration and manager-controlled publication, with real team accounts only.
 - Google sign-in with pending membership approval, multiple participating admins, engineer-specific constraints and server-enforced deadlines.
 - Atomic saves with stale-revision checks, private admin drafts and preserved published schedules during edits.
-- Published duty swap requests: approved members drag their primary duty starting today or later onto another engineer’s duty (or select two dates with tap or the keyboard). Eligibility uses the date in Asia/Jerusalem, including today after 09:00; a weekend starting yesterday remains ineligible. The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
+- Published duty swap requests: approved members drag their primary duty starting today or later onto another engineer’s duty (or select two dates with tap or the keyboard). Eligibility uses the date in Asia/Jerusalem, including today after 09:00; a weekend starting yesterday remains ineligible. The current counterpart accepts or declines; only then can an admin approve or reject. Requesters can cancel while pending. Admins may also propose a swap between any two members (drag or select any two duties in Published): each member accepts or declines their own side, and only the proposing admin can cancel. When the admin is one of the two, their side is the request and only the other member is asked. Every swap, including one an admin proposed or takes part in, still ends with an explicit admin approval after both members accepted, because the admin first records it in an external system; the approval dialog shows a copyable English/Hebrew summary of who, which dates and the points moved. Admins can reject at any pending stage. Before sending, the dialog checks both members' unavailability for the dates they would receive and names whose constraint blocks which date (never the note); a blocked swap cannot be sent. Accepting rechecks it (a party may still accept, then the admin must override with a reason), and so does final approval. Approval creates a new published version from the current publication, preserving drafts, history, emergency cover and date points. Pending requests retain their original duty slots across versions; counterpart changes clear consent and require the new owner to accept. Loss of requester ownership invalidates the request.
 - Foreign-key lookup tables for roles, membership statuses, month statuses and constraint types. Duty dates and extra points share the assignment table; changing an engineer preserves points.
 - Multiple admins, self-edited display names and deactivation without losing history. The first login is pending until explicitly promoted.
 - Published version history with calendar previews, restore-to-draft and confirmed deletion. Each version keeps duty rows with real member foreign keys. Publish removes the month's working rows; Reopen copies the selected publication into a separate mutable draft. Cancel removes that draft completely, including specials, weekend splits, emergency cover and overrides, while keeping history and independent availability/deadline/team/request data.

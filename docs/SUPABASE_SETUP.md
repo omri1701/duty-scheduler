@@ -166,7 +166,7 @@ distinct callbacks and separate clients; keep localhost confined to Development.
 | `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
 | `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
 | `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
-| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent, resolution and override audit reason. |
+| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent (and the requester's own consent when an admin proposed the swap), proposing admin, resolution and override audit reason. |
 | `duty_compensation_events` | Append-only manager-visible accounting events; exact half-point units, immutable source snapshots and participation history. No stored balances or historical debt import. |
 | `duty_roles` | Engineer/admin definitions and the admin capability. |
 | `duty_member_statuses` | Pending, approved and declined definitions. |
@@ -554,8 +554,25 @@ Admins retain draft editing and can switch their calendar to Published to reques
 swaps using the authoritative publication instead of draft rows.
 
 Workflow: `awaiting_engineer` -> counterpart Accept -> `awaiting_admin` -> admin
-Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject yields
-`rejected`; requester Cancel in either pending state yields `cancelled`. Only final
+Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject (at any
+pending stage) yields `rejected`; requester Cancel in either pending state yields
+`cancelled`.
+
+Admin proposals (migration `20261031215452_admin_proposed_swaps.sql`): an admin may
+pass any two members' duties to `duty_request_swap`; engineers still offer only their
+own primary duty. The request records `proposed_by` and stays `awaiting_engineer`
+until both members accepted their own side (`requester_accepted_at` for the
+requester, `accepted_by`/`accepted_at` for the counterpart); each answers once and
+either may decline. Only the proposing admin cancels. When the admin is one of the
+two, their side is normalized to the requester (`proposed_by` NULL), so their consent
+is implicit and only the other member is asked. Both consents then reach
+`awaiting_admin`: every swap, including one an admin proposed or takes part in, ends
+with an explicit admin approval, because admins first record each swap in an external
+system. Existing rows keep NULL in both new columns and their original meaning. RLS
+adds proposer visibility. Read-only `duty_swap_availability(p_from,p_to)` returns the
+same conflicts `validate_swap` refuses as `[{member,day}]`, never notes, and only to
+an approved admin or one of the two primaries. Members get emergency cover's conflicts
+with `member` NULL and only for a pair starting today or later. Only final
 approval copies the current publication into a new immutable version. Availability
 conflicts added after creation can be acknowledged at consent but require an
 explicit admin override reason at approval. Published swap requests retain their
@@ -582,7 +599,9 @@ request while older duplicates become Invalidated.
 
 RLS allows engineers to read initiated requests and incoming requests currently
 requiring their consent; approved admins additionally see requests awaiting admin
-approval. A former counterpart immediately loses incoming visibility on reassignment.
+approval, and a proposing admin keeps seeing their proposals. A former counterpart
+immediately loses incoming visibility on reassignment; the requester's consent to an
+admin proposal stays with their unchanged slot.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.

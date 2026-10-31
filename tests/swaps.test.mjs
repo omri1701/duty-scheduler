@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests} from '../lib/supabase/swaps.ts';
+import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapNeedsAction,readSwapConflicts,swapSummary} from '../lib/supabase/swaps.ts';
 import {todayIsrael} from '../lib/rota/calendar-dates.ts';
 
 test('Israeli midnight expires yesterday, including a continuing Friday weekend',()=>{
@@ -58,4 +58,45 @@ test('split Saturday belongs to Friday’s month and carried previous weekends a
  ]};
  assert.deepEqual(publishedSwapDuties(raw,'2026-07','2026-07-01').map(d=>d.id),['friday','saturday']);
  assert.deepEqual(publishedSwapDuties(raw,'2026-08','2026-07-01').map(d=>d.id),['combined']);
+});
+
+test('admin proposals wait on both members, then the admin; the proposer sees and cancels them',()=>{
+ const base={id:'p',month:'2026-11',requester_id:'a',other_id:'b',status:'awaiting_engineer',created_at:'2026-10-09',accepted_by:null,requester_accepted_at:null};
+ const proposed={...base,proposed_by:'admin'};
+ assert.equal(swapStarter(proposed),'admin');
+ assert.equal(swapStarter(base),'a');
+ assert.deepEqual(swapWaitingOn(proposed),['a','b']);
+ assert.deepEqual(swapWaitingOn({...proposed,accepted_by:'b'}),['a']);
+ assert.deepEqual(swapWaitingOn({...proposed,requester_accepted_at:'2026-10-09'}),['b']);
+ // A requester who asked consented by sending; older rows have no proposal fields.
+ assert.deepEqual(swapWaitingOn(base),['b']);
+ assert.deepEqual(swapWaitingOn({...proposed,status:'awaiting_admin'}),[]);
+ assert.equal(swapNeedsAction(proposed,'a',false),true);
+ assert.equal(swapNeedsAction({...proposed,requester_accepted_at:'x'},'a',false),false);
+ assert.equal(swapNeedsAction(proposed,'admin',true),false);
+ assert.equal(swapNeedsAction({...proposed,status:'awaiting_admin'},'admin',true),true);
+ assert.deepEqual(visibleSwapRequests([proposed],'admin',true).map(r=>r.id),['p']);
+ assert.deepEqual(visibleSwapRequests([{...proposed,status:'approved'}],'admin',false).map(r=>r.id),['p']);
+ assert.deepEqual(visibleSwapRequests([proposed],'c',true),[]);
+});
+
+test('availability conflicts carry who and when only; malformed responses fail closed',()=>{
+ assert.deepEqual(readSwapConflicts([{member:'b',day:'2026-11-02',note:'ignored'}]),[{member:'b',day:'2026-11-02'}]);
+ assert.deepEqual(readSwapConflicts([]),[]);
+ assert.deepEqual(readSwapConflicts([{member:null,day:'2026-11-03'}]),[{member:null,day:'2026-11-03'}]);
+ for(const bad of [null,{},[{member:'b'}],[{member:1,day:'2026-11-02'}],[{member:'b',day:'2 Nov'}]])assert.throws(()=>readSwapConflicts(bad));
+});
+
+test('approval summary names both members, dates and points moved in English and Hebrew',()=>{
+ const input={requester:'Alex',other:'Blair',from:{label:'2 Nov 2026',points:1},to:{label:'7 Nov 2026 – 8 Nov 2026',points:1.5}};
+ assert.equal(swapSummary({...input,lang:'en'}),[
+  'Duty swap: Alex ⇄ Blair',
+  'Alex — gives: 2 Nov 2026 (1 pt) · takes: 7 Nov 2026 – 8 Nov 2026 (1.5 pts) · change: +0.5 pts',
+  'Blair — gives: 7 Nov 2026 – 8 Nov 2026 (1.5 pts) · takes: 2 Nov 2026 (1 pt) · change: −0.5 pts',
+ ].join('\n'));
+ const he=swapSummary({...input,lang:'he'}).split('\n');
+ assert.equal(he[0],'החלפת תורנויות: Alex ⇄ Blair');
+ assert.match(he[1],/מסירה: 2 Nov 2026 \(1 נק׳\) · קבלה: .*\(1.5 נק׳\) · שינוי: \+0.5 נק׳$/);
+ assert.match(he[2],/שינוי: −0.5 נק׳$/);
+ assert.match(swapSummary({...input,to:{label:'x',points:1},lang:'en'}),/change: 0 pts/);
 });

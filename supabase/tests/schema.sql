@@ -6,14 +6,14 @@ BEGIN
     RAISE EXCEPTION 'Expected exactly 13 application tables';
   END IF;
   IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 83 THEN
-    RAISE EXCEPTION 'Expected exactly 83 application functions';
+      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 85 THEN
+    RAISE EXCEPTION 'Expected exactly 85 application functions';
   END IF;
   IF (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 23
+      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 24
     OR EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
       WHERE n.nspname='public' AND c.conrelid::regclass::text LIKE 'duty_%' AND NOT c.convalidated) THEN
-    RAISE EXCEPTION 'Expected 23 validated application foreign keys';
+    RAISE EXCEPTION 'Expected 24 validated application foreign keys';
   END IF;
   IF EXISTS (SELECT 1 FROM auth.users) OR EXISTS (SELECT 1 FROM auth.identities) THEN
     RAISE EXCEPTION 'Clean database requires zero Auth users and identities';

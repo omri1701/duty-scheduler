@@ -41,7 +41,7 @@ test('engineer sees filters only with a publication and never sees drafts',async
   await expect(duty(page,'2026-11-02')).toBeDisabled();
 });
 
-test('published manager requests from own duties by tap and drag, never directly edits',async({page,backend,openApp},info)=>{
+test('published manager requests and proposes swaps by tap and drag, never directly edits',async({page,backend,openApp},info)=>{
   backend.raw.months[0].status='published';
   backend.raw.assignments.find(d=>d.publication_id && d.day==='2026-11-02')!.primary_id=ids.admin;
   await openApp();
@@ -49,9 +49,12 @@ test('published manager requests from own duties by tap and drag, never directly
   await expect(page.getByRole('button',{name:'Special block',exact:true})).toBeHidden();
   await expect(page.getByRole('button',{name:'Publish',exact:true})).toHaveCount(0);
   await expect(page.locator('.request-swap-hint,.month-title .status-badge')).toHaveCount(0);
+  // Admins may also propose a swap between two other members, so their duties select too.
+  await duty(page,'2026-11-03').click();
+  await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await duty(page,'2026-11-03').click();
   await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
   await keyboardRequest(page);
   await expect(page.getByRole('button',{name:'Confirm Request',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');

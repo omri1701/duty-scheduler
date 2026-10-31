@@ -303,5 +303,167 @@ begin
  if (select status from public.duty_swap_requests where id=r)<>'invalidated' then raise exception 'Invalidation rolled back'; end if;
  if (select revision from public.duty_workspace)<>rev+1 then raise exception 'Invalidation did not advance revision'; end if;
 end $$;
+-- Admin-proposed swaps: both members accept, then an explicit admin approval.
+reset role;
+create function pg_temp.slot(p_day date) returns uuid language sql as $$
+ select a.id from public.duty_assignments a join public.duty_months m on m.current_publication_id=a.publication_id
+ where m.month='2098-03' and a.day=p_day$$;
+create function pg_temp.act(p_user uuid) returns bigint language plpgsql as $$
+begin perform set_config('request.jwt.claim.sub',p_user::text,true); return (select revision from public.duty_workspace); end $$;
+do $$
+declare
+ boss uuid:=gen_random_uuid(); x uuid:=gen_random_uuid(); y uuid:=gen_random_uuid(); z uuid:=gen_random_uuid();
+ pub uuid; live uuid; req uuid; rev bigint; history jsonb; result jsonb;
+begin
+ delete from public.duty_constraints;
+ insert into auth.users(id,email,email_confirmed_at,is_anonymous,aud,role)
+ select id,id||'@example.invalid',now(),false,'authenticated','authenticated' from unnest(array[boss,x,y,z]) id;
+ insert into public.duty_members(id,email,name,role,status,active)
+ values(boss,boss||'@example.invalid','Proposing admin','admin','approved',true),(x,x||'@example.invalid','Xavi','engineer','approved',true),
+ (y,y||'@example.invalid','Yael','engineer','approved',true),(z,z||'@example.invalid','Zohar','engineer','approved',true);
+ insert into public.duty_months(month,deadline,status,publication_sequence) values('2098-03','2098-02-25','published',1);
+ insert into public.duty_publications(month,version,published_by) values('2098-03',1,boss) returning id into pub;
+ update public.duty_months set current_publication_id=pub where month='2098-03';
+ insert into public.duty_assignments(publication_id,day,end_day,primary_id)
+ values(pub,'2098-03-02','2098-03-03',x),(pub,'2098-03-03','2098-03-04',y),(pub,'2098-03-04','2098-03-05',z),(pub,'2098-03-05','2098-03-06',boss);
+ select jsonb_agg(to_jsonb(a) order by day) into history from public.duty_assignments a where publication_id=pub;
+
+ -- Only admins propose for others; engineers cannot pass someone else's duty first.
+ rev:=pg_temp.act(z); set local role authenticated;
+ begin perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev); raise exception 'Engineer proposed for others'; exception when insufficient_privilege then null; end;
+ begin perform public.duty_request_swap(pg_temp.slot('2098-03-03'),pg_temp.slot('2098-03-04'),'',rev); raise exception 'Engineer passed counterpart duty first'; exception when insufficient_privilege then null; end;
+ -- Availability check: parties and admins only, who and which date, never the note.
+ begin perform public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03')); raise exception 'Outsider read availability'; exception when insufficient_privilege then null; end;
+ reset role; insert into public.duty_constraints values(y,'2098-03-02','no','Secret availability note'),(x,'2098-03-09','no','Unrelated');
+ rev:=pg_temp.act(x); set local role authenticated;
+ result:=public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'));
+ if result<>jsonb_build_array(jsonb_build_object('member',y,'day','2098-03-02')) then raise exception 'Party availability wrong: %',result; end if;
+ rev:=pg_temp.act(boss);
+ if public.duty_swap_availability(pg_temp.slot('2098-03-03'),pg_temp.slot('2098-03-02'))::text like '%Secret%'
+  or public.duty_swap_availability(pg_temp.slot('2098-03-03'),pg_temp.slot('2098-03-02'))<>result then raise exception 'Admin availability wrong'; end if;
+ -- Emergency cover is named to admins only; members get past pairs refused.
+ reset role; update public.duty_assignments set secondary_id=z where publication_id=pub and day='2098-03-03';
+ insert into public.duty_constraints values(z,'2098-03-03','no','Cover note');
+ insert into public.duty_assignments(publication_id,day,end_day,primary_id) values(pub,'2000-01-03','2000-01-04',y);
+ set local role authenticated;
+ if public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'))->1<>jsonb_build_object('member',z,'day','2098-03-03') then raise exception 'Admin cannot see cover conflict'; end if;
+ perform pg_temp.act(x);
+ if public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'))<>result||jsonb_build_array(jsonb_build_object('member',null,'day','2098-03-03'))
+  or public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'))::text like '%'||z||'%' then raise exception 'Cover identity leaked to a member'; end if;
+ perform pg_temp.act(y);
+ begin perform public.duty_swap_availability(pg_temp.slot('2000-01-03'),pg_temp.slot('2098-03-02')); raise exception 'Member read a past pair';
+ exception when raise_exception then if sqlerrm<>'Choose duties starting today or later' then raise; end if; end;
+ reset role; update public.duty_assignments set secondary_id=null where publication_id=pub and day='2098-03-03';
+ delete from public.duty_assignments where publication_id=pub and day='2000-01-03'; delete from public.duty_constraints where member_id=z;
+ rev:=pg_temp.act(boss); set local role authenticated;
+ if public.duty_swap_availability(pg_temp.slot('2098-03-04'),pg_temp.slot('2098-03-05'))<>'[]'::jsonb then raise exception 'Unrelated conflict reported'; end if;
+ begin perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev); raise exception 'Unavailable proposal sent';
+ exception when raise_exception then if sqlerrm<>'Availability conflict. An admin must explicitly override with a reason.' then raise; end if; end;
+ reset role; set local role anon;
+ begin perform public.duty_swap_availability(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03')); raise exception 'Anon read availability'; exception when insufficient_privilege then null; end;
+ reset role; delete from public.duty_constraints;
+
+ -- Proposal: nothing changes; proposer, both parties see it; outsiders do not.
+ rev:=pg_temp.act(boss); set local role authenticated;
+ perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'Admin proposal',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ if not exists(select 1 from public.duty_swap_requests where id=req and requester_id=x and other_id=y and proposed_by=boss and requester_accepted_at is null and accepted_by is null)
+  then raise exception 'Proposal not recorded for both parties'; end if;
+ foreach live in array array[x,y] loop
+  perform pg_temp.act(live);
+  if not exists(select 1 from public.duty_swap_requests where id=req) then raise exception 'Party cannot see proposal'; end if;
+ end loop;
+ rev:=pg_temp.act(z);
+ if exists(select 1 from public.duty_swap_requests where id=req) then raise exception 'Outsider sees proposal'; end if;
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Outsider accepted'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(x);
+ begin perform public.duty_resolve_swap(req,'cancel',rev); raise exception 'Party cancelled admin proposal'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(boss);
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Proposer consented for a party'; exception when insufficient_privilege then null; end;
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Approved before consent';
+ exception when raise_exception then if sqlerrm<>'Both engineers must accept before admin review' then raise; end if; end;
+ -- One side accepts: still waiting for the other. Double accept and late decline fail.
+ rev:=pg_temp.act(y); perform public.duty_resolve_swap(req,'accept',rev);
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_engineer' and accepted_by=y and requester_accepted_at is null) then raise exception 'Counterpart consent not recorded'; end if;
+ rev:=pg_temp.act(y);
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Double accept allowed'; exception when raise_exception then if sqlerrm<>'Your answer is already recorded' then raise; end if; end;
+ begin perform public.duty_resolve_swap(req,'decline',rev); raise exception 'Decline after accept allowed'; exception when raise_exception then if sqlerrm<>'Your answer is already recorded' then raise; end if; end;
+ rev:=pg_temp.act(boss);
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Approved with one consent';
+ exception when raise_exception then if sqlerrm<>'Both engineers must accept before admin review' then raise; end if; end;
+ rev:=pg_temp.act(x); perform public.duty_resolve_swap(req,'accept',rev);
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_admin' and requester_accepted_at is not null) then raise exception 'Both consents did not reach admin review'; end if;
+ rev:=pg_temp.act(x);
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Requester double accept allowed'; exception when raise_exception then if sqlerrm<>'Engineer consent already recorded' then raise; end if; end;
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Party approved own swap'; exception when insufficient_privilege then null; end;
+ reset role;
+ if (select jsonb_agg(to_jsonb(a) order by day) from public.duty_assignments a where publication_id=(select current_publication_id from public.duty_months where month='2098-03'))<>history
+  then raise exception 'Assignments changed before final approval'; end if;
+ -- A conflict added after consent still needs the audited admin override.
+ insert into public.duty_constraints values(x,'2098-03-03','no','Late private note');
+ rev:=pg_temp.act(boss); set local role authenticated;
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Late conflict approved without reason';
+ exception when raise_exception then if sqlerrm<>'Availability conflict. An admin must explicitly override with a reason.' then raise; end if; end;
+ perform public.duty_resolve_swap(req,'approve',rev,'Recorded in the external system');
+ select current_publication_id into live from public.duty_months where month='2098-03';
+ if live=pub or (select primary_id from public.duty_assignments where publication_id=live and day='2098-03-02')<>y
+  or (select primary_id from public.duty_assignments where publication_id=live and day='2098-03-03')<>x then raise exception 'Admin-proposed swap not published'; end if;
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='approved' and resolved_by=boss and override_reason='Recorded in the external system') then raise exception 'Approval not audited'; end if;
+ reset role;
+ if (select jsonb_agg(to_jsonb(a) order by day) from public.duty_assignments a where publication_id=pub)<>history then raise exception 'Published history changed'; end if;
+ delete from public.duty_constraints;
+ rev:=pg_temp.act(boss); set local role authenticated;
+ if not exists(select 1 from public.duty_swap_requests where id=req) then raise exception 'Proposer lost resolved history'; end if;
+
+ -- Admin as a party: either order normalizes to the admin's side; only the other member is asked.
+ perform public.duty_request_swap(pg_temp.slot('2098-03-04'),pg_temp.slot('2098-03-05'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ if not exists(select 1 from public.duty_swap_requests where id=req and requester_id=boss and other_id=z and proposed_by is null and from_day='2098-03-05')
+  then raise exception 'Admin party not normalized to requester'; end if;
+ rev:=pg_temp.act(boss);
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Admin party answered twice'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(z); perform public.duty_resolve_swap(req,'accept',rev);
+ rev:=pg_temp.act(z);
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Engineer party approved'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(boss);
+ if (select status from public.duty_swap_requests where id=req)<>'awaiting_admin' then raise exception 'Admin party swap skipped final approval'; end if;
+ perform public.duty_resolve_swap(req,'approve',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'approved' then raise exception 'Admin party approval failed'; end if;
+
+ -- Reject, cancel and decline at the consent stage, including an engineer's own request.
+ rev:=pg_temp.act(z); perform public.duty_request_swap(pg_temp.slot('2098-03-05'),pg_temp.slot('2098-03-02'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'reject',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'rejected' then raise exception 'Early reject of engineer request failed'; end if;
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'reject',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'rejected' then raise exception 'Early reject failed'; end if;
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(x); perform public.duty_resolve_swap(req,'accept',rev);
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'cancel',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'cancelled' then raise exception 'Proposer cancel failed'; end if;
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(y); perform public.duty_resolve_swap(req,'decline',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'declined' then raise exception 'Requester-side decline failed'; end if;
+
+ -- A reassigned counterpart must accept again; the requester's consent stays with their unchanged slot.
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(y); perform public.duty_resolve_swap(req,'accept',rev);
+ rev:=pg_temp.act(x); perform public.duty_resolve_swap(req,'accept',rev);
+ reset role;
+ select current_publication_id into pub from public.duty_months where month='2098-03';
+ update public.duty_months set publication_sequence=publication_sequence+1 where month='2098-03';
+ insert into public.duty_publications(month,version,published_by) select month,publication_sequence,boss from public.duty_months where month='2098-03' returning id into live;
+ insert into public.duty_assignments(publication_id,day,end_day,primary_id)
+ select live,day,end_day,case when day='2098-03-03' then boss else primary_id end from public.duty_assignments where publication_id=pub;
+ update public.duty_months set current_publication_id=live where month='2098-03';
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_engineer' and other_id=boss and accepted_by is null and requester_accepted_at is not null)
+  then raise exception 'Reassigned counterpart did not reset consent'; end if;
+end $$;
+select 'PASS: admin-proposed swaps need both members and an explicit admin approval; admin parties are asked once; availability names who and when, never the note' as result;
 rollback;
 \ir swap-today.sql
