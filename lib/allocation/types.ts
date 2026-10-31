@@ -37,7 +37,9 @@ export type AllocationDraft = {
   sourceKey: string;
   /** Members the manager changed by hand. The automatic balance never moves them.
    * Local editing state only: it is stripped before the checked RPC persists.
-   * A reopened draft treats every member with a nonzero change as hand edited. */
+   * Persisted with the plan, so reopening keeps the automatic balance flowing
+   * the same way; a plan saved before it was stored infers it on review
+   * (`inferHand`). */
   hand?: string[];
 };
 export type Stage = {name: string; status: string; objective: number | null; proved: boolean};

@@ -58,16 +58,19 @@ export type Hand = Readonly<Record<string, Change>>;
  * ranking after each step (receivers: fewest points, newest first; givers: most
  * points, senior first), never crossing a lock. A member already balancing the
  * other kind is chosen last, so one hand change of each kind lands on two
- * different members. Whatever cannot be placed is returned as `unplaced` and
+ * different members. A permanent receiver's fair share plus its permanent
+ * change stays within the month's total points. Whatever cannot be placed is returned as `unplaced` and
  * blocks confirmation. */
-export function balanceChanges(c: Context, seniority: readonly string[], offered: Readonly<Record<string, number>>, hand: Hand) {
+export function balanceChanges(c: Context, seniority: readonly string[], baseline: Readonly<Record<string, number>>,
+  offered: Readonly<Record<string, number>>, hand: Hand) {
   const changes: Record<string, Change> = Object.fromEntries(c.ids.map(id => [id, hand[id] ? {...hand[id]} : zeroChange()]));
   const free = c.ids.filter(id => !hand[id]), g = grain(c), rank = (id: string) => seniority.indexOf(id);
   const full = (id: string) => offered[id] + changes[id].temporary + changes[id].permanent;
   const other = (id: string, kind: Kind) => changes[id][kind === 'temporary' ? 'permanent' : 'temporary'] ? 1 : 0;
   const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id])
     .sort((a, b) => other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
-  const receivers = (kind: Kind) => [...free].sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
+  // A permanent receiver's fair share plus punishment never exceeds the month's total points.
+  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total).sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
   for (const id of seniority) {
     if (hand[id]) continue;
     while (full(id) < c.locked[id]) {
@@ -81,13 +84,35 @@ export function balanceChanges(c: Context, seniority: readonly string[], offered
     let remaining = 0 - c.ids.reduce((n, id) => n + (hand[id]?.[kind] ?? 0), 0);
     while (remaining) {
       const sign = Math.sign(remaining), units = Math.min(Math.abs(remaining), g);
-      const chosen = sign > 0 ? receivers(kind)[0] : givers(kind, units)[0];
+      const chosen = sign > 0 ? receivers(kind, units)[0] : givers(kind, units)[0];
       if (!chosen) break;
       changes[chosen][kind] += sign * units; remaining -= sign * units;
     }
     unplaced[kind] = remaining;
   }
   return {changes, unplaced};
+}
+
+/** The hand edits of a plan saved before they were stored: starting from every
+ * member with a change (and every dragged pair's members, which stay hand
+ * edited), drop members newest first while the automatic balance of the rest
+ * still reproduces the saved changes exactly. A reopened legacy plan then lets
+ * its automatic points flow on as the session that made them did. */
+export function inferHand(c: Context, seniority: readonly string[], draft: {baselineUnits: Record<string, number>;
+  offeredUnits: Record<string, number>; changes: Record<string, Change>; pairs: readonly Pair[]}): string[] {
+  const kept = new Set(draft.pairs.flatMap(p => [p.fromId, p.toId]));
+  const reproduces = (ids: string[]) => {
+    const {changes, unplaced} = balanceChanges(c, seniority, draft.baselineUnits, draft.offeredUnits, Object.fromEntries(ids.map(id => [id, {...draft.changes[id]}])));
+    return !unplaced.temporary && !unplaced.permanent && c.ids.every(id => KINDS.every(k => changes[id][k] === draft.changes[id][k]));
+  };
+  let hand = seniority.filter(id => kept.has(id) || draft.changes[id]?.temporary || draft.changes[id]?.permanent);
+  if (!reproduces(hand)) return hand;
+  for (const id of [...seniority].reverse()) {
+    if (!hand.includes(id) || kept.has(id)) continue;
+    const fewer = hand.filter(h => h !== id);
+    if (reproduces(fewer)) hand = fewer;
+  }
+  return hand;
 }
 
 /** The hand state of a draft: its listed hand members, or (for a reopened

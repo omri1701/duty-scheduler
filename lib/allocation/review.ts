@@ -1,6 +1,7 @@
 import {context} from './model.ts';
-import {permanentFloor, validateDraft} from './edits.ts';
+import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
 import {unevenTransfers} from './planner.ts';
+import {inferHand} from './derive.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
 import type {AllocationDraft, AllocationInput, Change} from './types.ts';
@@ -16,6 +17,9 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
   // the current order instead of trapping the month.
   if (draft.changes && typeof draft.changes === 'object' && draft.baselineUnits && typeof draft.baselineUnits === 'object') {
     draft.uneven = unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), draft.baselineUnits, draft.changes);
+    // A plan saved before hand edits were stored: infer them, so reopening keeps
+    // automatic points automatic instead of freezing every changed member.
+    if (draft.hand === undefined && Array.isArray(draft.pairs)) draft.hand = inferHand(c, input.seniority, draft);
   }
   validateDraft(c, input.seniority, draft);
   return draft;
@@ -31,15 +35,16 @@ export function changeOf(draft: Pick<AllocationDraft, 'changes' | 'transfers'> |
 }
 
 export function allocationTotals(input: AllocationInput, draft: AllocationDraft | null, assignments: PrimaryAssignments) {
-  const duties = canonicalDuties(input.schedule.month, input.schedule.calendar);
+  const duties = canonicalDuties(input.schedule.month, input.schedule.calendar), total = duties.reduce((n, d) => n + d.units, 0);
   const rows = input.seniority.map(id => {
     const assigned = duties.reduce((n, d) => n + (assignments[d.id]?.primary === id ? d.units : 0), 0);
     const locked = duties.reduce((n, d) => n + (input.schedule.locks?.some(l => l.dutyId === d.id && l.engineer === id) ? d.units : 0), 0);
     const {temporary, permanent} = changeOf(draft, id), target = draft?.targetsUnits[id] ?? 0;
     const permanentMin = draft?.baselineUnits && draft.offeredUnits ? permanentFloor(draft, id) : 0;
-    return {id, target, assigned, locked, temporary, permanent, permanentMin, generate: target - locked, missing: Math.max(0, target - assigned)};
+    const permanentMax = draft?.baselineUnits ? permanentCeiling(total, draft, id) : total;
+    return {id, target, assigned, locked, temporary, permanent, permanentMin, permanentMax, generate: target - locked, missing: Math.max(0, target - assigned)};
   });
-  return {rows, total: duties.reduce((n, d) => n + d.units, 0), configured: rows.reduce((n, r) => n + r.target, 0),
+  return {rows, total, configured: rows.reduce((n, r) => n + r.target, 0),
     uncovered: duties.filter(d => !assignments[d.id]?.primary).flatMap(d => d.dates)};
 }
 
