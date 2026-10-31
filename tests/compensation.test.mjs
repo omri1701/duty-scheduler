@@ -283,6 +283,16 @@ test('combined/split cross-year ownership, final block completion and shared wei
   h = publish(h, publication('dec2', '2027-12', [duty('2027-12-31', 'a', 1), duty('2028-01-01', 'b', 1)]), 'dec1');
   assert.deepEqual(amounts(h), [['a', 'b', 1]]);
   assert.throws(() => publish(h, publication('bad', '2028-01', [duty('2028-01-01', 'a', 1)])), /invalid-published-duty/);
+  // A combined holiday weekend (+2 → 6 units) carries 3 units on each date; splitting it by hand moves exactly the Saturday's 3.
+  let holiday = publish(setup(), publication('h1', '2027-12', [duty('2027-12-31', 'a', 6, '2028-01-02')]));
+  holiday = publish(holiday, publication('h2', '2027-12', [duty('2027-12-31', 'a', 3), duty('2028-01-01', 'b', 3)]), 'h1');
+  assert.deepEqual(amounts(holiday), [['a', 'b', 3]]);
+  // +0.5 → 3 units: Friday 2, Saturday 1; the odd unit stays with the first half.
+  let odd = publish(setup(), publication('o1', '2027-12', [duty('2027-12-31', 'a', 3, '2028-01-02')]));
+  odd = publish(odd, publication('o2', '2027-12', [duty('2027-12-31', 'b', 2), duty('2028-01-01', 'a', 1)]), 'o1');
+  assert.deepEqual(amounts(odd), [['a', 'b', 2]]);
+  assert.throws(() => publish(setup(), publication('thin', '2027-12', [duty('2027-12-31', 'a', 1, '2028-01-02')])), /invalid-published-duty-weight/);
+  invariant(holiday); invariant(odd);
   let weighted = publish(setup(), publication('w1', '2026-11', [duty('2026-11-02', 'a', 6)]));
   weighted = publish(weighted, publication('w2', '2026-11', [duty('2026-11-02', 'b', 4)]), 'w1');
   assert.deepEqual(amounts(weighted), [['a', 'b', 4]], 'only shared old/new committed weight transfers');

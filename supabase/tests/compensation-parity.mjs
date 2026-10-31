@@ -42,6 +42,11 @@ for(const at of [completion-1,completion+1]) {
 // Split weekend comparison, temporary/permanent exemptions and weighted swaps.
 h=publish(setup(),publication('weekend',[duty('2026-11-06','a',2,'2026-11-08')]));
 keep(publish(h,publication('split',[duty('2026-11-06','a',1,'2026-11-07'),duty('2026-11-07','b',1,'2026-11-08')]),'weekend'));
+// Holiday weekends: combined 1 + extra splits per date like a hand split, odd unit on Friday.
+h=publish(setup(),publication('holiday',[duty('2026-11-06','a',6,'2026-11-08')]));
+keep(publish(h,publication('holiday-split',[duty('2026-11-06','a',3,'2026-11-07'),duty('2026-11-07','b',3,'2026-11-08')]),'holiday'));
+h=publish(setup(),publication('odd',[duty('2026-11-06','a',3,'2026-11-08')]));
+keep(publish(h,publication('odd-split',[duty('2026-11-06','b',2,'2026-11-07'),duty('2026-11-07','a',1,'2026-11-08')]),'odd'));
 for(const kind of ['temporary','permanent']) {
  h=publish(setup(),publication('v1',[duty('2026-11-02','a')]));
  keep(publish(h,publication('v2',[duty('2026-11-02','b')],[],[{id:'intent',kind,fromId:'a',toId:'b',capacity:[{date:'2026-11-02',offset:0,units:2}]}]),'v1'));

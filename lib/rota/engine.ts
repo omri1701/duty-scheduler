@@ -13,16 +13,21 @@ export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]
  for(let d=addDays(begin,-2);d<addDays(end,2);d=addDays(d,1)){
   const dow=dayOf(d),weekendId=dow===5?d:dow===6?addDays(d,-1):undefined;
   const sp=specials.find(s=>s.start<=d&&d<s.end);
-  const split=weekendId&&(splitWeekends.includes(weekendId)||specials.some(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})));
-  if(weekendId&&!split){if(dow===6)continue;all.push({id:d,start:d,end:addDays(d,2),points:1,kind:'weekend',weekendId});}
-  else all.push({id:d,start:d,end:addDays(d,1),points:(weekendId?0.5:1)+(sp?.extra??0),kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),...(sp?{title:sp.title,specialId:sp.id}:{})});
+  const split=weekendId&&splitWeekends.includes(weekendId);
+  if(weekendId&&!split){
+   if(dow===6)continue;
+   // A holiday weekend stays one duty worth 1 + extra (the largest extra touching it).
+   const wsp=specials.filter(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})).sort((a,b)=>b.extra-a.extra)[0];
+   all.push({id:d,start:d,end:addDays(d,2),points:1+(wsp?.extra??0),kind:wsp?'special':'weekend',weekendId,...(wsp?{title:wsp.title,specialId:wsp.id}:{})});
+  }
+  // A hand-split holiday weekend keeps the same total: Friday takes the odd half point.
+  else all.push({id:d,start:d,end:addDays(d,1),points:weekendId?0.5+(sp?(dow===5?Math.ceil(sp.extra):Math.floor(sp.extra))/2:0):1+(sp?.extra??0),kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),...(sp?{title:sp.title,specialId:sp.id}:{})});
  }
  return all.filter(b=>(b.start<end&&b.end>begin)||ownerMonth(b)===month);
 }
 export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
  const assignments={...s.assignments};
  const splitWeekends=(s.splitWeekends??[]).filter(f=>{
-  if(s.specials.some(sp=>overlap(sp,{start:f,end:addDays(f,2)})))return true;
   const a=assignments[f],b=assignments[addDays(f,1)];
   // Only an explicit edit of this weekend can change a locked duty's shape.
   if((a?.locked||b?.locked)&&f!==reviewedWeekend)return true;

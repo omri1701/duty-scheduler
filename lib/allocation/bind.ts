@@ -37,8 +37,11 @@ export async function bindAllocation(source: AllocationInput, allocation: Alloca
     const primaryId = assignments[d.id].primary;
     return primaryId === null ? [] : [{startDate: d.startDate, endDate: d.endDate, primaryId, units: d.units}];
   }), intents: [], reservations: []};
-  const atoms = duties.flatMap(d => assignments[d.id].primary === null ? [] : d.dates.map(date => ({date,
-    primaryId: assignments[d.id].primary!, offset: 0, units: d.dates.length === 2 ? 1 : d.units})));
+  // A combined weekend's dates carry one unit each plus half of any holiday extra,
+  // the odd unit on Friday: the same split as the compensation atoms and a hand split.
+  const atoms = duties.flatMap(d => assignments[d.id].primary === null ? [] : d.dates.map((date, k) => ({date,
+    primaryId: assignments[d.id].primary!, offset: 0,
+    units: d.dates.length === 2 ? 1 + (k === 0 ? Math.ceil((d.units - 2) / 2) : Math.floor((d.units - 2) / 2)) : d.units})));
   const take = (engineer: string, units: number): CapacitySlice[] => {
     const slices: CapacitySlice[] = [];
     for (const a of atoms) {

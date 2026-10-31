@@ -34,8 +34,11 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    points, or half points when the month has half duties); remainders go to the
    newest members. Availability and locks never change the baseline.
    The database accepts only an exact, minimum-squared-cost partition of the
-   indivisible duty weights (`duty_private.allocation_baseline`). When duties
-   are lumpy (for example 14 days at +2 among 12 engineers: equal 4.5 each is
+   indivisible duty weights (`duty_private.allocation_baseline`). Weights follow
+   the canonical calendar: a weekday is 1 + extra, a holiday weekend touched by a
+   special range is one combined duty worth 1 + extra, and a hand-split holiday
+   weekend keeps that total with the odd half point on Friday. When duties
+   are lumpy (for example nine days at +0.5 among 12 engineers: equal 2.5 each is
    impossible), `fitPartition` in `lib/allocation/fit.ts` runs a small exact
    search over duty counts, with no solver, and the larger shares go to the
    newest members. The dialog then shows one note naming who gets more. The

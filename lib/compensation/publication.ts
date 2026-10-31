@@ -13,13 +13,17 @@ function atoms(s: State, publication: Publication) {
   for (const d of [...publication.duties].sort((a, b) => compareId(a.startDate, b.startDate))) {
     requireDate(d.startDate); requireDate(d.endDate); units(d.units, true);
     const combined = d.endDate === addDays(d.startDate, 2) && dayOf(d.startDate) === 5;
-    const base = [5, 6].includes(dayOf(d.startDate)) ? 1 : 2;
+    const base = combined || ![5, 6].includes(dayOf(d.startDate)) ? 2 : 1;
     if (!s.members.has(d.primaryId) || owner(d.startDate) !== publication.month ||
-      (!combined && d.endDate !== addDays(d.startDate, 1)) || (combined && d.units !== 2)) fail('invalid-published-duty');
-    if (!combined && (d.units < base || d.units > base + 40)) fail('invalid-published-duty-weight');
+      (!combined && d.endDate !== addDays(d.startDate, 1))) fail('invalid-published-duty');
+    if (d.units < base || d.units > base + 40) fail('invalid-published-duty-weight');
+    // A combined weekend's date atoms follow the hand-split weights: the extra beyond
+    // the ordinary two units goes half to each date, the odd unit to Friday.
+    const extra = combined ? d.units - 2 : 0;
     for (let date = d.startDate; date < d.endDate; date = addDays(date, 1)) {
       if (result.has(date)) fail('overlapping-published-duty');
-      result.set(date, {date, units: combined ? 1 : d.units, primaryId: d.primaryId, endInstantMs: handover(d.endDate) * 60000});
+      const amount = combined ? 1 + (date === d.startDate ? Math.ceil(extra / 2) : Math.floor(extra / 2)) : d.units;
+      result.set(date, {date, units: amount, primaryId: d.primaryId, endInstantMs: handover(d.endDate) * 60000});
     }
   }
   return result;

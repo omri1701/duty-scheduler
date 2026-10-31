@@ -59,10 +59,11 @@ test('calendar navigation, published visibility, weekends, special and emergency
   await expect(duty(page, '2026-11-07')).toHaveCount(0); // combined Friday–Sunday
   await expect(duty(page, '2026-11-12')).toContainText('Holiday coverage');
   await expect(duty(page, '2026-11-12')).toContainText('+2');
-  for (const day of ['2026-11-20', '2026-11-21']) {
-    await expect(duty(page, day)).toContainText('Weekend holiday');
-    await expect(duty(page, day)).toContainText('+2');
-  }
+  // A holiday weekend is one combined duty worth 1 + extra.
+  await expect(duty(page, '2026-11-20')).toContainText('Weekend holiday');
+  await expect(duty(page, '2026-11-20')).toContainText('+2');
+  await expect(duty(page, '2026-11-20').locator('.day-number')).toHaveText(['20', '21']);
+  await expect(duty(page, '2026-11-21')).toHaveCount(0);
   await expect(page.getByRole('button', {name: 'Publish', exact: true})).toHaveCount(0);
   await expect(page.getByRole('button', {name: 'Versions', exact: true})).toHaveCount(0);
   await page.getByRole('button', {name: 'Next month'}).click();

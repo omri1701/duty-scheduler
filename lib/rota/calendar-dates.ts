@@ -32,7 +32,7 @@ type Period = {start:string;end:string;kind:string};
 export function calendarCells<T extends Period>(dateCells:string[],periods:readonly T[]) {
   return dateCells.flatMap(date=>{
     const period=periods.find(b=>b.start<=date&&date<b.end);
-    const combined=period?.kind==='weekend'&&period.end===addDays(period.start,2);
+    const combined=!!period&&period.end===addDays(period.start,2);
     return combined&&date!==period.start?[]:[{date,period,combined}];
   });
 }

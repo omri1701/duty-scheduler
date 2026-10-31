@@ -87,7 +87,7 @@ The existing PR branch was inspected before editing.
 | Randomness | Fresh cryptographic seed in the UI; deterministic engine seeds available. | Fresh seed on every Generate; equivalent input/version/settings/seed reproducibility. Seed acts only after higher objectives. |
 | Emergency cover | Preserved, but currently earns full points and affects load, gaps and weekend counts. | Preserved; zero primary workload/compensation/spacing/weekend effect. Primary/secondary identity integrity still filters candidates. |
 | Weekend ownership | Friday owns both halves, even across month/year. | Preserve this canonical rule and explicit combined/split structure. |
-| Specials | Daily additions; weekends touched by specials split. Engine supports cross-month ranges; current UI restricts creation to selected owned duties, 1–14 days and 0–20 extra points. Adding a range clears touched assignments. | Half-point additions; ownership-aware cross-month workflow; no silent loss of locks/emergency cover or old-target reuse after a weight change. |
+| Specials | Daily additions; weekends touched by specials split. Engine supports cross-month ranges; current UI restricts creation to selected owned duties, 1–14 days and 0–20 extra points. Adding a range clears touched assignments. | Half-point additions; ownership-aware cross-month workflow; no silent loss of locks/emergency cover or old-target reuse after a weight change. *Decision 2026-10-31:* a weekend touched by a range stays one combined holiday weekend worth 1 + extra; only a manual split separates the halves (section 3.3). |
 | Arithmetic | JavaScript numbers; SQL `numeric`, without a half-step database invariant. | Exact half-point units in all core calculations and future persistence validation. |
 | Publication | Checked, revision-protected draft/publication separation and immutable versions. | Preserve it; commit ledger origins and repayment plans atomically with authoritative publication changes. |
 
@@ -175,13 +175,20 @@ dates read-only. Visible cells are not the ownership or solver-input authority.
 | Combined Friday–Saturday | 1 total |
 | Split Friday | 0.5 |
 | Split Saturday | 0.5 |
-| Special daily duty | Its weekday/weekend base plus that date's configured extra |
+| Special weekday duty | 1 + that date's configured extra |
+| Holiday weekend (combined, touched by a special range on either date) | 1 + extra, the largest extra touching it: like a regular weekend plus one extra day |
+| Hand-split holiday Friday | 0.5 + ⌈extra⌉ / 2 |
+| Hand-split holiday Saturday | 0.5 + ⌊extra⌋ / 2 |
 | Emergency/secondary cover | 0 |
 
-Special extra points are per covered date and must be nonnegative multiples of
-0.5 within existing product limits. Reject 1.1; never silently round it.
-Two special weekend dates with +2 each weigh 2.5 + 2.5 = 5, sharing one weekend
-identity. A Special Block may cross month boundaries; resulting duties retain
+Special extra points must be nonnegative multiples of 0.5 within existing
+product limits. Reject 1.1; never silently round it. A special range no longer
+splits a weekend (decision 2026-10-31): the combined weekend stays one duty worth
+1 + extra, which Generate gives to one member. If the manager splits it by hand,
+the halves keep that total; when 1 + extra is not an even number of half points
+the first half takes the odd half point (+0.5 → Friday 1, Saturday 0.5; +2 →
+1.5 and 1.5). The weekend cap and “either half is the weekend turn” are
+unchanged. A Special Block may cross month boundaries; resulting duties retain
 their owners.
 
 Use integer half-point units throughout the pure core:
@@ -928,7 +935,7 @@ across an owner-month boundary.
 
 A combined weekend is one block; Friday → Saturday inside that block is not
 two assignments. Split Friday and Saturday are separate blocks and cannot both
-be assigned automatically to the same engineer. Special weekend daily blocks
+be assigned automatically to the same engineer. Hand-split holiday halves
 follow the same rule. Explicit fixed-pair manager approval is the only permitted
 consecutive exception.
 
@@ -1975,7 +1982,8 @@ Friday 31 December 2027 and Saturday 1 January 2028 are December-owned:
 |---|---:|---:|
 | Combined ordinary | 1 | 0 |
 | Split ordinary | 0.5 + 0.5 | 0 |
-| Special daily +2 each | 2.5 + 2.5 | 0 |
+| Holiday weekend +2, combined | 3 | 0 |
+| Holiday weekend +2, split by hand | 1.5 + 1.5 | 0 |
 
 Combined coverage ends on Sunday 2 January at 09:00. Its engineer cannot receive
 an automatic consecutive Sunday duty in January. An owner-scoped January save
@@ -2122,7 +2130,7 @@ of the UI/server time gate.
 | B1 | Eight ordinary points, three otherwise equivalent eligible engineers | Ordinary proposal senior-first 2/3/3; compensation outranks this remainder tie; no seniority multiplier. |
 | B2 | Ordinary combined/split weekend | Combined 1 or separate 0.5/0.5; one shared Friday identity; primary-only distinct-weekend counting. |
 | B3 | 31 December 2027 / 1 January 2028, leading Saturday and leap day | Weekend entirely December-owned; no independent January Saturday; leap date covered exactly once. |
-| B4 | Two special weekend dates, +2 each, cross-owner range | Two 2.5 duties, no combined extra base; owner-scoped dates/points preserved. |
+| B4 | Special range over a weekend, +2, cross-owner | One combined 3-point holiday weekend; split by hand it is 1.5 + 1.5 (+0.5 splits 1 / 0.5); owner-scoped dates/points preserved. |
 | B5 | Availability/consecutive manager exceptions | Specific reviewed fixed assignment/pair retained; automatic neighboring violations remain prohibited. |
 | B6 | Target 3 with locks 1, 3 or 4 | Remaining 2, 0, or structural invalidity respectively; equal locks receive no extra primary points. |
 | B7 | Engineer unavailable all month; everyone unavailable on a duty | Valid targets remain unchanged; corresponding deficits and uncovered dates shown in partial output. |

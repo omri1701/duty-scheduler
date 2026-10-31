@@ -194,7 +194,7 @@ export function WorkspaceCalendar({
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {calendarState.months[month]?.status === 'draft' && a?.locked && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}
                 {b?.kind === 'special' && (
-                  <span className="tiny-badge">+{b.points - (b.weekendId ? 0.5 : 1)}</span>
+                  <span className="tiny-badge">+{b.points - (b.weekendId && b.end !== addDays(b.start, 2) ? 0.5 : 1)}</span>
                 )}
               </CalendarDateLine>
               {b && (

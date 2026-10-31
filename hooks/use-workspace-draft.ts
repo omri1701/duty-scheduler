@@ -197,10 +197,11 @@ export function useWorkspaceDraft({
             ? [x]
             : [
                 { ...x, end: b.start },
-                { ...x, id: crypto.randomUUID(), start: addDays(b.start, 1) },
+                { ...x, id: crypto.randomUUID(), start: b.end },
               ].filter((x) => x.start < x.end),
         );
-        const splitWeekends = b.weekendId
+        // Removing one hand-split half keeps the weekend split; a combined weekend loses the whole extra.
+        const splitWeekends = b.weekendId && b.end === addDays(b.start, 1)
           ? [...new Set([...(s.splitWeekends ?? []), b.weekendId])]
           : s.splitWeekends;
         return { ...s, specials, splitWeekends };

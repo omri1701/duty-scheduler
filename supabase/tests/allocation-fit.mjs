@@ -1,5 +1,5 @@
 // Real RPC -> browser baseline fit -> checked confirm, inside one rolled-back transaction.
-// A 14-day +2 special among 12 engineers cannot split equally; the fitted baseline must be accepted.
+// Nine days at +0.5 among 12 engineers cannot split equally (eight 3-unit duties for twelve 5-unit shares); the fitted baseline must be accepted.
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
@@ -27,15 +27,15 @@ try {
  do $$begin for i in 1..11 loop perform public.duty_add_temporary_member('Engineer '||i,${rev});end loop;end$$;
  select public.duty_save_schedule(${q({team:[],months:{[month]:{status:'draft',deadline:'2026-10-25',generated:false}},duties:[]})},${rev},null);`);
  const state=fromSnapshot(readSnapshot(await json('select public.duty_load();')),manager);
- state.specials=[{id:'holiday',title:'Holiday',start:'2026-11-01',end:'2026-11-15',extra:2}];
+ state.specials=[{id:'holiday',title:'Holiday',start:'2026-11-01',end:'2026-11-10',extra:0.5}];
  await sql(`select public.duty_save_schedule(${q(schedulePayload(state,month))},${rev},null);`);
  let context=readGenerationContext(await json(`select public.duty_generation_context('${month}',${rev});`));
  assert.equal(context.input.schedule.members.filter(m=>m.eligible).length,12);
  const proposal=proposeAllocation(context.input),ids=context.input.seniority;
- assert.deepEqual(ids.map(id=>proposal.draft.baselineUnits[id]),[...Array(6).fill(8),...Array(6).fill(10)]);
- assert.deepEqual(unevenBaseline(context.input,proposal.draft.baselineUnits).map(u=>u.id),ids.slice(6));
+ assert.deepEqual(ids.map(id=>proposal.draft.baselineUnits[id]),[4,4,...Array(8).fill(5),6,6]);
+ assert.deepEqual(unevenBaseline(context.input,proposal.draft.baselineUnits).map(u=>u.id),ids.slice(10));
  // The plain equal split is refused by the database's exact partition check.
- const equal=Object.fromEntries(ids.map(id=>[id,9]));
+ const equal=Object.fromEntries(ids.map(id=>[id,5]));
  await sql(`do $$begin perform public.duty_confirm_allocation('${month}',${q({...proposal.draft,baselineUnits:equal,offeredUnits:equal,targetsUnits:equal})},'[]','[]',${context.revision},'${context.fingerprint}');
   raise exception 'equal split accepted';exception when raise_exception then if sqlerrm<>'invalid-ordinary-baseline' then raise;end if;end$$;`);
  context=readGenerationContext(await json(`select public.duty_confirm_allocation('${month}',${q(proposal.draft)},'[]','[]',${context.revision},'${context.fingerprint}');`));

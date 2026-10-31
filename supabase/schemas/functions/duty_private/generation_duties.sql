@@ -15,7 +15,10 @@ begin
   split:=extract(dow from d)=5 and (coalesce(a.end_day=d+1,false) or exists(select 1 from public.duty_assignments where publication_id is not distinct from pub and day=d+1));
   until_day:=d+case when extract(dow from d)=5 and not split then 2 else 1 end;
   if a.id is not null and a.end_day<>until_day then raise exception 'noncanonical-duty'; end if;
-  units:=duty_private.compensation_units(to_jsonb((case when until_day=d+2 then 1 when extract(dow from d) in (5,6) then 0.5 else 1 end+coalesce(a.extra_points,0))*2),true);
+  -- Combined weekend or weekday: 1 + extra. Hand-split halves: Friday 0.5 + ceil(extra)/2, Saturday 0.5 + floor(extra)/2.
+  units:=duty_private.compensation_units(to_jsonb((case when until_day=d+2 then 1+coalesce(a.extra_points,0)
+   when extract(dow from d)=5 then 0.5+ceil(coalesce(a.extra_points,0))/2 when extract(dow from d)=6 then 0.5+floor(coalesce(a.extra_points,0))/2
+   else 1+coalesce(a.extra_points,0) end)*2),true);
   result:=result||jsonb_build_array(jsonb_build_object('id',d,'startDate',d,'endDate',until_day,'units',units,
    'primary',a.primary_id,'secondary',a.secondary_id,'title',coalesce(a.title,''),'extra',coalesce(a.extra_points,0),
    'weekendId',case when extract(dow from d)=5 then d when extract(dow from d)=6 then d-1 end));

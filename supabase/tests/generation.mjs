@@ -395,3 +395,26 @@ do $$begin if (select allocation from public.duty_allocations where publication_
 rollback;`;
 sql(convert);
 console.log('PASS: the migration converts a legacy working draft into per-person changes with the same routing, leaves pending or malformed legacy drafts alone without failing, and those drafts need a new confirmation');
+
+// Holiday weekends: a combined Friday row may carry a title and extra points and weighs
+// 1 + extra; hand-split halves keep that total with the odd half point on Friday. The
+// stored points column and duty_private.generation_duties apply the same formula.
+const holidayDuties=[{day:'2027-12-31',end_day:'2028-01-02',primary_id:ids[5],secondary_id:null,manager_override:false,title:'New Year',extra_points:2,locked:false},
+ {day:'2027-12-03',end_day:'2027-12-04',primary_id:ids[6],secondary_id:null,manager_override:false,title:'Half',extra_points:0.5,locked:false},
+ {day:'2027-12-04',end_day:'2027-12-05',primary_id:ids[7],secondary_id:null,manager_override:false,title:'Half',extra_points:0.5,locked:false},
+ {day:'2027-12-10',end_day:'2027-12-11',primary_id:ids[8],secondary_id:null,manager_override:false,title:'Even',extra_points:2,locked:false},
+ {day:'2027-12-11',end_day:'2027-12-12',primary_id:ids[9],secondary_id:null,manager_override:false,title:'Even',extra_points:2,locked:false}];
+let holiday=setup+`select public.duty_save_schedule(${quote({team:[],months:{[month]:{status:'draft',deadline:'2027-11-24',generated:false}},duties:holidayDuties})},${rev},null);
+reset role;
+do $$declare d jsonb:=duty_private.generation_duties('${month}'); u jsonb:='{}';
+begin
+ select jsonb_object_agg(x->>'id',x->'units') into u from jsonb_array_elements(d) x;
+ if u->>'2027-12-31'<>'6' or (select count(*) from jsonb_array_elements(d) x where x->>'id'='2028-01-01')<>0 then raise exception 'combined holiday weekend must weigh 1 + extra as one duty: %',u->'2027-12-31'; end if;
+ if u->>'2027-12-03'<>'2' or u->>'2027-12-04'<>'1' then raise exception 'hand-split +0.5 weekend must weigh 2 and 1 units'; end if;
+ if u->>'2027-12-10'<>'3' or u->>'2027-12-11'<>'3' then raise exception 'hand-split +2 weekend must weigh 3 and 3 units'; end if;
+ if (select jsonb_object_agg(day,points) from public.duty_assignments where publication_id is null and day in ('2027-12-31','2027-12-03','2027-12-04','2027-12-10','2027-12-11'))
+  <>jsonb_build_object('2027-12-31',3,'2027-12-03',1,'2027-12-04',0.5,'2027-12-10',1.5,'2027-12-11',1.5) then raise exception 'stored points differ from canonical weights'; end if;
+end$$;
+rollback;`;
+sql(holiday);
+console.log('PASS: combined holiday weekends weigh 1 + extra as one duty and hand-split halves keep the total with the odd half point on Friday, in generation_duties and the stored points column');

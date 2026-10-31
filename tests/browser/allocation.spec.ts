@@ -83,20 +83,20 @@ test('opening the plan runs no Worker; a target above availability warns on its 
 
 test('indivisible holiday duties show one inline note naming who gets more, in English and Hebrew', async ({page, backend, openApp}) => {
   fresh(backend);
-  // Seven +2 days among six: the equal 6.5/7 split is not a real partition of the duties.
-  for (let day = 1; day <= 7; day++) backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day: `2026-11-0${day}`, end_day: `2026-11-0${day + 1}`,
-    primary_id: null, secondary_id: null, title: 'Holiday', extra_points: 2, points: 3, locked: false, manager_override: false});
+  // Three +0.5 weekdays among six: the equal 4.5/5 split is not a real partition of the duties.
+  for (let day = 1; day <= 3; day++) backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day: `2026-11-0${day}`, end_day: `2026-11-0${day + 1}`,
+    primary_id: null, secondary_id: null, title: 'Holiday', extra_points: 0.5, points: 1.5, locked: false, manager_override: false});
   await openApp(); await openPlan(page);
-  const fourth = await page.locator('.allocation-row').nth(3).locator('.allocation-engineer strong').textContent();
+  const fifth = await page.locator('.allocation-row').nth(4).locator('.allocation-engineer strong').textContent();
   const note = page.getByRole('dialog').getByRole('note').filter({hasText: 'split evenly'});
-  await expect(note).toHaveText(`This month’s duties can’t split evenly: ${fourth} gets 7 pts.`);
+  await expect(note).toHaveText(`This month’s duties can’t split evenly: ${fifth} gets 5 pts.`);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
   await page.getByRole('button', {name: 'יצירת שיבוץ', exact: true}).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
-  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
+  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fifth} – 5 נק׳.`);
 });
 
 const member = (page: import('@playwright/test').Page, name: string) => {

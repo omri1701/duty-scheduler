@@ -70,6 +70,6 @@ export function schedulePayload(s:State,month?:string,publish=false,reviewedLock
   // Include only explicit data or duties belonging to an existing month; never invent a carried assignment.
    if(months.has(ownerMonth(duty))&&s.months[ownerMonth(duty)]&&(s.months[ownerMonth(duty)].status==='draft'||publish&&ownerMonth(duty)===month))duties.set(duty.id,duty);
  }
-  return {...(reviewedLocks?{lock_edits:reviewedLocks}:{}),team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,locked:!!s.assignments[d.id]?.locked,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
+  return {...(reviewedLocks?{lock_edits:reviewedLocks}:{}),team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,locked:!!s.assignments[d.id]?.locked,title:d.title??'',extra_points:d.specialId?(s.specials.find(x=>x.id===d.specialId)?.extra??0):0}))};
 }
 export {todayIsrael} from '../rota/calendar-dates.ts';

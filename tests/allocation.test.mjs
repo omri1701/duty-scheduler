@@ -66,9 +66,13 @@ test('ordinary baseline uses exact attainable weights; saved seniority only brea
 });
 
 // Literal ports of duty_private.allocation_partition and allocation_better_baseline:
-// the browser baseline must be one the checked confirm RPC accepts.
+// the browser baseline must be one the checked confirm RPC accepts. A revisited
+// state (same remaining duties, same sorted capacities) has the same answer, so
+// the memo only skips repeated permutations of identical duties.
+const seenPartition = new Set(), seenBetter = new Set();
 function sqlPartition(weights, capacities) {
   if (!weights.length) return capacities.every(x => x === 0);
+  const key = weights.length + '|' + capacities.join(','); if (seenPartition.has(key)) return false; seenPartition.add(key);
   let previous = -1;
   for (let i = 0; i < capacities.length; i++) {
     if (capacities[i] < weights[0] || capacities[i] === previous) continue;
@@ -82,6 +86,7 @@ function sqlBetter(weights, bins, ceiling, quantum, sum) {
   for (let i = 0; i < total(weights) / quantum; i++) relaxed[relaxed.indexOf(Math.min(...relaxed))] += quantum;
   if (relaxed.reduce((s, x) => s + (n * x - sum) ** 2, 0) >= ceiling) return false;
   if (!weights.length) return true;
+  const key = weights.length + '|' + bins.join(','); if (seenBetter.has(key)) return false; seenBetter.add(key);
   let previous = -1;
   for (let i = 0; i < n; i++) {
     if (bins[i] === previous) continue; previous = bins[i];
@@ -91,13 +96,16 @@ function sqlBetter(weights, bins, ceiling, quantum, sum) {
   return false;
 }
 function sqlAccepts(weights, baseline) {
+  seenPartition.clear(); seenBetter.clear();
   const w = [...weights].sort((a, b) => b - a), capacities = Object.values(baseline).sort((a, b) => b - a), n = capacities.length;
   const gcd = (a, b) => b ? gcd(b, a % b) : a, sum = total(w);
   const cost = capacities.reduce((s, x) => s + (n * x - sum) ** 2, 0);
   return sqlPartition(w, capacities) && !sqlBetter(w, Array(n).fill(0), cost, w.reduce(gcd, 0), sum);
 }
-const holiday = (extra = 2) => {
-  const i = scenario(); i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-15', extra}]}; return i;
+// Nine days at +0.5: seven 1.5-point weekdays and one 1.5-point holiday weekend (3 units each)
+// among eighteen ordinary duties; an equal 2.5 points each would need twelve 3-unit duties.
+const holiday = (extra = 0.5, end = '2026-11-10', splitWeekends = []) => {
+  const i = scenario(); i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end, extra}], splitWeekends}; return i;
 };
 const weightsOf = i => canonicalDuties(i.schedule.month, i.schedule.calendar).map(d => d.units);
 
@@ -109,16 +117,16 @@ test('a normal month keeps the plain equal split, which the database accepts', (
 });
 
 test('indivisible holiday duties fit the cheapest exact partition; extra goes to the newest', () => {
-  // 14 days at +2: ten 3-point weekdays and four 2.5-point weekend days among 12.
   const i = holiday(), weights = weightsOf(i), r = proposal(i);
   invariant(i, r);
+  assert.deepEqual([...weights].sort((a, b) => b - a), [...Array(8).fill(3), ...Array(18).fill(2)]);
   const plain = Object.fromEntries(i.seniority.map((id, k) => [id, equalShares(weights, 12)[k]]));
-  assert.deepEqual(Object.values(plain), Array(12).fill(9));
+  assert.deepEqual(Object.values(plain), Array(12).fill(5));
   assert.equal(sqlAccepts(weights, plain), false, 'the equal split is not a real partition');
-  assert.deepEqual(i.seniority.map(id => r.draft.baselineUnits[id]), [...Array(6).fill(8), ...Array(6).fill(10)]);
+  assert.deepEqual(i.seniority.map(id => r.draft.baselineUnits[id]), [4, 4, ...Array(8).fill(5), 6, 6]);
   assert.ok(sqlAccepts(weights, r.draft.baselineUnits), 'database rules accept the fitted baseline');
   assert.deepEqual(r.draft.targetsUnits, r.draft.baselineUnits);
-  assert.deepEqual(unevenBaseline(i, r.draft.baselineUnits).map(u => u.id), i.seniority.slice(6));
+  assert.deepEqual(unevenBaseline(i, r.draft.baselineUnits).map(u => u.id), i.seniority.slice(10));
   assert.deepEqual(proposal(i), r, 'deterministic');
   // Small cases against the same SQL rules.
   let seed = 11; const next = k => (seed = (seed * 1103515245 + 12345) % 2147483648) % k;
@@ -129,7 +137,8 @@ test('indivisible holiday duties fit the cheapest exact partition; extra goes to
 });
 
 test('the exact fit is bounded and reports a clear limit instead of freezing', () => {
-  assert.throws(() => fitPartition(weightsOf(holiday()), 12, 10), /allocation-fit-limit/);
+  // Two hand-split holiday weekends add 3- and 2-unit halves beside the 5-unit weekdays.
+  assert.throws(() => fitPartition(weightsOf(holiday(1.5, '2026-11-15', ['2026-11-06', '2026-11-13'])), 12, 10), /allocation-fit-limit/);
   assert.ok(fitPartition(weightsOf(holiday(1)), 12).length === 12);
 });
 

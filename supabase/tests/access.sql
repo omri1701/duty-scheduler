@@ -132,7 +132,7 @@ begin
  -- Rebuild the payload from the restored draft for the next publish.
  select jsonb_set(schedule,'{duties}',jsonb_agg(to_jsonb(a))) into schedule from public.duty_assignments a where publication_id is null;
  select revision into rev from public.duty_workspace;perform public.duty_save_schedule(schedule,rev,'2026-07');
- if not exists(select 1 from public.duty_assignments where publication_id=(select current_publication_id from public.duty_months where month='2026-07') and day='2026-08-01' and points=2.5) then raise exception 'July publication omitted special Saturday'; end if;
+ if not exists(select 1 from public.duty_assignments where publication_id=(select current_publication_id from public.duty_months where month='2026-07') and day='2026-08-01' and points=1.5) then raise exception 'July publication omitted special Saturday'; end if;
  select revision into rev from public.duty_workspace;perform public.duty_delete_publication(kept,rev);
  if (select current_publication_id from public.duty_months where month='2099-10') is not null or (select status from public.duty_months where month='2099-10')<>'draft' then raise exception 'Deleting the last version left month published'; end if;
  -- Deactivation retains published references and blocks that member's workspace access.

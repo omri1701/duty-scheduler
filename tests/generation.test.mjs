@@ -39,9 +39,16 @@ test('canonical real calendar: Friday ownership, combined/split/special, leap da
   assert.equal(weekend.end, handover('2028-01-02'));
   assert.equal(january[0].id, '2028-01-02');
   assert.equal(coverageStart('2028-01', {}), handover('2028-01-02') * 60000);
-  const special = canonicalDuties('2027-12', {specials: [{id: 's', start: '2027-12-31', end: '2028-01-02', extra: 2}]});
-  assert.deepEqual(special.slice(-2).map(d => [d.id, d.units, d.weekendId]), [
-    ['2027-12-31', 5, '2027-12-31'], ['2028-01-01', 5, '2027-12-31']]);
+  // A special range over a weekend keeps it combined at 1 + extra; a hand split keeps the total, Friday first.
+  const holiday = {specials: [{id: 's', start: '2027-12-31', end: '2028-01-02', extra: 2}]};
+  const special = canonicalDuties('2027-12', holiday);
+  assert.deepEqual(special.slice(-1).map(d => [d.id, d.units, d.weekendId, d.dates, d.specialDates]),
+    [['2027-12-31', 6, '2027-12-31', ['2027-12-31', '2028-01-01'], ['2027-12-31', '2028-01-01']]]);
+  assert.deepEqual(canonicalDuties('2027-12', {...holiday, splitWeekends: ['2027-12-31']}).slice(-2).map(d => [d.id, d.units]),
+    [['2027-12-31', 3], ['2028-01-01', 3]]);
+  assert.deepEqual(canonicalDuties('2027-12', {specials: [{id: 's', start: '2027-12-31', end: '2028-01-02', extra: 0.5}], splitWeekends: ['2027-12-31']})
+    .slice(-2).map(d => d.units), [2, 1]);
+  assert.deepEqual(canonicalDuties('2027-12', {specials: [{id: 's', start: '2028-01-01', end: '2028-01-02', extra: 1}]}).at(-1).units, 4);
   assert.equal(canonicalDuties('2028-02', {}).at(-1).id, '2028-02-29');
   assert.equal(canonicalDuties('2026-11', {specialDates: ['2026-11-07']}).find(d => d.id === '2026-11-06').specialDates.length, 1);
   assert.equal(halfUnits(34.5), 69);
