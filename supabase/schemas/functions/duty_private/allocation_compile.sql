@@ -16,11 +16,16 @@ declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_c
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
  pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','sourceKey']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','hand','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
   or (draft ? 'uneven' and jsonb_typeof(draft->'uneven') IS DISTINCT FROM 'array')
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
   or jsonb_typeof(draft->'pairs') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'changes') IS DISTINCT FROM 'object' then raise exception 'invalid-confirmed-allocation'; end if;
+ -- Members the manager edited by hand: editing state the browser reopens with, so
+ -- automatic points keep flowing the same way. Absent in plans saved before it existed.
+ if draft ? 'hand' and (jsonb_typeof(draft->'hand') IS DISTINCT FROM 'array'
+  or exists(select 1 from jsonb_array_elements(draft->'hand') h where jsonb_typeof(h) IS DISTINCT FROM 'string' or not ids ? (h#>>'{}'))
+  or (select count(*) from jsonb_array_elements(draft->'hand'))<>(select count(distinct h) from jsonb_array_elements(draft->'hand') h)) then raise exception 'invalid-hand-edits'; end if;
  foreach name in array array['baselineUnits','offeredUnits','targetsUnits'] loop
   table_value:=draft->name;
   if jsonb_typeof(table_value) IS DISTINCT FROM 'object' or (select count(*) from jsonb_each(table_value))<>jsonb_array_length(ids)

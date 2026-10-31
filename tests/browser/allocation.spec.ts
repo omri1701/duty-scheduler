@@ -93,7 +93,7 @@ test('two members: + stops when the other member has nothing left, so the plan n
   // The other member is at zero: + is disabled for both kinds and says why to screen readers.
   await expect(increase).toBeDisabled();
   await expect(increase).toHaveAttribute('aria-describedby', 'plan-no-counterpart');
-  await expect(page.locator('#plan-no-counterpart')).toHaveText('No one else can take on less. Lower someone first, or drag a point.');
+  await expect(page.locator('#plan-no-counterpart')).toHaveText('No one else can take on less. Drag a point instead.');
   await page.getByRole('button', {name: /^Permanent/}).click();
   await expect(first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true})).toBeDisabled();
   // − gives a point back to the other member.
@@ -102,6 +102,26 @@ test('two members: + stops when the other member has nothing left, so the plan n
   await expect(points).toHaveText('25');
   await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
   await expect(increase).toBeEnabled();
+});
+
+test('two members: after Save and reopen, − gives the point back to the same member, so the plan stays 26 / 26 pts', async ({page, backend, openApp}) => {
+  fresh(backend, 2); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'}), rows = dialog.locator('.plan-row');
+  const fair = Number(await rows.first().locator('output').textContent()), other = Number(await rows.nth(1).locator('output').textContent());
+  await rows.first().getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await openPlan(page);
+  await expect(rows.first().locator('output')).toHaveText(String(fair + 1));
+  // Before, every changed member was frozen on reopen, so this − left the plan at 25 / 26.
+  await rows.first().getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(rows.first().locator('output')).toHaveText(String(fair));
+  await expect(rows.nth(1).locator('output')).toHaveText(String(other));
+  await expect(dialog.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  // With the point back, a − on the other member has no one left to take it (Avery is edited by hand): disabled, with a reason.
+  const second = rows.nth(1).getByRole('button', {name: /^Decrease Temporary · /});
+  await expect(second).toBeDisabled(); await expect(second).toHaveAttribute('aria-describedby', 'plan-no-receiver');
 });
 
 test('Save stores the whole plan without generating; closing, reopening and reloading restore it exactly', async ({page, backend, openApp}) => {
@@ -265,7 +285,9 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
-  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'hand', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
+  // Hand edits persist with the plan: the dragged members stay hand edited after reopening.
+  expect([...saved.hand as string[]].sort()).toEqual([ids.a, ids.admin].sort());
   expect(saved.uneven).toEqual([]);
   expect(saved.pairs).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
   expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);

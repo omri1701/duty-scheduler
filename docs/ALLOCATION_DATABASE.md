@@ -32,7 +32,9 @@ without touching stored rows. The `20261031165238_permanent_month_cap.sql`
 migration adds the Permanent ceiling (fair + Permanent ≤ the month's total units) and
 the Temporary bound (|Temporary| ≤ the month's total units) to `allocation_compile`
 (`permanent-above-month-total`, `temporary-above-month-total`); stored plans already
-satisfy both. Only managers can
+satisfy both. It also lets the stored allocation carry `hand`, the members edited by
+hand (distinct current participants, else `invalid-hand-edits`), so a reopened plan
+balances like the session that saved it; plans without it still confirm. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
 `duty_assignments.locked` persists a primary lock even before the first allocation.

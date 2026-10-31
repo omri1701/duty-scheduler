@@ -93,6 +93,28 @@ export function balanceChanges(c: Context, seniority: readonly string[], baselin
   return {changes, unplaced};
 }
 
+/** The hand edits of a plan saved before they were stored: starting from every
+ * member with a change (and every dragged pair's members, which stay hand
+ * edited), drop members newest first while the automatic balance of the rest
+ * still reproduces the saved changes exactly. A reopened legacy plan then lets
+ * its automatic points flow on as the session that made them did. */
+export function inferHand(c: Context, seniority: readonly string[], draft: {baselineUnits: Record<string, number>;
+  offeredUnits: Record<string, number>; changes: Record<string, Change>; pairs: readonly Pair[]}): string[] {
+  const kept = new Set(draft.pairs.flatMap(p => [p.fromId, p.toId]));
+  const reproduces = (ids: string[]) => {
+    const {changes, unplaced} = balanceChanges(c, seniority, draft.baselineUnits, draft.offeredUnits, Object.fromEntries(ids.map(id => [id, {...draft.changes[id]}])));
+    return !unplaced.temporary && !unplaced.permanent && c.ids.every(id => KINDS.every(k => changes[id][k] === draft.changes[id][k]));
+  };
+  let hand = seniority.filter(id => kept.has(id) || draft.changes[id]?.temporary || draft.changes[id]?.permanent);
+  if (!reproduces(hand)) return hand;
+  for (const id of [...seniority].reverse()) {
+    if (!hand.includes(id) || kept.has(id)) continue;
+    const fewer = hand.filter(h => h !== id);
+    if (reproduces(fewer)) hand = fewer;
+  }
+  return hand;
+}
+
 /** The hand state of a draft: its listed hand members, or (for a reopened
  * draft without one) every member with a nonzero change. */
 export function handOf(draft: {changes: Record<string, Change>; hand?: string[]}): Record<string, Change> {

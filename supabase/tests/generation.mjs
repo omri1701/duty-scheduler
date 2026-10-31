@@ -362,11 +362,15 @@ const extraMember=structuredClone(confirmedDraft);extraMember.changes['00000000-
 floors+=failure(confirm(extraMember),'invalid-allocation-changes');
 const fractional=structuredClone(confirmedDraft);fractional.changes[ids[8]].temporary=0.5;
 floors+=failure(confirm(fractional),'invalid-allocation-changes');
-const handLeak=structuredClone(confirmedDraft);handLeak.hand=[ids[8]];
-floors+=failure(confirm(handLeak),'invalid-confirmed-allocation');
+// Hand edits persist with the plan (members only, each once), so reopening balances like the saving session.
+const withHand=hand=>({...structuredClone(confirmedDraft),hand});
+floors+=failure(confirm(withHand(['00000000-0000-0000-0000-000000000099'])),'invalid-hand-edits');
+floors+=failure(confirm(withHand([ids[8],ids[8]])),'invalid-hand-edits');
+floors+=failure(confirm(withHand(ids[8])),'invalid-hand-edits');
+floors+=confirm(withHand([ids[8],ids[9]]))+`do $$begin if not exists(select 1 from public.duty_allocations where publication_id is null and allocation->'hand'=${quote([ids[8],ids[9]])}) then raise exception 'Hand edits not persisted';end if;end$$;`;
 floors+=`rollback;`;
 sql(floors);
-console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share or lifting it above the month total, a temporary change beyond the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
+console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, malformed hand edits (valid ones persist), a permanent change below the fair share or lifting it above the month total, a temporary change beyond the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
 
 // The relief floor: a creditor relieved this month cannot give that relief away permanently.
 let relief=setup+`create temp table debt(v jsonb);insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:debtor,creditorId:creditor,units:4})},'debt','Reviewed source',${rev});`+refresh;

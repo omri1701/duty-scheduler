@@ -87,10 +87,13 @@ export const balanced = (draft: Pick<AllocationDraft, 'changes'>) =>
 export const unplacedChanges = (draft: Pick<AllocationDraft, 'changes'>): Change =>
   ({temporary: 0 - sum(Object.values(draft.changes).map(ch => ch.temporary)), permanent: 0 - sum(Object.values(draft.changes).map(ch => ch.permanent))});
 
-/** The checked RPC accepts only the persisted allocation shape. */
+/** The shape the checked RPC persists. `hand` is kept, so a reopened plan
+ * balances automatic points exactly like the session that saved it. */
 export function persistedDraft(source: AllocationDraft): AllocationDraft {
-  const draft = {...source}; delete draft.hand; return draft;
+  return {...source};
 }
+
+const unplacedUnits = (draft: Pick<AllocationDraft, 'changes'>) => {const u = unplacedChanges(draft); return Math.abs(u.temporary) + Math.abs(u.permanent);};
 
 /** Rebuild everything derived from the hand state: automatic balance, targets
  * and the canonical transfer list. */
@@ -103,6 +106,10 @@ export function rebuild(c: Context, input: AllocationInput, source: AllocationDr
     uneven: unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), source.baselineUnits, changes),
     sourceKey: source.sourceKey, hand: Object.keys(hand)};
   validateDraft(c, input.seniority, draft);
+  // The configured total always equals the month total: an edit no one can
+  // absorb is refused, never left unplaced. (A legacy unbalanced source may only
+  // move toward balance.)
+  if (!balanced(draft) && (balanced(source) || unplacedUnits(draft) >= unplacedUnits(source))) throw Error('unplaced-allocation-change');
   return draft;
 }
 

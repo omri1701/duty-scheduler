@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {proposeAllocation, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
   nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor, permanentCeiling} from '../lib/allocation/index.ts';
-import {validateDraft} from '../lib/allocation/edits.ts';
+import {validateDraft, persistedDraft} from '../lib/allocation/edits.ts';
+import {reviewAllocation} from '../lib/allocation/review.ts';
 import {context} from '../lib/allocation/model.ts';
 import {canonicalDuties} from '../lib/scheduling/calendar.ts';
 import {validateGeneration} from '../lib/scheduling/validate.ts';
@@ -44,7 +45,7 @@ const SCENARIOS = {
 function rng(seed) {let s = seed >>> 0; return () => {s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296;};}
 const pick = (r, xs) => xs[Math.floor(r() * xs.length)];
-const EXPECTED = /edit-below-locked-points|permanent-below-fair-share|permanent-above-month-total|temporary-above-month-total|allocation-above-month-total/;
+const EXPECTED = /edit-below-locked-points|permanent-below-fair-share|permanent-above-month-total|temporary-above-month-total|allocation-above-month-total|unplaced-allocation-change/;
 
 function lockedOf(i) {
   const duties = canonicalDuties(i.schedule.month, i.schedule.calendar), locked = Object.fromEntries(i.seniority.map(id => [id, 0]));
@@ -92,6 +93,8 @@ function apply(i, d, a) {
   if (a.op === 'edit') return editAllocation(i, d, {engineer: a.engineer, deltaUnits: a.delta, kind: a.kind}).draft;
   if (a.op === 'transfer') return transferAllocation(i, d, {id: a.id, fromId: a.from, toId: a.to, units: a.units, kind: a.kind}).draft;
   if (a.op === 'classify') return classifyTransfer(i, d, a.pair, a.kind);
+  // Save → reopen: the checked RPC stores the plan with its hand edits; a legacy plan has none and infers them.
+  if (a.op === 'reopen') {const saved = persistedDraft(d); if (a.legacy) delete saved.hand; return reviewAllocation(i, saved);}
   throw Error('op');
 }
 function randomAction(r, i, d, n) {
@@ -99,7 +102,8 @@ function randomAction(r, i, d, n) {
   if (x < 0.5) return {op: 'edit', engineer: pick(r, ids), delta: pick(r, [-2, -2, -1, 1, 2, 2, -4, 4]), kind: r() < 0.6 ? 'temporary' : 'permanent'};
   if (x < 0.8) {const from = pick(r, ids); let to = pick(r, ids); if (to === from) to = ids[(ids.indexOf(from) + 1) % ids.length];
     return {op: 'transfer', id: `t${n}`, from, to, units: pick(r, [2, 2, 1]), kind: r() < 0.8 ? 'temporary' : 'permanent'};}
-  if (x < 0.92 && d.pairs.length) return {op: 'classify', pair: pick(r, d.pairs).id, kind: r() < 0.8 ? 'permanent' : 'temporary'};
+  if (x < 0.88 && d.pairs.length) return {op: 'classify', pair: pick(r, d.pairs).id, kind: r() < 0.8 ? 'permanent' : 'temporary'};
+  if (x < 0.95) return {op: 'reopen', legacy: r() < 0.3};
   return {op: 'undo'};
 }
 const stats = {sequences: 0, steps: 0, accepted: 0, rejected: {}, compiled: 0, reviews: 0, bound: 0, boundComplete: 0, orderChecks: 0, inverseSame: 0, inverseChecks: 0};
@@ -110,6 +114,7 @@ function check(name, i, c, prop, d, trail) {
   const unplaced = unplacedChanges(d);
   assert.equal(sum(Object.values(d.targetsUnits)), c.total - unplaced.temporary - unplaced.permanent, `${where}: total conserved`);
   assert.ok(sum(Object.values(d.targetsUnits)) <= c.total, `${where}: never more points than the month has`);
+  if (balanced(prop.draft)) assert.ok(balanced(d), `${where}: the configured total always equals the month total, nothing unplaced`);
   for (const id of ids) {
     assert.ok(d.targetsUnits[id] >= locked[id] && d.targetsUnits[id] >= 0, `${where}: ${id} above lock`);
     assert.ok(d.changes[id].permanent >= permanentFloor(d, id), `${where}: ${id} permanent floor`);
@@ -193,6 +198,20 @@ test('fuzz: per-person allocation sequences keep floors, conservation, canonical
       stats.accepted++; trail.push(a); history.push(next);
       const before = d; d = next;
       check(name, i, c, prop, d, trail);
+      if (a.op === 'reopen') {
+        // Reopening restores the session; a legacy plan restores its table and keeps editing the same way.
+        stats.reopens = (stats.reopens ?? 0) + 1;
+        if (!a.legacy) assert.deepEqual({...d, sourceKey: '', hand: d.hand ?? []}, {...before, sourceKey: '', hand: before.hand ?? []}, `${name}: Save → reopen restores the plan`);
+        else for (const key of ['targetsUnits', 'changes', 'transfers', 'pairs']) assert.deepEqual(d[key], before[key], `${name}: legacy reopen keeps ${key}`);
+        const probe = {op: 'edit', engineer: pick(r, i.seniority), delta: pick(r, [-2, -1, 1, 2]), kind: r() < 0.6 ? 'temporary' : 'permanent'};
+        if (!a.legacy) {
+          let viaReopen, without;
+          try {viaReopen = apply(i, d, probe).targetsUnits;} catch (e) {viaReopen = e.message;}
+          try {without = apply(i, before, probe).targetsUnits;} catch (e) {without = e.message;}
+          assert.deepEqual(viaReopen, without, `${name}: editing after reopen equals editing without it (${JSON.stringify(probe)})`);
+        }
+        continue;
+      }
       // The opposite click restores that member's net change of the kind; its points too unless the
       // member held an automatic point of the other kind, which moved on when the member became hand edited.
       if (a.op === 'edit') {

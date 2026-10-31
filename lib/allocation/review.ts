@@ -1,6 +1,7 @@
 import {context} from './model.ts';
 import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
 import {unevenTransfers} from './planner.ts';
+import {inferHand} from './derive.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
 import type {AllocationDraft, AllocationInput, Change} from './types.ts';
@@ -16,6 +17,9 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
   // the current order instead of trapping the month.
   if (draft.changes && typeof draft.changes === 'object' && draft.baselineUnits && typeof draft.baselineUnits === 'object') {
     draft.uneven = unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), draft.baselineUnits, draft.changes);
+    // A plan saved before hand edits were stored: infer them, so reopening keeps
+    // automatic points automatic instead of freezing every changed member.
+    if (draft.hand === undefined && Array.isArray(draft.pairs)) draft.hand = inferHand(c, input.seniority, draft);
   }
   validateDraft(c, input.seniority, draft);
   return draft;
