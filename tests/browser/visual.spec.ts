@@ -108,6 +108,8 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
   await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
   await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  // Park the emulated mouse: a row opening under it would read as hovered.
+  await page.mouse.move(0, 0);
   // The total names the locked points without an icon.
   await expect(dialog.locator('.plan-pie-total small')).toHaveText(he ? '1 נעולות' : '1 locked');
   await expect(dialog.locator('.plan-pie-center svg')).toHaveCount(0);

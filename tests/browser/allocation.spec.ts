@@ -98,7 +98,8 @@ test('the pie shows one slice per member and the details of the slice or row in 
   const pie = dialog.locator('.plan-pie svg'), box = (await pie.boundingBox())!, middle = {position: {x: box.width / 2, y: box.height / 2}};
   if (info.project.name === 'mobile') await pie.tap(middle); else await pie.click(middle);
   await expect(center).toContainText('26/ 26 points');
-  // Keyboard: focusing a member shows the same details.
+  // Keyboard: focusing a member shows the same details. Park the mouse so rows scrolling under it never hover.
+  await page.mouse.move(0, 0);
   await dialog.locator('.plan-row').nth(2).getByRole('rowheader').focus();
   await expect(center).toContainText('Blair Birch');
   await expect(dialog.locator(`.plan-slice[data-engineer="${ids.b}"]`)).toHaveClass(/active/);
