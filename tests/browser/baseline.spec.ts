@@ -86,7 +86,7 @@ test('generation starts empty, saves a draft and publishes after review', async 
   await page.getByRole('button', {name: 'Generate month', exact: true}).click();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  await expect(page.getByRole('button', {name: 'Regenerate', exact: true})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled();
   const save = backend.calls.find(c => c.name === 'duty_save_generation')!;
   expect(save.params.p_month).toBe(MONTH);
   expect(backend.raw.assignments.every(d => d.primary_id)).toBe(true);

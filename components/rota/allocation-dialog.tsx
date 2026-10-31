@@ -12,6 +12,7 @@ import type {Kind} from '@/lib/allocation/types';
 import type {Language, Translate} from './workspace-types';
 import {nettedCompensation} from '@/lib/allocation/netting';
 import {loneHalf} from '@/lib/compensation';
+import {shortDate} from '@/lib/date-format';
 
 const points = (units: number) => String(units / 2);
 const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(units))}`;
@@ -98,6 +99,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           </div>
         </div>
       </section>
+      {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
+      {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
+      {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       {f.draft && <div className="plan-rows" role="table" aria-label={t('Monthly point allocation', 'הקצאת נקודות חודשית')}>
         <div className="plan-sr" role="row"><span role="columnheader">{t('Engineer', 'מהנדס')}</span><span role="columnheader">{t('Points', 'נקודות')}</span></div>
@@ -142,7 +146,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
               <button type="button" disabled={f.busy} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
             </div>
             {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
-            {f.ceilings && f.spaced && r.target <= f.ceilings[r.id] && r.target > f.spaced[r.id] && <p className="allocation-row-note" role="note">{t('This needs some back-to-back days', 'יידרשו כמה תורנויות רצופות')}</p>}
+            {!f.outcome?.generated && f.ceilings && f.spaced && r.target <= f.ceilings[r.id] && r.target > f.spaced[r.id] && <p className="allocation-row-note" role="note">{t('This needs some back-to-back days', 'יידרשו כמה תורנויות רצופות')}</p>}
+            {f.outcome?.generated && r.assigned !== r.target && <p className="allocation-row-warning" role="note">{t(`${points(r.assigned)} scheduled, plan says ${points(r.target)}`, `שובצו ${points(r.assigned)}, בתוכנית ${points(r.target)}`)}</p>}
+            {!!f.outcome?.backToBack[r.id] && <p className="allocation-row-note" role="note">{t(`Back-to-back days: ${f.outcome.backToBack[r.id]}`, `תורנויות רצופות: ${f.outcome.backToBack[r.id]}`)}</p>}
           </div>;
         })}
       </div>}

@@ -133,3 +133,45 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = 0;});
   await snapshot(page, `plan-month-dark-${lang}`);
 });
+
+/** A clipped reference: Generate's fresh seed varies the calendar, so only the
+ * deterministic plan and toolbar areas are compared. */
+async function region(page: Page, name: string, clip: {x: number; y: number; width: number; height: number}) {
+  test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
+  await page.evaluate(() => document.fonts.ready);
+  await page.mouse.move(0, 0);
+  if(!existsSync(test.info().snapshotPath(name+'.png'))) {
+    const path=test.info().outputPath(name+'-actual.png');
+    await page.screenshot({path,clip,fullPage:true,animations:'disabled',caret:'hide'});
+    await test.info().attach(name+'-actual.png',{path,contentType:'image/png'});
+  }
+  await expect.soft(page).toHaveScreenshot(name + '.png', {clip, fullPage: true});
+}
+
+for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${lang}`, async ({page, openApp, backend}) => {
+  backend.raw.assignments = []; backend.raw.publications = [];
+  backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
+  await openApp();
+  const he = lang === 'he', dialog = page.getByRole('dialog');
+  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  const confirm = dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true});
+  await expect(confirm).toBeEnabled({timeout: 30_000});
+  await confirm.click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 15_000});
+  // A saved plan change after Generate: Avery takes one point less.
+  await page.getByRole('button', {name: he ? 'בדיקת התוכנית' : 'Review plan', exact: true}).click();
+  await expect(confirm).toBeEnabled({timeout: 30_000});
+  await dialog.getByRole('button', {name: `${he ? 'הפחתת זמני' : 'Decrease Temporary'} · Avery Admin`, exact: true}).click();
+  await dialog.getByRole('button', {name: he ? 'שמירה' : 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: he ? 'נשמר' : 'Saved', exact: true})).toBeDisabled();
+  await expect(dialog.locator('.allocation-row-warning')).not.toHaveCount(0);
+  await region(page, `plan-review-${lang}`, (await dialog.boundingBox())!);
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 15_000});
+  const note = page.locator('.publish-blocked-note');
+  await expect(note).toBeVisible();
+  const top = (await page.locator('.month-toolbar-container').boundingBox())!, bottom = (await note.boundingBox())!;
+  await region(page, `publish-waits-${lang}`, {x: 0, y: top.y, width: page.viewportSize()!.width, height: bottom.y + bottom.height - top.y + 8});
+});

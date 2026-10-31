@@ -99,7 +99,7 @@ test('saved locks survive reloads and repeated real generations; unlocking relea
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   async function generate() {
-    await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
+    await page.getByRole('button', {name: /^(Generate month|Review plan)$/}).click();
     await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
     const confirm = page.getByRole('button', {name: 'Confirm & generate', exact: true});
     await expect(confirm).toBeEnabled({timeout: 30_000});

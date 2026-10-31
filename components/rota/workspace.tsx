@@ -31,7 +31,6 @@ import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
 import {useAllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import {AllocationDialog} from './allocation-dialog';
-import {AllocationOutcome} from './allocation-outcome';
 import {allocationTotals} from '@/lib/allocation/review';
 import {useIsraelToday} from '@/hooks/use-israel-today';
 import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
@@ -122,6 +121,18 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const generationClosed = allocation.closed;
   const confirmedTotals = allocation.captured?.allocation ? allocationTotals(allocation.captured.input, allocation.captured.allocation, allocation.captured.assignments) : null;
   const allocationMismatch = !!confirmedTotals?.rows.some(r => r.assigned !== r.target);
+  // Plan the month is where a generated month is reviewed; the toolbar marks waiting notes.
+  const outcome = allocation.outcome?.generated ? allocation.outcome : null;
+  const reviewNotes = !outcome || !confirmedTotals ? 0 : confirmedTotals.rows.filter(r => r.assigned !== r.target || outcome.backToBack[r.id]).length +
+    (confirmedTotals.uncovered.length ? 1 : 0) + (allocation.result && !allocation.result.search.allStagesProved ? 1 : 0);
+  // Why Publish is disabled, in one line: who differs from the saved plan, and open duties.
+  const unassigned = metrics.owned.length - metrics.assigned;
+  // Before Generate the calendar already says to generate; the line starts once there is a result to publish.
+  const publishBlockers = metrics.assigned && (monthDetails.generated || unassigned === 0) ? [
+    ...(confirmedTotals?.rows.filter(r => r.assigned !== r.target).map(r => t(`${nickname(r.id)}: ${r.assigned / 2} scheduled, plan says ${r.target / 2}`,
+      `${nickname(r.id)}: שובצו ${r.assigned / 2}, בתוכנית ${r.target / 2}`)) ?? []),
+    ...(unassigned > 0 ? [t(`${unassigned} without a primary`, `${unassigned} ללא שיבוץ`)] : []),
+  ] : [];
   const { selected, setSelected } = draft.editor;
   const interactions = useCalendarInteractions({
     remote,
@@ -296,6 +307,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               busy={allocation.busy}
               generationClosed={generationClosed}
               allocationMismatch={allocationMismatch}
+              reviewNotes={reviewNotes}
+              publishBlocked={publishBlockers.join(' · ')}
               metrics={metrics}
               blockCount={metrics.owned.length}
               t={t}
@@ -317,7 +330,10 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               style={{ display: tab === 'schedule' ? undefined : 'none' }}
             >
               {isManager && generationClosed && monthDetails.status === 'draft' && <p className="generation-cutoff-note">{t('Coverage has started. Use manual assignments or swaps; generation is closed.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות; השיבוץ האוטומטי נסגר.')}</p>}
-              {isManager && viewingDraft && <AllocationOutcome flow={allocation} state={state} lang={lang} t={t}/>}
+              {isManager && viewingDraft && !remote.readOnly && !!publishBlockers.length && <p className="publish-blocked-note" role="note">
+                <span>{t('Publish waits: ', 'הפרסום ממתין: ')}{publishBlockers.join(' · ')}</span>
+                {confirmedTotals && <Button size="sm" variant="link" disabled={allocation.busy} onClick={allocation.show}>{t('Open plan', 'פתיחת התוכנית')}</Button>}
+              </p>}
               <div className="workspace-grid">
                 <WorkspaceCalendar
                   state={state}

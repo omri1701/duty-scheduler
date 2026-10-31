@@ -11,7 +11,7 @@ function acceptedDraft(backend: Backend) {
   backend.raw.assignments.push({id: 'accepted', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: ids.admin, secondary_id: ids.a, title: '', extra_points: 0, points: 1, locked: false, manager_override: false});
 }
 async function openPlan(page: import('@playwright/test').Page) {
-  await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
+  await page.getByRole('button', {name: /^(Generate month|Review plan)$/}).click();
   await expect(page.getByRole('dialog', {name: 'Plan the month'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
 }
@@ -279,9 +279,10 @@ test('real generation Worker saves a verified partial, retains targets and emerg
   const targets = await page.locator('.plan-row output').allTextContents();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  await expect(page.getByText('Partial · Requires Manager Resolution', {exact: true})).toBeVisible();
-  await expect(page.locator('.allocation-uncovered')).toContainText('Uncovered dates');
+  // No result panel: one line says why Publish waits and leads into the plan, where the notes are.
+  await expect(page.locator('.publish-blocked-note')).toContainText('1 without a primary');
   await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(1);
   expect(backend.raw.assignments.find(d => d.day === '2026-11-02')!.secondary_id).toBe(ids.a);
   const confirm = backend.calls.find(c => c.name === 'duty_confirm_allocation')!, save = backend.calls.find(c => c.name === 'duty_save_generation')!;
   expect(save.params.p_revision).toBe(Number(confirm.params.p_revision) + 1);
@@ -289,8 +290,11 @@ test('real generation Worker saves a verified partial, retains targets and emerg
   const metrics = validateGeneration({month: MONTH, sourceRevision: String(context.revision), calendar: {}, members: context.facts.members, constraints: context.facts.constraints,
     targets: Object.fromEntries(Object.entries(allocation.targetsUnits).map(([id, u]) => [id, u / 2])), secondary: {'2026-11-02': ids.a}}, save.params.p_assignments as Parameters<typeof validateGeneration>[1]);
   expect(metrics.deficits.some(n => n > 0)).toBe(true);
-  await page.getByRole('button', {name: 'Review allocation', exact: true}).click();
+  await page.getByRole('button', {name: 'Open plan', exact: true}).click();
   await expect(page.locator('.plan-row output')).toHaveText(targets);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await expect(dialog.getByRole('note').filter({hasText: 'Uncovered: '})).toContainText('18 Nov');
+  await expect(dialog.locator('.allocation-row-warning').filter({hasText: /scheduled, plan says/})).not.toHaveCount(0);
 });
 
 test('fractional monotonic time generates and saves through a real Worker', async ({page, backend, openApp}) => {
@@ -304,9 +308,39 @@ test('fractional monotonic time generates and saves through a real Worker', asyn
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   expect(workers).toBe(1); // Only Generate solves; the allocation plan is plain arithmetic.
-  await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled(); await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
   expect(backend.raw.months[0].generated).toBe(true);
+});
+
+test('after Generate the plan is the review: a saved change shows why Publish waits and the plan names the difference', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  // The toast leads into the plan; nothing is waiting yet, so no dot and no Publish note.
+  await expect(page.getByRole('button', {name: 'Review', exact: true})).toBeVisible();
+  const review = page.getByRole('button', {name: 'Review plan', exact: true});
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(0);
+  await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeEnabled();
+  // The plan stays editable after Generate: one point less for Avery, saved without regenerating.
+  await review.click();
+  await expect(dialog.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  await expect(dialog.locator('.allocation-row-warning')).toHaveCount(0);
+  const avery = await targetOf(member(page, 'Avery Admin'));
+  await dialog.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(member(page, 'Avery Admin').row.locator('.allocation-row-warning')).toHaveText(`${avery} scheduled, plan says ${avery - 1}`);
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
+  // Publish re-checks against the saved plan and says why it waits, with a way back in.
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+  await expect(page.locator('.publish-blocked-note')).toContainText(`Avery: ${avery} scheduled, plan says ${avery - 1}`);
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(1);
+  await page.locator('.publish-blocked-note').getByRole('button', {name: 'Open plan', exact: true}).click();
+  await expect(member(page, 'Avery Admin').row.locator('.allocation-row-warning')).toHaveText(`${avery} scheduled, plan says ${avery - 1}`);
 });
 
 test('cancelling synchronous WASM retains accepted assignments and a fresh Worker can retry', async ({page, backend, openApp}) => {
@@ -511,7 +545,7 @@ for (const count of [12, 24]) {
     const solve = performance.now(); await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
     await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
     const generationMs = performance.now() - solve;
-    await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
+    await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled(); await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
     await info.attach('allocation-timing.json', {body: JSON.stringify({count, project: info.project.name, proposalMs, generationMs, includes: 'Worker initialization, domain work, intercepted checked RPCs and UI feedback'}), contentType: 'application/json'});
   });
 }

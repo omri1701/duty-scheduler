@@ -7,6 +7,7 @@ import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings} from '@/lib/allocation/model';
+import {generatedNotes} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -106,18 +107,24 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
 
   const input = captured ? {...captured.input, schedule: {...captured.input.schedule, locks, approvals}} : null;
   const totals = input ? allocationTotals(input, draft, captured!.assignments) : null;
+  // After Generate the plan is where the month is reviewed: scheduled vs planned, back-to-back days.
+  // Keyed on the month flag: saving the plan clears the stored generation record, not the flag.
+  const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
+  const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
+    [captured, approvals, generatedMonth]);
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
   // Above the spaced ceiling a target still fits availability but needs back-to-back days.
+  // Both ceilings are shown only in the open plan, so month browsing never builds them.
   const spaced = useMemo(() => {
-    if (!captured) return null;
+    if (!captured || !open) return null;
     try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
-  }, [captured, locks, approvals]);
+  }, [captured, locks, approvals, open]);
   // Live simple check: a target above what availability allows warns on its row.
   const ceilings = useMemo(() => {
-    if (!captured) return null;
+    if (!captured || !open) return null;
     try {return availableCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
-  }, [captured, locks, approvals]);
+  }, [captured, locks, approvals, open]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
@@ -262,7 +269,9 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const saved = await latest.current.saveGeneration(confirmed, generated.assignments, generated.reproduction.settings.seed);
       if (id !== sequence.current) return;
       accept(saved); setResult(generated); setOpen(false); setNotice('');
-      toast.success(generated.complete ? t('Draft ready. Review, then publish.', 'הטיוטה מוכנה לבדיקה ולפרסום.') : t('Partial draft saved. Review uncovered dates.', 'טיוטה חלקית נשמרה. יש לבדוק את התאריכים ללא כיסוי.'));
+      // The plan is where the result is reviewed: the toast leads there.
+      toast.success(generated.complete ? t('Draft ready. Review it in Plan the month.', 'הטיוטה מוכנה. אפשר לבדוק אותה בתכנון החודש.') : t('Partial draft saved. Review it in Plan the month.', 'טיוטה חלקית נשמרה. אפשר לבדוק אותה בתכנון החודש.'),
+        {action: {label: t('Review', 'בדיקה'), onClick: () => {void show();}}});
     } catch (e) {if (id === sequence.current) {failure = e; setReviewed(false);}}
     finally {
       rpc.current = false;
@@ -279,7 +288,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},

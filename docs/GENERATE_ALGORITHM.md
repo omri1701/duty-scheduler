@@ -872,10 +872,19 @@ the achieved amount or hide unfulfilled work.
   action stores the plan through the same checked confirmation without
   generating; reopening restores it.
 
-Partial output is prominently **Partial / Requires Manager Resolution**.
-A complete result can say “All duties covered”; “Optimal” is only appropriate
-for objective stages with proof. Low-level bounds and solver terms belong in
-diagnostics, not primary manager copy.
+*Decision 2026-10-31:* there is no separate result panel on the calendar. Plan
+the month is where a generated month is reviewed. After Generate a toast offers
+**Review**, the toolbar action reads **Review plan** with a dot while notes wait,
+and the plan shows short notes: per person "N scheduled, plan says M" where they
+differ and the number of back-to-back days Generate needed, and at the top the
+uncovered dates and "Best found; search limit reached." when the search stopped
+early. The manager fixes a difference by hand with Temporary or Permanent and
+Save; nothing matches the plan to the schedule automatically. When Publish is
+disabled, one line under the toolbar says why (who differs from the saved plan
+and by how much, or how many duties have no primary) with **Open plan**; Publish
+re-checks against the saved plan. “Optimal” is only appropriate for objective
+stages with proof. Low-level bounds and solver terms belong in diagnostics, not
+primary manager copy.
 
 Within the V1 generation window, the manager can change temporary/permanent
 targets, explicitly select/lock a duty including a permitted override,
