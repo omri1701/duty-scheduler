@@ -220,7 +220,15 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const confirmed = await latest.current.confirmAllocation(source, draft, locks, approvals);
       if (id !== sequence.current) return;
       accept(confirmed); rpc.current = false;
-      if (!generate) {setSavedDraft(draft); setNotice(t('Saved. Close any time and continue from here later.', 'נשמר. אפשר לסגור ולהמשיך מכאן מאוחר יותר.')); return;}
+      if (!generate) {
+        // The checked save moves the month to a new revision: review the plan against it,
+        // as reopening would, so later edits and the adjustments list stay current.
+        // Undo steps from before the save belong to the old revision.
+        let next = draft;
+        try {next = review(confirmed.input, draft, !!confirmed.sourcePublicationId);} catch {/* the checked save accepted it; reopening reviews it again */}
+        setDraft(next); setSavedDraft(next); setHistory([]);
+        setNotice(t('Saved. Close any time and continue from here later.', 'נשמר. אפשר לסגור ולהמשיך מכאן מאוחר יותר.')); return;
+      }
       if (!confirmed.generationInput || now() >= confirmed.coverageStartMs) throw Error('generation-window-closed');
       setPhase('generating');
       // Weekend and weekday rotation state comes from the published months the workspace

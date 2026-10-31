@@ -67,6 +67,8 @@ test('Save stores the whole plan without generating; closing, reopening and relo
   await save.click();
   await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
   await expect(dialog.getByRole('status').filter({hasText: 'Saved. Close any time'})).toBeVisible();
+  // The saved plan stays live: the same adjustments, and no stale state.
+  expect(await plan()).toEqual(before);
   expect(backend.calls.filter(c => c.name === 'duty_confirm_allocation')).toHaveLength(1);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
   await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
@@ -75,9 +77,15 @@ test('Save stores the whole plan without generating; closing, reopening and relo
   // The server copy restores the same plan after a reload.
   await page.reload(); await openPlan(page);
   expect(await plan()).toEqual(before);
-  // Any change makes Save available again.
+  // Editing straight after a Save works, and makes Save available again.
   await expect(save).toBeEnabled();
+  await save.click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  const alex = Number(await member(page, 'Alex Atlas').target.textContent());
+  await dialog.getByRole('button', {name: /^Temporary/}).click();
   await dialog.getByRole('button', {name: 'Increase Temporary · Alex Atlas', exact: true}).click();
+  await expect(member(page, 'Alex Atlas').target).toHaveText(String(alex + 1));
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(save).toBeEnabled();
 });
 
