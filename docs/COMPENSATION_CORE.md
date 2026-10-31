@@ -46,7 +46,9 @@ It is canonical serialization, not a cryptographic hash or an authorization toke
 
 Normalized segments retain exact source-lot slices and oldest contributing
 priority. Opposing/cycle cancellation and chain bypasses are derived explanations,
-not settlements. Gross lot `remaining` includes netted units; only normalized
+not settlements; they apply to half-point units exactly as to whole points, so
+halves net across people and a lone half is kept until a second half or a
+half-point duty repays it. Gross lot `remaining` includes netted units; only normalized
 claims are repayable. Settlement/reduction consumes the same amount on each path
 leg, leaving intermediary net positions unchanged.
 

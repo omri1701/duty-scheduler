@@ -93,7 +93,17 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
   confirm re-derives, so a seniority reorder after confirmation re-pairs the
   credit on the next review instead of blocking the month, and the browser keeps
   the confirmed baseline on a new proposal. Snapshots saved before this check
-  simply have no credit. Client publication metadata (a month without a
+  simply have no credit. Half-point debts are exact bigint half-units
+  throughout: nothing rounds, forgives or expires them. Halves net across
+  people where every claim does, in `duty_private.compensation_normalize`
+  (the same opposing/cycle/chain steps as the TypeScript core, checked by
+  `compensation-parity.mjs`), so `duty_balance` reports a half owed through an
+  intermediary as one `routed` relationship between the chain's ends and the
+  intermediary is clear; a settled half never moves, and a reserved half that
+  nets holds its reservation for review (`supabase/tests/balance.sql`). The
+  ledger's manual `adjust` operation (reduce or settle a selected claim, reason
+  required, admin only) can settle a lone half; no screen exposes it yet.
+  Client publication metadata (a month without a
   confirmed allocation) may not use the reserved `allocation/` intent ids or
   `uneven/` counterparts, so nothing a manager authors can appear as system
   credit. An independent

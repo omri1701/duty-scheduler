@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {nettedCompensation} from '../lib/allocation/netting.ts';
+import {loneHalf} from '../lib/compensation/index.ts';
 
 const order = ['a', 'b', 'c', 'd'];
 const temporary = (fromId, toId, units, kind = 'temporary', transferIds = [`${kind}/${fromId}/${toId}`]) => ({fromId, toId, units, kind, transferIds});
@@ -53,4 +54,13 @@ test('uneven-month credit is an ordinary temporary line with its reason; it canc
     [{debtorId: 'a', creditorId: 'c', units: 3, thisMonth: 0, later: 3, reason: 'uneven'}]);
   // A collapsed chain through the creditor carries no reason of its own.
   assert.deepEqual(lines({c: -2, d: 2}, [uneven('a', 'c', 2)]), [{debtorId: 'a', creditorId: 'd', units: 2, thisMonth: 0, later: 2}]);
+});
+
+test('half points net across people: the owner of a lone half is the end of the chain, and the half is flagged as waiting', () => {
+  // Opening: a owes b half a point. This month c owes a half a point (uneven credit carried by a): c owes b, a is clear.
+  assert.deepEqual(lines({a: -1, b: 1}, [uneven('c', 'a', 1)]), [{debtorId: 'c', creditorId: 'b', units: 1, thisMonth: 0, later: 1}]);
+  // Only the odd unit of what carries forward is a lone half; a whole point beside it is an ordinary "later".
+  assert.deepEqual([loneHalf(1), loneHalf(3), loneHalf(2), loneHalf(0)], [1, 1, 0, 0]);
+  // Two halves owed to one member by different people stay two lone halves: neither pairs with the other.
+  assert.deepEqual(lines({}, [uneven('a', 'c', 1), uneven('b', 'c', 1)]).map(l => [l.debtorId, l.units, loneHalf(l.later)]), [['a', 1, 1], ['b', 1, 1]]);
 });

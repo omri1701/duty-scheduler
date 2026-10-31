@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
-import {record, replay, sliceClaim, project} from '../lib/compensation/index.ts';
+import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
   retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
@@ -308,10 +308,21 @@ test('an older infeasible claim stays open while a feasible younger obligation p
   assert.ok(compiled(i, r.draft).plan.deferred.some(p => p.claim.path[0].lotId === 'old' && p.units === 4));
 });
 
-test('half-point debt cannot split a whole-point duty or manufacture a rounding transfer', () => {
+test('half-point debt cannot split a whole-point duty or manufacture a rounding transfer; a lone half waits and chains', () => {
   const i = owe(scenario(), 'e00', 'e11', 1, 'half'), r = proposal(i);
   assert.deepEqual(r.draft.repayments, []); assert.deepEqual(r.draft.transfers, []);
   assert.equal(compiled(i, r.draft).plan.deferred[0].units, 1);
+  // The lone half carries forward in full and is shown waiting for its second half, never as repaid this month.
+  // Shown as the popup shows it: from the projected net at month opening plus the compiled plan.
+  const shown = (i, r) => {const p = planAllocation(i, r.draft); return nettedCompensation(r.projection.projected.net, {transfers: p.plan.intents, repayments: p.plan.repayments}, i.seniority);};
+  assert.deepEqual(shown(i, r).map(l => [l.debtorId, l.creditorId, l.units, l.thisMonth, loneHalf(l.later)]), [['e00', 'e11', 1, 0, 1]]);
+  // A half the creditor owes onward nets across people: e00 owes e05, e11 is clear, and nothing is rounded away.
+  owe(i, 'e11', 'e05', 1, 'onward');
+  const q = proposal(i); invariant(i, q);
+  assert.deepEqual(q.draft.repayments, []);
+  assert.deepEqual(project(i.events, i.now, i.now).actual.claims.map(c => [c.debtorId, c.creditorId, c.units, c.path.map(s => s.lotId)]),
+    [['e00', 'e05', 1, ['half', 'onward']]], 'the ledger itself holds the chained half');
+  assert.deepEqual(shown(i, q).map(l => [l.debtorId, l.creditorId, l.units, l.thisMonth, l.later]), [['e00', 'e05', 1, 0, 1]]);
 });
 
 test('availability is a live ceiling, not an automatic change; the baseline remains fair', () => {

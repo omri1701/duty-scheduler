@@ -8,6 +8,7 @@ import type {State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Language, Translate} from './workspace-types';
 import {nettedCompensation} from '@/lib/allocation/netting';
+import {loneHalf} from '@/lib/compensation';
 
 const points = (units: number) => String(units / 2);
 const signed = (units: number) => `${units > 0 ? '+' : ''}${points(units)}`;
@@ -118,9 +119,13 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {f.draft && <details className="allocation-details" open={unplacedUnits > 0}>
         <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
         {unplacedUnits > 0 && <p className="allocation-attention">{points(unplacedUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
-        {owed.length ? <ul>{owed.map(l => <li key={`${l.debtorId}>${l.creditorId}`}><strong>{name(l.debtorId)} {lang === 'he' ? '←' : '→'} {name(l.creditorId)}</strong> · <bdi>{points(l.units)}</bdi> · {[
-          l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, l.later && `${points(l.later)} ${t('later', 'בהמשך')}`,
-          l.reason === 'uneven' && t('uneven split', 'חלוקה לא שווה')].filter(Boolean).join(' · ')}</li>)}</ul>
+        {owed.length ? <ul>{owed.map(l => {
+          // A lone half cannot be repaid by whole duties; it waits for its second half instead of a later month.
+          const lone = loneHalf(l.later), whole = l.later - lone;
+          return <li key={`${l.debtorId}>${l.creditorId}`}><strong>{name(l.debtorId)} {lang === 'he' ? '←' : '→'} {name(l.creditorId)}</strong> · <bdi>{points(l.units)}</bdi> · {[
+          l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, whole && `${points(whole)} ${t('later', 'בהמשך')}`,
+          lone && t('0.5 waiting for the second half', '0.5 ממתין לחצי השני'),
+          l.reason === 'uneven' && t('uneven split', 'חלוקה לא שווה')].filter(Boolean).join(' · ')}</li>;})}</ul>
           : <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}

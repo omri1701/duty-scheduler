@@ -93,14 +93,14 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   // The extra half point is credited: the 6-point member owes it, with the reason named.
   const first = await page.locator('.allocation-row').first().locator('.allocation-engineer strong').textContent();
   await page.getByRole('dialog').locator('summary').click();
-  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 later · uneven split`);
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 waiting for the second half · uneven split`);
   // Audit R3: a permanent reduction on the creditor lands on the debtor and removes the credit.
   await page.getByRole('button', {name: '0.5', exact: true}).click();
   await page.locator('.allocation-row').nth(3).getByRole('button', {name: `Decrease Permanent · ${fourth}`, exact: true}).click();
   await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveCount(0);
   await expect(page.getByRole('dialog').locator('.allocation-details')).toContainText('No one owes points.');
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
-  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 later · uneven split`);
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 waiting for the second half · uneven split`);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
@@ -109,7 +109,7 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
   await dialog.locator('summary').click();
-  await expect(dialog.locator('.allocation-details li')).toHaveText(`${first} ← ${fourth} · 0.5 · 0.5 בהמשך · חלוקה לא שווה`);
+  await expect(dialog.locator('.allocation-details li')).toHaveText(`${first} ← ${fourth} · 0.5 · 0.5 ממתין לחצי השני · חלוקה לא שווה`);
 });
 
 const member = (page: import('@playwright/test').Page, name: string) => {

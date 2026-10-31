@@ -222,6 +222,19 @@ temporary intents (including deferred repayment carried for a creditor) and
 subtracts the plan's repayments, then pairs net debtors with net creditors.
 Chains collapse (A owes B and B owes C shows A → C), opposite directions cancel,
 and each line shows what is really repaid this month and what carries forward.
+Half points follow the same rules (decisions 2026-10-31): a half-point debt is
+never rounded, forgiven or expired, and halves net across people, so if A owes B
+0.5 and C owes A 0.5 the list shows C → B 0.5 and A is clear. That netting is
+not a display convention: it is the ledger's own normalization (opposing, cycle
+and chain steps in `lib/compensation/normalize.ts`, mirrored exactly by
+`duty_private.compensation_normalize`), applied to every open claim on every
+ledger change, and the per-member netting here reproduces it for the plan. Only
+open halves net; a settled half never moves, and a half already reserved for
+repayment still nets, with its reservation held for review. A lone half, the odd
+half-unit that carries forward with nothing to pair it, says "0.5 waiting for the
+second half" (`loneHalf`) in place of "0.5 later": whole duties cannot repay it,
+so it waits for a second half or for a month with half-point duties. The Team
+breakdown adds the same line to a relationship whose net is a lone half.
 A line whose own direction carries an indivisible month's extra says "uneven
 split" (`reason`); the Team screen's net breakdown names the same credit
 "Uneven monthly split" (`duty_balance` kind `uneven`).

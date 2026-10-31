@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {record, replay, normalize, halfUnits, sliceClaim, repaymentCandidates, reconcile, project,
+import {record, replay, normalize, halfUnits, loneHalf, sliceClaim, repaymentCandidates, reconcile, project,
   ledgerFingerprint} from '../lib/compensation/index.ts';
 import {handover} from '../lib/scheduling/calendar.ts';
 
@@ -417,4 +417,38 @@ test('normalization rejects reused source capacity and malformed partial path re
   assert.throws(() => normalize([c, c], new Set(['a', 'b'])), /overlapping-source-slices/);
   assert.throws(() => normalize([{...c, priority: {...c.priority, at: NaN}}], new Set(['a', 'b'])), /invalid-priority/);
   assert.throws(() => sliceClaim({...c, path: [...c.path, {...c.path[0], units: 1}]}, 1), /invalid-path/);
+});
+
+test('half-point debts stay open without rounding or expiry, and chain across people to the end of the chain', () => {
+  assert.deepEqual([loneHalf(1), loneHalf(-3), loneHalf(2), loneHalf(0)], [1, 1, 0, 0]);
+  // a owes b half a point. Far reconciliation and projection keep the exact half; nothing forgives it.
+  let h = owe(setup(), 'a', 'b', 1, 'ab', 10);
+  const far = Date.parse('2099-01-01T00:00:00Z');
+  assert.deepEqual(reconcile(h, far).net, {a: -1, b: 1, c: 0, d: 0});
+  assert.deepEqual(project(h, far, Number.MAX_SAFE_INTEGER).projected.net, {a: -1, b: 1, c: 0, d: 0});
+  // An inactive party freezes the half (no repayment) but it is still owed in full; reactivation reopens it.
+  h = send(h, {kind: 'members', members: [{id: 'b', active: false}]}, 'b-away');
+  assert.equal(claims(h)[0].frozen, true); assert.deepEqual(replay(h).net, {a: -1, b: 1, c: 0, d: 0});
+  assert.deepEqual(repaymentCandidates(h), []);
+  h = send(h, {kind: 'members', members: [{id: 'b', active: true}]}, 'b-back');
+  assert.equal(claims(h)[0].frozen, false); assert.equal(repaymentCandidates(h)[0].units, 1);
+  // c owes a the other half: the halves net across people. c owes b, a is clear, both source legs are retained.
+  h = owe(h, 'c', 'a', 1, 'ca');
+  const v = invariant(h);
+  assert.deepEqual(amounts(h), [['c', 'b', 1]]);
+  assert.deepEqual(v.claims[0].path.map(s => s.lotId), ['ca', 'ab']);
+  assert.deepEqual(v.net, {a: 0, b: 1, c: -1, d: 0});
+  assert.equal(v.normalizations.at(-1).kind, 'chain');
+  // An open half already reserved for repayment still nets; its reservation is held for review, never silently rebound.
+  let g = owe(setup(), 'a', 'b', 1, 'ab', 10);
+  g = publish(g, publication('p', '2099-03', [duty('2099-03-02', 'a')], [plan('res', '2099-03-02', repaymentCandidates(g)[0])]));
+  g = owe(g, 'c', 'a', 1, 'ca');
+  assert.deepEqual(amounts(g), [['c', 'b', 1]]);
+  assert.deepEqual(replay(g).contributions.map(c => [c.status, c.holdReason]), [['held', 'claim-changed']]);
+  // A settled half never moves: the half later owed to a stays with a.
+  let s = owe(setup(), 'a', 'b', 1, 'ab', 10);
+  s = send(s, {kind: 'adjust', mode: 'settle', claim: claims(s)[0], units: 1}, 'settle-ab');
+  s = owe(s, 'c', 'a', 1, 'ca');
+  assert.deepEqual(amounts(s), [['c', 'a', 1]]);
+  assert.deepEqual(invariant(s).net, {a: 1, b: 0, c: -1, d: 0});
 });

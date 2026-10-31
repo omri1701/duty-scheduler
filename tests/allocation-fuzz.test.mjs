@@ -134,6 +134,7 @@ function check(name, i, c, prop, d, trail) {
   const lines = nettedCompensation(prop.projection.projected.net, {transfers: planned.plan.intents, repayments: planned.plan.repayments}, ids);
   const pairs = new Set(lines.map(l => `${l.debtorId}>${l.creditorId}`));
   assert.ok(!lines.some(l => pairs.has(`${l.creditorId}>${l.debtorId}`)), `${where}: netted list has one direction per pair`);
+  assert.ok(!lines.some(l => lines.some(o => o.creditorId === l.debtorId)), `${where}: netted list ends every chain (no member both owes and is owed)`);
   assert.ok(lines.every(l => l.units === l.thisMonth + l.later && l.thisMonth >= 0 && l.later >= 0 && l.units > 0), `${where}: netted lines consistent`);
   assert.ok(sum(lines.map(l => l.thisMonth)) <= sum(planned.plan.repayments.map(r => r.units)) + sum(planned.plan.intents.map(t => t.units)), `${where}: this month bounded by the plan`);
   for (const [label, asg] of [['holes', holes(i)], ['greedy', greedy(i, d)]]) {
@@ -157,7 +158,9 @@ async function bindCheck(name, i, c, prop, d, trail) {
   stats.boundComplete++;
   // After all work completes: actual net = opening + compiled temporary intents - compiled repayments.
   const far = Date.parse(i.schedule.month + '-01T00:00:00Z') + 70 * 86400000;
-  const view = project(b.preview.events, far, far).actual.net, ids = i.seniority;
+  const actual = project(b.preview.events, far, far).actual, view = actual.net, ids = i.seniority;
+  // Halves and points alike net across people: a published ledger never leaves a member in the middle of a chain.
+  assert.ok(!actual.claims.some(c => actual.claims.some(o => c.creditorId === o.debtorId)), `${where}: published claims end every chain`);
   const later = Object.fromEntries(ids.map(id => [id, project(i.events, far, far).actual.net[id] ?? 0]));
   for (const t of compiledPlan.plan.intents) if (t.kind === 'temporary') {later[t.toId] += t.units; later[t.fromId] -= t.units;}
   for (const r of compiledPlan.plan.repayments) {later[r.claim.debtorId] += r.units; later[r.claim.creditorId] -= r.units;}

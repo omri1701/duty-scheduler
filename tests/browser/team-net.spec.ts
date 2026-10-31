@@ -21,10 +21,13 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
  await expect(net(page,ids.e)).toHaveText('0net');
  await net(page,ids.c).focus();
  await expect(page.locator('.net-breakdown')).toContainText('Uneven monthly split · 10 Nov · temporary');
+ // A lone half cannot be repaid by whole duties: it waits for its second half.
+ await expect(page.locator('.net-breakdown')).toContainText('0.5 waiting for the second half');
  await page.keyboard.press('Escape');
  await net(page,ids.a).focus();
  const breakdown=page.locator('.net-breakdown');
  await expect(breakdown).toContainText(`${name(ids.b)} covered a duty · 3 Nov · temporary`);
+ await expect(breakdown).not.toContainText('waiting for the second half');
  await page.keyboard.press('Escape');await expect(breakdown).toBeHidden();
  if(info.project.name==='mobile')await net(page,ids.b).tap();else await net(page,ids.b).hover();
  await expect(breakdown).toContainText(`Covered ${name(ids.a)}'s duty · 3 Nov · temporary`);
@@ -37,6 +40,7 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
  await page.keyboard.press('Escape');
  await net(page,ids.d).focus();
  await expect(breakdown).toContainText('חלוקה חודשית לא שווה');
+ await expect(breakdown).toContainText('0.5 ממתין לחצי השני');
  expect(backend.calls.filter(c=>c.name==='duty_balance').length).toBeGreaterThan(0);
 });
 
