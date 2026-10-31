@@ -78,13 +78,13 @@ export function PlanPie({slices, configured, total, active, onActive, rtl, t}: {
         <ul>
           {!!focus.temporary && <li className="temporary"><bdi dir="ltr">{signed(focus.temporary)}</bdi> {t('temporary', 'זמני')}</li>}
           {!!focus.permanent && <li className="permanent"><bdi dir="ltr">{signed(focus.permanent)}</bdi> {t('permanent', 'קבוע')}</li>}
-          {!!focus.locked && <li><LockKeyhole size={11}/><bdi dir="ltr">{points(focus.locked)}</bdi> {t('locked', 'נעול')}</li>}
+          {!!focus.locked && <li className="locked"><LockKeyhole className="plan-pie-lock" size={10} strokeWidth={2.4} aria-hidden="true"/><bdi dir="ltr">{points(focus.locked)}</bdi> {t('locked', 'נעול')}</li>}
           {!focus.temporary && !focus.permanent && !focus.locked && <li>{t('Fair share', 'חלק הוגן')}</li>}
         </ul>
       </div> : <div className="plan-pie-detail plan-pie-total" key="total">
         <strong dir="ltr" className={configured === total ? undefined : 'off'}>{points(configured)}</strong>
         <span><bdi dir="ltr">/ {points(total)}</bdi> {t('points', 'נקודות')}</span>
-        {!!locked && <small><LockKeyhole size={11}/><bdi dir="ltr">{points(locked)}</bdi> {t('locked', 'נעולות')}</small>}
+        {!!locked && <small><bdi dir="ltr">{points(locked)}</bdi> {t('locked', 'נעולות')}</small>}
       </div>}
     </figcaption>
   </figure>;

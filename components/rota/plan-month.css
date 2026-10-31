@@ -6,7 +6,7 @@
 .allocation-dialog .plan-hero{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:28px;padding:18px 24px;border:1px solid var(--plan-line);border-radius:18px;
   background:radial-gradient(circle at 18% 50%,#fff 0,#fff 28%,transparent 62%),linear-gradient(120deg,#eef5e8,#f7f8ef 60%,#fbf4ea)}
 .plan-pie{position:relative;margin:0;width:232px;aspect-ratio:1}
-.plan-pie svg{display:block;width:100%;height:100%;overflow:visible;animation:plan-pie-in .9s var(--plan-spring) both;touch-action:manipulation}
+.plan-pie>svg{display:block;width:100%;height:100%;overflow:visible;animation:plan-pie-in .9s var(--plan-spring) both;touch-action:manipulation}
 .plan-pie-track{fill:none;stroke:#e6ede1}
 .plan-slice{stroke:var(--plan-surface);stroke-width:1.5;stroke-linejoin:round;cursor:pointer;transition:transform .35s var(--plan-spring),opacity .25s,filter .25s}
 .plan-slice.dim{opacity:.35}
@@ -23,6 +23,8 @@
 .plan-pie-detail li{display:flex;align-items:center;justify-content:center;gap:3px}
 .plan-pie-detail li.temporary{color:var(--plan-temporary)}
 .plan-pie-detail li.permanent{color:var(--plan-permanent)}
+.plan-pie-detail li.locked{gap:4px}
+.plan-pie-lock{width:10px;height:10px;flex-shrink:0;margin-block-start:-1px;opacity:.85}
 .plan-pie-detail bdi{font-weight:650;font-variant-numeric:tabular-nums}
 
 .plan-hero-side{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -85,4 +87,4 @@
   .plan-adjust button{width:40px;height:40px}
   .plan-points{min-width:38px}
 }
-@media(prefers-reduced-motion:reduce){.plan-pie svg,.plan-pie-detail,.plan-chip{animation:none}}
+@media(prefers-reduced-motion:reduce){.plan-pie>svg,.plan-pie-detail,.plan-chip{animation:none}}
