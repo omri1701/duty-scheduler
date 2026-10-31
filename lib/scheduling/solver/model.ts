@@ -1,4 +1,4 @@
-import {anchors, approvedBoundary, approvedPair, binaryValues, checkProblem, compareMetrics,
+import {anchors, approvedBoundary, approvedPair, binaryValues, checkProblem, compareGaps, compareQuality,
   decodeAssignment, validateAssignment, type Metrics, type Problem} from './problem.ts';
 import type {Column, Row, Settings, SolverAdapter, SolverResult, Term} from './highs-adapter.ts';
 import {defaultSettings} from './settings.ts';
@@ -10,9 +10,10 @@ const x = (e: number, i: number) => `x_${e}_${i}`;
 const minimum = (m: Metrics) => m.gaps[0] ?? Infinity;
 const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : name === 'special' ? -m.special :
   name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : name === 'rotation' ? m.rotation :
-  name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : m.gaps.filter(g => g === Number(name.slice(4))).length;
+  name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : name === 'weekdays' ? m.weekdays :
+  m.gaps.filter(g => g === Number(name.slice(4))).length;
 /** Stages whose objective is a nonnegative sum of nonnegative columns: an incumbent at zero is optimal. */
-const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'repeats';
+const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'repeats' || name === 'weekdays';
 /** 32-bit hash mixer (splitmix-style); every output bit depends on the whole state. */
 function mixer(seed: number) {
   let state = seed >>> 0;
@@ -31,7 +32,7 @@ export function buildModel(p: Problem, freeTargets = false) {
   // balanced source first; retain exactly the same assignment constraints.
   if (freeTargets) p = {...p, targets: p.targets.map(() => p.targets.reduce((a, b) => a + b, 0))};
   const columns: Column[] = [{name: 'dummy', binary: true, upper: 0}], rows: Row[] = [], gaps = new Set<number>();
-  const coverage: Term[] = [], special: Term[] = [], units: Term[] = [], rotation: Term[] = [];
+  const coverage: Term[] = [], special: Term[] = [], units: Term[] = [], rotation: Term[] = [], weekdays: Term[] = [];
   const ids = p.targets.map(() => [] as number[]);
   for (const [i, d] of p.duties.entries()) {
     rows.push({terms: d.eligible.map(e => [1, x(e, i)]), upper: 1});
@@ -44,6 +45,8 @@ export function buildModel(p: Problem, freeTargets = false) {
       coverage.push([-d.days, x(e, i)]);
       if (d.special) special.push([-d.special, x(e, i)]);
       units.push([-d.units, x(e, i)]);
+      // Weekday rotation: a Sunday–Thursday duty costs the engineer's count for that weekday this cycle.
+      if (d.weekday !== undefined && p.weekdays?.[e][d.weekday]) weekdays.push([p.weekdays[e][d.weekday], x(e, i)]);
     }
   }
   for (let e = 0; e < p.targets.length; e++) {
@@ -75,7 +78,7 @@ export function buildModel(p: Problem, freeTargets = false) {
     }
   }
   rows.push(...capacityRows(p, ids, 0));
-  return {columns, rows, gaps: [...gaps].sort((a, b) => a - b), ids, rotation, stages: [{name: 'coverage', terms: coverage},
+  return {columns, rows, gaps: [...gaps].sort((a, b) => a - b), ids, rotation, weekdays, stages: [{name: 'coverage', terms: coverage},
     {name: 'special', terms: special}, {name: 'units', terms: units}] as Stage[]};
 }
 
@@ -213,7 +216,7 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     !Number.isInteger(settings.nodes) || settings.nodes < 0 || settings.nodes > 2147483647) throw Error('Invalid solver settings');
   const started = performance.now(), base = buildModel(p), buildMs = performance.now() - started;
   const random = mixer(settings.seed);
-  const rotationStage: Stage = {name: 'rotation', terms: base.rotation};
+  const rotationStage: Stage = {name: 'rotation', terms: base.rotation}, weekdayStage: Stage = {name: 'weekdays', terms: base.weekdays};
   const preference: Stage = {name: 'preferred', terms: (p.preferences ?? []).map(v => [-v.weight, x(v.engineer, v.duty)])};
   const repeats = buildRepeats(p, base.ids);
   const seeded: Stage = {name: 'seed', terms: p.seededTies ? p.duties.flatMap((d, i) => d.eligible.map(e => {
@@ -222,13 +225,15 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     // million-scale costs produced >1e-7 drift on ordinary six-engineer months.
     return [random() % 1000, x(e, i)] as Term;
   })) : []};
-  // Directly below the proved minimum gap: cross-month weekend fairness, then weekday
-  // variety; then the remaining sorted-gap leximin, explicit preferred dates and the
-  // seeded tie. This list is the one place that fixes the order below the minimum gap.
-  const early = [rotationStage, repeats.stage], late = [preference, seeded];
-  let earlyDone = false;
-  const runEarly = () => {
-    for (const stage of early) {
+  // Directly below the proved minimum gap: cross-month weekend fairness, in-month weekday
+  // variety, cross-month weekday rotation, explicit preferred dates, then the seeded tie.
+  // The remaining sorted-gap leximin runs last, as a pure tie-breaker: above the seed it
+  // pushed every pair towards the same two-week pattern month after month. This list is
+  // the one place that fixes the order below the minimum gap.
+  const quality = [rotationStage, repeats.stage, weekdayStage, preference, seeded];
+  let qualityDone = false;
+  const runQuality = () => {
+    for (const stage of quality) {
       if (stage === repeats.stage && stage.terms.length) {
         session.addColumns(repeats.columns); session.addRows(repeats.rows);
         columns += repeats.columns.length; rows += repeats.rows.length;
@@ -237,11 +242,11 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     }
     return true;
   };
-  const objective = (name: string, m: Metrics, a: (number | null)[]) => name === 'seed'
-    ? seeded.terms.reduce((sum, [c, variable]) => {
-      const [, e, i] = variable.split('_').map(Number);
-      return sum + (a[i] === e ? c : 0);
-    }, 0) : score(name, m);
+  const seedCost = (a: (number | null)[]) => seeded.terms.reduce((sum, [c, variable]) => {
+    const [, e, i] = variable.split('_').map(Number);
+    return sum + (a[i] === e ? c : 0);
+  }, 0);
+  const objective = (name: string, m: Metrics, a: (number | null)[]) => name === 'seed' ? seedCost(a) : score(name, m);
   const stages: ProofStage[] = [], thresholds: (Omit<SolverResult, 'values'> & {threshold: number | null; feasible: boolean | null})[] = [];
   let assignment = p.duties.map(d => d.lock ?? null), metrics = validateAssignment(p, assignment);
   let remainingNodes = settings.nodes, columns = base.columns.length, rows = base.rows.length, peakRows = rows, finished = false;
@@ -276,10 +281,10 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     const value = terms.reduce((n, [c, v]) => n + c * (v.startsWith('r_') ? Math.round(raw[v]) : values[v]), 0);
     if (!Number.isSafeInteger(value) || (name && value !== objective(name, m, a)) || result.objective === null ||
       Math.abs(value - result.objective) > 1e-7) throw Error('Objective mismatch');
-    const comparison = compareMetrics(m, metrics, p.spacing);
-    if (comparison < 0 || (comparison === 0 && name === 'seed' && value < objective(name, metrics, assignment))) {
-      assignment = a; metrics = m; progress(name ?? 'threshold');
-    }
+    // Hierarchy order: the quality levels, the seeded tie, then the sorted-gap leximin.
+    const comparison = compareQuality(m, metrics, p.spacing) || Math.sign(seedCost(a) - seedCost(assignment)) ||
+      (p.spacing ? compareGaps(m, metrics) : 0);
+    if (comparison < 0) {assignment = a; metrics = m; progress(name ?? 'threshold');}
     return value;
   };
   const optimize = (stage: Stage) => {
@@ -355,12 +360,12 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           finished = true;
         }
         else {
-          // The flows enforce the proved minimum gap while the rotation and weekday
-          // levels are solved; the gap-count (leximin) stages follow them.
+          // The flows enforce the proved minimum gap while the quality levels and the
+          // seed are solved; the gap-count (leximin) stages follow them as tie-breakers.
           const flows = buildFlows(p, base.ids, floor);
           session.addColumns(flows.columns); session.addRows(flows.rows);
           columns += flows.columns.length; rows += flows.rows.length;
-          earlyDone = true; finished = runEarly();
+          qualityDone = true; finished = runQuality();
           if (finished) for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
         }
       } else {
@@ -369,8 +374,7 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           memoryBytes: adapter.memoryBytes, proved: false});
       }
     }
-    if (finished && !earlyDone) {earlyDone = true; finished = runEarly();}
-    if (finished) for (const stage of late) if (!optimize(stage)) {finished = false; break;}
+    if (finished && !qualityDone) {qualityDone = true; finished = runQuality();}
   } finally {session.dispose();}
   return {assignment, metrics, stages, thresholds, minimumGap, provedPrefix: prefix(),
     complete: metrics.deficits.every(n => n === 0) && assignment.every(e => e !== null),

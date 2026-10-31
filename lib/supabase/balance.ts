@@ -1,13 +1,13 @@
 import type {DutyClient} from './rpc.ts';
 
-export type BalanceKind = 'temporary' | 'change' | 'repayment' | 'manual' | 'correction' | 'routed' | 'other';
+export type BalanceKind = 'temporary' | 'uneven' | 'change' | 'repayment' | 'manual' | 'correction' | 'routed' | 'other';
 /** One explanation for memberId's projected relationship with counterpartId, in half-point units. */
 export type BalanceLine = {memberId: string; counterpartId: string; units: number; kind: BalanceKind;
   date: string | null; month: string | null};
 /** Display-only projection of published schedules. Members receive only their own row. */
 export type Balance = {net: Record<string, number>; lines: BalanceLine[]};
 
-const kinds: readonly string[] = ['temporary', 'change', 'repayment', 'manual', 'correction', 'routed', 'other'];
+const kinds: readonly string[] = ['temporary', 'uneven', 'change', 'repayment', 'manual', 'correction', 'routed', 'other'];
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const integer = (v: unknown): v is number => Number.isSafeInteger(v);
 const nullable = (v: unknown, pattern: RegExp) => v === null || (typeof v === 'string' && pattern.test(v));

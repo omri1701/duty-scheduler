@@ -3,6 +3,7 @@ import {useState} from 'react';
 import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
 import {shortDate} from '@/lib/date-format';
 import {calendarMonthLabel} from '@/lib/rota/calendar-dates';
+import {loneHalf} from '@/lib/compensation';
 import {relationships,signedPoints,type Balance,type BalanceLine} from '@/lib/supabase/balance';
 
 /** Projected from published schedules only. Hover, tap or focus shows the open relationships. */
@@ -16,6 +17,7 @@ export function NetBalance({memberId,memberName,balance,name,lang}:{memberId:str
   const when=l.date?' · '+shortDate(l.date,lang):l.month?' · '+calendarMonthLabel(l.month,lang):'';
   switch(l.kind){
    case 'temporary':return (l.units>0?t(`Covered ${counterpart}'s duty`,`כיסוי תורנות של ${counterpart}`):t(`${counterpart} covered a duty`,`תורנות כוסתה על ידי ${counterpart}`))+when+' · '+t('temporary','זמני');
+   case 'uneven':return t('Uneven monthly split','חלוקה חודשית לא שווה')+when+' · '+t('temporary','זמני');
    case 'repayment':return t('Repayment scheduled','החזר מתוכנן')+when;
    case 'change':return t('Published change','שינוי שפורסם')+when;
    case 'manual':return t('Manual adjustment','התאמה ידנית');
@@ -37,6 +39,7 @@ export function NetBalance({memberId,memberName,balance,name,lang}:{memberId:str
     {rows.length?rows.map(r=>{const counterpart=name(r.counterpartId);return <div key={r.counterpartId}>
      <p><span>{counterpart}</span><bdi dir="ltr">{signedPoints(r.units)}</bdi></p>
      {r.lines.map((l,i)=><small key={i}>{source(l,counterpart)} <bdi dir="ltr">{signedPoints(l.units)}</bdi></small>)}
+     {!!loneHalf(r.units)&&<small>{t('0.5 waiting for the second half','0.5 ממתין לחצי השני')}</small>}
     </div>}):<small>{t('No open balances','אין יתרות פתוחות')}</small>}
     <small>{t('Positive: owed relief · Negative: owes work','חיובי: זכאות להקלה · שלילי: עבודה להחזרה')}</small>
    </PopoverContent>

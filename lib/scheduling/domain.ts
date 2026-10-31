@@ -4,7 +4,7 @@ import {checkProblem, type Problem} from './solver/problem.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export const CORE_VERSION = 'duty-generation-v1';
-export const MODEL_VERSION = 'highs-leximin-v4';
+export const MODEL_VERSION = 'highs-leximin-v5';
 /** Exact canonical serialization, not a lossy hash. Input arrays are sets of facts. */
 function canonicalKey(value: unknown, sets: boolean): string {
   if (Array.isArray(value)) {
@@ -52,6 +52,10 @@ export function prepareGeneration(source: GenerationInput) {
   for (const [id, turns] of Object.entries(input.weekendRotation ?? {})) {
     if (!memberIds.has(id)) fail('unknown-rotation-member', {engineer: id});
     if (!Number.isSafeInteger(turns) || turns < 0 || turns > 1e6) fail('invalid-rotation', {engineer: id});
+  }
+  for (const [id, counts] of Object.entries(input.weekdayRotation ?? {})) {
+    if (!memberIds.has(id)) fail('unknown-rotation-member', {engineer: id});
+    if (!Array.isArray(counts) || counts.length !== 5 || counts.some(n => !Number.isSafeInteger(n) || n < 0 || n > 1e6)) fail('invalid-weekday-rotation', {engineer: id});
   }
   const unavailable = (id: string, dutyId: string) => duties[indices.get(dutyId)!].dates.filter(d => input.constraints?.[id]?.[d] === 'no');
   const approvals = input.approvals ?? [];
@@ -104,6 +108,7 @@ export function prepareGeneration(source: GenerationInput) {
   const diagnostics: Diagnostic[] = [], preferences: NonNullable<Problem['preferences']> = [];
   const problem: Problem = {targets, spacing: true, seededTies: true, preferences,
     rotation: members.map(m => input.weekendRotation?.[m.id] ?? 0),
+    weekdays: members.map(m => input.weekdayRotation?.[m.id] ?? [0, 0, 0, 0, 0]),
     boundaries: [...guards.values()].sort((a, b) => a.start - b.start || a.id.localeCompare(b.id)), exceptions,
     duties: duties.map((d, i) => {
       const locked = locks.get(d.id), secondary = input.secondary?.[d.id];

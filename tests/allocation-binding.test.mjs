@@ -29,8 +29,9 @@ function draftFor(input, assignments, transfers = [], repayments = []) {
   for (const t of transfers) {offered[t.fromId] += t.units; offered[t.toId] -= t.units; changes[t.fromId][t.kind] -= t.units; changes[t.toId][t.kind] += t.units;}
   const baseline = {...offered};
   for (const r of repayments) {baseline[r.claim.debtorId] -= r.units; baseline[r.claim.creditorId] += r.units;}
+  // These baselines follow the actual assignments, not a fitted partition, and carry no uneven credit.
   return {sourceKey: context(input).key, baselineUnits: baseline, offeredUnits: offered,
-    targetsUnits: final, repayments, changes, pairs: transfers, transfers: deriveTransfers(input.seniority, changes, transfers)};
+    targetsUnits: final, repayments, changes, pairs: transfers, transfers: deriveTransfers(input.seniority, changes, transfers), uneven: []};
 }
 // A member with duties passes the point on: a permanent change needs a fair share to give.
 function mixed(kind = 'normal') {

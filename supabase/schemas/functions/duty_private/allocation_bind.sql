@@ -14,9 +14,11 @@ begin
  atoms:=duty_private.compensation_atoms(publication);
  for funding in select value from jsonb_array_elements(plan->'funding') loop
   taken:=duty_private.allocation_take(atoms,funding->>'carrierId',(funding->>'units')::bigint); atoms:=taken->'atoms';
+  -- Uneven-month credit is recorded with the same counterpart shape as a temporary transfer.
   select jsonb_agg((l-array['units','normalizedDeferredClaims'])||jsonb_build_object('counterparts',
-   (select jsonb_agg(t order by j) from jsonb_array_elements_text(l->'transferIds') with ordinality ids(id,j)
-     join jsonb_array_elements(draft->'transfers') t on t->>'id'=id)) order by i) into route
+   (select jsonb_agg(cp.t order by j) from jsonb_array_elements_text(l->'transferIds') with ordinality ids(id,j)
+     join (select value t from jsonb_array_elements(draft->'transfers') union all
+      select value||'{"kind":"temporary"}'::jsonb from jsonb_array_elements(coalesce(draft->'uneven','[]'))) cp on cp.t->>'id'=id)) order by i) into route
    from jsonb_array_elements(funding->'route') with ordinality legs(l,i);
   intents:=intents||jsonb_build_array(jsonb_build_object('id','allocation/'||allocation_id||'/intent/'||idx,
    'kind',route->0->'kind','fromId',route->0->'fromId','toId',funding->'carrierId','route',route,'capacity',taken->'capacity')); idx:=idx+1;

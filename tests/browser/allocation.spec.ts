@@ -83,20 +83,33 @@ test('opening the plan runs no Worker; a target above availability warns on its 
 
 test('indivisible holiday duties show one inline note naming who gets more, in English and Hebrew', async ({page, backend, openApp}) => {
   fresh(backend);
-  // Three +0.5 weekdays among six: the equal 4.5/5 split is not a real partition of the duties.
-  for (let day = 1; day <= 3; day++) backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day: `2026-11-0${day}`, end_day: `2026-11-0${day + 1}`,
-    primary_id: null, secondary_id: null, title: 'Holiday', extra_points: 0.5, points: 1.5, locked: false, manager_override: false});
+  // Seven +2 days among six: the equal 6.5/7 split is not a real partition of the duties.
+  for (let day = 1; day <= 7; day++) backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day: `2026-11-0${day}`, end_day: `2026-11-0${day + 1}`,
+    primary_id: null, secondary_id: null, title: 'Holiday', extra_points: 2, points: 3, locked: false, manager_override: false});
   await openApp(); await openPlan(page);
-  const fifth = await page.locator('.allocation-row').nth(4).locator('.allocation-engineer strong').textContent();
+  const fourth = await page.locator('.allocation-row').nth(3).locator('.allocation-engineer strong').textContent();
   const note = page.getByRole('dialog').getByRole('note').filter({hasText: 'split evenly'});
-  await expect(note).toHaveText(`This month’s duties can’t split evenly: ${fifth} gets 5 pts.`);
+  await expect(note).toHaveText(`This month’s duties can’t split evenly: ${fourth} gets 7 pts.`);
+  // The extra half point is credited: the 6-point member owes it, with the reason named.
+  const first = await page.locator('.allocation-row').first().locator('.allocation-engineer strong').textContent();
+  await page.getByRole('dialog').locator('summary').click();
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 waiting for the second half · uneven split`);
+  // Audit R3: a permanent reduction on the creditor lands on the debtor and removes the credit.
+  await page.getByRole('button', {name: '0.5', exact: true}).click();
+  await page.locator('.allocation-row').nth(3).getByRole('button', {name: `Decrease Permanent · ${fourth}`, exact: true}).click();
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveCount(0);
+  await expect(page.getByRole('dialog').locator('.allocation-details')).toContainText('No one owes points.');
+  await page.getByRole('button', {name: 'Undo', exact: true}).click();
+  await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 waiting for the second half · uneven split`);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
   await page.getByRole('button', {name: 'יצירת שיבוץ', exact: true}).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
-  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fifth} – 5 נק׳.`);
+  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
+  await dialog.locator('summary').click();
+  await expect(dialog.locator('.allocation-details li')).toHaveText(`${first} ← ${fourth} · 0.5 · 0.5 ממתין לחצי השני · חלוקה לא שווה`);
 });
 
 const member = (page: import('@playwright/test').Page, name: string) => {
@@ -133,7 +146,8 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   await page.getByRole('button', {name: 'Save allocation only', exact: true}).click();
   await expect(page.getByText('Allocation and locks saved.', {exact: true})).toBeVisible();
   const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
-  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers']);
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
+  expect(saved.uneven).toEqual([]);
   expect(saved.pairs).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
   expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
 });

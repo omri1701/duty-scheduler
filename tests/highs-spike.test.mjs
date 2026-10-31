@@ -9,7 +9,8 @@ import {monthFixture} from '../lib/solver-spike/fixtures.ts';
 const solver = await createHighsAdapter(loadHighs);
 const duty = (day, units = 2, eligible = [0, 1], extra = {}) =>
   ({start: day * 1440, end: (day + 1) * 1440, units, days: 1, special: 0, eligible, ...extra});
-const key = m => [-m.coverage, -m.special, -m.units, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, ...m.gaps.map(g => -g), -Infinity, -m.preferred];
+// Without seeded ties the seed stage is empty, so the full hierarchy ends with the sorted-gap leximin.
+const key = m => [-m.coverage, -m.special, -m.units, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, m.weekdays, -m.preferred, ...m.gaps.map(g => -g)];
 function compare(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const diff = (a[i] ?? -Infinity) - (b[i] ?? -Infinity);
@@ -65,17 +66,20 @@ function referenceMetrics(p, a) {
     if (previous.length) gaps.push(p.duties[indices[0]].start - Math.max(...previous.map(b => b.end)));
     if (following.length) gaps.push(Math.min(...following.map(b => b.start)) - p.duties[indices.at(-1)].end);
   }
-  let rotation = 0, preferred = 0, repeats = 0;
+  let rotation = 0, preferred = 0, repeats = 0, weekdays = 0;
   for (let e = 0; e < totals.length; e++) {
     const indices = a.flatMap((owner, i) => owner === e ? [i] : []);
     if (indices.some(i => p.duties[i].weekend !== undefined)) rotation += p.rotation?.[e] ?? 0;
     const byWeekday = new Map();
-    for (const i of indices) if (p.duties[i].weekday !== undefined) byWeekday.set(p.duties[i].weekday, (byWeekday.get(p.duties[i].weekday) ?? 0) + 1);
+    for (const i of indices) if (p.duties[i].weekday !== undefined) {
+      byWeekday.set(p.duties[i].weekday, (byWeekday.get(p.duties[i].weekday) ?? 0) + 1);
+      weekdays += p.weekdays?.[e][p.duties[i].weekday] ?? 0;
+    }
     for (const n of byWeekday.values()) repeats += Math.max(0, n - 1);
     preferred += indices.reduce((n, i) => n + (p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0), 0);
   }
   return {coverage, special, units: totals.reduce((a, b) => a + b, 0),
-    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats};
+    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays};
 }
 
 test('binary MIP, exact units, locks, eligibility, split weekend identity and partial coverage', () => {
@@ -135,6 +139,18 @@ test('weekend rotation and same-weekday repeats break exact spacing ties and mat
   assert.equal(wr.metrics.rotation, 0);
   assert.deepEqual(key(wr.metrics), key(enumerate(w)));
   assert.throws(() => checkProblem({...w, rotation: [1]}));
+  // Weekday rotation: each weekday goes to the engineer who has not covered it this cycle.
+  const c = {targets: [2, 2], spacing: true, weekdays: [[0, 1, 0, 0, 0], [0, 0, 1, 0, 0]],
+    duties: [duty(0, 2, [0, 1], {weekday: 1}), duty(3, 2, [0, 1], {weekday: 2})]};
+  const cr = solveProblem(solver, c);
+  assert.deepEqual(cr.assignment, [1, 0]);
+  assert.deepEqual([cr.metrics.weekdays, cr.allStagesProved], [0, true]);
+  assert.deepEqual(key(cr.metrics), key(enumerate(c)));
+  assert.deepEqual(cr.metrics, referenceMetrics(c, cr.assignment));
+  assert.ok(cr.stages.some(s => s.name === 'weekdays' && s.proved));
+  assert.throws(() => checkProblem({...c, weekdays: [[0, 1, 0, 0, 0]]}));
+  assert.throws(() => checkProblem({...c, weekdays: [[0, 1], [0, 0, 1, 0, 0]]}));
+  assert.throws(() => checkProblem({...c, weekdays: [[0, 1, 0, 0, 0], [0, 0, -1, 0, 0]]}));
   assert.throws(() => checkProblem({...w, duties: [duty(0, 2, [0, 1], {weekend: 0, weekday: 1}), w.duties[1]]}));
   assert.throws(() => checkProblem({...w, duties: [w.duties[0], duty(5, 2, [0, 1], {weekday: 5})]}));
 });

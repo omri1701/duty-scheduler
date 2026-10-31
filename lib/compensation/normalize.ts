@@ -6,6 +6,10 @@ export function units(value: number, positive = false) {
   return value;
 }
 export function halfUnits(points: number) {return units(points * 2);}
+/** The lone half of an amount: 1 unit when it cannot pair into whole points. A lone
+ * half is never rounded, forgiven or expired; it waits for a second half or for a
+ * month with half-point duties, and it chains across people like any other claim. */
+export const loneHalf = (value: number) => Math.abs(value) % 2;
 export const comparePriority = (a: Priority, b: Priority) => a.at - b.at || a.sequence - b.sequence || compareId(a.lotId, b.lotId);
 export const claimId = (c: ClaimRef) => JSON.stringify([c.debtorId, c.creditorId, c.path.map(s => [s.lotId, s.offset, s.units])]);
 export const compareClaims = (a: ClaimSegment, b: ClaimSegment) => comparePriority(a.priority, b.priority) || compareId(a.id, b.id);

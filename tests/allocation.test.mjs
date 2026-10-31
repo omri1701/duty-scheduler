@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
-import {record, replay, sliceClaim} from '../lib/compensation/index.ts';
+import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
+import {reviewAllocation} from '../lib/allocation/review.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
-  retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline} from '../lib/allocation/index.ts';
+  retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -142,6 +143,145 @@ test('the exact fit is bounded and reports a clear limit instead of freezing', (
   assert.ok(fitPartition(weightsOf(holiday(1)), 12).length === 12);
 });
 
+const pair = (k, units = 1) => ({id: `uneven/e0${k}/e${String(k + 6).padStart(2, '0')}`, fromId: `e0${k}`, toId: `e${String(k + 6).padStart(2, '0')}`, units});
+// Six members and seven +2 days: the only uneven month the solver covers completely.
+const sixHoliday = () => {
+  const i = scenario(); i.schedule.members = i.schedule.members.slice(0, 6); i.seniority = i.seniority.slice(0, 6);
+  i.events = send([], {kind: 'members', members: i.schedule.members.map(m => ({id: m.id, active: true}))}, 'members');
+  i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-08', extra: 2}]}; return i;
+};
+const netted = (i, d) => {const p = planAllocation(i, d); return nettedCompensation({}, {transfers: p.plan.intents, repayments: p.plan.repayments}, i.seniority);};
+
+test('an uneven month credits each extra half point from the fewest-points members to those above the equal share', () => {
+  const i = holiday(), r = proposal(i);
+  assert.deepEqual(r.draft.uneven, [0, 1, 2, 3, 4, 5].map(k => pair(k)), 'six most senior (4 pts) each owe one of the six newest (5 pts) half a point');
+  assert.deepEqual(r.draft.targetsUnits, r.draft.baselineUnits, 'targets and the stored baseline are unchanged');
+  assert.deepEqual(r.draft.transfers, [], 'the credit is not a change: nets stay zero');
+  assert.deepEqual(normal.draft.uneven, [], 'a normal month creates no credit');
+  assert.deepEqual(netted(i, r.draft), [0, 1, 2, 3, 4, 5].map(k => ({debtorId: `e0${k}`, creditorId: `e${String(k + 6).padStart(2, '0')}`, units: 1, thisMonth: 0, later: 1, reason: 'uneven'})));
+  const six = sixHoliday(), s = proposal(six);
+  assert.deepEqual(six.seniority.map(id => s.draft.baselineUnits[id]), [12, 13, 13, 14, 14, 14]);
+  assert.deepEqual(s.draft.uneven, [{id: 'uneven/e00/e03', fromId: 'e00', toId: 'e03', units: 1}], 'the most senior 7-point member is owed by the 6-point member');
+  assert.deepEqual(unevenBaseline(six, s.draft.baselineUnits), [{id: 'e03', units: 14}], 'the inline note names the same creditor');
+  const p = compiled(six, s.draft);
+  assert.equal(p.check.feasibility, 'complete'); assert.equal(p.confirmable, true);
+  assert.deepEqual(p.plan.intents, [{fromId: 'e00', toId: 'e03', units: 1, kind: 'temporary', transferIds: ['uneven/e00/e03']}], 'publication intent: the creditor carries the debtor’s half point');
+  assert.deepEqual(p.plan.funding.map(f => f.carrierId), ['e03']); assert.deepEqual(p.plan.repayments, []);
+});
+
+test('uneven credit ties: the remainder itself is never debt; equal points pick the most senior', () => {
+  const flat = Array(38).fill(1), ids = ['a', 'b', 'c', 'd']; // plain split 9, 9, 10, 10
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 9, b: 9, c: 9, d: 11}), [{id: 'uneven/a/d', fromId: 'a', toId: 'd', units: 1}], 'fewest points tie: most senior owes');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 8, b: 10, c: 10, d: 10}), [{id: 'uneven/a/b', fromId: 'a', toId: 'b', units: 1}], 'most points tie: most senior is owed');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 8, b: 8, c: 11, d: 11}).map(u => `${u.fromId}>${u.toId}:${u.units}`), ['a>c:1', 'b>d:1']);
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 10, b: 10, c: 9, d: 9}), [], 'a remainder given to senior members is the same split: no debt');
+  assert.deepEqual(unevenTransfers(ids, flat, {a: 7, b: 9, c: 9, d: 13}), [{id: 'uneven/a/d', fromId: 'a', toId: 'd', units: 2}, {id: 'uneven/b/d', fromId: 'b', toId: 'd', units: 1}], 'one creditor, two debtors, senior tie first');
+  // Decision 2026-10-31: the credit follows the real permanent load.
+  const change = (permanent, temporary = 0) => ({temporary, permanent}), base = {a: 8, b: 8, c: 11, d: 11};
+  assert.deepEqual(unevenTransfers(ids, flat, base, {c: change(-1)}).map(u => u.id), ['uneven/a/d'], 'a creditor losing permanently is credited only for what it still carries');
+  assert.deepEqual(unevenTransfers(ids, flat, base, {c: change(-5)}).map(u => u.id), ['uneven/a/d'], 'never below zero');
+  assert.deepEqual(unevenTransfers(ids, flat, base, {a: change(1)}).map(u => u.id), ['uneven/b/c'], 'a debtor gaining permanently no longer sits below the split');
+  assert.deepEqual(unevenTransfers(ids, flat, base, {c: change(2), a: change(-2)}).map(u => `${u.id}:${u.units}`), ['uneven/a/c:1', 'uneven/b/d:1'], 'permanent gains of a creditor and losses of a debtor are deliberate: no extra credit, no relief');
+  assert.deepEqual(unevenTransfers(ids, flat, base, {c: change(0, -1), a: change(0, 1)}).map(u => u.id), ['uneven/a/c', 'uneven/b/d'], 'temporary changes carry their own compensation and leave the credit alone');
+});
+
+test('audit R3: a permanent reduction on an uneven creditor removes the credit instead of leaving fake debt', () => {
+  const i = holiday(), r = proposal(i);
+  // Permanent −0.5 on e11 (owed by e05) lands on e05, the newest 4-point member: both at 4.5 points.
+  const d = edit(i, r.draft, 'e11', -1, 'permanent').draft;
+  assert.deepEqual(legs(d), [['e11', 'e05', 1, 'permanent']]);
+  assert.equal(d.targetsUnits.e05, 9); assert.equal(d.targetsUnits.e11, 9);
+  assert.deepEqual(d.uneven, [0, 1, 2, 3, 4].map(k => pair(k)), 'e05 → e11 is gone; the other five credits stand');
+  assert.ok(!netted(i, d).some(l => l.debtorId === 'e05' || l.creditorId === 'e11'), 'nothing is owed between two members at the equal share');
+  assert.deepEqual(persistedDraft(d).uneven, d.uneven, 'the derived credit is persisted for the checked RPC');
+  // A permanent gain on a debtor: the giver (most points, most senior: e06) and the debtor both leave the credit.
+  const g = edit(i, r.draft, 'e05', 1, 'permanent').draft;
+  assert.deepEqual(legs(g), [['e06', 'e05', 1, 'permanent']]);
+  assert.deepEqual(g.uneven.map(u => u.id), ['uneven/e00/e07', 'uneven/e01/e08', 'uneven/e02/e09', 'uneven/e03/e10', 'uneven/e04/e11']);
+  // A temporary reduction on a creditor is its own compensation: the pair nets to nothing, the credit itself stays.
+  const t = edit(i, r.draft, 'e11', -1).draft;
+  assert.deepEqual(legs(t), [['e11', 'e05', 1, 'temporary']]); assert.deepEqual(t.uneven, r.draft.uneven);
+  assert.ok(!netted(i, t).some(l => l.debtorId === 'e05' || l.creditorId === 'e11'));
+  // Undoing the permanent change restores the credit: it is a function of the state, never of the click history.
+  assert.deepEqual(edit(i, d, 'e11', 1, 'permanent').draft.uneven, r.draft.uneven);
+  assert.deepEqual(proposeAllocation(i, retainedChanges(d)).draft.uneven, d.uneven, 'a new proposal with the retained changes derives the same credit');
+});
+
+test('uneven credit survives edits, protects the creditor’s carried work from relief and cannot be forged by hand', () => {
+  const i = holiday(), r = proposal(i);
+  const e = edit(i, r.draft, 'e11', -2);
+  assert.deepEqual(e.draft.uneven, r.draft.uneven); assert.equal(compiled(i, e.draft).confirmable, true);
+  const dragged = drag(i, r.draft, 'e06', 'e00').draft;
+  assert.deepEqual(dragged.uneven, r.draft.uneven); assert.equal(planAllocation(i, dragged).confirmable, true);
+  const forged = structuredClone(r.draft); forged.uneven.push({id: 'uneven/e01/e11', fromId: 'e01', toId: 'e11', units: 20});
+  assert.throws(() => planAllocation(i, forged), /uneven-credit-exceeds-share/);
+  const foreign = structuredClone(r.draft); foreign.uneven[0] = {...foreign.uneven[0], id: 'manual/0'};
+  assert.throws(() => planAllocation(i, foreign), /invalid-uneven-credit/);
+  const duplicate = structuredClone(r.draft); duplicate.uneven.push({...duplicate.uneven[0]});
+  assert.throws(() => planAllocation(i, duplicate), /invalid-uneven-credit/);
+  // An old creditor with uneven credit keeps that half point: relief stops at 4.5 of its 5 points.
+  const owed = owe(holiday(), 'e00', 'e11', 20, 'old'), relief = proposal(owed);
+  invariant(owed, relief);
+  assert.equal(total(relief.draft.repayments.map(p => p.units)), 9);
+  assert.equal(relief.draft.targetsUnits.e11, 1);
+  assert.equal(planAllocation(owed, relief.draft).confirmable, true);
+  const greedy = structuredClone(relief.draft), [plan] = greedy.repayments;
+  plan.units = 10; plan.claim.units = 10; plan.claim.path[0].units = 10;
+  greedy.offeredUnits.e00 += 1; greedy.offeredUnits.e11 -= 1; greedy.targetsUnits.e00 += 1; greedy.targetsUnits.e11 -= 1;
+  assert.throws(() => planAllocation(owed, greedy), /repayment-exceeds-creditor-relief/, 'relief cannot consume work carried for the debtor');
+});
+
+test('audit reorder: a seniority change after confirmation re-pairs the credit and keeps the confirmed baseline', () => {
+  const i = holiday(), saved = persistedDraft(edit(i, proposal(i).draft, 'e03', -2).draft);
+  const j = {...structuredClone(i), seniority: ['e11', ...i.seniority.slice(0, 11)]}; // the newest member becomes most senior
+  // The retained draft still reviews: the credit is derived under the current order, the numbers are unchanged.
+  const reviewed = reviewAllocation(j, saved);
+  assert.deepEqual(reviewed.baselineUnits, saved.baselineUnits); assert.deepEqual(reviewed.targetsUnits, saved.targetsUnits);
+  assert.deepEqual(reviewed.uneven.map(u => u.id), ['uneven/e00/e11', 'uneven/e01/e06', 'uneven/e02/e07', 'uneven/e03/e08', 'uneven/e04/e09', 'uneven/e05/e10']);
+  assert.deepEqual(reviewed.uneven, unevenTransfers(j.seniority, weightsOf(j), saved.baselineUnits, saved.changes), 'exactly what the checked RPC derives');
+  // A new proposal keeps the confirmed partition, so the database’s immutable-baseline rule still holds.
+  const again = proposeAllocation(j, retainedChanges(saved)).draft;
+  assert.deepEqual(again.baselineUnits, saved.baselineUnits); assert.deepEqual(again.uneven, reviewed.uneven);
+  // A reopened draft treats every member with a nonzero change as hand edited.
+  assert.deepEqual([...again.hand].sort(), Object.keys(saved.changes).filter(id => saved.changes[id].temporary || saved.changes[id].permanent).sort());
+  assert.equal(again.targetsUnits.e03, saved.targetsUnits.e03);
+  assert.notDeepEqual(proposeAllocation(j).draft.baselineUnits, saved.baselineUnits, 'without the retained baseline the larger shares would follow the new order');
+  // A changed calendar is a new fit: the retained baseline no longer matches and is dropped.
+  const k = structuredClone(j); k.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-08', extra: 2}]};
+  assert.deepEqual(proposeAllocation(k, retainedChanges(saved)).draft.baselineUnits, proposeAllocation(k).draft.baselineUnits);
+  // A normal month’s remainder follows the order, but the note never calls it uneven.
+  const n = {...normalInput, seniority: ['e11', ...normalInput.seniority.slice(0, 11)]};
+  assert.deepEqual(unevenBaseline(n, normal.draft.baselineUnits), []);
+  assert.deepEqual(proposeAllocation(n, retainedChanges(normal.draft)).draft.baselineUnits, normal.draft.baselineUnits);
+});
+
+test('uneven credit publishes as an ordinary temporary claim and a later half-point month repays it', async () => {
+  const i = sixHoliday(), r = proposal(i), assignments = generated(i, r.draft);
+  const bound = await bindAllocation(i, r.draft, assignments, {publicationId: 'november', sourceKey: 'publish/november', actor: 'manager'});
+  assert.equal(bound.bindable, true); assert.equal(bound.publishable, true);
+  assert.deepEqual(bound.publication.intents.flatMap(t => t.route.flatMap(l => l.counterparts)),
+    [{id: 'uneven/e00/e03', fromId: 'e00', toId: 'e03', units: 1, kind: 'temporary'}], 'recorded with the ordinary counterpart shape and its uneven identity');
+  for (const t of bound.publication.intents) for (const s of t.capacity) assert.equal(assignments[s.date].primary, t.toId);
+  const published = record(i.events, {sourceKey: 'publish/november', actor: 'manager', at: i.now,
+    operation: {kind: 'publication', month: '2026-11', beforeId: null, after: bound.publication}}).events;
+  assert.deepEqual(project(published, i.now, i.now).actual.net, {e00: -1, e01: 0, e02: 0, e03: 1, e04: 0, e05: 0});
+  // December has six +0.5 weekdays, so half-point duties exist and the month itself splits evenly.
+  const next = {...structuredClone(i), events: published, now: Date.parse('2026-11-20T10:00:00Z')};
+  next.schedule.month = '2026-12';
+  next.schedule.calendar = {specials: [{id: 'a', start: '2026-12-07', end: '2026-12-11', extra: 0.5}, {id: 'b', start: '2026-12-13', end: '2026-12-15', extra: 0.5}]};
+  const d = proposal(next); invariant(next, d);
+  assert.deepEqual(d.draft.uneven, []);
+  assert.deepEqual(d.draft.repayments.map(p => [p.claim.debtorId, p.claim.creditorId, p.units]), [['e00', 'e03', 1]]);
+  assert.equal(d.draft.targetsUnits.e00, d.draft.baselineUnits.e00 + 1); assert.equal(d.draft.targetsUnits.e03, d.draft.baselineUnits.e03 - 1);
+  const december = await bindAllocation(next, d.draft, generated(next, d.draft), {publicationId: 'december', sourceKey: 'publish/december', actor: 'manager'});
+  assert.equal(december.publishable, true); assert.equal(december.publication.reservations.length, 1);
+  const settled = record(published, {sourceKey: 'publish/december', actor: 'manager', at: next.now,
+    operation: {kind: 'publication', month: '2026-12', beforeId: null, after: december.publication}}).events;
+  const done = Date.parse('2027-01-05T10:00:00Z'), view = project(settled, done, done).actual;
+  assert.deepEqual(view.claims, []);
+  assert.deepEqual(view.net, {e00: 0, e01: 0, e02: 0, e03: 0, e04: 0, e05: 0}, 'repayment settles the uneven credit like any other temporary transfer');
+});
+
 test('repayment has no monthly cap beyond creditor relief and debtor availability', () => {
   const i = owe(scenario(), 'e11', 'e00', 8, 'old'), r = proposal(i);
   invariant(i, r);
@@ -177,10 +317,21 @@ test('an older infeasible claim stays open while a feasible younger obligation p
   assert.ok(compiled(i, r.draft).plan.deferred.some(p => p.claim.path[0].lotId === 'old' && p.units === 4));
 });
 
-test('half-point debt cannot split a whole-point duty or manufacture a rounding transfer', () => {
+test('half-point debt cannot split a whole-point duty or manufacture a rounding transfer; a lone half waits and chains', () => {
   const i = owe(scenario(), 'e00', 'e11', 1, 'half'), r = proposal(i);
   assert.deepEqual(r.draft.repayments, []); assert.deepEqual(r.draft.transfers, []);
   assert.equal(compiled(i, r.draft).plan.deferred[0].units, 1);
+  // The lone half carries forward in full and is shown waiting for its second half, never as repaid this month.
+  // Shown as the popup shows it: from the projected net at month opening plus the compiled plan.
+  const shown = (i, r) => {const p = planAllocation(i, r.draft); return nettedCompensation(r.projection.projected.net, {transfers: p.plan.intents, repayments: p.plan.repayments}, i.seniority);};
+  assert.deepEqual(shown(i, r).map(l => [l.debtorId, l.creditorId, l.units, l.thisMonth, loneHalf(l.later)]), [['e00', 'e11', 1, 0, 1]]);
+  // A half the creditor owes onward nets across people: e00 owes e05, e11 is clear, and nothing is rounded away.
+  owe(i, 'e11', 'e05', 1, 'onward');
+  const q = proposal(i); invariant(i, q);
+  assert.deepEqual(q.draft.repayments, []);
+  assert.deepEqual(project(i.events, i.now, i.now).actual.claims.map(c => [c.debtorId, c.creditorId, c.units, c.path.map(s => s.lotId)]),
+    [['e00', 'e05', 1, ['half', 'onward']]], 'the ledger itself holds the chained half');
+  assert.deepEqual(shown(i, q).map(l => [l.debtorId, l.creditorId, l.units, l.thisMonth, l.later]), [['e00', 'e05', 1, 0, 1]]);
 });
 
 test('availability is a live ceiling, not an automatic change; the baseline remains fair', () => {
