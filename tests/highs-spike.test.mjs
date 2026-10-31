@@ -9,7 +9,7 @@ import {monthFixture} from '../lib/solver-spike/fixtures.ts';
 const solver = await createHighsAdapter(loadHighs);
 const duty = (day, units = 2, eligible = [0, 1], extra = {}) =>
   ({start: day * 1440, end: (day + 1) * 1440, units, days: 1, special: 0, eligible, ...extra});
-const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g)];
+const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g), -Infinity, m.rotation, -m.preferred, m.repeats];
 function compare(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const diff = (a[i] ?? -Infinity) - (b[i] ?? -Infinity);
@@ -65,8 +65,17 @@ function referenceMetrics(p, a) {
     if (previous.length) gaps.push(p.duties[indices[0]].start - Math.max(...previous.map(b => b.end)));
     if (following.length) gaps.push(Math.min(...following.map(b => b.start)) - p.duties[indices.at(-1)].end);
   }
+  let rotation = 0, preferred = 0, repeats = 0;
+  for (let e = 0; e < totals.length; e++) {
+    const indices = a.flatMap((owner, i) => owner === e ? [i] : []);
+    if (indices.some(i => p.duties[i].weekend !== undefined)) rotation += p.rotation?.[e] ?? 0;
+    const byWeekday = new Map();
+    for (const i of indices) if (p.duties[i].weekday !== undefined) byWeekday.set(p.duties[i].weekday, (byWeekday.get(p.duties[i].weekday) ?? 0) + 1);
+    for (const n of byWeekday.values()) repeats += Math.max(0, n - 1);
+    preferred += indices.reduce((n, i) => n + (p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0), 0);
+  }
   return {coverage, special, units: totals.reduce((a, b) => a + b, 0),
-    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b)};
+    deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats};
 }
 
 test('binary MIP, exact units, locks, eligibility, split weekend identity and partial coverage', () => {
@@ -105,6 +114,29 @@ test('successor-gap leximin matches independent enumeration including partial/va
     assert.deepEqual(key(r.metrics), key(enumerate(p)));
     assert.equal(r.allStagesProved, true);
   }
+});
+
+test('weekend rotation and same-weekday repeats break exact spacing ties and match enumeration', () => {
+  // Five and two duties from seven days: two partitions share the sorted gap vector
+  // [1, 1, 1, 4, 5] and differ only in repeated weekday labels (two versus one).
+  const labels = [0, 2, 0, 1, 2, 3, 1];
+  const p = {targets: [10, 4], spacing: true, duties: [1, 3, 8, 9, 10, 11, 16].map((d, i) => duty(d, 2, [0, 1], {weekday: labels[i]}))};
+  const r = solveProblem(solver, p);
+  assert.equal(r.allStagesProved, true);
+  assert.equal(r.metrics.repeats, 1);
+  assert.deepEqual(r.metrics.gaps.map(g => g / 1440), [1, 1, 1, 4, 5]);
+  assert.deepEqual(r.assignment.slice(2, 5), [1, 0, 1]);
+  assert.deepEqual(key(r.metrics), key(enumerate(p)));
+  assert.deepEqual(r.metrics, referenceMetrics(p, r.assignment));
+  // Rotation: the weekend goes to the engineer with fewer turns; equal turns leave it to the seed.
+  const w = {targets: [2, 2], spacing: true, rotation: [1, 0], duties: [duty(0, 2, [0, 1], {weekend: 0}), duty(5, 2, [0, 1], {weekday: 2})]};
+  const wr = solveProblem(solver, w);
+  assert.equal(wr.assignment[0], 1);
+  assert.equal(wr.metrics.rotation, 0);
+  assert.deepEqual(key(wr.metrics), key(enumerate(w)));
+  assert.throws(() => checkProblem({...w, rotation: [1]}));
+  assert.throws(() => checkProblem({...w, duties: [duty(0, 2, [0, 1], {weekend: 0, weekday: 1}), w.duties[1]]}));
+  assert.throws(() => checkProblem({...w, duties: [w.duties[0], duty(5, 2, [0, 1], {weekday: 5})]}));
 });
 
 test('independent validator rejects fractional, missing, duplicate, over-target and illegal incumbents', () => {

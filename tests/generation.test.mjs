@@ -9,7 +9,7 @@ import {monthScenario} from './fixtures/generation.mjs';
 const solver = await createHighsAdapter(loadHighs);
 const run = (input, extra = {}) => solveGeneration(solver, createGenerationRequest(input,
   {now: coverageStart(input.month, input.calendar) - 1, seed: 17, seconds: 3, ...extra}));
-const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g)];
+const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g), -Infinity, m.rotation, -m.preferred, m.repeats];
 
 test('seeded ties with preserved emergency coverage retain exact integer objective verification', () => {
   const ids = Array.from({length: 6}, (_, i) => `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`);
@@ -165,21 +165,26 @@ function exhaustive(input) {
       return;
     }
     const totals = Object.fromEntries(input.members.map(e => [e.id, 0])), gaps = [];
-    let coverage = 0, special = 0;
+    let coverage = 0, special = 0, preferred = 0, rotation = 0, repeats = 0;
     for (let i = 0; i < duties.length; i++) if (selected[i]) {
       totals[selected[i]] += duties[i].units; coverage += duties[i].dates.length; special += duties[i].specialDates.length;
+      preferred += duties[i].dates.filter(date => input.constraints?.[selected[i]]?.[date] === 'prefer').length;
     }
     for (const e of input.members) {
       if (totals[e.id] > input.targets[e.id] * 2) return;
       const own = duties.filter((_, i) => selected[i] === e.id);
       if (new Set(own.map(d => d.weekendId).filter(Boolean)).size > 1) return;
+      if (own.some(d => d.weekendId)) rotation += input.weekendRotation?.[e.id] ?? 0;
+      const weekdays = {};
+      for (const d of own) if (!d.weekendId) weekdays[new Date(d.startDate + 'T12:00:00Z').getUTCDay()] = (weekdays[new Date(d.startDate + 'T12:00:00Z').getUTCDay()] ?? 0) + 1;
+      repeats += Object.values(weekdays).reduce((n, v) => n + Math.max(0, v - 1), 0);
       for (let j = 1; j < own.length; j++) {
         const gap = own[j].start - own[j - 1].end;
         if (gap <= 0) return;
         gaps.push(gap);
       }
     }
-    const metrics = {coverage, special, units: Object.values(totals).reduce((a, b) => a + b), gaps: gaps.sort((a, b) => a - b)};
+    const metrics = {coverage, special, units: Object.values(totals).reduce((a, b) => a + b), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats};
     if (!best || compare(key(metrics), key(best)) < 0) best = metrics;
   }
   visit(0, []); return best;
@@ -292,12 +297,12 @@ test('preferred dates precede recorded seeded alternatives; reordering inputs re
   assert.equal(first.assignments['2026-11-01'].primary, 'a');
   assert.deepEqual(first.assignments, replay.assignments);
   assert.equal(first.reproduction.inputKey, inputKey(input));
-  assert.deepEqual(first.search.provedPrefix.slice(-2), ['preferred', 'seed']);
+  assert.deepEqual(first.search.provedPrefix.slice(-4), ['rotation', 'preferred', 'repeats', 'seed']);
   delete input.constraints.a['2026-11-01'];
   const signatures = new Set();
   for (let seed = 0; seed < 8; seed++) {
     const r = run(input, {seed}); signatures.add(JSON.stringify(r.assignments));
-    assert.deepEqual(key(r.metrics), key(first.metrics));
+    assert.deepEqual(key({...r.metrics, preferred: 0}), key({...first.metrics, preferred: 0}));
     assert.equal(r.reproduction.settings.seed, seed);
   }
   assert.ok(signatures.size > 1);
@@ -308,6 +313,75 @@ test('preferred dates precede recorded seeded alternatives; reordering inputs re
   assert.ok(requests.every(r => Number.isInteger(r.settings.seed) && r.settings.seed >= 0));
   assert.notEqual(requests[0].settings.seed, requests[1].settings.seed);
   assert.equal(draws, 2);
+});
+
+test('weekend rotation gives weekends to members with fewer turns, below spacing and above preferences', () => {
+  // One duty each: the weekend and a Monday are otherwise equivalent.
+  const equal = limitedMonth({'2026-11-06': ['a', 'b'], '2026-11-16': ['a', 'b']}, [2, 2]);
+  for (const [rotation, weekend] of [[{a: 1, b: 0}, 'b'], [{a: 0, b: 2}, 'a'], [{a: 3}, 'b']]) {
+    const r = run({...equal, weekendRotation: rotation});
+    assert.equal(r.assignments['2026-11-06'].primary, weekend);
+    assert.equal(r.metrics.rotation, 0);
+    assert.ok(r.search.stages.some(s => s.name === 'rotation' && s.proved));
+    assert.deepEqual(key(r.metrics), key(exhaustive({...equal, weekendRotation: rotation})));
+    assert.deepEqual(validateGeneration({...equal, weekendRotation: rotation}, r.assignments), r.metrics);
+  }
+  // Equal counts: the rotation level is an identity and the seed still varies the choice.
+  const ties = new Set([0, 1, 2, 3, 4, 5].map(seed => run({...equal, weekendRotation: {a: 1, b: 1}}, {seed}).assignments['2026-11-06'].primary));
+  assert.equal(ties.size, 2);
+  // Spacing wins: giving b the weekend would leave a with a three-day gap.
+  const spaced = limitedMonth({'2026-11-02': ['a'], '2026-11-06': ['a', 'b'], '2026-11-16': ['a', 'b']}, [4, 2]);
+  const s = run({...spaced, weekendRotation: {a: 0, b: 1}});
+  assert.equal(s.assignments['2026-11-06'].primary, 'b');
+  assert.equal(s.metrics.rotation, 1);
+  assert.deepEqual(s.metrics.gaps, [13 * 1440]);
+  // A preferred weekend date does not outrank the rotation.
+  const preferred = structuredClone(equal); preferred.constraints.a['2026-11-06'] = 'prefer';
+  const p = run({...preferred, weekendRotation: {a: 1, b: 0}});
+  assert.equal(p.assignments['2026-11-06'].primary, 'b');
+  assert.equal(p.metrics.preferred, 0);
+  assert.deepEqual(key(p.metrics), key(exhaustive({...preferred, weekendRotation: {a: 1, b: 0}})));
+  assert.throws(() => prepareGeneration({...equal, weekendRotation: {zed: 1}}), /unknown-rotation-member/);
+  assert.throws(() => prepareGeneration({...equal, weekendRotation: {a: -1}}), /invalid-rotation/);
+  assert.throws(() => prepareGeneration({...equal, weekendRotation: {a: 0.5}}), /invalid-rotation/);
+});
+
+test('same-weekday repeats are minimized below spacing and preferences, and reported by the validator', () => {
+  // c alone covers four Mondays and one Tuesday: three gaps are forced, one repeat is avoidable only
+  // by a shorter gap, so spacing keeps the repeat; the validator counts it independently.
+  const forced = limitedMonth({'2026-11-02': ['a'], '2026-11-16': ['a']}, [4, 0]);
+  const f = run(forced);
+  assert.equal(f.metrics.repeats, 1);
+  assert.ok(f.search.stages.some(s => s.name === 'repeats' && s.proved));
+  assert.deepEqual(validateGeneration(forced, f.assignments), f.metrics);
+  // With at most four Sunday–Thursday duties per engineer, equal sorted gap vectors fix the
+  // repeat count (an exhaustive November search found no exception), so the level acts only on
+  // heavier loads: here a (five duties) and b (two) tie on spacing with one or two repeats.
+  const shared = ['2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11'];
+  const tie = limitedMonth({'2026-11-01': ['a'], '2026-11-03': ['a'], '2026-11-16': ['a'], ...Object.fromEntries(shared.map(d => [d, ['a', 'b']]))}, [10, 4]);
+  const t = run(tie);
+  assert.deepEqual(key(t.metrics), key(exhaustive(tie)));
+  assert.deepEqual(t.metrics.gaps.map(g => g / 1440), [1, 1, 1, 4, 5]);
+  assert.equal(t.metrics.repeats, 1);
+  assert.deepEqual(['2026-11-08', '2026-11-10'].map(d => t.assignments[d].primary), ['b', 'b']);
+  // A preferred date outranks weekday variety.
+  tie.constraints.a['2026-11-08'] = 'prefer';
+  const p = run(tie);
+  assert.equal(p.assignments['2026-11-08'].primary, 'a');
+  assert.equal(p.metrics.preferred, 1);
+  assert.equal(p.metrics.repeats, 2);
+  assert.deepEqual(key(p.metrics), key(exhaustive(tie)));
+});
+
+test('a fresh seed varies equivalent choices across the whole month, not only the last duties', () => {
+  const {input} = monthScenario('normal');
+  const results = [1, 2, 3, 4, 5].map(seed => run(input, {seed, seconds: 15}));
+  assert.ok(results.every(r => r.complete && r.search.allStagesProved));
+  assert.equal(new Set(results.map(r => JSON.stringify(r.metrics.gaps))).size, 1);
+  assert.equal(new Set(results.map(r => JSON.stringify(r.assignments))).size, results.length);
+  const duties = results[0].duties, varied = duties.filter(d => new Set(results.map(r => r.assignments[d.id].primary)).size > 1);
+  assert.ok(varied.length >= duties.length / 2, `${varied.length} of ${duties.length} duties vary`);
+  assert.ok(varied.some(d => d.id < '2026-11-08') && varied.some(d => d.id > '2026-11-22'));
 });
 
 test('spacing outranks preferred dates and a locked zero cannot hide the next-worst gap', () => {

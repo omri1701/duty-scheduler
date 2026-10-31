@@ -10,6 +10,8 @@ import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
+import {weekendRotation} from '@/lib/scheduling/rotation';
+import {publishedHistory} from '@/lib/supabase/snapshot';
 import {addDays} from '@/lib/rota/calendar-dates';
 import {acceptGeneration, type GenerationResult} from '@/lib/scheduling/generate';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
@@ -195,13 +197,18 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       if (!generate) {setNotice(t('Allocation and locks saved.', 'ההקצאה והנעילות נשמרו.')); return;}
       if (!confirmed.generationInput || now() >= confirmed.coverageStartMs) throw Error('generation-window-closed');
       setPhase('generating');
+      // Weekend rotation state comes from the published months the workspace already
+      // holds; it is a soft objective, so the checked save does not revalidate it.
+      const eligible = confirmed.generationInput.members.filter(m => m.active && m.approved && m.eligible).map(m => m.id);
+      const generationInput: GenerationInput = {...confirmed.generationInput,
+        weekendRotation: weekendRotation(latest.current.snapshot ? publishedHistory(latest.current.snapshot, month) : [], eligible, month)};
       const active = createGenerationWorker(now); worker.current = active;
-      const generated = await active.run(confirmed.generationInput, {seconds: 30}, p => {
+      const generated = await active.run(generationInput, {seconds: 30}, p => {
         if (id === sequence.current) setProgress(p.metrics.coverage);
       });
       active.terminate(); worker.current = null;
       if (id !== sequence.current) return;
-      acceptGeneration(generated, confirmed.generationInput, now());
+      acceptGeneration(generated, generationInput, now());
       // Compile against the actual returned assignments, never the allocation witness.
       // Copied publication intent is independently revalidated by the checked RPC.
       if (!confirmed.sourcePublicationId &&
@@ -209,7 +216,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
         throw Error('Allocation requires review before saving.');
       }
       if (id !== sequence.current) return;
-      acceptGeneration(generated, confirmed.generationInput, now());
+      acceptGeneration(generated, generationInput, now());
       setPhase('saving'); rpc.current = true;
       const saved = await latest.current.saveGeneration(confirmed, generated.assignments, generated.reproduction.settings.seed);
       if (id !== sequence.current) return;

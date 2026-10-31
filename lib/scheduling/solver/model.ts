@@ -9,7 +9,20 @@ export type Progress = {stage: string; assignment: (number | null)[]; metrics: M
 const x = (e: number, i: number) => `x_${e}_${i}`;
 const minimum = (m: Metrics) => m.gaps[0] ?? Infinity;
 const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : name === 'special' ? -m.special :
-  name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : m.gaps.filter(g => g === Number(name.slice(4))).length;
+  name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : name === 'rotation' ? m.rotation :
+  name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : m.gaps.filter(g => g === Number(name.slice(4))).length;
+/** Stages whose objective is a nonnegative sum of nonnegative columns: an incumbent at zero is optimal. */
+const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'repeats';
+/** 32-bit hash mixer (splitmix-style); every output bit depends on the whole state. */
+function mixer(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x9e3779b9) >>> 0;
+    let t = state ^ (state >>> 16); t = Math.imul(t, 0x21f0aaad);
+    t ^= t >>> 15; t = Math.imul(t, 0x735a2d97);
+    return (t ^ (t >>> 15)) >>> 0;
+  };
+}
 
 /** Assignment/coverage model only. No successor columns or path constraints. */
 export function buildModel(p: Problem, freeTargets = false) {
@@ -18,7 +31,7 @@ export function buildModel(p: Problem, freeTargets = false) {
   // balanced source first; retain exactly the same assignment constraints.
   if (freeTargets) p = {...p, targets: p.targets.map(() => p.targets.reduce((a, b) => a + b, 0))};
   const columns: Column[] = [{name: 'dummy', binary: true, upper: 0}], rows: Row[] = [], gaps = new Set<number>();
-  const coverage: Term[] = [], special: Term[] = [], units: Term[] = [];
+  const coverage: Term[] = [], special: Term[] = [], units: Term[] = [], rotation: Term[] = [];
   const ids = p.targets.map(() => [] as number[]);
   for (const [i, d] of p.duties.entries()) {
     rows.push({terms: d.eligible.map(e => [1, x(e, i)]), upper: 1});
@@ -44,6 +57,8 @@ export function buildModel(p: Problem, freeTargets = false) {
     for (const [w, ds] of weekends) {
       const y = `w_${e}_${w}`;
       columns.push({name: y, upper: approval && !approval.weekends.includes(w) ? 0 : 1}); ys.push([1, y]);
+      // Weekend rotation: a weekend for an engineer who already had turns this cycle costs their count.
+      if (p.rotation?.[e]) rotation.push([p.rotation[e], y]);
       for (const i of ds) rows.push({terms: [[1, x(e, i)], [-1, y]], upper: 0});
       rows.push({terms: [[1, y], ...ds.map(i => [-1, x(e, i)] as Term)], upper: 0});
     }
@@ -60,8 +75,29 @@ export function buildModel(p: Problem, freeTargets = false) {
     }
   }
   rows.push(...capacityRows(p, ids, 0));
-  return {columns, rows, gaps: [...gaps].sort((a, b) => a - b), ids, stages: [{name: 'coverage', terms: coverage},
+  return {columns, rows, gaps: [...gaps].sort((a, b) => a - b), ids, rotation, stages: [{name: 'coverage', terms: coverage},
     {name: 'special', terms: special}, {name: 'units', terms: units}] as Stage[]};
+}
+
+/** Same-weekday repeats: r[e,wd] >= (ordinary Sunday-Thursday duties of e on weekday wd) - 1.
+ * Minimizing the sum counts every extra duty on an already used weekday. Continuous
+ * columns suffice: binary x makes the minimum integral. */
+function buildRepeats(p: Problem, ids: number[][]) {
+  const columns: Column[] = [], rows: Row[] = [], terms: Term[] = [];
+  for (let e = 0; e < p.targets.length; e++) {
+    const byWeekday = new Map<number, number[]>();
+    for (const i of ids[e]) {
+      const wd = p.duties[i].weekday;
+      if (wd !== undefined) byWeekday.set(wd, [...(byWeekday.get(wd) ?? []), i]);
+    }
+    for (const [wd, duties] of byWeekday) {
+      if (duties.length < 2) continue;
+      const r = `r_${e}_${wd}`;
+      columns.push({name: r, upper: duties.length}); terms.push([1, r]);
+      rows.push({terms: [[1, r], ...duties.map(i => [-1, x(e, i)] as Term)], lower: -1});
+    }
+  }
+  return {columns, rows, stage: {name: 'repeats', terms} as Stage};
 }
 
 /** With binary x, acyclic unit flow through every selected node has a unique integral path. */
@@ -176,23 +212,24 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     !Number.isFinite(settings.seconds) || settings.seconds < 0 ||
     !Number.isInteger(settings.nodes) || settings.nodes < 0 || settings.nodes > 2147483647) throw Error('Invalid solver settings');
   const started = performance.now(), base = buildModel(p), buildMs = performance.now() - started;
-  let random = settings.seed >>> 0;
+  const random = mixer(settings.seed);
+  const rotationStage: Stage = {name: 'rotation', terms: base.rotation};
   const preference: Stage = {name: 'preferred', terms: (p.preferences ?? []).map(v => [-v.weight, x(v.engineer, v.duty)])};
+  const repeats = buildRepeats(p, base.ids);
   const seeded: Stage = {name: 'seed', terms: p.seededTies ? p.duties.flatMap((d, i) => d.eligible.map(e => {
-    random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
     // This last-stage score only breaks equivalent outcomes. Keep coefficients
     // small so native objective accumulation agrees with exact integer replay;
     // million-scale costs produced >1e-7 drift on ordinary six-engineer months.
-    return [random % 1000, x(e, i)] as Term;
+    return [random() % 1000, x(e, i)] as Term;
   })) : []};
-  const secondary = [preference, seeded];
-  const objective = (name: string, m: Metrics, a: (number | null)[]) => {
-    const stage = secondary.find(s => s.name === name);
-    return stage ? stage.terms.reduce((sum, [c, variable]) => {
+  // Below spacing: cross-month weekend fairness, explicit preferred dates, weekday
+  // variety, then the seeded tie. Only the seed is outside the verified metrics.
+  const secondary = [rotationStage, preference, repeats.stage, seeded];
+  const objective = (name: string, m: Metrics, a: (number | null)[]) => name === 'seed'
+    ? seeded.terms.reduce((sum, [c, variable]) => {
       const [, e, i] = variable.split('_').map(Number);
       return sum + (a[i] === e ? c : 0);
     }, 0) : score(name, m);
-  };
   const stages: ProofStage[] = [], thresholds: (Omit<SolverResult, 'values'> & {threshold: number | null; feasible: boolean | null})[] = [];
   let assignment = p.duties.map(d => d.lock ?? null), metrics = validateAssignment(p, assignment);
   let remainingNodes = settings.nodes, columns = base.columns.length, rows = base.rows.length, peakRows = rows, finished = false;
@@ -219,20 +256,23 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   };
   const candidate = (result: SolverResult, terms: Term[], name?: string, floor?: number) => {
     if (!result.values) return null;
-    const values = binaryValues(result.values), a = decodeAssignment(p, values), m = validateAssignment(p, a);
+    // Repeat counters are the only non-binary columns; everything else must be exactly 0/1.
+    const raw = result.values, values = binaryValues(Object.fromEntries(Object.entries(raw).filter(([k]) => !k.startsWith('r_'))));
+    const a = decodeAssignment(p, values), m = validateAssignment(p, a);
     for (const stage of stages) if (stage.proved && objective(stage.name, m, a) !== stage.objective) throw Error('Prior objective degraded');
     if (floor !== undefined && minimum(m) < floor) throw Error('Threshold violated');
-    const value = terms.reduce((n, [c, v]) => n + c * values[v], 0);
+    const value = terms.reduce((n, [c, v]) => n + c * (v.startsWith('r_') ? Math.round(raw[v]) : values[v]), 0);
     if (!Number.isSafeInteger(value) || (name && value !== objective(name, m, a)) || result.objective === null ||
       Math.abs(value - result.objective) > 1e-7) throw Error('Objective mismatch');
     const comparison = compareMetrics(m, metrics, p.spacing);
-    if (comparison < 0 || (comparison === 0 && name && secondary.some(s => s.name === name) &&
-      value < objective(name, metrics, assignment))) {assignment = a; metrics = m; progress(name ?? 'threshold');}
+    if (comparison < 0 || (comparison === 0 && name === 'seed' && value < objective(name, metrics, assignment))) {
+      assignment = a; metrics = m; progress(name ?? 'threshold');
+    }
     return value;
   };
   const optimize = (stage: Stage) => {
     const initial = objective(stage.name, metrics, assignment);
-    if (!stage.terms.length || (stage.name.startsWith('gap:') && initial === 0)) {
+    if (!stage.terms.length || (nonnegative(stage.name) && initial === 0)) {
       identity(stage.name, initial, 'Nonnegative count at zero');
       if (stage.terms.length) session.zeroColumns(stage.terms);
       return true;
@@ -248,7 +288,7 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     stages.push({...metadata, name: stage.name, objective: value, proved});
     progress(stage.name);
     if (proved) {
-      if (stage.name.startsWith('gap:') && value === 0) session.zeroColumns(stage.terms);
+      if (nonnegative(stage.name) && value === 0) session.zeroColumns(stage.terms);
       else {session.addRows([{terms: stage.terms, lower: value!, upper: value!}]); rows++;}
     }
     return proved;
@@ -312,7 +352,11 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           memoryBytes: adapter.memoryBytes, proved: false});
       }
     }
-    if (finished) for (const stage of secondary.filter(s => s.terms.length)) {
+    if (finished) for (const stage of secondary) {
+      if (stage === repeats.stage && stage.terms.length) {
+        session.addColumns(repeats.columns); session.addRows(repeats.rows);
+        columns += repeats.columns.length; rows += repeats.rows.length;
+      }
       if (!optimize(stage)) {finished = false; break;}
     }
   } finally {session.dispose();}

@@ -1,12 +1,19 @@
 /** Normalized solver input. Minutes represent actual instants, including DST. */
 export type Duty = {start: number; end: number; units: number; days: number;
-  special: number; eligible: number[]; weekend?: number; lock?: number};
+  special: number; eligible: number[]; weekend?: number; lock?: number;
+  /** Sunday–Thursday calendar weekday (0–4) of an ordinary daily duty; weekend halves omit it. */
+  weekday?: number};
 export type Boundary = {id: string; engineer: number; start: number; end: number; source: string};
 export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; boundaries?: Boundary[];
   preferences?: {duty: number; engineer: number; weight: number}[]; seededTies?: boolean;
+  /** Weekend turns already taken in the current rotation cycle, per engineer. */
+  rotation?: number[];
   exceptions?: {consecutive?: [number, number][]; boundary?: {duty: number; boundary: string}[];
     weekends?: {engineer: number; weekends: number[]}[]}};
-export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[]};
+/** Ordered objective facts: coverage, special, units, then ascending gaps, then
+ * weekend rotation cost, preferred-date count and same-weekday repeats. */
+export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
+  rotation: number; preferred: number; repeats: number};
 
 export function approvedPair(p: Problem, i: number, j: number) {
   return p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j) ?? false;
@@ -33,8 +40,10 @@ export function checkProblem(p: Problem) {
       !d.units || !d.days || d.special > d.days || (i > 0 && p.duties[i - 1].end > d.start) ||
       new Set(d.eligible).size !== d.eligible.length || d.eligible.some(e => !engineer(e)) ||
       (d.weekend !== undefined && !integer(d.weekend)) ||
+      (d.weekday !== undefined && (!integer(d.weekday) || d.weekday > 4 || d.weekend !== undefined)) ||
       (d.lock !== undefined && !d.eligible.includes(d.lock))) throw Error('Invalid normalized duty');
   }
+  if (p.rotation !== undefined && (p.rotation.length !== p.targets.length || !p.rotation.every(integer))) throw Error('Invalid rotation state');
   const total = p.targets.reduce((a, b) => a + b, 0);
   if (!Number.isSafeInteger(total) || total > 1e9 || total !== p.duties.reduce((a, d) => a + d.units, 0)) throw Error('Unbalanced/oversized targets');
   const preferences = new Set<string>();
@@ -76,7 +85,8 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   if (assignment.length !== p.duties.length) throw Error('Wrong assignment length');
   const used = p.targets.map(() => 0), weekends = p.targets.map(() => new Set<number>());
   const selected = p.targets.map(() => [] as number[]), gaps: number[] = [];
-  let coverage = 0, special = 0;
+  const weekdays = p.targets.map(() => new Map<number, number>());
+  let coverage = 0, special = 0, preferred = 0;
   assignment.forEach((e, i) => {
     const d = p.duties[i];
     if (d.lock !== undefined && d.lock !== e) throw Error('Missing lock');
@@ -97,8 +107,13 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     }
     selected[e].push(i);
     coverage += d.days; special += d.special;
+    if (d.weekday !== undefined) weekdays[e].set(d.weekday, (weekdays[e].get(d.weekday) ?? 0) + 1);
+    preferred += p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0;
   });
+  let rotation = 0, repeats = 0;
   for (let e = 0; e < used.length; e++) {
+    if (weekends[e].size) rotation += p.rotation?.[e] ?? 0;
+    for (const n of weekdays[e].values()) repeats += Math.max(0, n - 1);
     const approval = p.exceptions?.weekends?.find(a => a.engineer === e);
     if (approval ? [...weekends[e]].some(w => !approval.weekends.includes(w)) : weekends[e].size > 1) throw Error('Weekend cap exceeded');
     if (!selected[e].length) continue; // No external-anchor-to-anchor gap.
@@ -107,7 +122,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     if (after) gaps.push(after.start - p.duties[selected[e].at(-1)!].end);
   }
   return {coverage, special, units: used.reduce((a, b) => a + b, 0),
-    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b)};
+    deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats};
 }
 
 export function decodeAssignment(p: Problem, values: Record<string, number>) {
@@ -129,11 +144,16 @@ export function binaryValues(values: Record<string, number>) {
     return [key, Math.abs(n) <= 1e-8 ? 0 : 1];
   }));
 }
+/** Lexicographic objective order; lower is better. Missing gaps pad with infinity. */
 export function compareMetrics(a: Metrics, b: Metrics, spacing = true) {
-  const av = [-a.coverage, -a.special, -a.units, ...(spacing ? a.gaps.map(g => -g) : [])];
-  const bv = [-b.coverage, -b.special, -b.units, ...(spacing ? b.gaps.map(g => -g) : [])];
+  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units];
+  const tail = (m: Metrics) => [m.rotation, -m.preferred, m.repeats];
+  const av = [...head(a), ...(spacing ? a.gaps.map(g => -g) : [])];
+  const bv = [...head(b), ...(spacing ? b.gaps.map(g => -g) : [])];
   for (let i = 0; i < Math.max(av.length, bv.length); i++) {
     if ((av[i] ?? -Infinity) !== (bv[i] ?? -Infinity)) return (av[i] ?? -Infinity) < (bv[i] ?? -Infinity) ? -1 : 1;
   }
+  const at = tail(a), bt = tail(b);
+  for (let i = 0; i < at.length; i++) if (at[i] !== bt[i]) return at[i] < bt[i] ? -1 : 1;
   return 0;
 }

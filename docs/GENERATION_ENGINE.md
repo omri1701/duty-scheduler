@@ -11,8 +11,11 @@ independent of UI, storage and authorization; the application uses the checked
 `GenerationInput` contains one owner month, an opaque authoritative source
 revision, calendar specials/splits/marked dates, known member identities and
 explicit active/approved/eligible status, confirmed targets **in points**, date
-constraints, locks, secondary identities, neighboring commitments and scoped
-approvals with reasons. Every participating member needs a target, including zero.
+constraints, locks, secondary identities, neighboring commitments, scoped
+approvals with reasons and an optional `weekendRotation` map of weekend turns per
+member (derived from published months by `weekendRotation` in `rotation.ts`;
+the application builds it from the workspace snapshot with `publishedHistory`).
+Every participating member needs a target, including zero.
 Targets must sum to the weight of all required owned duties. Invalid half steps,
 special ranges/weights, identities, fixed conflicts and lock floors are errors.
 Unavailable or globally unattainable allocations remain valid partial problems.
@@ -66,12 +69,14 @@ A wall-clock-limited unfinished search does not promise identical incumbents;
 use the recorded seed, node budget, package/runtime/environment and sufficient
 time for deterministic completed replay.
 
-Model `highs-leximin-v2` keeps the final seeded tie coefficients below 1,000.
-Million-scale coefficients caused native floating-point objective drift on a
-six-engineer emergency-cover fixture, despite exact valid binary assignments.
-Smaller scores preserve the priority hierarchy and strict integer/objective
-checks; seed reproduction must use the recorded model version. Earlier benchmark
-records below describe v1.
+Model `highs-leximin-v3` adds the weekend rotation, preferred-date and
+same-weekday levels to the verified metrics and draws the seeded tie coefficients
+from a 32-bit hash mixer instead of a linear congruential generator, whose low
+bits alternated with each draw. Coefficients stay below 1,000: million-scale
+coefficients caused native floating-point objective drift on a six-engineer
+emergency-cover fixture, despite exact valid binary assignments. Smaller scores
+preserve the priority hierarchy and strict integer/objective checks; seed
+reproduction must use the recorded model version.
 
 ## Constraints, objectives and acceptance
 
@@ -96,12 +101,17 @@ Neighbors are constants, never returned as writable selected-month assignments.
 
 Optimization uses one optional-coverage MILP. It proves and fixes each priority
 before advancing: covered dates, marked special dates, assigned point units,
-maximum minimum elapsed gap, full sorted-gap leximin, preferred date count, then
-a seeded integer tie objective. A combined weekend counts two dates. Missing
-gaps are padded with infinity; external-only pairs are omitted. Approved locked
-zero gaps remain in the objective. There is no average-gap or weighted-priority
-shortcut. Threshold/clique search, exact capacity cuts and continuous successor
-flows reuse the foundation from PR #31, with one disposable native model per run.
+maximum minimum elapsed gap, full sorted-gap leximin, weekend rotation cost,
+preferred date count, same-weekday repeats, then a seeded integer tie objective.
+A combined weekend counts two dates. Missing gaps are padded with infinity;
+external-only pairs are omitted. Approved locked zero gaps remain in the
+objective. There is no average-gap or weighted-priority shortcut. Threshold/clique
+search, exact capacity cuts and continuous successor flows reuse the foundation
+from PR #31, with one disposable native model per run. The rotation cost reuses
+the weekend OR columns; repeat counters are continuous columns added only once
+spacing is proved. A nonnegative level whose incumbent is already zero is fixed
+by identity without a native solve. The independent validator recomputes all
+three new facts from source dates, constraints and the rotation map.
 
 The default and maximum domain search budget is 30 seconds across all stages,
 including model construction. Solving stops early when finished. WASM loading,
@@ -138,42 +148,50 @@ those database guarantees can be replaced by client proof metadata.
 Focused checks:
 
 ```sh
-node --test tests/generation.test.mjs tests/highs-spike.test.mjs tests/engine.test.mjs tests/snapshot.test.mjs
+node --test tests/generation.test.mjs tests/highs-spike.test.mjs tests/rotation.test.mjs tests/engine.test.mjs tests/snapshot.test.mjs
 pnpm exec tsc --noEmit
-pnpm exec eslint lib/scheduling lib/solver-spike tests/generation.test.mjs tests/fixtures/generation.mjs scripts/benchmark-generation.mjs
+pnpm exec eslint lib/scheduling lib/solver-spike tests/generation.test.mjs tests/rotation.test.mjs tests/fixtures/generation.mjs scripts/benchmark-generation.mjs
 pnpm build
 pnpm exec playwright test tests/browser/solver-spike.spec.ts --workers=1
-node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --output=docs/benchmarks/generation-2026-10-24.jsonl
+node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --scenarios=normal,availability,weighted,locked,boundary,tight,shared-shortage,small-team,larger-team,rotation --output=docs/benchmarks/generation-2026-10-31.jsonl
 ```
 
 Regression coverage includes real 12-engineer months, three years of owned
 coverage, cross-year combined/split specials, leap day, DST, shared capacity,
 availability/lock scope, fixed zero gaps, weekend shortages, emergency identity,
 both boundary sources, stale/late/altered results, Worker cancellation/restart,
-automatic seeds and deterministic completed replay. An independent exhaustive
+automatic seeds, deterministic completed replay, weekend rotation state from
+published months, the rotation and weekday levels against the exhaustive oracle,
+and seed variety across a whole ordinary month. An independent exhaustive
 oracle checks small real-month scenarios against the complete coverage/point/
-leximin objective vector; the retained solver tests enumerate varied weighted,
-partial, boundary and fixed-exception instances. Existing application engine and
-snapshot regressions still exercise the legacy behavior.
+leximin/rotation/preferred/repeat objective vector; the retained solver tests
+enumerate varied weighted, partial, boundary and fixed-exception instances.
+Existing application engine and snapshot regressions still exercise the legacy behavior.
 
-Recorded Node 24 / Windows x64 / Intel i9-10900KF results (three sequential runs
-per scenario, one fresh WASM instance per scenario; node limit 1,000,000, seed 17):
+Recorded Node 23 / Windows x64 / Intel i9-10900KF results for model v3 (three
+sequential runs per scenario, one fresh WASM instance per scenario; node limit
+1,000,000, seed 17; the first run of each scenario includes JIT warm-up):
 
 | Scenario | Engineers | End-to-end range | Outcome |
 |---|---:|---:|---|
-| Ordinary | 12 | 0.81–1.01 s | Complete, all objectives proved |
-| Availability/preferences | 12 | 1.03–1.06 s | Complete, all objectives proved |
-| Weighted specials and splits | 12 | 0.92–1.04 s | Complete, all objectives proved |
-| Locks | 12 | 0.60–0.62 s | Complete, all objectives proved |
-| Live/working boundaries | 12 | 2.05–2.20 s | Complete, all objectives proved |
-| Tight availability | 12 | 0.12–0.14 s | Complete, all objectives proved |
-| Shared opportunity shortage | 12 | 1.61–1.64 s | Optimal partial, 27/30 dates |
-| Five weekends, small team | 2 | 0.11–0.13 s | Optimal partial, 25/31 dates |
-| Larger team | 24 | 0.30–0.35 s | Complete, all objectives proved |
+| Ordinary | 12 | 1.62–4.23 s | Complete, all objectives proved |
+| Availability/preferences | 12 | 1.43–1.52 s | Complete, all objectives proved |
+| Weighted specials and splits | 12 | 1.22–1.26 s | Complete, all objectives proved |
+| Locks | 12 | 0.97–1.06 s | Complete, all objectives proved |
+| Live/working boundaries | 12 | 2.72–3.06 s | Complete, all objectives proved |
+| Tight availability | 12 | 0.16–0.18 s | Complete, all objectives proved |
+| Shared opportunity shortage | 12 | 1.64–1.88 s | Optimal partial, 27/30 dates |
+| Five weekends, small team | 2 | 0.14–0.15 s | Optimal partial, 25/31 dates |
+| Larger team | 24 | 0.38–0.45 s | Complete, all objectives proved |
+| Weekend rotation state | 12 | 1.15–1.23 s | Complete, all objectives proved |
 
-Raw inputs are reproducible through `tests/fixtures/generation.mjs`; hashes,
-settings, stage proofs and measurements are in the
-[benchmark record](benchmarks/generation-2026-10-24.jsonl). Every sample passed
+The v2 record from 24 October 2026 on the same machine ranged from 0.6 s (locks)
+to 2.5 s (boundaries) for the twelve-engineer months; the same-weekday level adds
+one native solve of roughly 0.1–0.35 s whenever the incumbent has repeats, and the
+rotation level is an identity when no weekend member has a turn. Raw inputs are
+reproducible through `tests/fixtures/generation.mjs`; hashes, settings, stage
+proofs and measurements are in the [benchmark record](benchmarks/generation-2026-10-31.jsonl)
+(the earlier [v2 record](benchmarks/generation-2026-10-24.jsonl) is kept). Every sample passed
 independent domain validation and disposed its native model. WASM linear memory
 ranged from about 20 to 61 MiB and stayed constant across each scenario's warm
 repeats. End-to-end measurements include conversion/final validation but exclude

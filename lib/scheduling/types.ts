@@ -23,6 +23,8 @@ export type GenerationInput = {
   secondary?: Record<string, string>;
   neighbors?: Neighbor[];
   approvals?: Approval[];
+  /** Weekend turns per member in the current rotation cycle (see rotation.ts); absent members count 0. */
+  weekendRotation?: Record<string, number>;
 };
 export type CanonicalDuty = {
   id: string; ownerMonth: string; startDate: string; endDate: string; dates: string[];

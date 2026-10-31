@@ -47,6 +47,8 @@ export function monthScenario(kind = 'normal', count = 12) {
     }
   }
   if (kind === 'locked') input.locks = [duties[2], duties[8], duties[17]].map(d => ({dutyId: d.id, engineer: witness[d.id].primary}));
+  // The witness gave the weekends to the first members; the rotation says they already had their turn.
+  if (kind === 'rotation') input.weekendRotation = Object.fromEntries(members.slice(0, 4).map((m, i) => [m.id, i < 2 ? 2 : 1]));
   if (kind === 'boundary') {
     const id = members.find(m => m.id !== witness[duties[0].id].primary).id;
     input.neighbors = [
