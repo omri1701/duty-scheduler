@@ -49,7 +49,7 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
     const approved = input.approvals?.find(v => v.rule === 'weekends' && v.engineer === member.id);
     const extra = Math.max(0, weekends.size - (approved?.rule === 'weekends' ? approved.weekends.length : 1));
     extraWeekends += extra * (extra + 1) / 2;
-    if (weekends.size) rotation += input.weekendRotation?.[member.id] ?? 0;
+    rotation += weekends.size * (input.weekendRotation?.[member.id] ?? 0); // per weekend, like the model
     const weekdays = new Map<number, number>();
     for (const d of selected) if (!d.weekendId) {
       weekdays.set(dayOf(d.startDate), (weekdays.get(dayOf(d.startDate)) ?? 0) + 1);

@@ -1056,7 +1056,7 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 3a | Fewest extra weekends | Minimize the sum over members of 1 + 2 + … + k for k weekends above the member's allowance (section 10.2). |
 | 3b | Fewest back-to-back pairs | Minimize unapproved back-to-back pairs inside the month (section 10.1). |
 | 4 | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
-| 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend. |
+| 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend, counted once per weekend a member receives (an extra weekend costs the turns again). |
 | 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
 | 7 | Weekday rotation across months | Give each Sunday–Thursday duty to a member who has not covered that weekday in the current weekday cycle (section 11.4): minimize the sum, over assigned weekday duties, of the member's count for that weekday. |
 | 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |

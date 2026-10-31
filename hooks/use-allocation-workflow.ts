@@ -257,9 +257,18 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const generationInput: GenerationInput = {...confirmed.generationInput,
         weekendRotation: weekendRotation(history, eligible, month), weekdayRotation: weekdayRotation(history, eligible, month)};
       const active = createGenerationWorker(now); worker.current = active;
-      const generated = await active.run(generationInput, {seconds: 30}, p => {
-        if (id === sequence.current) setProgress(p.metrics.coverage);
-      });
+      let generated: GenerationResult;
+      try {
+        generated = await active.run(generationInput, {seconds: 30}, p => {
+          if (id === sequence.current) setProgress(p.metrics.coverage);
+        });
+      } catch (e) {
+        // Cancellation, Worker loading and stale or closed windows keep their own messages.
+        // Anything else is an internal solver/validation failure: the detail goes to the console.
+        if (/Worker|WASM|fetch|load failed|stale|window-closed/i.test(errorMessage(e, ''))) throw e;
+        console.error('Generate failed', e);
+        throw Error(t('Generate couldn’t finish. Try again, or adjust the plan.', 'השיבוץ לא הושלם. אפשר לנסות שוב או לשנות את התוכנית.'));
+      }
       active.terminate(); worker.current = null;
       if (id !== sequence.current) return;
       acceptGeneration(generated, generationInput, now());

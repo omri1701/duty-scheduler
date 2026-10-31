@@ -470,6 +470,28 @@ test('a real Worker asset failure retains the accepted draft and recovers withou
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
 });
 
+test('an internal solver failure shows a short message and keeps the detail in the console', async ({page, backend, openApp}) => {
+  fresh(backend); acceptedDraft(backend);
+  // A Worker that reports an internal solver error, as "Objective mismatch" did.
+  await page.addInitScript(() => {
+    class FailingWorker {
+      onmessage: ((event: {data: unknown}) => void) | null = null; onerror: (() => void) | null = null;
+      postMessage(message: {id: number}) {setTimeout(() => this.onmessage?.({data: {id: message.id, type: 'error', message: 'Objective mismatch'}}), 10);}
+      terminate() {}
+    }
+    Object.defineProperty(window, 'Worker', {value: FailingWorker});
+  });
+  const logged: string[] = []; page.on('console', m => {if (m.type() === 'error') logged.push(m.text());});
+  await openApp(); await openPlan(page);
+  const before = structuredClone(backend.raw.assignments);
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  const alert = page.getByRole('dialog', {name: 'Plan the month'}).getByRole('alert');
+  await expect(alert).toHaveText('Generate couldn’t finish. Try again, or adjust the plan.', {timeout: 15_000});
+  expect(logged.some(text => text.includes('Generate failed') && text.includes('Objective mismatch'))).toBe(true);
+  expect(backend.raw.assignments).toEqual(before);
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
+});
+
 test('a refresh that cannot read the month offers Try again in place of Confirm', async ({page, backend, openApp}) => {
   fresh(backend); acceptedDraft(backend); await openApp(); await openPlan(page);
   backend.failGenerationSave = true;

@@ -74,7 +74,7 @@ function referenceMetrics(p, a) {
   let rotation = 0, preferred = 0, repeats = 0, weekdays = 0;
   for (let e = 0; e < totals.length; e++) {
     const indices = a.flatMap((owner, i) => owner === e ? [i] : []);
-    if (indices.some(i => p.duties[i].weekend !== undefined)) rotation += p.rotation?.[e] ?? 0;
+    rotation += new Set(indices.map(i => p.duties[i].weekend).filter(w => w !== undefined)).size * (p.rotation?.[e] ?? 0);
     const byWeekday = new Map();
     for (const i of indices) if (p.duties[i].weekday !== undefined) {
       byWeekday.set(p.duties[i].weekday, (byWeekday.get(p.duties[i].weekday) ?? 0) + 1);

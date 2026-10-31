@@ -209,7 +209,7 @@ function exhaustive(input) {
       const own = duties.filter((_, i) => selected[i] === e.id);
       const extra = Math.max(0, new Set(own.map(d => d.weekendId).filter(Boolean)).size - 1);
       extraWeekends += extra * (extra + 1) / 2;
-      if (own.some(d => d.weekendId)) rotation += input.weekendRotation?.[e.id] ?? 0;
+      rotation += new Set(own.map(d => d.weekendId).filter(Boolean)).size * (input.weekendRotation?.[e.id] ?? 0);
       const byWeekday = {};
       for (const d of own) if (!d.weekendId) {
         byWeekday[dayOf(d.startDate)] = (byWeekday[dayOf(d.startDate)] ?? 0) + 1;
@@ -355,6 +355,50 @@ test('a 25-point target fills the month with back-to-back duties only where it m
   assert.deepEqual([r.metrics.extraWeekends, r.metrics.adjacent], [1, 13]);
   const owners = r.duties.map(d => r.assignments[d.id].primary);
   assert.ok(owners.every((o, i) => o === 'a' || owners[i + 1] !== o));
+});
+
+test('one member at 25 of 26 points in January with rotation history fills the month with the fewest pairs', () => {
+  // The reported local month: twelve members, a +23 temporary change, weekend and weekday rotation
+  // state from published months and a December duty ending on 1 January. The rotation level counted
+  // a member once while the model counted each weekend, so four weekends failed "Objective mismatch".
+  const ids = Array.from({length: 12}, (_, i) => `m${String(i).padStart(2, '0')}`);
+  const input = {month: '2027-01', calendar: {}, sourceRevision: 'january-v1', constraints: {},
+    members: ids.map(id => ({id, active: true, approved: true, eligible: true})),
+    targets: Object.fromEntries(ids.map((id, i) => [id, i === 0 ? 25 : i === 11 ? 1 : 0])),
+    neighbors: [{id: 'dec-31', ownerMonth: '2026-12', start: '2026-12-31', end: '2027-01-01', engineer: ids[11], source: 'published'}],
+    weekendRotation: Object.fromEntries(ids.map((id, i) => [id, (i * 7 + 1) % 3])),
+    weekdayRotation: Object.fromEntries(ids.map((id, i) => [id, [0, 1, 2, 3, 4].map(k => (i + k + 1) % 2)]))};
+  for (const seed of [1, 2, 3]) {
+    const r = run(input, {seed, seconds: 30});
+    assert.equal(r.complete, true);
+    assert.equal(r.search.allStagesProved, true);
+    // 26 duties, one of them the other member's: two runs, so 23 pairs; five weekends, one not a's.
+    assert.deepEqual([r.metrics.adjacent, r.metrics.extraWeekends], [23, 6]);
+    assert.equal(r.metrics.rotation, 4 * input.weekendRotation[ids[0]] + input.weekendRotation[ids[11]]);
+    assert.deepEqual(validateGeneration(input, r.assignments), r.metrics);
+  }
+});
+
+test('extreme targets never throw: one member at 50–100% of the month in two- and three-member teams', () => {
+  // A seeded fuzz over the shapes the last resorts exist for, with rotation history and neighbours.
+  let state = 7;
+  const next = () => (state = (Math.imul(state, 1103515245) + 12345) >>> 0) / 2 ** 32;
+  const months = ['2026-11', '2027-01', '2027-05'];
+  for (let k = 0; k < 12; k++) {
+    const month = months[k % 3], count = 2 + (k % 2), ids = ['a', 'b', 'c'].slice(0, count);
+    const total = canonicalDuties(month, {}).reduce((n, d) => n + d.units, 0) / 2;
+    const heavy = Math.max(Math.ceil(total / 2), Math.min(total, Math.round(total * (0.5 + next() / 2))));
+    const rest = total - heavy, targets = {a: heavy};
+    ids.slice(1).forEach((id, i) => {targets[id] = i === ids.length - 2 ? rest - ids.slice(1, -1).reduce((n, x) => n + targets[x], 0) : Math.floor(rest / 2);});
+    const input = {month, calendar: {}, sourceRevision: `fuzz-${k}`, constraints: {}, targets,
+      members: ids.map(id => ({id, active: true, approved: true, eligible: true})),
+      weekendRotation: Object.fromEntries(ids.map(id => [id, Math.floor(next() * 3)])),
+      weekdayRotation: Object.fromEntries(ids.map(id => [id, [0, 1, 2, 3, 4].map(() => Math.floor(next() * 2))]))};
+    const label = `${month} ${JSON.stringify(targets)}`;
+    const r = run(input, {seed: k + 1, seconds: 30});
+    assert.equal(r.complete, true, label);
+    assert.deepEqual(validateGeneration(input, r.assignments), r.metrics, label);
+  }
 });
 
 test('two members split the weekends 2/2 and vary their weekdays at the cost of one back-to-back pair', () => {

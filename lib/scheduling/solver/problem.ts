@@ -143,7 +143,8 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   });
   let rotation = 0, repeats = 0, extraWeekends = 0;
   for (let e = 0; e < used.length; e++) {
-    if (weekends[e].size) rotation += p.rotation?.[e] ?? 0;
+    // Each weekend costs the member's turns this cycle, as in the model (extra weekends cost again).
+    rotation += weekends[e].size * (p.rotation?.[e] ?? 0);
     for (const n of weekdays[e].values()) repeats += Math.max(0, n - 1);
     extraWeekends += extraWeekendCost(weekends[e].size, weekendAllowance(p, e));
     if (!selected[e].length) continue; // No external-anchor-to-anchor gap.
