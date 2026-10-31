@@ -50,9 +50,18 @@ export function planAllocation(input: AllocationInput, draft: AllocationDraft) {
 
 function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, capacityUnits: Readonly<Record<string, number>>, diagnostics: Diagnostic[]) {
   const tokens: Token[] = c.ids.map(id => ({carrier: id, origin: id, units: draft.baselineUnits[id], trail: [], prior: []}));
+  // Uneven-month credit: part of the creditor's own fitted share is carried for
+  // the debtor, exactly as if the equal split had been transferred temporarily.
+  for (const u of draft.uneven ?? []) {
+    const own = tokens.find(t => t.carrier === u.toId && t.origin === u.toId && !t.claim && !t.trail.length && t.units >= u.units);
+    if (!own) throw Error('uneven-credit-exceeds-share');
+    own.units -= u.units;
+    tokens.push({carrier: u.toId, origin: u.fromId, units: u.units, trail: [u.id], prior: []});
+  }
   for (const r of draft.repayments) {
     let remaining = r.units;
-    for (const t of tokens.filter(t => t.carrier === r.claim.creditorId && !t.claim)) {
+    // Relief consumes the creditor's own ordinary work, never work carried for others.
+    for (const t of tokens.filter(t => t.carrier === r.claim.creditorId && !t.claim && !t.trail.length)) {
       const take = Math.min(t.units, remaining); t.units -= take; remaining -= take;
     }
     if (remaining) throw Error('repayment-exceeds-creditor-relief');

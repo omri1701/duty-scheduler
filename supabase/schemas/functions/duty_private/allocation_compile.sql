@@ -14,8 +14,9 @@ declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_c
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
  pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','sourceKey']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
+  or (draft ? 'uneven' and jsonb_typeof(draft->'uneven') IS DISTINCT FROM 'array')
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
   or jsonb_typeof(draft->'pairs') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'changes') IS DISTINCT FROM 'object' then raise exception 'invalid-confirmed-allocation'; end if;
  foreach name in array array['baselineUnits','offeredUnits','targetsUnits'] loop
@@ -51,6 +52,21 @@ begin
  for id in select x from jsonb_array_elements_text(ids) x order by x COLLATE "C" loop
   tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',id,'origin',id,'units',expected->id,'claim',null,'trail','[]'::jsonb,'prior','[]'::jsonb));
  end loop;
+ -- Uneven-month credit (decision 2026-10-30): part of the creditor's own fitted
+ -- share is carried for the debtor, exactly as if the equal split had been
+ -- transferred temporarily. Targets are unchanged. duty_confirm_allocation
+ -- requires the stored list to be exactly duty_private.allocation_uneven; a
+ -- snapshot saved before the credit existed carries none.
+ for r in select value from jsonb_array_elements(coalesce(draft->'uneven','[]'::jsonb)) loop
+  if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['id','fromId','toId','units']<>'{}' or r->>'id' IS DISTINCT FROM 'uneven/'||(r->>'fromId')||'/'||(r->>'toId')
+   or r->>'id'=any(seen) or not ids ? (r->>'fromId') or not ids ? (r->>'toId') or r->>'fromId'=r->>'toId' then raise exception 'invalid-uneven-credit'; end if;
+  seen:=array_append(seen,r->>'id'); n:=duty_private.compensation_units(r->'units',true);
+  select ordinality::integer-1 into position from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
+   where value->>'carrier'=r->>'toId' and value->>'origin'=r->>'toId' and value->'claim'='null' and value->'trail'='[]'::jsonb and (value->>'units')::bigint>=n limit 1;
+  if position is null then raise exception 'uneven-credit-exceeds-share'; end if;
+  tokens:=jsonb_set(tokens,array[position::text,'units'],to_jsonb((tokens->position->>'units')::bigint-n));
+  tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',r->'toId','origin',r->'fromId','units',n,'claim',null,'trail',jsonb_build_array(r->'id'),'prior','[]'::jsonb));
+ end loop;
  for r in select value from jsonb_array_elements(draft->'repayments') loop
   if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['claim','units']<>'{}' then raise exception 'invalid-repayment-source'; end if;
   n:=duty_private.compensation_units(r->'units',true);
@@ -64,7 +80,8 @@ begin
   expected:=jsonb_set(expected,array[c->>'debtorId'],to_jsonb((expected->>(c->>'debtorId'))::bigint+n));
   expected:=jsonb_set(expected,array[c->>'creditorId'],to_jsonb((expected->>(c->>'creditorId'))::bigint-n));
   remaining:=n;
-  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality where value->>'carrier'=c->>'creditorId' and value->'claim'='null' loop
+  -- Relief consumes the creditor's own ordinary work, never work carried for others.
+  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality where value->>'carrier'=c->>'creditorId' and value->'claim'='null' and value->'trail'='[]'::jsonb loop
    take:=least(remaining,(t->>'units')::bigint); remaining:=remaining-take;
    tokens:=jsonb_set(tokens,array[position::text,'units'],to_jsonb((t->>'units')::bigint-take));
   end loop;
@@ -74,7 +91,7 @@ begin
  if expected<>draft->'offeredUnits' then raise exception 'invalid-offered-allocation'; end if;
  for transfer in select value from jsonb_array_elements(draft->'transfers') loop
   if jsonb_typeof(transfer) IS DISTINCT FROM 'object' or transfer-array['id','fromId','toId','units','kind']<>'{}'
-   or coalesce(btrim(transfer->>'id'),'')='' or transfer->>'id'=any(seen) or coalesce(transfer->>'kind','') not in ('temporary','permanent')
+   or coalesce(btrim(transfer->>'id'),'')='' or transfer->>'id'=any(seen) or starts_with(transfer->>'id','uneven/') or coalesce(transfer->>'kind','') not in ('temporary','permanent')
    or not ids ? (transfer->>'fromId') or not ids ? (transfer->>'toId') or transfer->>'fromId'=transfer->>'toId' then raise exception 'invalid-counterpart'; end if;
   seen:=array_append(seen,transfer->>'id'); remaining:=duty_private.compensation_units(transfer->'units',true);
   expected:=jsonb_set(expected,array[transfer->>'fromId'],to_jsonb((expected->>(transfer->>'fromId'))::bigint-remaining));

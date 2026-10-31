@@ -39,10 +39,11 @@ test('balance read model: strict shape, signed half points and one line per open
     {memberId: 'avi', counterpartId: 'dana', units: -2, kind: 'temporary', date: '2026-11-03', month: null},
     {memberId: 'avi', counterpartId: 'eli', units: -2, kind: 'temporary', date: '2026-11-10', month: null},
     {memberId: 'avi', counterpartId: 'eli', units: 1, kind: 'repayment', date: '2026-12-07', month: null},
-    {memberId: 'dana', counterpartId: 'avi', units: 2, kind: 'temporary', date: '2026-11-03', month: null}]};
+    {memberId: 'dana', counterpartId: 'avi', units: 2, kind: 'temporary', date: '2026-11-03', month: null},
+    {memberId: 'dana', counterpartId: 'eli', units: 1, kind: 'uneven', date: '2026-11-10', month: null}]};
   const b = readBalance(raw);
   assert.deepEqual(relationships(b, 'avi').map(r => [r.counterpartId, r.units, r.lines.length]), [['dana', -2, 1], ['eli', -1, 2]]);
-  assert.deepEqual(relationships(b, 'dana').map(r => r.counterpartId), ['avi']);
+  assert.deepEqual(relationships(b, 'dana').map(r => [r.counterpartId, r.units, r.lines[0].kind]), [['avi', 2, 'temporary'], ['eli', 1, 'uneven']]);
   assert.deepEqual([signedPoints(-2), signedPoints(1), signedPoints(0), signedPoints(3)], ['−1', '+0.5', '0', '+1.5']);
   for (const bad of [null, {net: {}}, {net: {a: 0.5}, lines: []}, {net: {}, lines: [{...raw.lines[0], kind: 'secret'}]},
     {net: {}, lines: [{...raw.lines[0], date: 'Nov 3'}]}]) assert.throws(() => readBalance(bad), /Invalid balance/);

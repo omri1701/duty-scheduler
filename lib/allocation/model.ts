@@ -23,7 +23,7 @@ export function context(input: AllocationInput) {
   // Manual allocation/lock review remains available after opening. Do not project
   // actual accounting backwards; Generate enforces its separate time window.
   const projection = project(input.events, input.now, Math.max(input.now, coverageStart(schedule.month, schedule.calendar)));
-  return {prepared, ids, total, locked, projection,
+  return {prepared, ids, total, locked, projection, seniority: [...input.seniority],
     candidates: projection.projected.candidates.filter(c => ids.includes(c.debtorId) && ids.includes(c.creditorId)),
     key: inputKey({schedule, seniority: snapshotKey(input.seniority), ledger: projection.sourceFingerprint, cutoff: projection.cutoffMs})};
 }

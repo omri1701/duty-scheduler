@@ -24,7 +24,11 @@ fingerprints, generation seed/metrics and publication ancestry. The
 `confirm_allocation`, and converts working drafts recorded as click histories
 (their transfers become routing pairs, their nets are recomputed); a draft the
 new rules cannot express keeps its shape and needs a new proposal, and published
-snapshots and restored copies are not touched. Only managers can
+snapshots and restored copies are not touched. The
+`20261031033000_uneven_month_credit.sql` migration adds
+`duty_private.allocation_uneven` and the uneven-credit checks to
+`allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
+without touching stored rows. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
 `duty_assignments.locked` persists a primary lock even before the first allocation.
@@ -71,7 +75,38 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
   ≥ 0), counterpart conservation, locked floors and exact exception scopes, and
   requires the transfer list to equal `duty_private.allocation_transfers` under the
   current seniority: the same derivation as the browser (pairs first, then netted),
-  so no transfer list can show relief the per-person nets do not. An independent
+  so no transfer list can show relief the per-person nets do not. When the
+  partition is uneven, `p_allocation.uneven` must equal exactly what
+  `duty_private.allocation_uneven(facts, baseline, changes)` derives: the fitted
+  excess over the plain equal split that each creditor still carries after its
+  net permanent loss, owed by the members still below the split after their net
+  permanent gain (debtors with the fewest points most senior first, creditors
+  with the most points most senior first), paired under the current seniority.
+  A missing, stale, inflated, redirected or extra entry fails with
+  `invalid-uneven-credit`, and ordinary transfers may not use the reserved
+  `uneven/` identity. The partition check accepts any holder of each fitted
+  share, so the credit follows whoever the confirmed baseline makes carry the
+  larger share; its total is invariant. `allocation_compile` then carries that
+  part of the creditor's own share for the debtor at confirm and publication, so
+  the published intent is an ordinary temporary claim and `duty_balance` reports
+  it as kind `uneven`. Publication applies the confirmed list as stored; only
+  confirm re-derives, so a seniority reorder after confirmation re-pairs the
+  credit on the next review instead of blocking the month, and the browser keeps
+  the confirmed baseline on a new proposal. Snapshots saved before this check
+  simply have no credit. Half-point debts are exact bigint half-units
+  throughout: nothing rounds, forgives or expires them. Halves net across
+  people where every claim does, in `duty_private.compensation_normalize`
+  (the same opposing/cycle/chain steps as the TypeScript core, checked by
+  `compensation-parity.mjs`), so `duty_balance` reports a half owed through an
+  intermediary as one `routed` relationship between the chain's ends and the
+  intermediary is clear; a settled half never moves, and a reserved half that
+  nets holds its reservation for review (`supabase/tests/balance.sql`). The
+  ledger's manual `adjust` operation (reduce or settle a selected claim, reason
+  required, admin only) can settle a lone half; no screen exposes it yet.
+  Client publication metadata (a month without a
+  confirmed allocation) may not use the reserved `allocation/` intent ids or
+  `uneven/` counterparts, so nothing a manager authors can appear as system
+  credit. An independent
   canonical-weight partition search verifies minimum ordinary squared cost; the
   baseline cannot be inflated to manufacture creditor relief or changed later while
   the calendar/participants remain unchanged. Manager point deviations are the
