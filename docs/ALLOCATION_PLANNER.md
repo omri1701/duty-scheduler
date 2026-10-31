@@ -113,13 +113,40 @@ never crossed. So the same per-person state gives the same table whatever the
 click order, an automatic point never sticks on a member later edited by hand (a
 minus on a member holding only an automatic point removes it and the point moves
 on), and hand changes never cancel each other implicitly; a drag routes a specific
-point. What cannot be placed stays visible as unplaced and blocks confirmation.
+point. An edit whose counterpart cannot be placed is refused (see Month bounds).
 
 **Floors.** fair + Permanent ≥ 0, and a permanent reduction never exceeds the
 member's planned work (offered + Permanent ≥ 0: relief already planned cannot be
 given away); Points ≥ Locked. The dialog disables a button at its floor; the
 library and the database refuse past it. Temporary credit is the positive net
 Temporary only, so a member is owed exactly the work above their planned load.
+
+**Ceiling.** fair + Permanent ≤ the month's total points, so a member's Permanent
+is at most the month total minus their fair share (`permanentCeiling`, decision
+2026-10-31): with a fair share of 2 in a 26-point month, at most +24. Permanent + is
+a punishment: the member does more and the others are relieved for free. Mixing
++ Permanent and − Temporary on one member stays allowed (they work more for good and
+the others cover the deferred part now) up to the ceiling. The library refuses an
+edit, drag or Make permanent that would pass it (`permanent-above-month-total`) and
+never applies part of a step: half a point below the ceiling a one-point step is
+refused, a half-point step still applies. The automatic balance never chooses a
+permanent receiver past it, and the dialog disables Permanent + at the ceiling with
+the note "Max punishment here is +24 (26 points this month)". The database checks
+the same ceiling.
+
+**Month bounds** (audit 2026-10-31). The configured total always equals the month
+total, before and after Generate and after Save → reopen. An edit or drag whose
+counterpart no one can absorb is refused, never left unplaced
+(`unplaced-allocation-change`; above the total, `allocation-above-month-total`).
+Before, a two-member team could press + until 77 / 26 points, and a − with no
+counterpart left the plan short. No member's net Temporary exceeds the month total
+either way (`temporary-above-month-total`; the database checks it too). With these,
+every member's points stay between locked and the month total. `editOptions`
+reports which + and − the library accepts at the current step, and the dialog
+disables the rest with a screen-reader note ("No one else can take on less. Drag a
+point instead." / "No one else can take this point. Drag a point instead.").
+A plan saved before this rule that is still unbalanced may only move toward
+balance.
 
 `transferAllocation` records a drag as a pair, moving both members' nets by its
 units and protecting both. `classifyTransfer` switches a pair's kind, moving the
@@ -128,10 +155,15 @@ compensation. `deriveTransfers` builds the canonical list kind by kind (permanen
 first): pairs in order, clipped to the nets they can still route, then the
 remainder netted largest first, then seniority order; one transfer per direction,
 and round trips cancel in the nets. The checked RPC re-derives that list and
-requires it exactly. `hand` is local editing state, stripped before persisting;
-a reopened draft treats every member with a nonzero change as hand edited. A new
+requires it exactly. `hand` (the members edited by hand) persists with the plan,
+so after Save → reopen, or Generate and reopen, automatic points keep flowing
+exactly as in the session that saved it. A plan saved before `hand` was stored
+infers it on review (`inferHand`): starting from every changed member and every
+dragged pair's members, it drops members newest first while the automatic balance
+of the rest still reproduces the saved changes. Before, a reopened plan froze every
+changed member, so in a two-member team a − had no one to give the point to. A new
 proposal reapplies the retained hand changes and pairs of members still present
-when they fit the floors (`retainedChanges`); otherwise the plain proposal stands.
+when they fit the floors and the ceiling (`retainedChanges`); otherwise the plain proposal stands.
 It also keeps the confirmed ordinary baseline when that is still the same
 partition of the month's duties, so a seniority reorder after confirmation never
 forces a different baseline onto the next proposal (the database keeps a confirmed

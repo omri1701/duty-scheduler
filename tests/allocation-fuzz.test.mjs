@@ -3,8 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {proposeAllocation, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
-  nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor} from '../lib/allocation/index.ts';
-import {validateDraft} from '../lib/allocation/edits.ts';
+  nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor, permanentCeiling} from '../lib/allocation/index.ts';
+import {validateDraft, persistedDraft} from '../lib/allocation/edits.ts';
+import {reviewAllocation} from '../lib/allocation/review.ts';
 import {context} from '../lib/allocation/model.ts';
 import {canonicalDuties} from '../lib/scheduling/calendar.ts';
 import {validateGeneration} from '../lib/scheduling/validate.ts';
@@ -36,11 +37,15 @@ const SCENARIOS = {
   'holiday-debts': () => owe(owe(holiday(), 'e00', 'e11', 6, 'old'), 'e07', 'e02', 1, 'half'),
   'small-uneven': () => {const i = shrink(base(), 5); i.schedule.calendar = {specials: [{id: 'h', start: '2026-11-02', end: '2026-11-06', extra: 1.5}]}; return owe(i, 'e04', 'e00', 3, 'old');},
   'locked-debts': () => owe(base('locked'), 'e02', 'e08', 4, 'old'),
+  // Small teams like a local two-member workspace: one member can absorb only what the other has.
+  two: () => shrink(base(), 2),
+  'two-debt': () => owe(shrink(base(), 2), 'e00', 'e01', 4, 'old'),
+  'three-half': () => {const i = shrink(base(), 3); i.schedule.calendar = {specials: [{id: 'h', start: '2026-11-02', end: '2026-11-06', extra: 1.5}]}; return owe(i, 'e02', 'e00', 1, 'half');},
 };
 function rng(seed) {let s = seed >>> 0; return () => {s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296;};}
 const pick = (r, xs) => xs[Math.floor(r() * xs.length)];
-const EXPECTED = /edit-below-locked-points|permanent-below-fair-share/;
+const EXPECTED = /edit-below-locked-points|permanent-below-fair-share|permanent-above-month-total|temporary-above-month-total|allocation-above-month-total|unplaced-allocation-change/;
 
 function lockedOf(i) {
   const duties = canonicalDuties(i.schedule.month, i.schedule.calendar), locked = Object.fromEntries(i.seniority.map(id => [id, 0]));
@@ -88,6 +93,8 @@ function apply(i, d, a) {
   if (a.op === 'edit') return editAllocation(i, d, {engineer: a.engineer, deltaUnits: a.delta, kind: a.kind}).draft;
   if (a.op === 'transfer') return transferAllocation(i, d, {id: a.id, fromId: a.from, toId: a.to, units: a.units, kind: a.kind}).draft;
   if (a.op === 'classify') return classifyTransfer(i, d, a.pair, a.kind);
+  // Save → reopen: the checked RPC stores the plan with its hand edits; a legacy plan has none and infers them.
+  if (a.op === 'reopen') {const saved = persistedDraft(d); if (a.legacy) delete saved.hand; return reviewAllocation(i, saved);}
   throw Error('op');
 }
 function randomAction(r, i, d, n) {
@@ -95,7 +102,8 @@ function randomAction(r, i, d, n) {
   if (x < 0.5) return {op: 'edit', engineer: pick(r, ids), delta: pick(r, [-2, -2, -1, 1, 2, 2, -4, 4]), kind: r() < 0.6 ? 'temporary' : 'permanent'};
   if (x < 0.8) {const from = pick(r, ids); let to = pick(r, ids); if (to === from) to = ids[(ids.indexOf(from) + 1) % ids.length];
     return {op: 'transfer', id: `t${n}`, from, to, units: pick(r, [2, 2, 1]), kind: r() < 0.8 ? 'temporary' : 'permanent'};}
-  if (x < 0.92 && d.pairs.length) return {op: 'classify', pair: pick(r, d.pairs).id, kind: r() < 0.8 ? 'permanent' : 'temporary'};
+  if (x < 0.88 && d.pairs.length) return {op: 'classify', pair: pick(r, d.pairs).id, kind: r() < 0.8 ? 'permanent' : 'temporary'};
+  if (x < 0.95) return {op: 'reopen', legacy: r() < 0.3};
   return {op: 'undo'};
 }
 const stats = {sequences: 0, steps: 0, accepted: 0, rejected: {}, compiled: 0, reviews: 0, bound: 0, boundComplete: 0, orderChecks: 0, inverseSame: 0, inverseChecks: 0};
@@ -105,9 +113,13 @@ function check(name, i, c, prop, d, trail) {
   validateDraft(c, ids, d);
   const unplaced = unplacedChanges(d);
   assert.equal(sum(Object.values(d.targetsUnits)), c.total - unplaced.temporary - unplaced.permanent, `${where}: total conserved`);
+  assert.ok(sum(Object.values(d.targetsUnits)) <= c.total, `${where}: never more points than the month has`);
+  if (balanced(prop.draft)) assert.ok(balanced(d), `${where}: the configured total always equals the month total, nothing unplaced`);
   for (const id of ids) {
     assert.ok(d.targetsUnits[id] >= locked[id] && d.targetsUnits[id] >= 0, `${where}: ${id} above lock`);
     assert.ok(d.changes[id].permanent >= permanentFloor(d, id), `${where}: ${id} permanent floor`);
+    assert.ok(d.changes[id].permanent <= permanentCeiling(c.total, d, id), `${where}: ${id} fair + Permanent within the month`);
+    assert.ok(Math.abs(d.changes[id].temporary) <= c.total && d.targetsUnits[id] <= c.total, `${where}: ${id} Temporary and points within the month`);
     assert.equal(d.offeredUnits[id] + d.changes[id].temporary + d.changes[id].permanent, d.targetsUnits[id], `${where}: ${id} points`);
   }
   assert.deepEqual(d.transfers, deriveTransfers(ids, d.changes, d.pairs), `${where}: canonical transfers`);
@@ -186,11 +198,34 @@ test('fuzz: per-person allocation sequences keep floors, conservation, canonical
       stats.accepted++; trail.push(a); history.push(next);
       const before = d; d = next;
       check(name, i, c, prop, d, trail);
+      if (a.op === 'reopen') {
+        // Reopening restores the session; a legacy plan restores its table and keeps editing the same way.
+        stats.reopens = (stats.reopens ?? 0) + 1;
+        if (!a.legacy) assert.deepEqual({...d, sourceKey: '', hand: d.hand ?? []}, {...before, sourceKey: '', hand: before.hand ?? []}, `${name}: Save → reopen restores the plan`);
+        else for (const key of ['targetsUnits', 'changes', 'transfers', 'pairs']) assert.deepEqual(d[key], before[key], `${name}: legacy reopen keeps ${key}`);
+        const probe = {op: 'edit', engineer: pick(r, i.seniority), delta: pick(r, [-2, -1, 1, 2]), kind: r() < 0.6 ? 'temporary' : 'permanent'};
+        if (!a.legacy) {
+          let viaReopen, without;
+          try {viaReopen = apply(i, d, probe).targetsUnits;} catch (e) {viaReopen = e.message;}
+          try {without = apply(i, before, probe).targetsUnits;} catch (e) {without = e.message;}
+          assert.deepEqual(viaReopen, without, `${name}: editing after reopen equals editing without it (${JSON.stringify(probe)})`);
+        }
+        continue;
+      }
       // The opposite click restores that member's net change of the kind; its points too unless the
       // member held an automatic point of the other kind, which moved on when the member became hand edited.
       if (a.op === 'edit') {
         stats.inverseChecks++;
-        const back = apply(i, d, {...a, delta: -a.delta}), other = a.kind === 'temporary' ? 'permanent' : 'temporary';
+        let back;
+        // The opposite click can hit a bound the first did not (a + no one can absorb, after the
+        // first click's automatic point of the other kind moved on); that is a refusal, not a change.
+        try {back = apply(i, d, {...a, delta: -a.delta});} catch (e) {
+          assert.match(e.message, EXPECTED, `${name}: unexpected rejection of the inverse of ${JSON.stringify(a)}`);
+          stats.inverseRefused = (stats.inverseRefused ?? 0) + 1;
+          if (process.env.FUZZ_DEBUG) console.log('inverse refused', name, e.message, JSON.stringify(before.changes), JSON.stringify(before.hand), JSON.stringify(a), JSON.stringify(d.changes));
+          continue;
+        }
+        const other = a.kind === 'temporary' ? 'permanent' : 'temporary';
         assert.equal(back.changes[a.engineer][a.kind], before.changes[a.engineer][a.kind], `${name}: inverse restores the member`);
         if (before.hand?.includes(a.engineer) || !before.changes[a.engineer][other]) assert.equal(back.targetsUnits[a.engineer], before.targetsUnits[a.engineer], `${name}: inverse restores the points`);
         if (JSON.stringify(back.targetsUnits) === JSON.stringify(before.targetsUnits)) stats.inverseSame++;

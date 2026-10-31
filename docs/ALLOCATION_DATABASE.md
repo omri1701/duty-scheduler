@@ -28,7 +28,13 @@ snapshots and restored copies are not touched. The
 `20261031033000_uneven_month_credit.sql` migration adds
 `duty_private.allocation_uneven` and the uneven-credit checks to
 `allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
-without touching stored rows. Only managers can
+without touching stored rows. The `20261031165238_permanent_month_cap.sql`
+migration adds the Permanent ceiling (fair + Permanent ≤ the month's total units) and
+the Temporary bound (|Temporary| ≤ the month's total units) to `allocation_compile`
+(`permanent-above-month-total`, `temporary-above-month-total`); stored plans already
+satisfy both. It also lets the stored allocation carry `hand`, the members edited by
+hand (distinct current participants, else `invalid-hand-edits`), so a reopened plan
+balances like the session that saved it; plans without it still confirm. Only managers can
 read it; clients cannot write it. Calendar snapshots do not include this table.
 
 `duty_assignments.locked` persists a primary lock even before the first allocation.
@@ -71,8 +77,8 @@ and the explicitly captured `p_revision`. Private helpers are not client-callabl
   p_revision, p_fingerprint)` persists explicitly reviewed input for an open draft.
   It independently checks denomination, membership, nominal totals, actual source
   claims, exclusive source intervals, the per-member changes (each kind balanced,
-  explaining every target exactly, fair + Permanent ≥ 0 and offered + Permanent
-  ≥ 0), counterpart conservation, locked floors and exact exception scopes, and
+  explaining every target exactly, fair + Permanent ≥ 0, offered + Permanent
+  ≥ 0, fair + Permanent ≤ the month's total units and |Temporary| ≤ the month's total units), counterpart conservation, locked floors and exact exception scopes, and
   requires the transfer list to equal `duty_private.allocation_transfers` under the
   current seniority: the same derivation as the browser (pairs first, then netted),
   so no transfer list can show relief the per-person nets do not. When the
@@ -185,7 +191,7 @@ The generation fixture rolls back every synthetic case. It covers authorization,
 malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,
 rollback during publication, partial drafts, cutoff, copied/deleted lineage,
 exclusive source budgets, routed publication, exact TypeScript replay, the
-per-person floors, refusal of a transfer list that differs from the derivation,
+per-person floors and Permanent ceiling, refusal of a transfer list that differs from the derivation,
 SQL/TypeScript derivation parity on random states and the click-history conversion. Separate
 sessions exercise competing saves, demotion and cutoff during real lock waits.
 The existing fresh/upgrade, security, swap and compensation tests remain required;

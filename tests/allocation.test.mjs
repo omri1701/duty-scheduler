@@ -5,7 +5,9 @@ import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGener
 import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
-  retainedChanges, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
+  retainedChanges, editOptions, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
+import {balanceChanges} from '../lib/allocation/derive.ts';
+import {context} from '../lib/allocation/model.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -13,8 +15,8 @@ const solver = await createHighsAdapter(loadHighs);
 const total = xs => xs.reduce((a, b) => a + b, 0);
 const send = (h, operation, sourceKey, at = (h.at(-1)?.at ?? 0) + 1) => record(h,
   {operation, sourceKey, at, actor: 'manager', reason: 'Reviewed fixture'}).events;
-function scenario(kind = 'normal') {
-  const {input, now} = monthScenario(kind), schedule = structuredClone(input); delete schedule.targets;
+function scenario(kind = 'normal', count = 12) {
+  const {input, now} = monthScenario(kind, count), schedule = structuredClone(input); delete schedule.targets;
   return {schedule, now, seniority: schedule.members.map(m => m.id), events: send([], {
     kind: 'members', members: schedule.members.map(m => ({id: m.id, active: true})),
   }, 'members')};
@@ -249,8 +251,8 @@ test('audit reorder: a seniority change after confirmation re-pairs the credit a
   // A new proposal keeps the confirmed partition, so the database’s immutable-baseline rule still holds.
   const again = proposeAllocation(j, retainedChanges(saved)).draft;
   assert.deepEqual(again.baselineUnits, saved.baselineUnits); assert.deepEqual(again.uneven, reviewed.uneven);
-  // A reopened draft treats every member with a nonzero change as hand edited.
-  assert.deepEqual([...again.hand].sort(), Object.keys(saved.changes).filter(id => saved.changes[id].temporary || saved.changes[id].permanent).sort());
+  // The retained draft keeps the saving session's hand edits.
+  assert.deepEqual([...again.hand].sort(), [...saved.hand].sort());
   assert.equal(again.targetsUnits.e03, saved.targetsUnits.e03);
   assert.notDeepEqual(proposeAllocation(j).draft.baselineUnits, saved.baselineUnits, 'without the retained baseline the larger shares would follow the new order');
   // A changed calendar is a new fit: the retained baseline no longer matches and is dropped.
@@ -421,12 +423,17 @@ test('the automatic balance is recomputed from scratch: order independent, never
   }
 });
 
-test('half-point changes redistribute exactly; a change without a counterpart stays visible and blocks compilation', () => {
+test('half-point changes redistribute exactly; a change without a counterpart is refused, and a legacy unplaced one blocks compilation', () => {
   const i = normalInput, half = edit(i, normal.draft, 'e00', -1);
   assert.equal(half.balanced, true);
   assert.deepEqual(legs(half.draft), [['e00', 'e09', 1, 'temporary']]);
-  // With every other member hand edited, the change waits for an explicit counterpart.
-  const first = edit(i, {...normal.draft, hand: i.seniority.filter(id => id !== 'e00')}, 'e00', -1);
+  // With every other member hand edited, nobody can take the half point: refused, the plan stays whole.
+  assert.throws(() => edit(i, {...normal.draft, hand: i.seniority.filter(id => id !== 'e00')}, 'e00', -1), /unplaced-allocation-change/);
+  // A plan left unplaced before this rule still shows the gap, blocks compilation and only moves toward balance.
+  const unplacedDraft = {...structuredClone(normal.draft), hand: [...i.seniority],
+    changes: {...structuredClone(normal.draft.changes), e00: {temporary: -1, permanent: 0}}, targetsUnits: {...normal.draft.targetsUnits, e00: 3}};
+  const first = {draft: unplacedDraft, balanced: balanced(unplacedDraft), unplaced: unplacedChanges(unplacedDraft)};
+  assert.throws(() => edit(i, first.draft, 'e00', -1), /unplaced-allocation-change/);
   assert.equal(first.balanced, false); assert.equal(first.draft.targetsUnits.e00, 3);
   assert.deepEqual(first.unplaced, {temporary: 1, permanent: 0}); assert.deepEqual(unplacedChanges(first.draft), first.unplaced);
   assert.deepEqual(first.draft.transfers, []);
@@ -456,19 +463,17 @@ test('hand-edited members keep their points exactly; automatic points move on to
   assert.deepEqual([r.draft.targetsUnits.e09, r.draft.targetsUnits.e08], [4, 4], 'the automatic points are no longer needed');
   assert.equal(r.balanced, true);
   assert.deepEqual(legs(r.draft), [['e00', 'e04', 2, 'temporary'], ['e01', 'e05', 2, 'temporary']], 'netted largest first, then seniority');
-  assert.deepEqual(persistedDraft(r.draft), Object.fromEntries(Object.entries(r.draft).filter(([k]) => k !== 'hand')));
+  assert.deepEqual(persistedDraft(r.draft), r.draft, 'hand edits persist with the plan');
   assert.equal(compiled(i, r.draft).confirmable, true);
   assert.deepEqual(normal.draft.hand, undefined, 'a new proposal starts unprotected');
 });
 
-test('without an untouched counterpart the requested change stays, visibly unplaced', () => {
+test('without an untouched counterpart a change is refused either way: the plan always matches the month', () => {
   const i = normalInput, ids = i.seniority;
   const draft = {...structuredClone(normal.draft), hand: ids.filter(id => id !== 'e00')};
-  const r = edit(i, draft, 'e00', 2);
-  assert.equal(r.draft.targetsUnits.e00, normal.draft.targetsUnits.e00 + 2, 'requested change kept');
-  for (const id of ids.slice(1)) assert.equal(r.draft.targetsUnits[id], normal.draft.targetsUnits[id]);
-  assert.deepEqual(r.draft.transfers, []); assert.equal(r.balanced, false);
-  assert.deepEqual(r.unplaced, {temporary: -2, permanent: 0});
+  assert.throws(() => edit(i, draft, 'e00', -2), /unplaced-allocation-change/);
+  assert.throws(() => edit(i, draft, 'e00', 2), /allocation-above-month-total/);
+  assert.deepEqual(editOptions(i, draft, 2).e00, {temporary: {up: false, down: false}, permanent: {up: false, down: false}});
   assert.throws(() => edit(i, {...normal.draft, hand: ['nobody']}, 'e00', 1), /invalid-hand-edits/);
 });
 
@@ -523,6 +528,117 @@ test('floors: fair + Permanent and planned relief are never taken away permanent
   const extra = edit(j, r.draft, 'e11', 2).draft;
   assert.throws(() => edit(j, extra, 'e11', -2, 'permanent'), /permanent-below-fair-share/);
   assert.throws(() => edit(j, r.draft, 'e11', -2), /edit-below-locked-points/);
+});
+
+test('ceiling: fair share + Permanent never exceeds the month total; mixed + Permanent / − Temporary stays allowed below it', () => {
+  const i = normalInput, d = normal.draft, month = total(Object.values(d.baselineUnits)), A = 'e00';
+  // 26 points this month and a fair share of 2: at most +24 permanent.
+  const ceiling = month - d.baselineUnits[A];
+  assert.equal(month, 52); assert.equal(ceiling, 48);
+  // One mixed round is a legitimate plan: A works one more point for good and defers one.
+  const once = edit(i, edit(i, d, A, 2, 'permanent').draft, A, -2);
+  assert.ok(once.balanced); assert.deepEqual(once.draft.changes[A], {temporary: -2, permanent: 2});
+  assert.equal(once.draft.targetsUnits[A], d.targetsUnits[A]);
+  // Repeating it stays allowed and balanced up to +24, then the next + Permanent is refused.
+  let x = d, rounds = 0, stop = null;
+  while (!stop && rounds < 100) {
+    try {
+      const r = edit(i, edit(i, x, A, 2, 'permanent').draft, A, -2);
+      assert.ok(r.balanced, `round ${rounds + 1} balanced`); x = r.draft; rounds++;
+    } catch (e) {stop = e;}
+  }
+  assert.match(stop?.message ?? '', /permanent-above-month-total/);
+  assert.equal(rounds, 24); assert.equal(x.changes[A].permanent, ceiling);
+  assert.equal(x.targetsUnits[A], d.targetsUnits[A]); assert.equal(d.baselineUnits[A] + x.changes[A].permanent, month);
+  assert.ok(Object.keys(x.changes).every(id => x.baselineUnits[id] + x.changes[id].permanent <= month));
+  // A whole-point step that overshoots by half a point is refused, never half applied.
+  const half = edit(i, x, A, -1, 'permanent').draft;
+  assert.equal(half.changes[A].permanent, ceiling - 1);
+  assert.throws(() => edit(i, half, A, 2, 'permanent'), /permanent-above-month-total/);
+  assert.equal(edit(i, half, A, 1, 'permanent').draft.changes[A].permanent, ceiling);
+  // A permanent drag or Make permanent onto a member at the ceiling is refused too: at the
+  // ceiling every other member already sits on its floor, so the giver's floor refuses first.
+  assert.throws(() => drag(i, x, 'e05', A, 2, 'permanent'), /permanent-(above-month-total|below-fair-share)/);
+  // Even a temporary drag is refused here: e05 would become hand edited, its automatic
+  // permanent relief would need a new counterpart, and no one is left to absorb it.
+  assert.throws(() => drag(i, x, 'e05', A), /allocation-above-month-total/);
+  // Review refuses a stored change above the ceiling.
+  const stored = structuredClone(persistedDraft(once.draft));
+  stored.changes[A].permanent = ceiling + 2;
+  assert.throws(() => reviewAllocation(i, stored), /permanent-above-month-total/);
+  // The automatic balance never lifts a permanent receiver past its ceiling: what does not fit stays unplaced.
+  const c = context(i), lone = 'e11', hand = Object.fromEntries(c.ids.filter(id => id !== lone).map(id => [id, {temporary: 0, permanent: 0}]));
+  hand[A] = {temporary: 0, permanent: -(month + 2)};
+  const placed = balanceChanges(c, i.seniority, d.baselineUnits, d.offeredUnits, hand), loneCeiling = month - d.baselineUnits[lone];
+  assert.equal(placed.changes[lone].permanent, loneCeiling); assert.equal(placed.unplaced.permanent, month + 2 - loneCeiling);
+});
+
+test('two members (audit 2026-10-31): a + no one can absorb is refused, so points, Temporary and Permanent stay within the month', () => {
+  const i = scenario('normal', 2), d = proposal(i).draft, month = total(Object.values(d.baselineUnits));
+  assert.equal(month, 52); assert.deepEqual(d.targetsUnits, {e00: 26, e01: 26});
+  // Shortest break before (audit): "+1 Temporary e00, +1 Temporary e01" left both hand edited at 27 / 26.
+  assert.throws(() => edit(i, edit(i, d, 'e00', 2).draft, 'e01', 2), /allocation-above-month-total/);
+  // Longest single-button break before: 14 × "+1 Temporary e00" reached 27 / 26 points (the user saw 77 / 26 after more presses).
+  let x = d, presses = 0, stop = null;
+  while (!stop && presses < 100) {try {x = edit(i, x, 'e00', 2).draft; presses++;} catch (e) {stop = e;}}
+  assert.match(stop?.message ?? '', /allocation-above-month-total/);
+  assert.equal(presses, 13); assert.deepEqual(x.targetsUnits, {e00: 52, e01: 0}); assert.ok(balanced(x));
+  // The dialog disables exactly what the library refuses: every + (e00 is hand edited, so no one is
+  // left to absorb a + on e01 either) and − on e01; − on e00 gives the points back.
+  const options = editOptions(i, x, 2);
+  assert.deepEqual(options.e00, {temporary: {up: false, down: true}, permanent: {up: false, down: true}});
+  assert.deepEqual(options.e01.temporary, {up: false, down: false});
+  assert.deepEqual(edit(i, x, 'e00', -2).draft.targetsUnits, {e00: 50, e01: 2});
+  // The user's mix (+P then +T on one member) stops at the month total too.
+  let y = d;
+  for (let k = 0; k < 40; k++) for (const kind of ['permanent', 'temporary']) {try {y = edit(i, y, 'e00', 2, kind).draft;} catch {/* refused at a bound */}}
+  assert.ok(total(Object.values(y.targetsUnits)) <= month && y.targetsUnits.e00 <= month);
+  assert.ok(y.baselineUnits.e00 + y.changes.e00.permanent <= month && Math.abs(y.changes.e00.temporary) <= month);
+  // + Permanent / − Temporary within the ceiling stays allowed: the other member covers the deferred part.
+  const mixed = edit(i, edit(i, d, 'e00', 2, 'permanent').draft, 'e00', -2);
+  assert.ok(mixed.balanced); assert.deepEqual(mixed.draft.changes.e00, {temporary: -2, permanent: 2});
+  // A stored change beyond the month total is refused on review, whatever its kind.
+  const deferred = structuredClone(persistedDraft(d)); deferred.changes.e00.temporary = -(month + 2);
+  assert.throws(() => reviewAllocation(i, deferred), /temporary-above-month-total/);
+});
+
+test('reopen (audit 2026-10-31): hand edits persist, so editing after Save → reopen equals editing without it', () => {
+  // The user's case: two members, a temporary point added, saved (Generate), reopened, then lowered.
+  const i = scenario('normal', 2), d = proposal(i).draft, month = total(Object.values(d.baselineUnits));
+  const session = edit(i, d, 'e00', 2).draft;
+  assert.deepEqual(session.hand, ['e00']); assert.deepEqual(session.targetsUnits, {e00: 28, e01: 24});
+  const saved = persistedDraft(session);
+  assert.deepEqual(saved.hand, ['e00'], 'the checked RPC stores the hand edits');
+  const reopened = reviewAllocation(i, saved);
+  assert.deepEqual({...reopened, sourceKey: ''}, {...session, sourceKey: ''});
+  const steps = [['e00', -2, 'temporary'], ['e00', -1, 'temporary'], ['e00', -2, 'permanent'], ['e00', 1, 'permanent'], ['e00', 2, 'permanent']];
+  for (const [id, delta, kind] of steps) {
+    const after = edit(i, reopened, id, delta, kind).draft, without = edit(i, session, id, delta, kind).draft;
+    for (const key of ['targetsUnits', 'changes', 'transfers', 'hand']) assert.deepEqual(after[key], without[key], `${id} ${delta} ${kind}: ${key}`);
+    assert.equal(total(Object.values(after.targetsUnits)), month, `${id} ${delta} ${kind}: the plan matches the month`);
+  }
+  // Lowering the added point gives it back to the member the session took it from.
+  assert.deepEqual(edit(i, reopened, 'e00', -2).draft.targetsUnits, {e00: 26, e01: 26});
+  // A plan saved before hand edits were stored infers them instead of freezing everyone (before: 51 / 52 units after the −).
+  const legacy = structuredClone(saved); delete legacy.hand;
+  const inferred = reviewAllocation(i, legacy);
+  assert.deepEqual(inferred.hand, ['e00']);
+  assert.deepEqual(edit(i, inferred, 'e00', -2).draft.targetsUnits, {e00: 26, e01: 26});
+  // If everyone really is hand edited, the − is refused and the dialog disables it.
+  const frozen = {...structuredClone(session), hand: ['e00', 'e01']};
+  assert.throws(() => edit(i, frozen, 'e00', -2), /unplaced-allocation-change/);
+  assert.equal(editOptions(i, frozen, 2).e00.temporary.down, false);
+  // Twelve members with edits of both kinds and a drag: reopen restores the session exactly, legacy or not.
+  const n = normalInput, s12 = drag(n, edit(n, edit(n, normal.draft, 'e03', 2).draft, 'e07', -2, 'permanent').draft, 'e01', 'e05').draft;
+  const back = reviewAllocation(n, persistedDraft(s12));
+  assert.deepEqual(back.hand, s12.hand);
+  for (const [id, delta, kind] of [['e09', -2, 'temporary'], ['e03', -1, 'temporary'], ['e10', 2, 'permanent']]) {
+    assert.deepEqual(edit(n, back, id, delta, kind).draft.targetsUnits, edit(n, s12, id, delta, kind).draft.targetsUnits);
+  }
+  const old12 = structuredClone(persistedDraft(s12)); delete old12.hand;
+  const guessed = reviewAllocation(n, old12);
+  assert.ok(['e01', 'e05', 'e03', 'e07'].every(id => guessed.hand.includes(id)), 'hand and dragged members stay hand edited');
+  assert.equal(total(Object.values(edit(n, guessed, 'e09', -2).draft.targetsUnits)), total(Object.values(s12.targetsUnits)));
 });
 
 test('a temporary change on a debtor defers newest repayment; a permanent change that keeps the points never consumes it', () => {

@@ -53,6 +53,77 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   for (const name of ['Refresh & review retained targets', 'Use a new proposal', 'Save allocation only']) await expect(page.getByRole('button', {name})).toHaveCount(0);
 });
 
+test('Permanent + stops when fair share + punishment reaches the month total, with a note; an overshooting step is disabled', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const first = page.locator('.plan-row').first(), note = first.locator('[role=note][id^="plan-cap-"]');
+  const increase = first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true});
+  // The month has 26 points: the max punishment is 26 minus Avery's fair share.
+  const fair = Number(await first.locator('output').textContent()), max = 26 - fair;
+  await page.getByRole('button', {name: /^Permanent/}).click();
+  for (let k = 0; k < max; k++) await increase.click();
+  await expect(first.locator('.plan-chip.permanent')).toHaveText(`+${max} permanent`);
+  await expect(first.locator('output')).toHaveText('26');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  await expect(increase).toBeDisabled();
+  await expect(note).toHaveText(`Max punishment here is +${max} (26 points this month)`);
+  await expect(increase).toHaveAttribute('aria-describedby', await note.getAttribute('id') ?? '');
+  // Half a point below the ceiling: a whole-point step stays disabled, a half-point step applies.
+  await page.getByRole('button', {name: '0.5', exact: true}).click();
+  await expect(increase).toBeDisabled();
+  await first.getByRole('button', {name: 'Decrease Permanent · Avery Admin', exact: true}).click();
+  await expect(first.locator('.plan-chip.permanent')).toHaveText(`+${max - .5} permanent`);
+  await expect(increase).toBeEnabled(); await expect(note).toHaveCount(0);
+  await page.getByRole('button', {name: '1', exact: true}).click();
+  await expect(increase).toBeDisabled(); await expect(note).toBeVisible();
+  // Temporary + has no punishment note, but everyone else is at zero, so no one can absorb it either.
+  await page.getByRole('button', {name: /^Temporary/}).click();
+  await expect(note).toHaveCount(0);
+  const temporary = first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true});
+  await expect(temporary).toBeDisabled(); await expect(temporary).toHaveAttribute('aria-describedby', 'plan-no-counterpart');
+});
+
+test('two members: + stops when the other member has nothing left, so the plan never exceeds 26 / 26 pts', async ({page, backend, openApp}) => {
+  fresh(backend, 2); await openApp(); await openPlan(page);
+  const first = page.locator('.plan-row').first(), points = first.locator('output');
+  const increase = first.getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true});
+  const fair = Number(await points.textContent());
+  for (let k = 0; k < 26 - fair; k++) await increase.click();
+  await expect(points).toHaveText('26');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  // The other member is at zero: + is disabled for both kinds and says why to screen readers.
+  await expect(increase).toBeDisabled();
+  await expect(increase).toHaveAttribute('aria-describedby', 'plan-no-counterpart');
+  await expect(page.locator('#plan-no-counterpart')).toHaveText('No one else can take on less. Drag a point instead.');
+  await page.getByRole('button', {name: /^Permanent/}).click();
+  await expect(first.getByRole('button', {name: 'Increase Permanent · Avery Admin', exact: true})).toBeDisabled();
+  // − gives a point back to the other member.
+  await page.getByRole('button', {name: /^Temporary/}).click();
+  await first.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(points).toHaveText('25');
+  await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  await expect(increase).toBeEnabled();
+});
+
+test('two members: after Save and reopen, − gives the point back to the same member, so the plan stays 26 / 26 pts', async ({page, backend, openApp}) => {
+  fresh(backend, 2); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'}), rows = dialog.locator('.plan-row');
+  const fair = Number(await rows.first().locator('output').textContent()), other = Number(await rows.nth(1).locator('output').textContent());
+  await rows.first().getByRole('button', {name: 'Increase Temporary · Avery Admin', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await openPlan(page);
+  await expect(rows.first().locator('output')).toHaveText(String(fair + 1));
+  // Before, every changed member was frozen on reopen, so this − left the plan at 25 / 26.
+  await rows.first().getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(rows.first().locator('output')).toHaveText(String(fair));
+  await expect(rows.nth(1).locator('output')).toHaveText(String(other));
+  await expect(dialog.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  // With the point back, a − on the other member has no one left to take it (Avery is edited by hand): disabled, with a reason.
+  const second = rows.nth(1).getByRole('button', {name: /^Decrease Temporary · /});
+  await expect(second).toBeDisabled(); await expect(second).toHaveAttribute('aria-describedby', 'plan-no-receiver');
+});
+
 test('Save stores the whole plan without generating; closing, reopening and reloading restore it exactly', async ({page, backend, openApp}) => {
   fresh(backend); await openApp(); await openPlan(page);
   const dialog = page.getByRole('dialog', {name: 'Plan the month'}), save = dialog.getByRole('button', {name: 'Save', exact: true});
@@ -214,7 +285,9 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
-  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'hand', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers', 'uneven']);
+  // Hand edits persist with the plan: the dragged members stay hand edited after reopening.
+  expect([...saved.hand as string[]].sort()).toEqual([ids.a, ids.admin].sort());
   expect(saved.uneven).toEqual([]);
   expect(saved.pairs).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
   expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);

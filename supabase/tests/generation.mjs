@@ -335,6 +335,19 @@ floors+=failure(confirm(unexplained),'unexplained-target-edit');
 const belowFair=edited(ids[12],ids[8],'permanent',2,{[ids[12]]:{temporary:2},[ids[8]]:{temporary:-2}});
 assert.equal(belowFair.changes[ids[12]].permanent,-6);assert.equal(belowFair.targetsUnits[ids[12]],0);
 floors+=failure(confirm(belowFair),'permanent-below-fair-share');
+// The Permanent ceiling (decision 2026-10-31): fair share + Permanent never exceeds the month's total units.
+// Exactly at the ceiling the per-member check passes (only the balance refuses this one-sided draft); one more unit is refused.
+const monthUnits=duties.reduce((n,d)=>n+d.units,0),punished=units=>{const d=structuredClone(confirmedDraft),c=d.changes[ids[8]],delta=units-c.permanent;
+ c.permanent+=delta;c.temporary-=delta;d.transfers=deriveTransfers(ids,d.changes,d.pairs);return d};
+const ceiling=monthUnits-confirmedDraft.baselineUnits[ids[8]];
+assert.equal(punished(ceiling+1).targetsUnits[ids[8]],confirmedDraft.targetsUnits[ids[8]]);
+floors+=failure(confirm(punished(ceiling)),'unbalanced-allocation-changes');
+floors+=failure(confirm(punished(ceiling+1)),'permanent-above-month-total');
+// No member owes or is owed more temporary work than the month holds (checked before the targets).
+const owing=units=>{const d=structuredClone(confirmedDraft);d.changes[ids[8]].temporary=units;d.transfers=deriveTransfers(ids,d.changes,d.pairs);return d};
+floors+=failure(confirm(owing(-monthUnits)),'unexplained-target-edit');
+floors+=failure(confirm(owing(-monthUnits-1)),'temporary-above-month-total');
+floors+=failure(confirm(owing(monthUnits+1)),'temporary-above-month-total');
 const unbalancedDraft=structuredClone(confirmedDraft);unbalancedDraft.changes[ids[8]].temporary+=2;unbalancedDraft.targetsUnits[ids[8]]+=2;unbalancedDraft.changes[ids[9]].temporary-=2;unbalancedDraft.targetsUnits[ids[9]]-=2;unbalancedDraft.changes[ids[9]].temporary=0;
 floors+=`reset role;`+failure(`select duty_private.allocation_compile((select v->'facts' from context)||'{"locks":[],"approvals":[]}'::jsonb,${quote(unbalancedDraft)},${quote(Object.fromEntries(ids.map(id=>[id,0])))},duty_private.compensation_state())`,'unexplained-target-edit|unbalanced-allocation-changes');
 floors+=`set local role authenticated;`;
@@ -349,11 +362,15 @@ const extraMember=structuredClone(confirmedDraft);extraMember.changes['00000000-
 floors+=failure(confirm(extraMember),'invalid-allocation-changes');
 const fractional=structuredClone(confirmedDraft);fractional.changes[ids[8]].temporary=0.5;
 floors+=failure(confirm(fractional),'invalid-allocation-changes');
-const handLeak=structuredClone(confirmedDraft);handLeak.hand=[ids[8]];
-floors+=failure(confirm(handLeak),'invalid-confirmed-allocation');
+// Hand edits persist with the plan (members only, each once), so reopening balances like the saving session.
+const withHand=hand=>({...structuredClone(confirmedDraft),hand});
+floors+=failure(confirm(withHand(['00000000-0000-0000-0000-000000000099'])),'invalid-hand-edits');
+floors+=failure(confirm(withHand([ids[8],ids[8]])),'invalid-hand-edits');
+floors+=failure(confirm(withHand(ids[8])),'invalid-hand-edits');
+floors+=confirm(withHand([ids[8],ids[9]]))+`do $$begin if not exists(select 1 from public.duty_allocations where publication_id is null and allocation->'hand'=${quote([ids[8],ids[9]])}) then raise exception 'Hand edits not persisted';end if;end$$;`;
 floors+=`rollback;`;
 sql(floors);
-console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
+console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, malformed hand edits (valid ones persist), a permanent change below the fair share or lifting it above the month total, a temporary change beyond the month total and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
 
 // The relief floor: a creditor relieved this month cannot give that relief away permanently.
 let relief=setup+`create temp table debt(v jsonb);insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:debtor,creditorId:creditor,units:4})},'debt','Reviewed source',${rev});`+refresh;
