@@ -46,19 +46,21 @@ const drag = (i, d, fromId, toId, units = 2, kind = 'temporary') =>
   transferAllocation(i, d, {id: `${fromId}>${toId}/${d.pairs.length}`, fromId, toId, units, kind}).draft;
 
 test('a repayment handed to someone who owes the same creditor is their own repayment, through Generate and binding', async () => {
-  // The reported case: Tamar (e10) repays Local Admin (e00) and hands one point to Lior (e07),
-  // who owes Local Admin too. Lior's point repays his own debt; Tamar's stays open.
-  const {i, ids} = owing(), [owed, tamar, lior, maya] = [ids[0], ids[10], ids[7], ids[8]];
+  // The reported case: Tamar repays Local Admin (e00) one point and hands it to Lior, who owes
+  // Local Admin too. Lior's point repays his own debt; Tamar's stays open. The newest debtors
+  // (e11, e10) repay this month, one point each (decision 2026-11-01).
+  const {i, ids} = owing(), [owed, tamar, other] = [ids[0], ids[10], ids[11]], [lior, maya] = [ids[7], ids[8]];
   const base = proposeAllocation(i).draft;
-  assert.deepEqual(byPair(planAllocation(i, base).plan.repayments), {[`${tamar}>${owed}`]: 4});
-  for (const [label, receivers] of [['one receiver', [lior]], ['two receivers', [lior, maya]], ['two receivers, other order', [maya, lior]]]) {
-    const d = receivers.reduce((x, to) => drag(i, x, tamar, to), base);
+  assert.deepEqual(byPair(planAllocation(i, base).plan.repayments), {[`${tamar}>${owed}`]: 2, [`${other}>${owed}`]: 2});
+  for (const [label, moves] of [['one receiver', [[tamar, lior]]], ['two debtors, two receivers', [[tamar, lior], [other, maya]]],
+    ['two debtors, two receivers, other order', [[other, maya], [tamar, lior]]]]) {
+    const d = moves.reduce((x, [from, to]) => drag(i, x, from, to), base);
     const planned = planAllocation(i, d);
     assert.equal(planned.confirmable, true, label);
     assert.deepEqual(planned.plan.intents, [], `${label}: no new debt to the receivers`);
-    const expected = {[`${tamar}>${owed}`]: 4 - 2 * receivers.length};
-    for (const r of receivers) expected[`${r}>${owed}`] = 2;
-    assert.deepEqual(byPair(planned.plan.repayments), Object.fromEntries(Object.entries(expected).filter(([, n]) => n).sort()), label);
+    const expected = {[`${tamar}>${owed}`]: 2, [`${other}>${owed}`]: 2};
+    for (const [from, to] of moves) {delete expected[`${from}>${owed}`]; expected[`${to}>${owed}`] = 2;}
+    assert.deepEqual(byPair(planned.plan.repayments), Object.fromEntries(Object.entries(expected).sort()), label);
     // Nothing is orphaned: every debt is either repaid this month or still open, unit for unit.
     const owedNow = project(i.events, i.now, i.now).projected.candidates;
     assert.deepEqual(byPair([...planned.plan.repayments, ...planned.plan.deferred]), byPair(owedNow.map(claim => ({claim, units: claim.units}))), label);
@@ -70,10 +72,11 @@ test('a repayment handed to someone who owes the same creditor is their own repa
     assert.deepEqual(byPair(compiled.plan.repayments), byPair(planned.plan.repayments), label);
     const bound = await bindAllocation(i, d, r.assignments, {publicationId: 'p', sourceKey: 'publish/p', actor: 'm'});
     assert.equal(bound.bindable, true, label);
-    // Once the month is worked: Tamar still owes the deferred units, each receiver two fewer, nobody owes a receiver.
+    // Once the month is worked: the deferring debtors still owe everything, each receiver one point less.
     const far = Date.parse(i.schedule.month + '-01T00:00:00Z') + 70 * 86400000, after = project(bound.preview.events, far, far).actual;
+    const receivers = moves.map(([, to]) => to);
     assert.ok(!after.claims.some(k => receivers.includes(k.creditorId)), `${label}: nothing owed to a receiver`);
-    assert.equal(after.net[tamar], -(6 - (4 - 2 * receivers.length)), label);
+    for (const [from] of moves) assert.equal(after.net[from], from === tamar ? -6 : -4, label);
     for (const id of receivers) assert.equal(after.net[id], -2, label);
   }
 });
@@ -85,7 +88,7 @@ test('half points hand over exactly: half a point of a deferred repayment repays
   const planned = planAllocation(i, d);
   assert.equal(planned.confirmable, true);
   assert.equal(byPair(planned.plan.repayments)[`${maya}>${owed}`], 1);
-  assert.equal(byPair(planned.plan.repayments)[`${tamar}>${owed}`], 3);
+  assert.equal(byPair(planned.plan.repayments)[`${tamar}>${owed}`], 1);
 });
 
 test('automatic points spread one per member per round, newest first, and survive Save → reopen', () => {
@@ -106,4 +109,54 @@ test('automatic points spread one per member per round, newest first, and surviv
     assert.deepEqual(reopened.changes, d.changes);
     assert.deepEqual(reopened.targetsUnits, d.targetsUnits);
   }
+});
+
+/** A team in seniority order with debts as [debtor, creditor, units], oldest first. */
+function team(month, names, debts) {
+  const {input} = monthScenario('normal'), schedule = structuredClone(input); delete schedule.targets;
+  schedule.month = month; schedule.calendar = {}; schedule.constraints = {}; schedule.sourceRevision = `team-${month}`;
+  schedule.members = names.map(id => ({id, active: true, approved: true, eligible: true}));
+  let events = send([], {kind: 'members', members: names.map(id => ({id, active: true}))}, 'members');
+  debts.forEach(([debtorId, creditorId, units], k) => {events = send(events, {kind: 'claim', debtorId, creditorId, units}, `debt-${k}`);});
+  return {schedule, now: Date.parse(`${month}-01T00:00:00Z`) - 7 * 86400000, seniority: names, events};
+}
+const points = d => Object.fromEntries(Object.entries(d.targetsUnits).map(([id, u]) => [id, u / 2]));
+
+test('one extra each before anyone gets two: the January case repays newest first, one point each', () => {
+  // The reported January (decision 2026-11-01): Local Admin's relief this month is two points.
+  // It was repaid by Tamar alone (her oldest debt, both points); now the newest debtors Shira and
+  // Omer repay one point each, and the two leftover points go newest first to members without
+  // a point extra: Tamar and Lior.
+  const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
+  const i = team('2027-01', names, [['Tamar', 'Local Admin', 4], ...names.slice(1).filter(n => n !== 'Tamar').map(n => [n, 'Local Admin', n === 'Shira' ? 6 : 4])]);
+  const d = proposeAllocation(i).draft;
+  assert.deepEqual(d.repayments.map(r => [r.claim.debtorId, r.units / 2]), [['Shira', 1], ['Omer', 1]]);
+  assert.deepEqual(points(d), {'Local Admin': 0, 'Local Engineer': 2, Avi: 2, Dana: 2, Yossi: 2, Noa: 2, Eitan: 2, Maya: 2, Lior: 3, Tamar: 3, Omer: 3, Shira: 3});
+  assert.equal(planAllocation(i, d).confirmable, true);
+  // Save → reopen and a fresh proposal from the saved plan give the same table.
+  assert.deepEqual(reviewAllocation(i, persistedDraft(d)).targetsUnits, d.targetsUnits);
+  assert.deepEqual(proposeAllocation(i, {hand: {}, pairs: [], baselineUnits: d.baselineUnits}).draft.targetsUnits, d.targetsUnits);
+});
+
+test('a second extra point only when every member already has one', () => {
+  // Three members, two leftover points, two debtors: the creditor takes the first leftover,
+  // the newest repayer the second (more extras than members without one).
+  const i = team('2026-11', ['a', 'b', 'c'], [['b', 'a', 4], ['c', 'a', 4]]), d = proposeAllocation(i).draft;
+  // Extra points: a leftover share above the smallest, plus repayment work.
+  const low = Math.min(...Object.values(d.baselineUnits)), repaid = id => d.repayments.filter(r => r.claim.debtorId === id).reduce((n, r) => n + r.units, 0);
+  const extra = Object.fromEntries(['a', 'b', 'c'].map(id => [id, (d.baselineUnits[id] - low + repaid(id)) / 2]));
+  assert.deepEqual(d.repayments.map(r => [r.claim.debtorId, r.units / 2]), [['c', 1], ['b', 1]]);
+  assert.ok(Object.values(extra).every(n => n >= 1), JSON.stringify(points(d)));
+  assert.deepEqual(Object.entries(extra).filter(([, n]) => n === 2).map(([id]) => id), ['c']);
+  assert.equal(planAllocation(i, d).confirmable, true);
+});
+
+test('several creditors: newest debtors first per creditor, one point per debtor in all', () => {
+  const names = Array.from({length: 12}, (_, k) => `m${String(k).padStart(2, '0')}`);
+  const i = team('2026-11', names, [['m09', 'm00', 4], ['m09', 'm01', 4], ['m10', 'm00', 4], ['m11', 'm01', 4]]);
+  const d = proposeAllocation(i).draft;
+  // m00 has the oldest debt, so it is served first: m10 and m09 repay it; m09 has then used its
+  // point, so only m11 repays m01.
+  assert.deepEqual(d.repayments.map(r => [r.claim.debtorId, r.claim.creditorId, r.units / 2]), [['m10', 'm00', 1], ['m09', 'm00', 1], ['m11', 'm01', 1]]);
+  assert.equal(planAllocation(i, d).confirmable, true);
 });

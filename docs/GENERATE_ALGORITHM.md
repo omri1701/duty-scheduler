@@ -279,9 +279,11 @@ unlocking; preserve secondary coverage.
 ## 5. Ordinary fairness and compensation-aware proposals
 
 > **Superseded for the allocation preview (decision 2026-10-30).** Plan the month
-> no longer solves. Its proposal is synchronous arithmetic: equal ordinary shares
-> with remainders newest first; open obligations repaid oldest first, capped by the
-> debtor's availability ceiling and the creditor's locked floor; locks as floors.
+> no longer solves. Its proposal is synchronous arithmetic: one extra point each
+> before anyone gets two (decision 2026-11-01): each creditor's relief is repaid
+> by its debtors newest member first, at most one point per debtor a month, within
+> the debtor's availability ceiling; remainders go newest first to members not
+> repaying; locks as floors.
 > A simple per-member availability ceiling (available covered duties not locked
 > to someone else) warns inline and never blocks; a softer note says when a
 > target needs back-to-back days. Automatic repayments stay within the spaced
@@ -359,7 +361,9 @@ stored with the allocation so it is not recomputed later to manufacture history.
 
 Read actual obligations, simulate published work through the selected month's
 operational opening, normalize the resulting graph and propose repayment of the
-oldest feasible units. There is no fixed monthly repayment cap.
+oldest feasible units. *Superseded for the proposal (decision 2026-11-01):* each
+debtor repays at most one point a month, newest member first per creditor, each
+from its own oldest debt; see `docs/ALLOCATION_PLANNER.md`.
 
 For an ordinary normalized obligation `debtor D -> creditor C`, proposed
 repayment `s` increases D's target by `s` and decreases C's by `s`.

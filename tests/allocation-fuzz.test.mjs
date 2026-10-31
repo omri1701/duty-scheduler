@@ -196,6 +196,10 @@ test('fuzz: per-person allocation sequences keep floors, conservation, canonical
   for (let s = 0; s < SEQ; s++) {
     const name = names[s % names.length], i = SCENARIOS[name](), c = context(i), prop = proposeAllocation(i);
     stats.sequences++;
+    // One extra each (decision 2026-11-01): a proposal repays at most one point per debtor a month.
+    const repaid = {};
+    for (const r of prop.draft.repayments) repaid[r.claim.debtorId] = (repaid[r.claim.debtorId] ?? 0) + r.units;
+    assert.ok(Object.values(repaid).every(u => u <= 2), `${name}: at most one point of repayment per debtor (${JSON.stringify(repaid)})`);
     check(name, i, c, prop, prop.draft, []);
     let d = prop.draft; const history = [d], trail = [];
     for (let k = 0; k < LEN; k++) {

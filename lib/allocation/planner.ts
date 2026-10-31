@@ -11,13 +11,17 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
 
 /** Synchronous proposal: plain arithmetic, no solver. Date placement and the
  * exact coverage check remain Generate's job.
- * 1. Equal ordinary shares; remainders go to the newest members. When the
- *    indivisible duties cannot split that way, the cheapest exact partition
- *    is used instead, larger shares again to the newest members, and the
- *    extra above the plain split is temporary credit (`uneven`).
- * 2. Open obligations are repaid oldest first, capped by the debtor's
- *    availability ceiling and by the creditor's locked floor; work carried as
- *    uneven credit is never relief.
+ * One extra each, before anyone gets two (decision 2026-11-01):
+ * 1. Open obligations are repaid newest member first, per creditor (creditors in
+ *    the order of their oldest debt), each debtor from its own oldest debt, at
+ *    most one point per debtor per month over all creditors, capped by the
+ *    debtor's availability ceiling and by the creditor's relief (above its locks;
+ *    work carried as uneven credit is never relief). The rest carries over.
+ * 2. Equal ordinary shares; the larger shares (remainders) go to the newest
+ *    members who are not repaying this month, then, only if needed, to the newest
+ *    repayers. When the indivisible duties cannot split equally, the cheapest
+ *    exact partition is used the same way, and the extra above the plain split is
+ *    temporary credit (`uneven`).
  * 3. Locks are floors: a member below them takes temporary work from the member
  *    with most points (most senior on ties), as part of the automatic balance.
  * `retained` hand changes and pairs of members still present are reapplied
@@ -27,22 +31,42 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
 export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   const c = context(input), g = grain(c), ceiling = ceilings(c), weights = c.prepared.duties.map(d => d.units);
   const shares = fitPartition(weights, c.ids.length);
-  let baseline = Object.fromEntries(c.ids.map(id => [id, shares[input.seniority.indexOf(id)]]));
+  const newest = [...input.seniority].reverse();
+  // Larger shares newest first, members repaying this month last.
+  const arrange = (repaying: ReadonlySet<string>) => {
+    const order = [...newest.filter(id => !repaying.has(id)), ...newest.filter(id => repaying.has(id))];
+    const descending = [...shares].sort((a, b) => b - a);
+    const share = new Map(order.map((id, k) => [id, descending[k]]));
+    return Object.fromEntries(c.ids.map(id => [id, share.get(id)!]));
+  };
   const kept = retained?.baselineUnits;
-  if (kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
-    JSON.stringify(c.ids.map(id => kept[id]).sort((a, b) => a - b)) === JSON.stringify([...shares].sort((a, b) => a - b))) {
-    baseline = Object.fromEntries(c.ids.map(id => [id, kept[id]]));
+  const keep = !!kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
+    JSON.stringify(c.ids.map(id => kept[id]).sort((a, b) => a - b)) === JSON.stringify([...shares].sort((a, b) => a - b));
+  const repay = (baseline: Record<string, number>) => {
+    const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
+    const offered = {...baseline}, repayments: AllocationDraft['repayments'] = [], extra: Record<string, number> = {};
+    const creditors = [...new Set(c.candidates.map(k => k.creditorId))];
+    for (const creditorId of creditors) for (const debtorId of newest) {
+      // Each debtor repays from its own oldest debt to this creditor, at most one point a month in all.
+      for (const claim of c.candidates.filter(k => k.creditorId === creditorId && k.debtorId === debtorId)) {
+        const room = Math.min(claim.units, 2 - (extra[debtorId] ?? 0), ceiling[debtorId] - offered[debtorId],
+          offered[creditorId] - c.locked[creditorId] - (carried[creditorId] ?? 0));
+        const amount = Math.floor(Math.max(0, room) / g) * g;
+        if (!amount) continue;
+        repayments.push({claim: {...claim, ...sliceClaim(claim, amount), units: amount}, units: amount});
+        offered[debtorId] += amount; offered[creditorId] -= amount; extra[debtorId] = (extra[debtorId] ?? 0) + amount;
+      }
+    }
+    return {offered, repayments, repaying: new Set(Object.keys(extra))};
+  };
+  // Who repays depends on the creditors' shares and the shares on who repays: settle both.
+  let baseline = keep ? Object.fromEntries(c.ids.map(id => [id, kept![id]])) : arrange(new Set()), plan = repay(baseline);
+  for (let round = 0; !keep && round < c.ids.length; round++) {
+    const next = arrange(plan.repaying);
+    if (c.ids.every(id => next[id] === baseline[id])) break;
+    baseline = next; plan = repay(baseline);
   }
-  const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
-  const offered = {...baseline}, repayments: AllocationDraft['repayments'] = [];
-  for (const claim of c.candidates) {
-    const room = Math.min(claim.units, ceiling[claim.debtorId] - offered[claim.debtorId],
-      offered[claim.creditorId] - c.locked[claim.creditorId] - (carried[claim.creditorId] ?? 0));
-    const amount = Math.floor(Math.max(0, room) / g) * g;
-    if (!amount) continue;
-    repayments.push({claim: {...claim, ...sliceClaim(claim, amount), units: amount}, units: amount});
-    offered[claim.debtorId] += amount; offered[claim.creditorId] -= amount;
-  }
+  const {offered, repayments} = plan;
   const build = (hand: Hand, pairs: Pair[]): AllocationDraft => {
     const {changes} = balanceChanges(c, input.seniority, baseline, offered, hand);
     const targets = Object.fromEntries(c.ids.map(id => [id, offered[id] + changes[id].temporary + changes[id].permanent]));
