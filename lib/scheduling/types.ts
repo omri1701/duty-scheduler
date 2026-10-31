@@ -31,6 +31,8 @@ export type GenerationInput = {
 export type CanonicalDuty = {
   id: string; ownerMonth: string; startDate: string; endDate: string; dates: string[];
   start: number; end: number; units: number; specialDates: string[]; weekendId?: string;
+  /** Combined weekends only: the Saturday date's own units (one plus twice its extra). */
+  saturdayUnits?: number;
 };
 export type Diagnostic = {
   code: string; certainty: 'fact' | 'proved' | 'unproved';

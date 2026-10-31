@@ -46,7 +46,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  {duplicate&&<div className="warning-note">{t('Primary and emergency engineers must be different on each day.','המהנדס הראשי ומהנדס החירום חייבים להיות שונים בכל יום.')}</div>}
  {needsOverride&&<div className="warning-note">{!!conflicts.length&&<p>{conflicts.join(' / ')}</p>}{!!extraWeekends.length&&<p>{extraWeekends.map(name).join(', ')} · {t('This adds another weekend this month.','השיבוץ מוסיף סוף שבוע נוסף בחודש.')}</p>}<label className="check-label duty-override manager-override"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Approve these exceptions as manager','אישור החריגות כמנהל')}</label></div>}
  <div className="editor-actions"><Button disabled={duplicate||(needsOverride&&!override)||busy} onClick={()=>submit(()=>onSave(s=>change(s,needsOverride&&override),weekend?[friday,addDays(friday,1)]:[duty.id]))}>{t('Save assignment','שמירת השיבוץ')}</Button></div>
- {duty.kind==='special'&&<Button variant="ghost" disabled={busy} onClick={()=>submit(onRemoveSpecial)}><Trash2/>{t('Remove extra points from this day','הסרת הנקודות הנוספות ביום זה')}</Button>}
+ {duty.kind==='special'&&<Button variant="ghost" disabled={busy} onClick={()=>submit(onRemoveSpecial)}><Trash2/>{t('Remove extra points from this duty','הסרת הנקודות הנוספות מתורנות זו')}</Button>}
  </>}
  </EditorDialog>
 }

@@ -200,8 +200,9 @@ test('multiple reverse transfers reserve distinct original source slices and ear
 });
 
 test('a weighted cross-year holiday weekend binds real units per date and completes at its Sunday end', async () => {
-  // The +2 special keeps the 31 December weekend combined: 3 units on Friday and 3 on the
-  // January Saturday, both earned only when the duty ends on 2 January at 09:00.
+  // The +2 special covers both weekend dates and keeps the 31 December weekend combined:
+  // 5 units on Friday and 5 on the January Saturday, both earned only when the duty ends on
+  // 2 January at 09:00.
   const weekend = '2027-12-31', {input, assignments} = scenario('weighted'), debtor = assignments[weekend].primary;
   assert.equal(assignments['2028-01-01'], undefined);
   const units = sum(canonicalDuties(input.schedule.month, input.schedule.calendar)
@@ -215,14 +216,15 @@ test('a weighted cross-year holiday weekend binds real units per date and comple
   const result = await bindAllocation(input, draft, partial, {...envelope, publicationId: 'december'});
   assert.equal(result.bindable, true, JSON.stringify(result.diagnostics)); assert.equal(result.publishable, false);
   const reservations = result.publication.reservations;
-  assert.equal(sum(reservations.map(r => r.capacity.units)), 6);
+  assert.equal(sum(reservations.map(r => r.capacity.units)), 10);
+  assert.equal(result.publication.duties.find(d => d.startDate === weekend).saturdayUnits, 5);
   for (const date of ['2027-12-31', '2028-01-01']) {
-    assert.equal(sum(reservations.filter(r => r.capacity.date === date).map(r => r.capacity.units)), 3);
-    assert.ok(reservations.filter(r => r.capacity.date === date).every(r => r.capacity.offset + r.capacity.units <= 3));
+    assert.equal(sum(reservations.filter(r => r.capacity.date === date).map(r => r.capacity.units)), 5);
+    assert.ok(reservations.filter(r => r.capacity.date === date).every(r => r.capacity.offset + r.capacity.units <= 5));
   }
   const end = handover('2028-01-02') * 60000;
   assert.equal(reconcile(result.preview.events, end - 1).net[debtor], -units);
-  assert.equal(reconcile(result.preview.events, end).net[debtor], -units + 6); exclusivity(result.publication);
+  assert.equal(reconcile(result.preview.events, end).net[debtor], -units + 10); exclusivity(result.publication);
 });
 
 test('combined weekend splits accounting atoms but never earns before the real Sunday end', async () => {

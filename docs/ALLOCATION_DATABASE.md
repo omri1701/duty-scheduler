@@ -155,9 +155,11 @@ routes and ambiguous normalized deferrals likewise require review.
 Baseline validation is an exact decision over owned canonical weights,
 independent of the scheduling solver and its proofs. Those weights come from
 `duty_private.generation_duties` and the stored `points` column, which apply the
-same formula as `canonicalDuties`: weekday 1 + extra, combined holiday weekend
-1 + extra, hand-split holiday halves 0.5 + ⌈extra⌉/2 and 0.5 + ⌊extra⌋/2
-(migration `20261031023000_holiday_weekends`). `allocation_fit` searches
+same formula as `canonicalDuties`: weekday 1 + extra, Friday or Saturday 0.5 + its
+own extra, combined holiday weekend the sum of its two dates (`extra_points` for
+Friday, `saturday_extra_points` for Saturday; migration
+`20261031130000_holiday_weekends`). Compensation gives each weekend date its own
+atom (`saturdayUnits` on a combined published duty). `allocation_fit` searches
 remaining duty-count vectors, so identical duties are never re-explored: lumpy
 12-engineer special months that took 8–60+ s in the original per-duty search now
 take milliseconds. Outside its exact integer domain (a non-positive weight, over 64

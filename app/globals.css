@@ -177,7 +177,7 @@
  .calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:0}
  .calendar-weekdays span{font-size:10px;padding:9px 0;text-align:center}
  .calendar-grid{--calendar-cell-min-height:76px}
- .calendar-grid .day-cell{display:flex;align-items:stretch;min-height:var(--calendar-cell-min-height);gap:5px;padding:7px 2px;border-inline-end:1px solid #e5eae7;border-bottom:1px solid #e5eae7}
+ .calendar-grid .day-cell{--calendar-day-inset:2px;display:flex;align-items:stretch;min-height:var(--calendar-cell-min-height);gap:5px;padding:7px 2px;border-inline-end:1px solid #e5eae7;border-bottom:1px solid #e5eae7}
  .calendar-grid .day-cell.outside{display:flex}
  .calendar-grid .date-line{min-height:18px;justify-content:center;gap:2px;flex-wrap:wrap}
  .calendar-grid .combined-weekend .weekend-dates{width:calc(100% + 4px);margin-inline:-2px}
@@ -542,7 +542,25 @@
 .duty-dialog .duty-lock-toggle{position:absolute;top:8px;right:40px;width:32px;height:32px;color:#64766b}
 .duty-dialog .duty-lock-toggle[aria-pressed=true]{color:#174b42;background:#edf4e8}
 .duty-dialog [data-slot=dialog-header]{padding-right:64px}
-.duty-lock-indicator{display:inline-flex;color:#52665a;margin-inline-start:auto}
+.duty-lock-indicator{display:inline-flex;color:#52665a}
+/* Date-line marks (lock, +extra) sit top-right like a regular cell, also inside a combined weekend's two-column date line. */
+.date-marks{display:inline-flex;align-items:center;gap:4px;margin-inline-start:auto}
+.calendar-grid .combined-weekend .date-line{position:relative}
+.calendar-grid .combined-weekend .date-marks{position:absolute;top:0;inset-inline-end:0;margin:0}
+/* A holiday marks only its own dates inside a combined weekend. */
+.calendar-grid .combined-weekend.special.holiday-friday:not(.holiday-saturday){background:linear-gradient(to right,#fff2d4 50%,#edf4f0 50%)}
+.calendar-grid .combined-weekend.special.holiday-saturday:not(.holiday-friday){background:linear-gradient(to right,#edf4f0 50%,#fff2d4 50%)}
+.calendar-grid:dir(rtl) .combined-weekend.special.holiday-friday:not(.holiday-saturday){background:linear-gradient(to left,#fff2d4 50%,#edf4f0 50%)}
+.calendar-grid:dir(rtl) .combined-weekend.special.holiday-saturday:not(.holiday-friday){background:linear-gradient(to left,#edf4f0 50%,#fff2d4 50%)}
+/* Streaks: adjacent duties of one member read as one bar; across the Saturday→Sunday row break the bar ends with an arrow and resumes with a notch. Mirroring follows the grid's own direction (the desktop week stays left-to-right in Hebrew; the phone grid flips). */
+.calendar-grid .streak-start:not(.streak-break-after),.calendar-grid .streak-middle:not(.streak-break-after){border-inline-end-color:transparent}
+.calendar-grid .streak-start .assignment-chip,.calendar-grid .streak-middle .assignment-chip{margin-inline-end:calc(-1 * var(--calendar-day-inset) - 1px);border-start-end-radius:0;border-end-end-radius:0;max-width:none}
+.calendar-grid .streak-middle .assignment-chip,.calendar-grid .streak-end .assignment-chip{margin-inline-start:calc(-1 * var(--calendar-day-inset));border-start-start-radius:0;border-end-start-radius:0;max-width:none}
+.calendar-grid .streak-break-after .assignment-chip{margin-inline-end:0;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 50%,calc(100% - 7px) 100%,0 100%)}
+.calendar-grid .streak-break-before .assignment-chip{margin-inline-start:0;clip-path:polygon(0 0,100% 0,100% 100%,0 100%,7px 50%)}
+.calendar-grid:dir(rtl) .streak-break-after .assignment-chip{clip-path:polygon(100% 0,7px 0,0 50%,7px 100%,100% 100%)}
+.calendar-grid:dir(rtl) .streak-break-before .assignment-chip{clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
+.streak-continued{display:inline-block;min-height:1em}
 .net-points button{display:block;width:100%;min-height:44px;background:none;border:0;padding:0;color:inherit;font:inherit;border-radius:6px}
 .net-points .owed strong{color:#386227}.net-points .owes strong{color:#a94c36}
 .net-breakdown{display:grid;gap:10px;font-size:13px;color:#405a49}

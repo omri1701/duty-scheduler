@@ -70,7 +70,8 @@ test('reopened versions and My Duties are independent, Cancel Draft confirms and
   backend.raw.assignments.find(d=>d.publication_id===null && d.day==='2026-11-02')!.primary_id=ids.admin;
   await page.reload();
   await expect(page.getByRole('button',{name:'Draft',exact:true})).toHaveAttribute('aria-pressed','true');
-  await expect(duty(page,'2026-11-02')).toContainText('Avery');
+  // 1 and 2 November are both Avery's now, so the name shows once on the streak; the accessible name stays per duty.
+  await expect(duty(page,'2026-11-02')).toHaveAccessibleName(/Avery/);
   await page.getByRole('button',{name:'My duties',exact:true}).click();
   await page.getByRole('button',{name:'Published',exact:true}).click();
   await expect(page.getByRole('button',{name:'My duties',exact:true})).toHaveAttribute('aria-pressed','true');
@@ -151,7 +152,8 @@ for(const split of [false,true])for(const role of ['admin','a'] as const)for(con
     await expect(saturday).toBeEnabled();
     await expect(saturday).not.toHaveClass(/outside|adjacent-duty/);
     await expect(saturday).toHaveAttribute('data-gesture-key','2028-01-01');
-    await expect(saturday).toContainText(role==='admin'?'Blair':'Alex');
+    // Both halves belong to one member: the bar names them once, each half keeps its accessible name.
+    await expect(saturday).toHaveAccessibleName(role==='admin'?/Blair/:/Alex/);
     if(role==='admin') {
       await saturday.click();
       await expect(page.getByRole('dialog')).toBeVisible();

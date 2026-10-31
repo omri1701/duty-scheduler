@@ -11,6 +11,7 @@ import {
   overlap,
   ownerMonth,
   dayOf,
+  removeSpecialDates,
   swapDraft,
   type State,
   type Duty,
@@ -190,25 +191,10 @@ export function useWorkspaceDraft({
   const removeSpecial = async () => {
     const b = selected;
     if (!b) return;
-    if (
-      !(await update((s) => {
-        const specials = s.specials.flatMap((x) =>
-          x.id !== b.specialId
-            ? [x]
-            : [
-                { ...x, end: b.weekendId ?? b.start },
-                { ...x, id: crypto.randomUUID(), start: b.weekendId ? addDays(b.weekendId, 2) : b.end },
-              ].filter((x) => x.start < x.end),
-        );
-        // A weekend's extra belongs to both halves, so removing it cuts the range around the
-        // whole weekend; a hand split stays split.
-        const splitWeekends = b.weekendId && b.end === addDays(b.start, 1)
-          ? [...new Set([...(s.splitWeekends ?? []), b.weekendId])]
-          : s.splitWeekends;
-        return { ...s, specials, splitWeekends };
-      }))
-    )
-      return;
+    // Every date of this duty loses its extra; a combined weekend stays combined and a hand
+    // split stays split. The points change, so a locked duty is reviewed explicitly.
+    const reviewed = b.weekendId ? [b.weekendId, addDays(b.weekendId, 1)] : [b.id];
+    if (!(await update((s) => removeSpecialDates(s, b), true, true, reviewed))) return;
     setSelected(null);
   };
   function resetSpecialDates(month: string) {

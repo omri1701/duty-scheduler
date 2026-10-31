@@ -103,10 +103,10 @@ function sqlAccepts(weights, baseline) {
   const cost = capacities.reduce((s, x) => s + (n * x - sum) ** 2, 0);
   return sqlPartition(w, capacities) && !sqlBetter(w, Array(n).fill(0), cost, w.reduce(gcd, 0), sum);
 }
-// Nine days at +0.5: seven 1.5-point weekdays and one 1.5-point holiday weekend (3 units each)
-// among eighteen ordinary duties; an equal 2.5 points each would need twelve 3-unit duties.
-const holiday = (extra = 0.5, end = '2026-11-10', splitWeekends = []) => {
-  const i = scenario(); i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end, extra}], splitWeekends}; return i;
+// 14 days at +2 with both weekends split by hand: ten 3-point weekdays and four 2.5-point
+// weekend halves (each half keeps its own date's extra) among twelve ordinary duties.
+const holiday = (extra = 2) => {
+  const i = scenario(); i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-15', extra}], splitWeekends: ['2026-11-06', '2026-11-13']}; return i;
 };
 const weightsOf = i => canonicalDuties(i.schedule.month, i.schedule.calendar).map(d => d.units);
 
@@ -120,15 +120,22 @@ test('a normal month keeps the plain equal split, which the database accepts', (
 test('indivisible holiday duties fit the cheapest exact partition; extra goes to the newest', () => {
   const i = holiday(), weights = weightsOf(i), r = proposal(i);
   invariant(i, r);
-  assert.deepEqual([...weights].sort((a, b) => b - a), [...Array(8).fill(3), ...Array(18).fill(2)]);
+  assert.deepEqual([...weights].sort((a, b) => b - a), [...Array(10).fill(6), ...Array(4).fill(5), ...Array(14).fill(2)]);
   const plain = Object.fromEntries(i.seniority.map((id, k) => [id, equalShares(weights, 12)[k]]));
-  assert.deepEqual(Object.values(plain), Array(12).fill(5));
+  assert.deepEqual(Object.values(plain), Array(12).fill(9));
   assert.equal(sqlAccepts(weights, plain), false, 'the equal split is not a real partition');
-  assert.deepEqual(i.seniority.map(id => r.draft.baselineUnits[id]), [4, 4, ...Array(8).fill(5), 6, 6]);
+  assert.deepEqual(i.seniority.map(id => r.draft.baselineUnits[id]), [...Array(6).fill(8), ...Array(6).fill(10)]);
   assert.ok(sqlAccepts(weights, r.draft.baselineUnits), 'database rules accept the fitted baseline');
   assert.deepEqual(r.draft.targetsUnits, r.draft.baselineUnits);
-  assert.deepEqual(unevenBaseline(i, r.draft.baselineUnits).map(u => u.id), i.seniority.slice(10));
+  assert.deepEqual(unevenBaseline(i, r.draft.baselineUnits).map(u => u.id), i.seniority.slice(6));
   assert.deepEqual(proposal(i), r, 'deterministic');
+  // The same range with the weekends combined: each holiday weekend is one 5-point duty (10
+  // units) that no 9-unit share can hold, so the fit is different but still exact.
+  const combined = scenario(); combined.schedule.calendar = {specials: i.schedule.calendar.specials};
+  const cw = weightsOf(combined), cr = proposal(combined); invariant(combined, cr);
+  assert.deepEqual([...cw].sort((a, b) => b - a), [10, 10, ...Array(10).fill(6), ...Array(14).fill(2)]);
+  assert.ok(sqlAccepts(cw, cr.draft.baselineUnits), 'database rules accept the fitted baseline with combined holiday weekends');
+  assert.ok(Object.values(cr.draft.baselineUnits).some(u => u >= 10), 'someone carries a whole holiday weekend');
   // Small cases against the same SQL rules.
   let seed = 11; const next = k => (seed = (seed * 1103515245 + 12345) % 2147483648) % k;
   for (let k = 0; k < 300; k++) {
@@ -138,17 +145,17 @@ test('indivisible holiday duties fit the cheapest exact partition; extra goes to
 });
 
 test('the exact fit is bounded and reports a clear limit instead of freezing', () => {
-  // Two hand-split holiday weekends add 3- and 2-unit halves beside the 5-unit weekdays.
-  assert.throws(() => fitPartition(weightsOf(holiday(1.5, '2026-11-15', ['2026-11-06', '2026-11-13'])), 12, 10), /allocation-fit-limit/);
+  assert.throws(() => fitPartition(weightsOf(holiday()), 12, 10), /allocation-fit-limit/);
   assert.ok(fitPartition(weightsOf(holiday(1)), 12).length === 12);
 });
 
 const pair = (k, units = 1) => ({id: `uneven/e0${k}/e${String(k + 6).padStart(2, '0')}`, fromId: `e0${k}`, toId: `e${String(k + 6).padStart(2, '0')}`, units});
-// Six members and seven +2 days: the only uneven month the solver covers completely.
+// Six members and seven +2 days (the weekend split by hand): the only uneven month the solver
+// covers completely.
 const sixHoliday = () => {
   const i = scenario(); i.schedule.members = i.schedule.members.slice(0, 6); i.seniority = i.seniority.slice(0, 6);
   i.events = send([], {kind: 'members', members: i.schedule.members.map(m => ({id: m.id, active: true}))}, 'members');
-  i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-08', extra: 2}]}; return i;
+  i.schedule.calendar = {specials: [{id: 'holiday', start: '2026-11-01', end: '2026-11-08', extra: 2}], splitWeekends: ['2026-11-06']}; return i;
 };
 const netted = (i, d) => {const p = planAllocation(i, d); return nettedCompensation({}, {transfers: p.plan.intents, repayments: p.plan.repayments}, i.seniority);};
 

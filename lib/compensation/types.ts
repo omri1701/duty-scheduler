@@ -9,9 +9,11 @@ export type SourceLot = {
   id: string; debtorId: string; creditorId: string; units: Units; remaining: Units;
   correctedUnits: Units; priority: Priority; sourceKey: string; correctionOf?: string;
 };
-/** Capacity belongs to a primary's owned date atom. Combined weekends have one unit per date. */
+/** Capacity belongs to a primary's owned date atom. A combined weekend has one atom per
+ * date: Saturday carries saturdayUnits (one plus twice its own extra), Friday the rest. */
 export type CapacitySlice = {date: string; offset: Units; units: Units};
-export type PublishedDuty = {startDate: string; endDate: string; primaryId: string; units: Units};
+export type PublishedDuty = {startDate: string; endDate: string; primaryId: string; units: Units;
+  /** Combined weekends only; absent means an ordinary one-unit Saturday. */ saturdayUnits?: Units};
 export type TransferIntent = {
   id: string; kind: 'temporary' | 'permanent'; fromId: string; toId: string;
   capacity: readonly CapacitySlice[];

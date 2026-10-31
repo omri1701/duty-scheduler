@@ -48,25 +48,23 @@ export function canonicalDuties(month: string, calendar: Calendar): CanonicalDut
   for (const d of marked) requireDate(d);
   const next = monthNext(month) + '-01';
   const result: CanonicalDuty[] = [], end = dayOf(next) === 6 ? addDays(next, 1) : next;
-  // A special range touching either weekend date makes the weekend a holiday weekend
-  // worth 1 + extra (the largest extra touching it). Only an explicit split separates
-  // the halves; both halves then use that same extra and the odd half point goes to
-  // Friday, so splitting never changes the weekend's total.
-  const weekendExtra = (friday: string) => specials.filter(s => s.start < addDays(friday, 2) && friday < s.end)
-    .reduce((most, s) => Math.max(most, s.extra), 0);
+  // Every holiday date adds its own extra: a weekday is 2 + 2·extra units, a Friday or
+  // Saturday 1 + 2·extra. A weekend touched by a special stays one combined duty worth the
+  // sum of its two dates; only an explicit split separates the halves, each keeping its own
+  // date's units, so splitting never changes the weekend's total.
+  const extraAt = (date: string) => specials.find(s => s.start <= date && date < s.end)?.extra ?? 0;
   for (let date = month + '-01'; date < end;) {
     const dow = dayOf(date);
     if (dow === 6 && date === month + '-01') {date = addDays(date, 1); continue;}
     const weekendId = dow === 5 ? date : dow === 6 ? addDays(date, -1) : undefined;
     const split = weekendId && splits.has(weekendId);
     const combined = dow === 5 && !split, until = addDays(date, combined ? 2 : 1);
-    const covered = dates(date, until), special = specials.find(s => s.start <= date && date < s.end);
-    const extra = weekendId ? weekendExtra(weekendId) : special?.extra ?? 0;
-    const units = combined ? 2 + halfUnits(extra) : weekendId ? 1 + (dow === 5 ? Math.ceil(extra) : Math.floor(extra)) : 2 + halfUnits(extra);
+    const covered = dates(date, until);
+    const units = covered.reduce((sum, d) => sum + (weekendId ? 1 : 2) + halfUnits(extraAt(d)), 0);
     result.push({id: date, ownerMonth: month, startDate: date, endDate: until, dates: covered,
       start: handover(date), end: handover(until), units,
       specialDates: covered.filter(d => marked.has(d) || specials.some(s => s.start <= d && d < s.end)),
-      ...(weekendId ? {weekendId} : {})});
+      ...(weekendId ? {weekendId} : {}), ...(combined ? {saturdayUnits: 1 + halfUnits(extraAt(addDays(date, 1)))} : {})});
     date = until;
   }
   return result;

@@ -1,4 +1,4 @@
-import type {ReactNode,Ref,ComponentProps} from 'react';
+import {Children,type ReactNode,type Ref,type ComponentProps} from 'react';
 import type {Translate} from './workspace-types';
 import {calendarOwnerMonth} from '@/lib/rota/calendar-dates';
 
@@ -48,9 +48,11 @@ export function CalendarWeekdays({lang}:{lang:'en'|'he'}) {
 
 export function CalendarDateLine({date,end,children,loading=false,today}:{date:string;end?:string;children?:ReactNode;loading?:boolean;today?:string}) {
   const number=(value:string)=>loading?<span className="skeleton-content">{Number(value.slice(-2))}</span>:<span className={value===today ? 'current-date' : undefined} aria-current={value===today ? 'date' : undefined}>{Number(value.slice(-2))}</span>;
+  // Marks (lock, +extra) render only when present: an empty wrapper would shift the date numbers.
+  const marks=Children.toArray(children);
   return <div className={end?'date-line weekend-dates':'date-line'}>
     <span className="day-number">{number(date)}</span>
     {end&&<span className="day-number weekend-end">{number(end)}</span>}
-    {children}
+    {marks.length>0&&<span className="date-marks">{marks}</span>}
   </div>;
 }

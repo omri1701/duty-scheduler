@@ -1,5 +1,6 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
+import {streakCells} from '@/lib/rota/streaks';
 import { Plus, Info, LockKeyhole } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
@@ -72,6 +73,8 @@ export function WorkspaceCalendar({
     ignoreDragClick,
     selectCalendarDuty,
   } = interactions;
+  // Display only: adjacent duties of one member read as a single bar.
+  const streaks = streakCells(calendarBlocks, calendarState.assignments);
   return (
     <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
         {reopened ? <>
@@ -157,7 +160,8 @@ export function WorkspaceCalendar({
           const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
             mine = a?.primary === meId || a?.secondary === meId,
-            interactive = !!b && ownerMonth(b) === month;
+            interactive = !!b && ownerMonth(b) === month,
+            cell = b ? streaks[b.id] : undefined;
           return (
             <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
               disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id))}
@@ -175,6 +179,12 @@ export function WorkspaceCalendar({
               aria-describedby={requesting ? 'published-swap-help' : undefined}
               className={[
                 !interactive ? 'adjacent-duty' : '',
+                cell ? `streak-${cell.position}` : '',
+                cell?.breakBefore ? 'streak-break-before' : '',
+                cell?.breakAfter ? 'streak-break-after' : '',
+                // A holiday marks only its own dates inside a combined weekend.
+                combined && b?.specialDates?.includes(b.start) ? 'holiday-friday' : '',
+                combined && b?.specialDates?.includes(addDays(b!.start, 1)) ? 'holiday-saturday' : '',
                 view === 'me' && !mine ? 'faded' : '',
                 dragFrom === b?.id || keyboardSource === b?.id ? 'drag-source' : '',
                 (dragOver === b?.id && dragFrom !== b?.id) ||
@@ -193,9 +203,7 @@ export function WorkspaceCalendar({
             >
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {calendarState.months[month]?.status === 'draft' && a?.locked && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}
-                {b?.kind === 'special' && (
-                  <span className="tiny-badge">+{b.points - (b.weekendId && b.end !== addDays(b.start, 2) ? 0.5 : 1)}</span>
-                )}
+                {cell?.badge !== undefined && <span className="tiny-badge">+{cell.badge}</span>}
               </CalendarDateLine>
               {b && (
                 <>
@@ -211,7 +219,9 @@ export function WorkspaceCalendar({
                         : undefined
                     }
                   >
-                    {p ? (
+                    {p ? cell?.showName === false ? (
+                      <span className="streak-continued" aria-hidden="true" />
+                    ) : (
                       <span>
                         {nickname(p.id)}
                         {p.id === meId && <small> {t('(you)', '(אני)')}</small>}
@@ -220,7 +230,7 @@ export function WorkspaceCalendar({
                       <span>{t('Unassigned', 'ללא שיבוץ')}</span>
                     )}
                   </CalendarAssignment>
-                  {b.title && <div className="special-title">{b.title}</div>}
+                  {b.title && cell?.showTitle !== false && <div className="special-title">{b.title}</div>}
                   {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
 
                 </>

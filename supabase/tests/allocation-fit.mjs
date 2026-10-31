@@ -1,5 +1,6 @@
 // Real RPC -> browser baseline fit -> checked confirm, inside rolled-back transactions.
-// A 14-day +2 special among 12 engineers cannot split equally; the fitted baseline must be
+// A 14-day +2 special among 12 engineers (its weekends split by hand, so every weekend date
+// is its own 2.5-point half) cannot split equally; the fitted baseline must be
 // accepted together with exactly the system uneven credit it implies (decision 2026-10-30),
 // reduced by the real permanent load (decision 2026-10-31), and nothing else may create,
 // enlarge, redirect or drop that credit. A seniority reorder after confirmation re-pairs the
@@ -44,6 +45,7 @@ async function fixture(engineers,specialEnd){
  select public.duty_save_schedule(${q({team:[],months:{[month]:{status:'draft',deadline:'2026-10-25',generated:false}},duties:[]})},${rev},null);`);
  const state=await load();
  state.specials=[{id:'holiday',title:'Holiday',start:'2026-11-01',end:specialEnd,extra:2}];
+ state.splitWeekends=['2026-11-06','2026-11-13'].filter(friday=>friday<specialEnd);
  await sql(`select public.duty_save_schedule(${q(schedulePayload(state,month))},${rev},null);`);
  const context=await contextOf();
  assert.equal(context.input.schedule.members.filter(m=>m.eligible).length,engineers);
