@@ -113,7 +113,27 @@ do $$declare pub uuid;intent jsonb:='[{"id":"avi-to-dana-again","kind":"temporar
  perform pg_temp.check(3,'{"61000000-0000-0000-0000-000000000003":1}',
   '[{"memberId":"61000000-0000-0000-0000-000000000003","counterpartId":"61000000-0000-0000-0000-000000000001","units":1,"kind":"manual","date":null,"month":null}]');
  perform pg_temp.check(2,'{"61000000-0000-0000-0000-000000000002":0}','[]');
+ -- Halves net across people: Avi owes the admin half a point and the admin owes Dana half a point, so Avi owes
+ -- Dana directly (carried through the team) and the admin is clear. The lone half stays exact beside Avi's
+ -- reserved whole point; nothing rounds, forgives or rebinds it.
+ perform pg_temp.as_member(1);
+ perform public.duty_compensation('{"kind":"claim","debtorId":"61000000-0000-0000-0000-000000000002","creditorId":"61000000-0000-0000-0000-000000000001","units":1}','balance-chain','PRIVATE-CHAIN-REASON',pg_temp.rev());
+ perform pg_temp.check(1,'{"61000000-0000-0000-0000-000000000001":0,"61000000-0000-0000-0000-000000000002":-1,"61000000-0000-0000-0000-000000000003":1,"61000000-0000-0000-0000-000000000004":0,"61000000-0000-0000-0000-000000000005":0}',
+  '[{"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":-1,"kind":"routed","date":null,"month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":-2,"kind":"temporary","date":"2099-01-12","month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":2,"kind":"repayment","date":"2099-02-02","month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000003","counterpartId":"61000000-0000-0000-0000-000000000002","units":1,"kind":"routed","date":null,"month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000003","counterpartId":"61000000-0000-0000-0000-000000000002","units":2,"kind":"temporary","date":"2099-01-12","month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000003","counterpartId":"61000000-0000-0000-0000-000000000002","units":-2,"kind":"repayment","date":"2099-02-02","month":null}]');
+ perform pg_temp.check(2,'{"61000000-0000-0000-0000-000000000002":-1}',
+  '[{"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":-1,"kind":"routed","date":null,"month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":-2,"kind":"temporary","date":"2099-01-12","month":null},
+    {"memberId":"61000000-0000-0000-0000-000000000002","counterpartId":"61000000-0000-0000-0000-000000000003","units":2,"kind":"repayment","date":"2099-02-02","month":null}]');
+ perform pg_temp.as_member(1);
+ v:=public.duty_compensation('{"kind":"reconcile"}',null,null,pg_temp.rev());
+ if jsonb_array_length(v->'actual'->'claims')<>2 or (select count(*) from jsonb_array_elements(v->'actual'->'claims') c where jsonb_array_length(c->'path')=2 and c->>'units'='1')<>1
+  or (select count(*) from jsonb_array_elements(v->'actual'->'contributions') x where x->>'status'='pending')<>1 then raise exception 'Half-point chain changed the reserved whole point or lost a leg: %',v->'actual'->'claims';end if;
 end$$;
 reset role;
-select 'PASS: member-scoped projected balance, pending/inactive/anonymous denial, read-only access, no private notes or audit reasons, transfer/republish/repayment projection';
+select 'PASS: member-scoped projected balance, pending/inactive/anonymous denial, read-only access, no private notes or audit reasons, transfer/republish/repayment projection, half-point chain netting';
 rollback;

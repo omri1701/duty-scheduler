@@ -17,6 +17,10 @@ export type Change = {temporary: number; permanent: number};
 export type Pair = {id: string; fromId: string; toId: string; units: number; kind: Kind};
 /** One canonical derived transfer. The checked RPC re-derives the list and requires it exactly. */
 export type Transfer = {id: string; fromId: string; toId: string; units: number; kind: Kind};
+/** System credit for an indivisible month: part of a fitted share above the plain
+ * equal split, carried temporarily for a member still below it. Derived, never
+ * chosen (`uneven/<debtor>/<creditor>`); the checked RPC requires the exact list. */
+export type UnevenTransfer = {id: string; fromId: string; toId: string; units: number};
 /** Preserve this snapshot; never recompute its baseline from later history. */
 export type AllocationDraft = {
   baselineUnits: Record<string, number>;
@@ -27,6 +31,9 @@ export type AllocationDraft = {
   changes: Record<string, Change>;
   pairs: Pair[];
   transfers: Transfer[];
+  /** Uneven-month credit still carried after permanent changes. Absent in
+   * snapshots saved before the credit existed: they carry none. */
+  uneven?: UnevenTransfer[];
   sourceKey: string;
   /** Members the manager changed by hand. The automatic balance never moves them.
    * Local editing state only: it is stripped before the checked RPC persists.

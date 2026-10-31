@@ -1,11 +1,12 @@
 import {settle} from './derive.ts';
 import type {Kind} from './types.ts';
 
-/** One netted temporary relationship, in half-point units. */
-export type NettedLine = {debtorId: string; creditorId: string; units: number; thisMonth: number; later: number};
+/** One netted temporary relationship, in half-point units. `reason` names system
+ * uneven-month credit when that is what the line's own direction carries. */
+export type NettedLine = {debtorId: string; creditorId: string; units: number; thisMonth: number; later: number; reason?: 'uneven'};
 /** The compiled plan's temporary intents and this month's repayments. */
 export type NettedSource = {
-  transfers: readonly {fromId: string; toId: string; units: number; kind: Kind}[];
+  transfers: readonly {fromId: string; toId: string; units: number; kind: Kind; transferIds?: readonly string[]}[];
   repayments: readonly {claim: {debtorId: string; creditorId: string}; units: number}[];
 };
 
@@ -31,6 +32,10 @@ export function nettedCompensation(opening: Readonly<Record<string, number>>, pl
   for (const f of settle(later, order)) {
     const line = lines.find(l => l.debtorId === f.debtorId && l.creditorId === f.creditorId);
     if (line) {line.units += f.units; line.later += f.units;} else lines.push({...f, thisMonth: 0, later: f.units});
+  }
+  for (const line of lines) {
+    if (plan.transfers.some(t => t.kind === 'temporary' && t.fromId === line.debtorId && t.toId === line.creditorId &&
+      t.transferIds?.[0]?.startsWith('uneven/'))) line.reason = 'uneven';
   }
   return lines;
 }

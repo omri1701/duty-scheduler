@@ -43,6 +43,28 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    (`allocation-fit-limit`) instead of freezing. The database's own optimality
    proof is slower: about 8 s locally for that 14-day case, which is the
    hosted `authenticated` statement timeout.
+   **Uneven credit (decisions 2026-10-30 and 2026-10-31).** The people who carry
+   more are compensated: `unevenTransfers` records the fitted baseline's excess
+   over the plain equal split as system temporary transfers in `draft.uneven`
+   (`uneven/<debtor>/<creditor>`, half-point units). The baseline is compared
+   rank by rank with the sorted plain split, so a remainder given to a different
+   member never creates debt; only the fit's deviation does. Debtors are the
+   members with the fewest points, most senior first; creditors have the most
+   points, most senior first. In the 14-day case each of the six most senior
+   members owes half a point to one of the six newest. The credit follows the
+   real permanent load: a creditor is credited only for the extra it still
+   carries after its net permanent loss, and a debtor owes only while it still
+   sits below the split after its net permanent gain (audit R3: Permanent −0.5
+   on a creditor lands on its debtor, both reach the equal share, and the credit
+   disappears). Temporary changes carry their own compensation and leave the
+   credit alone. Targets and the stored baseline are unchanged; compilation
+   carries part of the creditor's own share for the debtor, exactly as if the
+   equal split had been transferred, so publication creates the ordinary
+   temporary claim and later repayment settles it. Relief for an existing claim
+   never consumes work carried this way. The credit is derived, never chosen:
+   proposals, edits and review recompute it from the baseline and the
+   per-person changes under the current seniority, and the checked database
+   derives the same list and refuses any other.
 2. **Repayment.** Open projected obligations are repaid oldest first, in whole
    steps, capped by the debtor's availability ceiling (below) and by the
    creditor's locked floor. An older claim that does not fit is skipped and stays
@@ -106,6 +128,12 @@ requires it exactly. `hand` is local editing state, stripped before persisting;
 a reopened draft treats every member with a nonzero change as hand edited. A new
 proposal reapplies the retained hand changes and pairs of members still present
 when they fit the floors (`retainedChanges`); otherwise the plain proposal stands.
+It also keeps the confirmed ordinary baseline when that is still the same
+partition of the month's duties, so a seniority reorder after confirmation never
+forces a different baseline onto the next proposal (the database keeps a confirmed
+baseline immutable while duties and participants stand); `reviewAllocation`
+re-derives the uneven credit under the current order, so the retained draft still
+confirms.
 
 Source, weight, membership, constraint, ledger or saved seniority changes
 invalidate an old draft. Save the selected ordinary baseline, the per-person
@@ -194,6 +222,22 @@ temporary intents (including deferred repayment carried for a creditor) and
 subtracts the plan's repayments, then pairs net debtors with net creditors.
 Chains collapse (A owes B and B owes C shows A → C), opposite directions cancel,
 and each line shows what is really repaid this month and what carries forward.
+Half points follow the same rules (decisions 2026-10-31): a half-point debt is
+never rounded, forgiven or expired, and halves net across people, so if A owes B
+0.5 and C owes A 0.5 the list shows C → B 0.5 and A is clear. That netting is
+not a display convention: it is the ledger's own normalization (opposing, cycle
+and chain steps in `lib/compensation/normalize.ts`, mirrored exactly by
+`duty_private.compensation_normalize`), applied to every open claim on every
+ledger change, and the per-member netting here reproduces it for the plan. Only
+open halves net; a settled half never moves, and a half already reserved for
+repayment still nets, with its reservation held for review. A lone half, the odd
+half-unit that carries forward with nothing to pair it, says "0.5 waiting for the
+second half" (`loneHalf`) in place of "0.5 later": whole duties cannot repay it,
+so it waits for a second half or for a month with half-point duties. The Team
+breakdown adds the same line to a relationship whose net is a lone half.
+A line whose own direction carries an indivisible month's extra says "uneven
+split" (`reason`); the Team screen's net breakdown names the same credit
+"Uneven monthly split" (`duty_balance` kind `uneven`).
 Permanent intents and unplaced changes do not appear; unplaced units show one
 short warning line. The list is display only: stored changes, repayments, ledger
 and provenance are unchanged.
