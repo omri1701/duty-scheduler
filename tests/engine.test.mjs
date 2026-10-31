@@ -75,8 +75,14 @@ test('split cross-month weekend stays owned by Friday month and survives next ge
 test('a special weekend stays one combined duty worth 1 + extra; a hand split gives Friday the odd half point',()=>{let s=demo();s.specials=[{id:'sp',start:'2026-10-02',end:'2026-10-04',extra:2,title:'Holiday'}];s=setWeekendAssignment(s,'2026-10-02','all',{primary:'e0'});const bs=blocks('2026-10',s.specials,s.splitWeekends).filter(b=>b.specialId);assert.deepEqual(bs.map(b=>[b.id,b.end,b.points,b.kind]),[['2026-10-02','2026-10-04',3,'special']]);assert.equal(weekendCounts(s,'2026-10').e0,1);
  const halves=blocks('2026-10',s.specials,['2026-10-02']).filter(b=>b.specialId);assert.deepEqual(halves.map(b=>[b.id,b.points]),[['2026-10-02',1.5],['2026-10-03',1.5]]);
  const odd=blocks('2026-10',[{...s.specials[0],extra:0.5}],['2026-10-02']).filter(b=>b.specialId);assert.deepEqual(odd.map(b=>[b.id,b.points]),[['2026-10-02',1],['2026-10-03',0.5]]);
- // A range covering only Saturday still makes the whole weekend a holiday weekend.
- assert.equal(blocks('2026-10',[{id:'sat',start:'2026-10-03',end:'2026-10-05',extra:1,title:'Sat'}]).find(b=>b.id==='2026-10-02').points,2);});
+ // A range touching only one weekend date still makes the whole weekend a holiday weekend,
+ // combined or split by hand, and splitting never changes the total.
+ for(const [range,label] of [[{start:'2026-10-03',end:'2026-10-05'},'Saturday only'],[{start:'2026-10-01',end:'2026-10-03'},'Friday only'],[{start:'2026-10-02',end:'2026-10-04'},'both']]){
+  const sp=[{id:'r',extra:1.5,title:'Range',...range}],combined=blocks('2026-10',sp).find(b=>b.id==='2026-10-02');
+  assert.deepEqual([combined.points,combined.kind,combined.specialId],[2.5,'special','r'],label);
+  const halves=blocks('2026-10',sp,['2026-10-02']).filter(b=>b.weekendId==='2026-10-02');
+  assert.deepEqual(halves.map(b=>[b.id,b.points,b.specialId,b.title]),[['2026-10-02',1.5,'r','Range'],['2026-10-03',1,'r','Range']],label);
+ }});
 test('migration keeps notes and assigns each old special day without retaining hidden locks',()=>{const s=demo();s.version=1;s.specials=[{id:'sp',title:'Holiday',start:'2026-10-05',end:'2026-10-07',extra:2}];s.assignments['2026-10-05']={primary:'e0',locked:true};s.constraintNotes={e0:{'2026-10-04':'Trip'}};const n=migrate(s);assert.equal(n.version,3);assert.equal(n.assignments['2026-10-06'].primary,'e0');assert.equal(n.assignments['2026-10-05'].locked,undefined);assert.deepEqual(n.constraintNotes,s.constraintNotes);assert.deepEqual(migrate(n),n);});
 test('swaps cannot create a second weekend for an engineer',()=>{const s=swapFixture();s.assignments['2026-10-09']={primary:'e0'};assert.equal(swapDraft(s,'2026-10','2026-10-01','2026-10-02').reason,'weekend-limit');});
 

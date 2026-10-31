@@ -196,11 +196,12 @@ export function useWorkspaceDraft({
           x.id !== b.specialId
             ? [x]
             : [
-                { ...x, end: b.start },
-                { ...x, id: crypto.randomUUID(), start: b.end },
+                { ...x, end: b.weekendId ?? b.start },
+                { ...x, id: crypto.randomUUID(), start: b.weekendId ? addDays(b.weekendId, 2) : b.end },
               ].filter((x) => x.start < x.end),
         );
-        // Removing one hand-split half keeps the weekend split; a combined weekend loses the whole extra.
+        // A weekend's extra belongs to both halves, so removing it cuts the range around the
+        // whole weekend; a hand split stays split.
         const splitWeekends = b.weekendId && b.end === addDays(b.start, 1)
           ? [...new Set([...(s.splitWeekends ?? []), b.weekendId])]
           : s.splitWeekends;

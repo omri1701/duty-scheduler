@@ -404,6 +404,9 @@ const holidayDuties=[{day:'2027-12-31',end_day:'2028-01-02',primary_id:ids[5],se
  {day:'2027-12-04',end_day:'2027-12-05',primary_id:ids[7],secondary_id:null,manager_override:false,title:'Half',extra_points:0.5,locked:false},
  {day:'2027-12-10',end_day:'2027-12-11',primary_id:ids[8],secondary_id:null,manager_override:false,title:'Even',extra_points:2,locked:false},
  {day:'2027-12-11',end_day:'2027-12-12',primary_id:ids[9],secondary_id:null,manager_override:false,title:'Even',extra_points:2,locked:false}];
+// Both halves carry the weekend's extra, whichever date the range touched; differing halves are refused.
+const halves=(fri,sat)=>[{day:'2027-12-17',end_day:'2027-12-18',primary_id:ids[10],secondary_id:null,manager_override:false,title:'H',extra_points:fri,locked:false},
+ {day:'2027-12-18',end_day:'2027-12-19',primary_id:ids[11],secondary_id:null,manager_override:false,title:'H',extra_points:sat,locked:false}];
 let holiday=setup+`select public.duty_save_schedule(${quote({team:[],months:{[month]:{status:'draft',deadline:'2027-11-24',generated:false}},duties:holidayDuties})},${rev},null);
 reset role;
 do $$declare d jsonb:=duty_private.generation_duties('${month}'); u jsonb:='{}';
@@ -415,6 +418,16 @@ begin
  if (select jsonb_object_agg(day,points) from public.duty_assignments where publication_id is null and day in ('2027-12-31','2027-12-03','2027-12-04','2027-12-10','2027-12-11'))
   <>jsonb_build_object('2027-12-31',3,'2027-12-03',1,'2027-12-04',0.5,'2027-12-10',1.5,'2027-12-11',1.5) then raise exception 'stored points differ from canonical weights'; end if;
 end$$;
+set local role authenticated;
+select public.duty_save_schedule(${quote({team:[],months:{[month]:{status:'draft',deadline:'2027-11-24',generated:false}},duties:[...holidayDuties,...halves(1.5,1.5)]})},${rev},null);
+reset role;
+do $$declare u jsonb; begin
+ select jsonb_object_agg(x->>'id',x->'units') into u from jsonb_array_elements(duty_private.generation_duties('${month}')) x;
+ if u->>'2027-12-17'<>'3' or u->>'2027-12-18'<>'2' then raise exception 'hand-split +1.5 weekend must weigh 3 and 2 units: % %',u->'2027-12-17',u->'2027-12-18'; end if;
+ update public.duty_assignments set extra_points=0,title='' where publication_id is null and day='2027-12-18';
+ begin perform duty_private.generation_duties('${month}'); raise exception 'differing halves accepted';
+ exception when others then if sqlerrm<>'noncanonical-duty' then raise; end if; end;
+end$$;
 rollback;`;
 sql(holiday);
-console.log('PASS: combined holiday weekends weigh 1 + extra as one duty and hand-split halves keep the total with the odd half point on Friday, in generation_duties and the stored points column');
+console.log('PASS: combined holiday weekends weigh 1 + extra as one duty, hand-split halves keep the total with the odd half point on Friday (generation_duties and the stored points column), and halves with differing extras are refused');

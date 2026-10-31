@@ -12,13 +12,13 @@ export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]
  const begin=month+'-01',end=monthNext(month)+'-01',all:Duty[]=[];
  for(let d=addDays(begin,-2);d<addDays(end,2);d=addDays(d,1)){
   const dow=dayOf(d),weekendId=dow===5?d:dow===6?addDays(d,-1):undefined;
-  const sp=specials.find(s=>s.start<=d&&d<s.end);
+  // A weekend touched by a special is a holiday weekend worth 1 + extra (the largest extra
+  // touching either date); both hand-split halves use that same special.
+  const sp=weekendId?specials.filter(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})).sort((a,b)=>b.extra-a.extra)[0]:specials.find(s=>s.start<=d&&d<s.end);
   const split=weekendId&&splitWeekends.includes(weekendId);
   if(weekendId&&!split){
    if(dow===6)continue;
-   // A holiday weekend stays one duty worth 1 + extra (the largest extra touching it).
-   const wsp=specials.filter(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})).sort((a,b)=>b.extra-a.extra)[0];
-   all.push({id:d,start:d,end:addDays(d,2),points:1+(wsp?.extra??0),kind:wsp?'special':'weekend',weekendId,...(wsp?{title:wsp.title,specialId:wsp.id}:{})});
+   all.push({id:d,start:d,end:addDays(d,2),points:1+(sp?.extra??0),kind:sp?'special':'weekend',weekendId,...(sp?{title:sp.title,specialId:sp.id}:{})});
   }
   // A hand-split holiday weekend keeps the same total: Friday takes the odd half point.
   else all.push({id:d,start:d,end:addDays(d,1),points:weekendId?0.5+(sp?(dow===5?Math.ceil(sp.extra):Math.floor(sp.extra))/2:0):1+(sp?.extra??0),kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),...(sp?{title:sp.title,specialId:sp.id}:{})});

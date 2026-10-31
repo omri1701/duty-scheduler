@@ -185,9 +185,10 @@ Special extra points must be nonnegative multiples of 0.5 within existing
 product limits. Reject 1.1; never silently round it. A special range no longer
 splits a weekend (decision 2026-10-31): the combined weekend stays one duty worth
 1 + extra, which Generate gives to one member. If the manager splits it by hand,
-the halves keep that total; when 1 + extra is not an even number of half points
-the first half takes the odd half point (+0.5 → Friday 1, Saturday 0.5; +2 →
-1.5 and 1.5). The weekend cap and “either half is the weekend turn” are
+both halves use the weekend's extra (both rows store it) and keep that total;
+when 1 + extra is not an even number of half points the first half takes the odd
+half point (+0.5 → Friday 1, Saturday 0.5; +2 → 1.5 and 1.5). Halves stored
+with different extras are not canonical and are refused by the generation facts. The weekend cap and “either half is the weekend turn” are
 unchanged. A Special Block may cross month boundaries; resulting duties retain
 their owners.
 

@@ -122,7 +122,7 @@ independent of the scheduling solver and its proofs. Those weights come from
 `duty_private.generation_duties` and the stored `points` column, which apply the
 same formula as `canonicalDuties`: weekday 1 + extra, combined holiday weekend
 1 + extra, hand-split holiday halves 0.5 + ⌈extra⌉/2 and 0.5 + ⌊extra⌋/2
-(migration `20261031200000_holiday_weekends`). `allocation_fit` searches
+(migration `20261031023000_holiday_weekends`). `allocation_fit` searches
 remaining duty-count vectors, so identical duties are never re-explored: lumpy
 12-engineer special months that took 8–60+ s in the original per-duty search now
 take milliseconds. Outside its exact integer domain (a non-positive weight, over 64

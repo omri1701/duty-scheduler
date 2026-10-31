@@ -25,7 +25,8 @@ subset of duties to evade coverage or the opening cutoff. Friday owns both halve
 of a weekend, including a split Saturday in the next month/year. A special range
 touching a weekend keeps it combined as one holiday weekend worth 1 + extra (the
 largest extra touching it); only an explicit split separates the halves, which
-then take 0.5 + ⌈extra⌉/2 (Friday) and 0.5 + ⌊extra⌋/2 (Saturday). Marked holiday
+both use that extra and take 0.5 + ⌈extra⌉/2 (Friday) and 0.5 + ⌊extra⌋/2
+(Saturday), so splitting never changes the weekend's total. Marked holiday
 dates affect coverage priority without changing structure or weight. Overlapping
 special ranges are rejected. All internal weights, targets and deficits are integer
 half-point units; divide by two for display. No physical duty is divided by the solver.

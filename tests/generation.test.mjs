@@ -49,6 +49,16 @@ test('canonical real calendar: Friday ownership, combined/split/special, leap da
   assert.deepEqual(canonicalDuties('2027-12', {specials: [{id: 's', start: '2027-12-31', end: '2028-01-02', extra: 0.5}], splitWeekends: ['2027-12-31']})
     .slice(-2).map(d => d.units), [2, 1]);
   assert.deepEqual(canonicalDuties('2027-12', {specials: [{id: 's', start: '2028-01-01', end: '2028-01-02', extra: 1}]}).at(-1).units, 4);
+  // A range touching only Friday, only Saturday or both: combined and hand-split totals agree.
+  for (const [start, end] of [['2027-12-30', '2028-01-01'], ['2028-01-01', '2028-01-02'], ['2027-12-31', '2028-01-02']]) {
+    for (const extra of [0.5, 1, 1.5, 2]) {
+      const specials = [{id: 's', start, end, extra}], whole = canonicalDuties('2027-12', {specials}).at(-1);
+      const halves = canonicalDuties('2027-12', {specials, splitWeekends: ['2027-12-31']}).slice(-2);
+      assert.equal(whole.units, 2 + 2 * extra, `${start} +${extra}`);
+      assert.deepEqual(halves.map(d => d.units), [1 + Math.ceil(extra), 1 + Math.floor(extra)], `${start} +${extra}`);
+      assert.equal(halves[0].units + halves[1].units, whole.units);
+    }
+  }
   assert.equal(canonicalDuties('2028-02', {}).at(-1).id, '2028-02-29');
   assert.equal(canonicalDuties('2026-11', {specialDates: ['2026-11-07']}).find(d => d.id === '2026-11-06').specialDates.length, 1);
   assert.equal(halfUnits(34.5), 69);
