@@ -424,7 +424,7 @@
 .allocation-step button{min-height:36px;min-width:38px;border:1px solid transparent;border-radius:7px;transition:background .15s}
 .allocation-step button[aria-pressed=true]{background:#e8f0e4;border-color:#c2d2ba;color:#315939;font-weight:650}
 .allocation-table{border:1px solid #dce5da;border-radius:11px;overflow:hidden;background:white}
-.allocation-table-head,.allocation-row{display:grid;grid-template-columns:minmax(170px,1fr) 130px 130px 65px 70px;align-items:center;column-gap:8px;padding:12px 14px}
+.allocation-table-head,.allocation-row{display:grid;grid-template-columns:minmax(150px,1fr) 58px 128px 128px 60px 66px;align-items:center;column-gap:8px;padding:12px 14px}
 .allocation-table-head{background:#f3f6f0;font-size:11px;color:#72836b;min-height:40px;text-align:center}
 .allocation-table-head>span:first-child{text-align:start}
 .allocation-row+.allocation-row{border-top:1px solid #edf1e9}
@@ -460,6 +460,8 @@
 .allocation-mobile-label{display:none}
 .allocation-readout{display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:#74836a}
 .allocation-readout.generate{font-size:16px;font-weight:650;color:#315d3f}
+.allocation-readout.points{font-size:16px;font-weight:650;color:#294b3c}
+.allocation-points{font-variant-numeric:tabular-nums}
 .allocation-caption{font-size:12px;line-height:1.65;color:#718269;margin:10px 0}
 .allocation-details{border-top:1px solid #e0e7da;padding:13px 0;font-size:12px;line-height:1.65}
 .allocation-details summary{font-size:13px;font-weight:550;cursor:pointer;min-height:28px;display:flex;align-items:center;gap:7px}
@@ -523,6 +525,8 @@
  .permanent output{font-size:15px}
  .allocation-readout{justify-content:flex-start;gap:6px;font-size:12px;padding-top:2px}
  .allocation-readout.generate{justify-content:flex-end;font-size:13px}
+ .allocation-readout.points{grid-column:1/-1;justify-content:flex-start;gap:10px;font-size:20px}
+ .allocation-readout.points .allocation-mobile-label{font-size:11px}
  .allocation-readout .allocation-mobile-label{font-size:11px}
  .allocation-footer{padding:13px 16px max(13px,env(safe-area-inset-bottom));gap:10px}
  .allocation-footer>div{font-size:12px}

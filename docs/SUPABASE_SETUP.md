@@ -277,6 +277,14 @@ generation-save RPCs, used by the allocation popup and Worker generation workflo
 migration preserves existing identities, notes, schedules and publication history;
 it does not infer old allocations or backfill compensation.
 
+Per-person allocation changes (`20261030230832_per_person_allocation_changes.sql`)
+add `duty_private.allocation_transfers` and replace the allocation compile and
+confirm functions: each member's net temporary/permanent change, the drag pairs
+and the derived transfer list are checked server-side, with the floors. The
+migration also converts working drafts recorded as click histories; see
+[the database contract](ALLOCATION_DATABASE.md#persistence). Apply it only
+through the normal database-first release; LOCAL takes it with `pnpm local:reset`.
+
 Compensation persistence adds a checked manager-only `duty_compensation` RPC and
 optional reviewed publication metadata to the existing schedule RPC. See the
 [accounting contract and local SQL checks](COMPENSATION_CORE.md#publication-and-persistence-boundary).

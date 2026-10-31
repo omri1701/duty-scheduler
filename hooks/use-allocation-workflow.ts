@@ -4,9 +4,9 @@ import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
-import {classifyTransfer, editAllocation, persistedDraft, transferAllocation} from '@/lib/allocation/edits';
-import {allocationCeilings, proposeAllocation, unevenBaseline} from '@/lib/allocation/planner';
-import {compileAllocation} from '@/lib/allocation/compile';
+import {balanced, classifyTransfer, editAllocation, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
+import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
@@ -18,6 +18,9 @@ import {errorMessage} from '@/lib/supabase/rpc';
 import type {Translate} from '@/components/rota/workspace-types';
 
 type Phase = 'idle' | 'loading' | 'confirming' | 'generating' | 'saving';
+/** Pair ids only need to be unique within one draft; crypto.randomUUID needs a secure context. */
+let pairSerial = 0;
+const pairId = () => `pair-${Date.now().toString(36)}-${(pairSerial++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 type Review = {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]};
 
 export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: Translate) {
@@ -98,12 +101,21 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
   }, [captured, locks, approvals]);
   let structural = '';
+  // Every change kind must have found its counterpart: the hand total of each
+  // kind is zero once the automatic balance has placed it.
+  const unplaced = draft?.changes ? unplacedChanges(draft) : {temporary: 0, permanent: 0};
   if (draft && input) {
     try {
       prepareGeneration({...input.schedule, targets: Object.fromEntries(Object.entries(draft.targetsUnits).map(([id, u]) => [id, u / 2]))});
-      if (draft.pending.length) structural = t('Finish the pending redistribution using Target or Permanent controls.', 'יש להשלים את החלוקה הממתינה באמצעות בקרי היעד או השינוי הקבוע.');
+      // An unchanged copy of an earlier publication keeps its stored provenance;
+      // the checked RPC revalidates it. Anything else needs the per-person shape.
+      if (!draft.changes) {if (!captured?.sourcePublicationId) structural = t('This saved allocation uses an earlier format. Choose “Use a new proposal”, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן. יש לבחור ״שימוש בהצעה חדשה״ ולאשר שוב.');}
+      else if (!balanced(draft)) structural = t('Place the remaining points with the Temporary or Permanent controls.', 'יש לחלק את הנקודות שנותרו באמצעות בקרי השינוי הזמני או הקבוע.');
     } catch (e) {structural = errorMessage(e, 'Review allocation');}
   }
+  // The plan as if every point were worked: what is really repaid now and later.
+  let planned: ReturnType<typeof planAllocation> | null = null;
+  if (draft?.changes && input && !structural) {try {planned = planAllocation(input, draft);} catch {planned = null;}}
   /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
   function plan(make: () => AllocationDraft) {
     setError('');
@@ -130,14 +142,14 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   function edit(engineer: string, deltaUnits: number, kind: Kind) {
     if (!input || !draft || phase !== 'idle') return;
     const previous = {draft, locks, approvals};
-    if (plan(() => editAllocation(input, draft, {id: crypto.randomUUID(), engineer, deltaUnits, kind}).draft)) {
-      setHistory(h => [...h, previous]); setNotice(t('Targets updated. Counterpart changes are shown below.', 'היעדים עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
+    if (plan(() => editAllocation(input, draft, {engineer, deltaUnits, kind}).draft)) {
+      setHistory(h => [...h, previous]); setNotice(t('Points updated. Counterpart changes are shown below.', 'הנקודות עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
     }
   }
   /** Exact manual transfer of one point; temporary until made permanent. */
   function transfer(fromId: string, toId: string) {
     if (!input || !draft || phase !== 'idle' || fromId === toId) return;
-    const previous = {draft, locks, approvals}, id = `${crypto.randomUUID()}/0`;
+    const previous = {draft, locks, approvals}, id = pairId();
     if (plan(() => transferAllocation(input, draft, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
       setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');
     }
@@ -214,9 +226,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings,
-    locks, approvals, totals, uneven, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), refreshReview, confirm, cancel,
-    propose: () => {if (input && phase === 'idle') {remember(); plan(() => proposeAllocation(input).draft);}},
+    // A new proposal keeps the per-person changes of members still present when they fit.
+    propose: () => {if (input && phase === 'idle') {remember(); plan(() => proposeAllocation(input, retainedChanges(draft)).draft);}},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle',
   };

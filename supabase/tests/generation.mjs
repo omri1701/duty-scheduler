@@ -6,13 +6,22 @@ import {readFileSync} from 'node:fs';
 import {canonicalDuties, handover} from '../../lib/scheduling/calendar.ts';
 import {replay} from '../../lib/compensation/index.ts';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
+import {deriveTransfers} from '../../lib/allocation/derive.ts';
 const container=process.argv[2];assert.match(container??'',/^supabase_db_[\w-]+$/);
 const ids=Array.from({length:13},(_,i)=>`73000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
 const manager=ids[0],month='2027-12',duties=canonicalDuties(month,{}),zero=()=>Object.fromEntries(ids.map(id=>[id,0]));
 let weekend=0,weekday=0;
 const assignments=Object.fromEntries(duties.map(d=>[d.id,{primary:ids[d.weekendId?weekend++:5+weekday++%7]}]));
 const totals=zero();for(const d of duties)totals[assignments[d.id].primary]+=d.units;
-const draft={baselineUnits:{...totals},offeredUnits:{...totals},targetsUnits:{...totals},repayments:[],transfers:[],pending:[],sourceKey:'reviewed-server-fixture'};
+// Per-person shape: the listed transfers become net changes and routing pairs;
+// the stored transfer list is their derivation (duty_private.allocation_transfers).
+function canonical(d) {
+ const changes=Object.fromEntries(ids.map(id=>[id,{temporary:0,permanent:0}]));
+ for(const t of d.transfers){changes[t.fromId][t.kind]-=t.units;changes[t.toId][t.kind]+=t.units}
+ return {baselineUnits:d.baselineUnits,offeredUnits:d.offeredUnits,targetsUnits:d.targetsUnits,repayments:d.repayments??[],changes,pairs:d.transfers,transfers:deriveTransfers(ids,changes,d.transfers),sourceKey:d.sourceKey};
+}
+const raw={baselineUnits:{...totals},offeredUnits:{...totals},targetsUnits:{...totals},repayments:[],transfers:[],sourceKey:'reviewed-server-fixture'};
+const draft=canonical(raw);
 // Baseline is a minimum-cost partition of the actual canonical weights. Explicit
 // permanent counterparts express deliberate differences in these test targets.
 const fair=Object.fromEntries(ids.map(id=>[id,4]));fair[manager]+=duties.reduce((n,d)=>n+d.units,0)-ids.length*4;
@@ -20,9 +29,9 @@ function classify(d,repayments=[]) {
  const offered={...fair};for(const r of repayments){offered[r.debtor]+=r.units;offered[r.creditor]-=r.units}
  const current={...offered},prefix=[];
  for(const fromId of ids)for(const toId of ids){const n=Math.min(current[fromId]-d.offeredUnits[fromId],d.offeredUnits[toId]-current[toId]);if(n>0){prefix.push({id:'baseline/'+prefix.length,fromId,toId,units:n,kind:'permanent'});current[fromId]-=n;current[toId]+=n}}
- return {...structuredClone(d),baselineUnits:{...fair},offeredUnits:offered,transfers:[...prefix,...d.transfers]};
+ return canonical({...structuredClone(d),baselineUnits:{...fair},offeredUnits:offered,transfers:[...prefix,...d.transfers]});
 }
-const confirmedDraft=classify(draft);
+const confirmedDraft=classify(raw);
 const ordered=v=>{v=structuredClone(v);for(const k of ['members','lots','contributions','settlements','publications'])v[k]?.sort((a,b)=>a.id.localeCompare(b.id));return v};
 const quote=v=>"'"+JSON.stringify(v).replaceAll("'","''")+"'::jsonb";
 const sql=(query)=>{const r=spawnSync('docker',['exec','-i',container,'psql','-XqAt','-U','postgres','-v','ON_ERROR_STOP=1'],{input:query,encoding:'utf8',maxBuffer:32*1024*1024});assert.equal(r.status,0,r.stderr);return r.stdout.trim().split('\n').filter(x=>x.startsWith('{')).map(JSON.parse)};
@@ -101,10 +110,11 @@ const views=sql(test);for(const view of views)assert.deepEqual(ordered(view),ord
 console.log('PASS: generation authorization, independent schedule validation, partial saves, stale revisions, cutoff, publication copies and cancellation');
 
 // Real first-publication routed accounting, including the Astra mixed chain.
-const mixed=structuredClone(draft);
+// The pass-through member must own a share to give permanently (fair + Permanent >= 0).
+const mixed=structuredClone(raw);
 mixed.baselineUnits[ids[5]]+=2;mixed.baselineUnits[ids[6]]-=2;mixed.offeredUnits={...mixed.baselineUnits};
-mixed.transfers=[{id:'temporary',fromId:ids[5],toId:ids[12],units:2,kind:'temporary'},
- {id:'permanent',fromId:ids[12],toId:ids[6],units:2,kind:'permanent'}];
+mixed.transfers=[{id:'temporary',fromId:ids[5],toId:ids[7],units:2,kind:'temporary'},
+ {id:'permanent',fromId:ids[7],toId:ids[6],units:2,kind:'permanent'}];
 let routed=setup+confirm(classify(mixed))+save()+publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
 routed+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());
 set local role authenticated;select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`;
@@ -112,7 +122,7 @@ routed+=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day
 routed+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());rollback;`;
 const routedViews=sql(routed);
 for(const view of routedViews)assert.deepEqual(ordered(view),ordered(replay(view.events)));
-assert.equal(routedViews[0].net[ids[5]],-2);assert.equal(routedViews[0].net[ids[12]],2);assert.equal(routedViews[0].net[ids[6]],0);
+assert.equal(routedViews[0].net[ids[5]],-2);assert.equal(routedViews[0].net[ids[7]],2);assert.equal(routedViews[0].net[ids[6]],0);
 assert.equal(routedViews[0].lots.length,routedViews[1].lots.length);
 console.log('PASS: server-compiled mixed temporary/permanent route retains the original creditor, earns no duplicate origin on copying, and replays exactly in TypeScript');
 
@@ -204,13 +214,16 @@ console.log('PASS: incremental upgrade backfills draft and immutable publication
 
 // Server debt validation, deferred repayment mixed route, post-normalization
 // source suffix and actual duty reservations. Nothing is earned on publication.
-const deferred={...structuredClone(draft),baselineUnits:{...fair},offeredUnits:{...fair},targetsUnits:{...fair}},debtor=ids[5],creditor=ids[6],carrier=ids[7];
-deferred.offeredUnits[debtor]+=4;deferred.offeredUnits[creditor]-=4;deferred.targetsUnits={...deferred.offeredUnits};
-deferred.targetsUnits[ids[12]]-=4;deferred.targetsUnits[ids[8]]+=4;
-deferred.targetsUnits[debtor]-=2;deferred.targetsUnits[carrier]+=2;
-deferred.transfers=[{id:'bridge-relief',fromId:ids[12],toId:ids[8],units:4,kind:'permanent'},
+const deferredRaw={...structuredClone(raw),baselineUnits:{...fair},offeredUnits:{...fair},targetsUnits:{...fair}},debtor=ids[5],creditor=ids[6],carrier=ids[7];
+deferredRaw.offeredUnits[debtor]+=4;deferredRaw.offeredUnits[creditor]-=4;deferredRaw.targetsUnits={...deferredRaw.offeredUnits};
+deferredRaw.targetsUnits[ids[12]]-=4;deferredRaw.targetsUnits[ids[8]]+=4;
+deferredRaw.targetsUnits[debtor]-=2;deferredRaw.targetsUnits[carrier]+=2;
+// ids[12] gives its whole fair share away permanently (the floor) and nets out of
+// the temporary chain, so the debtor's deferred point is carried by ids[7].
+deferredRaw.transfers=[{id:'bridge-relief',fromId:ids[12],toId:ids[8],units:4,kind:'permanent'},
  {id:'defer',fromId:debtor,toId:ids[12],units:2,kind:'temporary'},
- {id:'volunteer',fromId:ids[12],toId:carrier,units:2,kind:'permanent'}];
+ {id:'volunteer',fromId:ids[12],toId:carrier,units:2,kind:'temporary'}];
+const deferred=canonical(deferredRaw);
 // Small deterministic constructive fixture; no solver proofs cross the RPC.
 function arrangement(targets) {
  const remaining={...targets},chosen={},seen=new Map(ids.map(id=>[id,new Set()]));
@@ -248,7 +261,7 @@ begin
  exception when serialization_failure then null;end;
 end$$;rollback;`;
 const repaymentViews=sql(repayment),repaymentView=repaymentViews[0];for(const view of repaymentViews)assert.deepEqual(ordered(view),ordered(replay(view.events)));
-assert.equal(repaymentView.net[debtor],-4);assert.equal(repaymentView.net[ids[12]],2);assert.equal(repaymentView.net[creditor],2);
+assert.equal(repaymentView.net[debtor],-4);assert.equal(repaymentView.net[ids[12]],0);assert.equal(repaymentView.net[carrier],2);assert.equal(repaymentView.net[creditor],2);
 assert.equal(repaymentView.settlements.length,0);assert.equal(repaymentView.contributions.reduce((n,c)=>n+c.capacity.units,0),2);
 assert.deepEqual(repaymentView.contributions.flatMap(c=>Array.from({length:c.capacity.units},(_,i)=>c.claim.path[0].offset+i)).sort(),[2,3]);
 console.log('PASS: deferred mixed route retains the original debtor and reserves only the unreserved normalized suffix; no unearned settlement');
@@ -296,3 +309,89 @@ select public.duty_generation_context('2028-01',${rev});rollback;`;
 const boundaryViews=sql(boundary);assert.deepEqual(new Set(boundaryViews[0].facts.neighbors.map(n=>n.source)),new Set(['published','working']));
 assert.equal(boundaryViews[1].coverageStartMs,handover('2028-01-02')*60000);assert.equal(boundaryViews[1].generationAllowed,true);
 console.log('PASS: both neighboring live/draft commitments bind, and the Saturday-start owner opens on its Sunday handover');
+
+// Per-person changes: the floors, the derived transfer list and the relief floor
+// are enforced by the checked confirm, independently of the client.
+const edited=(from,to,kind,units,extra={})=>{const d=structuredClone(confirmedDraft);
+ d.changes[from][kind]-=units;d.changes[to][kind]+=units;d.targetsUnits[from]-=units;d.targetsUnits[to]+=units;
+ for(const [id,c] of Object.entries(extra)){d.changes[id].temporary+=c.temporary??0;d.changes[id].permanent+=c.permanent??0;d.targetsUnits[id]+=(c.temporary??0)+(c.permanent??0)}
+ d.transfers=deriveTransfers(ids,d.changes,d.pairs);return d};
+let floors=setup;
+// Two relieved and two burdened members: the cross pairing conserves every target but is not the derivation.
+const chosen=edited(ids[8],ids[10],'temporary',2,{[ids[9]]:{temporary:-2},[ids[11]]:{temporary:2}});
+const derivedPair=(from,to)=>'temporary/'+from+'/'+to;
+assert.deepEqual(chosen.transfers.filter(t=>t.kind==='temporary').map(t=>t.id),[derivedPair(ids[8],ids[10]),derivedPair(ids[9],ids[11])]);
+chosen.transfers=chosen.transfers.map(t=>t.id===derivedPair(ids[8],ids[10])?{...t,toId:ids[11],id:derivedPair(ids[8],ids[11])}:t.id===derivedPair(ids[9],ids[11])?{...t,toId:ids[10],id:derivedPair(ids[9],ids[10])}:t);
+floors+=failure(confirm(chosen),'invalid-derived-transfers');
+const reordered=edited(ids[8],ids[9],'temporary',2);reordered.transfers.reverse();
+floors+=failure(confirm(reordered),'invalid-derived-transfers');
+const roundTrip=structuredClone(confirmedDraft);roundTrip.pairs=[...roundTrip.pairs,{id:'out',fromId:ids[8],toId:ids[9],units:2,kind:'temporary'},{id:'back',fromId:ids[9],toId:ids[8],units:2,kind:'temporary'}];
+const claimed=structuredClone(roundTrip);claimed.transfers=[...claimed.transfers,{id:'temporary/'+ids[8]+'/'+ids[9],fromId:ids[8],toId:ids[9],units:2,kind:'temporary'},{id:'temporary/'+ids[9]+'/'+ids[8],fromId:ids[9],toId:ids[8],units:2,kind:'temporary'}];
+floors+=failure(confirm(claimed),'invalid-derived-transfers');
+floors+=confirm(roundTrip)+`do $$begin if not exists(select 1 from public.duty_allocations where publication_id is null and allocation->'transfers'=${quote(confirmedDraft.transfers)}) then raise exception 'Round trip changed transfers';end if;end$$;`;
+const unexplained=structuredClone(confirmedDraft);unexplained.changes[ids[8]].temporary+=2;unexplained.changes[ids[9]].temporary-=2;
+floors+=failure(confirm(unexplained),'unexplained-target-edit');
+// ids[12] has a fair share of 4 and already gives it all away permanently: two more units are below the floor even with temporary credit keeping its points at zero.
+const belowFair=edited(ids[12],ids[8],'permanent',2,{[ids[12]]:{temporary:2},[ids[8]]:{temporary:-2}});
+assert.equal(belowFair.changes[ids[12]].permanent,-6);assert.equal(belowFair.targetsUnits[ids[12]],0);
+floors+=failure(confirm(belowFair),'permanent-below-fair-share');
+const unbalancedDraft=structuredClone(confirmedDraft);unbalancedDraft.changes[ids[8]].temporary+=2;unbalancedDraft.targetsUnits[ids[8]]+=2;unbalancedDraft.changes[ids[9]].temporary-=2;unbalancedDraft.targetsUnits[ids[9]]-=2;unbalancedDraft.changes[ids[9]].temporary=0;
+floors+=`reset role;`+failure(`select duty_private.allocation_compile((select v->'facts' from context)||'{"locks":[],"approvals":[]}'::jsonb,${quote(unbalancedDraft)},${quote(Object.fromEntries(ids.map(id=>[id,0])))},duty_private.compensation_state())`,'unexplained-target-edit|unbalanced-allocation-changes');
+floors+=`set local role authenticated;`;
+// Malformed per-person payloads are refused at the trust boundary, before any derivation.
+const withPairs=pairs=>{const d=structuredClone(confirmedDraft);d.pairs=[...d.pairs,...pairs];return d};
+floors+=failure(confirm(withPairs([{id:'ghost',fromId:'00000000-0000-0000-0000-000000000099',toId:ids[8],units:2,kind:'temporary'}])),'invalid-allocation-pair');
+floors+=failure(confirm(withPairs([{id:'dup',fromId:ids[8],toId:ids[9],units:2,kind:'temporary'},{id:'dup',fromId:ids[9],toId:ids[10],units:2,kind:'temporary'}])),'invalid-allocation-pair');
+floors+=failure(confirm(withPairs([{id:'half',fromId:ids[8],toId:ids[9],units:2.5,kind:'temporary'}])),'invalid-units');
+floors+=failure(confirm(withPairs([{id:'zero',fromId:ids[8],toId:ids[9],units:0,kind:'temporary'}])),'invalid-units');
+floors+=failure(confirm(withPairs([{id:'self',fromId:ids[8],toId:ids[8],units:2,kind:'permanent'}])),'invalid-allocation-pair');
+const extraMember=structuredClone(confirmedDraft);extraMember.changes['00000000-0000-0000-0000-000000000099']={temporary:0,permanent:0};
+floors+=failure(confirm(extraMember),'invalid-allocation-changes');
+const fractional=structuredClone(confirmedDraft);fractional.changes[ids[8]].temporary=0.5;
+floors+=failure(confirm(fractional),'invalid-allocation-changes');
+const handLeak=structuredClone(confirmedDraft);handLeak.hand=[ids[8]];
+floors+=failure(confirm(handLeak),'invalid-confirmed-allocation');
+floors+=`rollback;`;
+sql(floors);
+console.log('PASS: confirm refuses a transfer list that differs from the derivation (chosen counterpart, reordered, claimed round trip), unexplained or unbalanced changes, a permanent change below the fair share and malformed pairs/changes/local fields; a round trip of pairs leaves the transfers unchanged');
+
+// The relief floor: a creditor relieved this month cannot give that relief away permanently.
+let relief=setup+`create temp table debt(v jsonb);insert into debt select public.duty_compensation(${quote({kind:'claim',debtorId:debtor,creditorId:creditor,units:4})},'debt','Reviewed source',${rev});`+refresh;
+const relieved=canonical({...deferredRaw,targetsUnits:{...deferredRaw.offeredUnits},transfers:[{id:'take-back',fromId:creditor,toId:ids[8],units:2,kind:'permanent'},{id:'cover',fromId:ids[8],toId:creditor,units:2,kind:'temporary'}]});
+relief+=`create temp table proposed(v jsonb);insert into proposed select jsonb_set(${quote(relieved)},'{repayments}',jsonb_build_array(jsonb_build_object('claim',v->'actual'->'claims'->0,'units',4))) from debt;`;
+relief+=failure(`update context set v=public.duty_confirm_allocation('${month}',(select v from proposed),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint')`,'permanent-below-fair-share');
+relief+=`rollback;`;
+sql(relief);
+console.log('PASS: a creditor whose fair share is planned relief cannot reduce it permanently, even with temporary credit');
+
+// Parity: the SQL derivation equals the TypeScript derivation on random per-person states.
+let seed=20261031;const next=k=>(seed=(seed*1103515245+12345)%2147483648)%k;
+let parity='begin;';const expectedLists=[];
+for(let k=0;k<40;k++){
+ const changes=Object.fromEntries(ids.map(id=>[id,{temporary:0,permanent:0}]));
+ for(const kind of ['temporary','permanent']){let balance=0;for(const id of ids.slice(0,-1)){const v=[-4,-2,-1,0,0,1,2,4][next(8)];changes[id][kind]=v;balance+=v}changes[ids.at(-1)][kind]=-balance}
+ const pairs=Array.from({length:next(5)},(_,i)=>{const from=ids[next(13)];let to=ids[next(13)];if(to===from)to=ids[(ids.indexOf(from)+1)%13];return {id:'p'+i,fromId:from,toId:to,units:[1,2,4][next(3)],kind:next(3)?'temporary':'permanent'}});
+ expectedLists.push(deriveTransfers(ids,changes,pairs));
+ parity+=`select jsonb_build_object('transfers',duty_private.allocation_transfers(${quote(ids)},${quote(changes)},${quote(pairs)}));`;
+}
+parity+='rollback;';
+const actualLists=sql(parity).map(v=>v.transfers);
+assert.deepEqual(actualLists,expectedLists);
+console.log(`PASS: duty_private.allocation_transfers matches the TypeScript derivation on ${expectedLists.length} random per-person states`);
+
+// The incremental migration converts working drafts recorded as click histories
+// into per-person changes with their transfers as routing pairs, and leaves
+// snapshots it cannot express untouched.
+const conversion=readFileSync(new URL('../migrations/20261030230832_per_person_allocation_changes.sql',import.meta.url),'utf8');
+const block=conversion.slice(conversion.indexOf('-- conversion-start'),conversion.indexOf('-- conversion-end'));
+const legacy={baselineUnits:confirmedDraft.baselineUnits,offeredUnits:confirmedDraft.offeredUnits,targetsUnits:confirmedDraft.targetsUnits,repayments:[],transfers:confirmedDraft.pairs,pending:[],sourceKey:confirmedDraft.sourceKey};
+let convert=setup+confirm()+`reset role;update public.duty_allocations set allocation=${quote(legacy)} where publication_id is null;`+block+`
+do $$begin if (select allocation from public.duty_allocations where publication_id is null)<>${quote(confirmedDraft)} then raise exception 'Legacy draft not converted';end if;end$$;
+update public.duty_allocations set allocation=${quote({...legacy,pending:[{id:'x',engineer:ids[5],deltaUnits:2,kind:'temporary'}]})} where publication_id is null;`+block+`
+do $$begin if (select allocation from public.duty_allocations where publication_id is null)<>${quote({...legacy,pending:[{id:'x',engineer:ids[5],deltaUnits:2,kind:'temporary'}]})} then raise exception 'Unconvertible draft changed';end if;end$$;
+set local role authenticated;`+refresh+failure(save(),'invalid-confirmed-allocation')+`
+reset role;update public.duty_allocations set allocation=${quote({...legacy,transfers:[{id:'odd',fromId:ids[5],toId:ids[6],units:'x',kind:'temporary'}]})} where publication_id is null;`+block+`
+do $$begin if (select allocation from public.duty_allocations where publication_id is null)<>${quote({...legacy,transfers:[{id:'odd',fromId:ids[5],toId:ids[6],units:'x',kind:'temporary'}]})} then raise exception 'Odd legacy draft changed';end if;end$$;
+rollback;`;
+sql(convert);
+console.log('PASS: the migration converts a legacy working draft into per-person changes with the same routing, leaves pending or malformed legacy drafts alone without failing, and those drafts need a new confirmation');

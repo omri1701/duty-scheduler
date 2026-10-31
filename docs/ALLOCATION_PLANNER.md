@@ -18,9 +18,7 @@ import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation
 const input = {schedule, seniority, events, now}; // schedule omits confirmed targets
 const proposal = proposeAllocation(input);
 const ceilings = allocationCeilings(input); // live inline availability check
-const edited = editAllocation(input, proposal.draft, {
-  id: 'reviewed-edit-1', engineer: seniority[0], deltaUnits: -2, kind: 'temporary',
-});
+const edited = editAllocation(input, proposal.draft, {engineer: seniority[0], deltaUnits: -2, kind: 'temporary'});
 // Actual generated/manually reviewed assignments, including null primary holes.
 const final = compileAllocation(input, edited.draft, actualDraftAssignments);
 const binding = await bindAllocation(input, edited.draft, actualDraftAssignments, {
@@ -50,11 +48,10 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    creditor's locked floor. An older claim that does not fit is skipped and stays
    open; a younger one may still progress. There is no fixed monthly cap.
 3. **Locks are floors.** A member below their locked points takes temporary work
-   from the member with most points, most senior on ties.
+   from the member with most points, most senior on ties, as part of the
+   automatic balance below.
 
-Automatic +/- counterparts follow the same order for Target and Permanent: a
-receiver has the fewest points, newest first; a giver has the most points, senior
-first. Unavailable members keep their fair baseline; the manager moves their work
+Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
 
 **Availability ceiling.** `allocationCeilings` gives each member the most units of
@@ -73,35 +70,56 @@ seniority) and a feasibility witness, and showed complete/partial/unknown status
 That preview was slow and complex and is superseded by the arithmetic above. The
 allocation Worker is removed; `compileAllocation` runs synchronously after Generate.
 
-## Editing and final compilation
+## Per-person changes (decision 2026-10-31)
 
-`editAllocation(input, draft, edit)` clones the draft, tries the whole change with
-one counterpart before half-point redistribution, refreshes donor/recipient ranking
-after each transfer and never crosses locked floors. The app only rearranges what it arranged itself: every
-member the manager changed by hand is recorded in the draft's local `handEdited`
-list, and automatic counterparts never take from or give to them. Members changed
-only automatically stay re-adjustable, ranked as before. The list survives later
-edits and Undo, resets with a new proposal, and is stripped before the checked
-RPC persists the allocation. `transferAllocation` records one exact manual
-transfer, such as a drag, without choosing a counterpart and protects both
-members. `classifyTransfer` only changes a transfer's kind, so Make permanent keeps
-targets and removes its future compensation. When no unprotected counterpart can
-take the change, it stays pending; the requested target is preserved. Subsequent
-opposite edits of the same classification consume pending provenance first.
-Pending edits prevent confirmation even when unrelated classifications happen
-to offset numerically. Managers can explicitly finish a balanced partial table.
+The draft holds one net **Temporary** and one net **Permanent** change per member
+(`changes`, signed half-point units), the explicit drag `pairs`, and the derived
+`transfers`. Points = offered (fair baseline plus planned repayments) + Permanent +
+Temporary. Nothing records a history of clicks: `editAllocation` sets the member's
+net change of that kind to what the row showed plus the delta, marks the member
+hand edited, and rebuilds everything derived. The **automatic balance**
+(`balanceChanges` in `lib/allocation/derive.ts`) is recomputed from scratch on
+every edit: lock floors first, then each kind's hand total (permanent first) is
+placed on members without hand changes in duty steps, refreshing the ranking after
+each step: receivers have the fewest points, newest first; givers the most points,
+senior first; a member already balancing the other kind comes last; locks are
+never crossed. So the same per-person state gives the same table whatever the
+click order, an automatic point never sticks on a member later edited by hand (a
+minus on a member holding only an automatic point removes it and the point moves
+on), and hand changes never cancel each other implicitly; a drag routes a specific
+point. What cannot be placed stays visible as unplaced and blocks confirmation.
+
+**Floors.** fair + Permanent ≥ 0, and a permanent reduction never exceeds the
+member's planned work (offered + Permanent ≥ 0: relief already planned cannot be
+given away); Points ≥ Locked. The dialog disables a button at its floor; the
+library and the database refuse past it. Temporary credit is the positive net
+Temporary only, so a member is owed exactly the work above their planned load.
+
+`transferAllocation` records a drag as a pair, moving both members' nets by its
+units and protecting both. `classifyTransfer` switches a pair's kind, moving the
+nets between kinds, so Make permanent keeps points and removes its future
+compensation. `deriveTransfers` builds the canonical list kind by kind (permanent
+first): pairs in order, clipped to the nets they can still route, then the
+remainder netted largest first, then seniority order; one transfer per direction,
+and round trips cancel in the nets. The checked RPC re-derives that list and
+requires it exactly. `hand` is local editing state, stripped before persisting;
+a reopened draft treats every member with a nonzero change as hand edited. A new
+proposal reapplies the retained hand changes and pairs of members still present
+when they fit the floors (`retainedChanges`); otherwise the plain proposal stands.
 
 Source, weight, membership, constraint, ledger or saved seniority changes
-invalidate an old draft. Save the selected ordinary baseline
-and counterpart provenance with the checked allocation snapshot.
+invalidate an old draft. Save the selected ordinary baseline, the per-person
+changes, pairs and derived transfers with the checked allocation snapshot.
 
 `compileAllocation(input, draft, assignments)` independently validates the supplied
 actual assignments against the confirmed targets and all scheduling rules. It
 never calls a solver or substitutes a feasibility witness. Compilation validates component
 conservation and source-slice exclusivity, then tracks ordinary and repayment
 responsibility through counterpart transfers.
-Lowered debtor targets defer newest repayment first; remaining capacity funds
-oldest repayment first. Temporary chains collapse to their approved endpoint
+A transfer out of a member takes planned repayment tokens (newest first) only
+as far as that member's target was lowered; a change that keeps the target moves
+ordinary responsibility and never consumes planned repayment work. Remaining
+capacity funds oldest repayment first. Temporary chains collapse to their approved endpoint
 trail. Third-party deferral creates creditor-to-carrier intent, preserving the
 original debt rather than creating a second debtor shortfall. Permanent transfers
 remain exempt from new claims and do not settle/forgive the old debt. Temporary
@@ -169,26 +187,34 @@ publication intent remains under the checked database lineage rules.
 ## Compensation display
 
 "Adjustments & compensation" lists netted temporary relationships only
-(`nettedCompensation` in `lib/allocation/netting.ts`). It starts from the projected
-net at month opening, adds the draft's temporary transfers and subtracts this
-month's repayments, then pairs net debtors with net creditors. Chains collapse
-(A owes B and B owes C shows A → C), opposite directions cancel, and each line
-shows what is repaid this month and what carries forward. Permanent transfers and
-pending edits do not appear; pending edits show one short warning line. The list is
-display only: stored transfers, repayments, ledger and provenance are unchanged.
+(`nettedCompensation` in `lib/allocation/netting.ts`), built from the **compiled**
+plan (`planAllocation`: the same compilation as if every confirmed point were
+worked). It starts from the projected net at month opening, adds the plan's
+temporary intents (including deferred repayment carried for a creditor) and
+subtracts the plan's repayments, then pairs net debtors with net creditors.
+Chains collapse (A owes B and B owes C shows A → C), opposite directions cancel,
+and each line shows what is really repaid this month and what carries forward.
+Permanent intents and unplaced changes do not appear; unplaced units show one
+short warning line. The list is display only: stored changes, repayments, ledger
+and provenance are unchanged.
 
 ## Focused verification
 
 ```sh
 node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
+node --test tests/allocation-fuzz.test.mjs   # FUZZ_SEQ, FUZZ_LEN, FUZZ_SEED widen the bounded run
 pnpm exec tsc --noEmit
 pnpm exec eslint lib/allocation lib/compensation/publication.ts lib/compensation/types.ts tests/allocation.test.mjs tests/allocation-binding.test.mjs
 ```
 
 The tests cover canonical fairness, compensation-before-seniority, partial/blocked
-oldest repayment, whole/half duties, availability ceilings, both adjustment kinds,
-hand-edit protection, pending edits, deferral/netting, projected and future-reserved
-slices, locks, partial months, weighted cross-year duties, boundaries and stale inputs.
+oldest repayment, whole/half duties, availability ceilings, both change kinds,
+order independence, hand-edit protection, unplaced changes, the floors, pairs and
+the canonical derivation, deferral/netting, projected and future-reserved slices,
+locks, partial months, weighted cross-year duties, boundaries and stale inputs. The
+fuzz regression replays random edit, drag, Make permanent and Undo sequences and
+checks floors, conservation, canonical transfers, state determinism, compilation
+and ledger parity after publication.
 Binding regressions additionally cover mixed routes with a nonperforming
 intermediary, changed assignments, partial coverage, stable identities, original
 versus normalized deferral slices, reverse obligations and overlapping/future reservations.

@@ -1,8 +1,8 @@
 import {context} from './model.ts';
-import {validateDraft} from './edits.ts';
+import {permanentFloor, validateDraft} from './edits.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
-import type {AllocationDraft, AllocationInput} from './types.ts';
+import type {AllocationDraft, AllocationInput, Change} from './types.ts';
 import type {Approval, GenerationInput} from '../scheduling/types.ts';
 import type {PrimaryAssignments} from '../scheduling/validate.ts';
 
@@ -10,8 +10,17 @@ import type {PrimaryAssignments} from '../scheduling/validate.ts';
  * This never calculates a proposal or repairs/changes a manager target. */
 export function reviewAllocation(input: AllocationInput, saved: AllocationDraft) {
   const c = context(input), draft = {...structuredClone(saved), sourceKey: c.key};
-  validateDraft(c, draft);
+  validateDraft(c, input.seniority, draft);
   return draft;
+}
+
+/** A member's net change. A copied snapshot from before per-person changes
+ * (display only; the checked RPC revalidates it) is read from its transfers. */
+export function changeOf(draft: Pick<AllocationDraft, 'changes' | 'transfers'> | null, id: string): Change {
+  if (draft?.changes?.[id]) return {...draft.changes[id]};
+  const change: Change = {temporary: 0, permanent: 0};
+  for (const t of draft?.transfers ?? []) if (t.toId === id || t.fromId === id) change[t.kind] += t.toId === id ? t.units : -t.units;
+  return change;
 }
 
 export function allocationTotals(input: AllocationInput, draft: AllocationDraft | null, assignments: PrimaryAssignments) {
@@ -19,10 +28,9 @@ export function allocationTotals(input: AllocationInput, draft: AllocationDraft 
   const rows = input.seniority.map(id => {
     const assigned = duties.reduce((n, d) => n + (assignments[d.id]?.primary === id ? d.units : 0), 0);
     const locked = duties.reduce((n, d) => n + (input.schedule.locks?.some(l => l.dutyId === d.id && l.engineer === id) ? d.units : 0), 0);
-    const permanent = (draft?.transfers.reduce((n, t) => n + (t.kind !== 'permanent' ? 0 : t.toId === id ? t.units : t.fromId === id ? -t.units : 0), 0) ?? 0)
-      + (draft?.pending.reduce((n, p) => n + (p.kind === 'permanent' && p.engineer === id ? p.deltaUnits : 0), 0) ?? 0);
-    const target = draft?.targetsUnits[id] ?? 0;
-    return {id, target, assigned, locked, permanent, generate: target - locked, missing: Math.max(0, target - assigned)};
+    const {temporary, permanent} = changeOf(draft, id), target = draft?.targetsUnits[id] ?? 0;
+    const permanentMin = draft?.baselineUnits && draft.offeredUnits ? permanentFloor(draft, id) : 0;
+    return {id, target, assigned, locked, temporary, permanent, permanentMin, generate: target - locked, missing: Math.max(0, target - assigned)};
   });
   return {rows, total: duties.reduce((n, d) => n + d.units, 0), configured: rows.reduce((n, r) => n + r.target, 0),
     uncovered: duties.filter(d => !assignments[d.id]?.primary).flatMap(d => d.dates)};

@@ -1,17 +1,23 @@
 -- Reconstruct allocation tokens from reviewed counterpart operations. All claim
 -- capacity comes from the server's projected ledger, excluding other reservations.
+-- One net temporary and one net permanent change per member must explain the
+-- targets exactly, balance to zero and respect the floors (a permanent change
+-- never takes away the fair share or work already given as planned relief).
+-- duty_confirm_allocation additionally requires the transfers to be the exact
+-- derivation of those changes and the recorded pairs.
 CREATE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
  LANGUAGE plpgsql STABLE SET search_path TO '' AS $$
 #variable_conflict use_column
-declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_candidates(s); expected jsonb; table_value jsonb;
- tokens jsonb:='[]'; reserved jsonb:='[]'; funding jsonb:='[]'; used jsonb:='[]'; seen text[]:='{}';
- r jsonb; c jsonb; t jsonb; moved jsonb; transfer jsonb; route jsonb; leg jsonb; ref jsonb; ranges int8multirange; part int8range;
+declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_candidates(s); expected jsonb; table_value jsonb; change jsonb;
+ tokens jsonb:='[]'; reserved jsonb:='[]'; funding jsonb:='[]'; used jsonb:='[]'; seen text[]:='{}'; lowered jsonb:='{}';
+ r jsonb; c jsonb; t jsonb; moved jsonb; transfer jsonb; route jsonb; leg jsonb; ref jsonb; ranges int8multirange; part int8range; v numeric;
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
+ pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','transfers','pending','sourceKey']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
-  or draft->'pending' IS DISTINCT FROM '[]'::jsonb then raise exception 'invalid-confirmed-allocation'; end if;
+  or jsonb_typeof(draft->'pairs') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'changes') IS DISTINCT FROM 'object' then raise exception 'invalid-confirmed-allocation'; end if;
  foreach name in array array['baselineUnits','offeredUnits','targetsUnits'] loop
   table_value:=draft->name;
   if jsonb_typeof(table_value) IS DISTINCT FROM 'object' or (select count(*) from jsonb_each(table_value))<>jsonb_array_length(ids)
@@ -19,6 +25,28 @@ begin
   total:=0; for id in select jsonb_array_elements_text(ids) loop total:=total+duty_private.compensation_units(table_value->id); end loop;
   if total<>(select sum((x->>'units')::bigint) from jsonb_array_elements(f->'duties') x) then raise exception 'invalid-allocation-total'; end if;
  end loop;
+ if (select count(*) from jsonb_each(draft->'changes'))<>jsonb_array_length(ids) or exists(select 1 from jsonb_each(draft->'changes') where not ids ? key) then raise exception 'invalid-allocation-changes'; end if;
+ for id in select jsonb_array_elements_text(ids) loop
+  change:=draft->'changes'->id;
+  if jsonb_typeof(change) IS DISTINCT FROM 'object' or change-array['temporary','permanent']<>'{}' then raise exception 'invalid-allocation-changes'; end if;
+  foreach name in array array['temporary','permanent'] loop
+   if jsonb_typeof(change->name) IS DISTINCT FROM 'number' then raise exception 'invalid-allocation-changes'; end if;
+   v:=(change->>name)::numeric;
+   if v<>trunc(v) or abs(v)>1000000000 then raise exception 'invalid-allocation-changes'; end if;
+  end loop;
+  temporary_total:=temporary_total+(change->>'temporary')::numeric::bigint; permanent_total:=permanent_total+(change->>'permanent')::numeric::bigint;
+  if (change->>'permanent')::numeric::bigint< -least((draft->'baselineUnits'->>id)::numeric::bigint,(draft->'offeredUnits'->>id)::numeric::bigint) then raise exception 'permanent-below-fair-share'; end if;
+  if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
+  lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
+ end loop;
+ if temporary_total<>0 or permanent_total<>0 then raise exception 'unbalanced-allocation-changes'; end if;
+ for r in select value from jsonb_array_elements(draft->'pairs') loop
+  if jsonb_typeof(r) IS DISTINCT FROM 'object' or r-array['id','fromId','toId','units','kind']<>'{}' or jsonb_typeof(r->'id') IS DISTINCT FROM 'string'
+   or coalesce(btrim(r->>'id'),'')='' or r->>'id'=any(seen) or coalesce(r->>'kind','') not in ('temporary','permanent')
+   or not ids ? (r->>'fromId') or not ids ? (r->>'toId') or r->>'fromId'=r->>'toId' then raise exception 'invalid-allocation-pair'; end if;
+  perform duty_private.compensation_units(r->'units',true); seen:=array_append(seen,r->>'id');
+ end loop;
+ seen:='{}';
  expected:=draft->'baselineUnits';
  for id in select x from jsonb_array_elements_text(ids) x order by x COLLATE "C" loop
   tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',id,'origin',id,'units',expected->id,'claim',null,'trail','[]'::jsonb,'prior','[]'::jsonb));
@@ -51,27 +79,38 @@ begin
   seen:=array_append(seen,transfer->>'id'); remaining:=duty_private.compensation_units(transfer->'units',true);
   expected:=jsonb_set(expected,array[transfer->>'fromId'],to_jsonb((expected->>(transfer->>'fromId'))::bigint-remaining));
   expected:=jsonb_set(expected,array[transfer->>'toId'],to_jsonb((expected->>(transfer->>'toId'))::bigint+remaining));
-  -- Deferral consumes newest repayment tokens first, then ordinary responsibility.
-  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality
-   where value->>'carrier'=transfer->>'fromId' and (value->>'units')::bigint>0
-   order by (value->'claim'<>'null') desc,(value->'claim'->'priority'->>'at')::bigint desc,
-    (value->'claim'->'priority'->>'sequence')::bigint desc,value->'claim'->'priority'->>'lotId' COLLATE "C" desc,value->'claim'->>'id' COLLATE "C" desc,ordinality loop
+  -- A lowered target defers newest repayment first, and only as far as it was
+  -- lowered (pass 1); then ordinary responsibility moves (pass 2). Planned
+  -- repayment work never moves for a change that keeps the target (pass 3 is a
+  -- safety net for snapshots outside the floors).
+  for pass in 1..3 loop
+   for position in select ordinality::integer-1 from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
+    where value->>'carrier'=transfer->>'fromId' and (value->>'units')::bigint>0 and ((pass in (1,3) and value->'claim'<>'null') or (pass=2 and value->'claim'='null'))
+    order by (value->'claim'->'priority'->>'at')::bigint desc,(value->'claim'->'priority'->>'sequence')::bigint desc,
+     value->'claim'->'priority'->>'lotId' COLLATE "C" desc,value->'claim'->>'id' COLLATE "C" desc,ordinality loop
+    if remaining=0 then exit; end if;
+    t:=tokens->position;
+    take:=least(remaining,(t->>'units')::bigint);
+    if pass=1 then take:=least(take,(lowered->>(transfer->>'fromId'))::bigint); end if;
+    if take<=0 then continue; end if;
+    if pass=1 then lowered:=jsonb_set(lowered,array[transfer->>'fromId'],to_jsonb((lowered->>(transfer->>'fromId'))::bigint-take)); end if;
+    remaining:=remaining-take;
+    moved:=duty_private.allocation_part(t,take,(t->>'units')::bigint-take);
+    if (t->>'units')::bigint>take then tokens:=jsonb_set(tokens,array[position::text],duty_private.allocation_part(t,(t->>'units')::bigint-take));
+    else tokens:=jsonb_set(tokens,array[position::text,'units'],'0'); end if;
+    moved:=jsonb_set(moved,'{carrier}',transfer->'toId');
+    if transfer->>'kind'='permanent' then
+     if jsonb_array_length(moved->'trail')>0 and moved->>'origin'<>transfer->>'fromId' then
+      leg:=jsonb_build_object('fromId',moved->'origin','toId',transfer->'fromId','units',take,'kind','temporary','transferIds',moved->'trail');
+      if moved->'claim'<>'null' then leg:=leg||jsonb_build_object('deferredClaim',duty_private.compensation_slice(moved->'claim',take)); end if;
+      moved:=jsonb_set(moved,'{prior}',(moved->'prior')||jsonb_build_array(leg));
+     end if;
+     moved:=moved||jsonb_build_object('origin',transfer->'toId','claim',null,'trail','[]'::jsonb,'prior',(moved->'prior')||jsonb_build_array(
+      jsonb_build_object('fromId',transfer->'fromId','toId',transfer->'toId','kind','permanent','units',take,'transferIds',jsonb_build_array(transfer->'id'))));
+    else moved:=jsonb_set(moved,'{trail}',(moved->'trail')||jsonb_build_array(transfer->'id')); end if;
+    tokens:=tokens||jsonb_build_array(moved);
+   end loop;
    if remaining=0 then exit; end if;
-   take:=least(remaining,(t->>'units')::bigint); remaining:=remaining-take;
-   moved:=duty_private.allocation_part(t,take,(t->>'units')::bigint-take);
-   if (t->>'units')::bigint>take then tokens:=jsonb_set(tokens,array[position::text],duty_private.allocation_part(t,(t->>'units')::bigint-take));
-   else tokens:=jsonb_set(tokens,array[position::text,'units'],'0'); end if;
-   moved:=jsonb_set(moved,'{carrier}',transfer->'toId');
-   if transfer->>'kind'='permanent' then
-    if jsonb_array_length(moved->'trail')>0 and moved->>'origin'<>transfer->>'fromId' then
-     leg:=jsonb_build_object('fromId',moved->'origin','toId',transfer->'fromId','units',take,'kind','temporary','transferIds',moved->'trail');
-     if moved->'claim'<>'null' then leg:=leg||jsonb_build_object('deferredClaim',duty_private.compensation_slice(moved->'claim',take)); end if;
-     moved:=jsonb_set(moved,'{prior}',(moved->'prior')||jsonb_build_array(leg));
-    end if;
-    moved:=moved||jsonb_build_object('origin',transfer->'toId','claim',null,'trail','[]'::jsonb,'prior',(moved->'prior')||jsonb_build_array(
-     jsonb_build_object('fromId',transfer->'fromId','toId',transfer->'toId','kind','permanent','units',take,'transferIds',jsonb_build_array(transfer->'id'))));
-   else moved:=jsonb_set(moved,'{trail}',(moved->'trail')||jsonb_build_array(transfer->'id')); end if;
-   tokens:=tokens||jsonb_build_array(moved);
   end loop;
   if remaining<>0 then raise exception 'transfer-exceeds-source-target'; end if;
  end loop;

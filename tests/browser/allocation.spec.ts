@@ -18,10 +18,12 @@ async function openPlan(page: import('@playwright/test').Page) {
 
 test('allocation controls preserve one-point and half-point intent, redistribute, undo and restore keyboard focus', async ({page, backend, openApp}) => {
   fresh(backend); await openApp(); await openPlan(page);
+  // Outputs per row: Points, then the signed Temporary and Permanent steppers.
   const first = page.locator('.allocation-row').first(), values = first.locator('output');
   const original = Number(await values.first().textContent());
-  await first.getByRole('button', {name: 'Decrease Target · Avery Admin', exact: true}).click();
+  await first.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
   await expect(values.first()).toHaveText(String(original - 1));
+  await expect(values.nth(1)).toHaveText('-1');
   await expect(page.getByRole('button', {name: '0.5', exact: true})).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
@@ -73,7 +75,7 @@ test('opening the plan runs no Worker; a target above availability warns on its 
   const alex = member(page, 'Alex Atlas');
   await expect(alex.row.getByRole('note')).toHaveText('Availability allows about 0');
   await expect(page.locator('.allocation-row-warning')).toHaveCount(1);
-  await alex.row.getByRole('button', {name: 'Decrease Target · Alex Atlas', exact: true}).click();
+  await alex.row.getByRole('button', {name: 'Decrease Temporary · Alex Atlas', exact: true}).click();
   await expect(alex.target).toHaveText('3');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   expect(workers).toBe(0);
@@ -131,7 +133,8 @@ test('dragging one engineer onto another gives one exact temporary point, then M
   await page.getByRole('button', {name: 'Save allocation only', exact: true}).click();
   await expect(page.getByText('Allocation and locks saved.', {exact: true})).toBeVisible();
   const saved = backend.calls.find(c => c.name === 'duty_confirm_allocation')!.params.p_allocation as Record<string, unknown>;
-  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'offeredUnits', 'pending', 'repayments', 'sourceKey', 'targetsUnits', 'transfers']);
+  expect(Object.keys(saved).sort()).toEqual(['baselineUnits', 'changes', 'offeredUnits', 'pairs', 'repayments', 'sourceKey', 'targetsUnits', 'transfers']);
+  expect(saved.pairs).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
   expect(saved.transfers).toEqual([expect.objectContaining({fromId: ids.admin, toId: ids.a, units: 2, kind: 'permanent'})]);
 });
 

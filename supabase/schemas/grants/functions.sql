@@ -170,6 +170,8 @@ REVOKE ALL ON FUNCTION duty_private.allocation_partition(weights integer[], capa
 
 REVOKE ALL ON FUNCTION duty_private.allocation_rebind(s jsonb, publication jsonb, source_publication uuid, allocation_id uuid, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
 
+REVOKE ALL ON FUNCTION duty_private.allocation_transfers(seniority jsonb, changes jsonb, pairs jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
 REVOKE ALL ON FUNCTION duty_private.add_temporary_member(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION duty_private.add_temporary_member(text, bigint) TO authenticated;
 
