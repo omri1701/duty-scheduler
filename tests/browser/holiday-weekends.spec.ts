@@ -188,3 +188,27 @@ test('the lock, the dates and the +extra never overlap on a locked holiday weeke
     }
   }
 });
+
+test('weekend bars centre the name: plain, locked holiday, a weekend ending a streak row and each half of a split weekend', async ({page, backend, openApp}, info) => {
+  splitHoliday(backend, true);
+  // Fri–Sat 6–7 → Sun 8 is one member's streak; the weekend ends its row alone, so it keeps its own name.
+  for (const day of ['2026-11-06', '2026-11-08']) for (const r of rows(backend, day)) r.primary_id = ids.b;
+  for (const day of ['2026-11-05', '2026-11-09']) for (const r of rows(backend, day)) r.primary_id = ids.d;
+  for (const r of rows(backend, '2026-11-20')) r.locked = true;
+  // Someone else on Thursday 26, so the split Friday stands alone.
+  for (const r of rows(backend, '2026-11-26')) r.primary_id = ids.a;
+  await openApp();
+  for (const lang of ['en', 'he'] as const) {
+    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
+      await page.setViewportSize({width, height: 900});
+      for (const day of ['2026-11-06', '2026-11-13', '2026-11-20', '2026-11-27', '2026-11-28']) {
+        const chip = duty(page, day).locator('.assignment-chip'), name = chip.locator('> span:last-child');
+        await expect(name).not.toHaveText('');
+        const bar = await box(chip), text = await box(name);
+        expect(Math.abs(centre(text) - centre(bar)), `${day} at ${width}px in ${lang}`).toBeLessThanOrEqual(1.5);
+        expect(text.x).toBeGreaterThanOrEqual(bar.x - 0.5); expect(text.x + text.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+      }
+    }
+  }
+});

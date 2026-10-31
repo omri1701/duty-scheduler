@@ -40,6 +40,12 @@ for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${la
   for (const day of ['2026-11-04', '2026-11-10']) for (const r of rows(day)) r.primary_id = ids.d;
   // A locked holiday weekend and a locked holiday weekday carry the lock, the dates and the +extra together.
   for (const day of ['2026-11-12', '2026-11-20']) for (const r of rows(day)) r.locked = true;
+  // A hand-split 27–28 weekend: each half centres its own name. Thursday 26 is someone else's so the halves stand alone.
+  for (const r of rows('2026-11-26')) r.primary_id = ids.a;
+  backend.raw.assignments = backend.raw.assignments.filter(r => r.day !== '2026-11-27');
+  for (const publication of [backend.raw.publications[0].id, null]) backend.raw.assignments.push(
+    {id: `split-fri-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-27', end_day: '2026-11-28', primary_id: ids.d, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5},
+    {id: `split-sat-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-28', end_day: '2026-11-29', primary_id: ids.e, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5});
   await openApp();
   if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
   await snapshot(page, `streaks-${lang}`);
