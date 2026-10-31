@@ -33,6 +33,31 @@ for(const lang of ['en','he'])test(`today accent in combined weekend ${lang}`,as
   await snapshot(page,`today-weekend-published-${lang}`);
 });
 
+for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${lang}`, async ({page, openApp, backend}, info) => {
+  const rows = (day: string) => backend.raw.assignments.filter(r => r.day === day);
+  // Thu 5 → weekend 6–7 → Sun 8 → Mon 9 is one member's streak across the Saturday→Sunday row break.
+  for (const day of ['2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']) for (const r of rows(day)) r.primary_id = ids.b;
+  for (const day of ['2026-11-04', '2026-11-10']) for (const r of rows(day)) r.primary_id = ids.d;
+  // A locked holiday weekend and a locked holiday weekday carry the lock, the dates and the +extra together.
+  for (const day of ['2026-11-12', '2026-11-20']) for (const r of rows(day)) r.locked = true;
+  // A hand-split 27–28 weekend: each half centres its own name. Thursday 26 is someone else's so the halves stand alone.
+  for (const r of rows('2026-11-26')) r.primary_id = ids.a;
+  backend.raw.assignments = backend.raw.assignments.filter(r => r.day !== '2026-11-27');
+  for (const publication of [backend.raw.publications[0].id, null]) backend.raw.assignments.push(
+    {id: `split-fri-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-27', end_day: '2026-11-28', primary_id: ids.d, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5},
+    {id: `split-sat-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-28', end_day: '2026-11-29', primary_id: ids.e, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5});
+  await openApp();
+  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await snapshot(page, `streaks-${lang}`);
+  // The app has no dark theme of its own; this checks that the OS preference leaves the calendar intact.
+  await page.emulateMedia({colorScheme: 'dark'});
+  await snapshot(page, `streaks-dark-${lang}`);
+  if (info.project.name !== 'mobile') return;
+  await page.emulateMedia({colorScheme: 'light'});
+  await page.setViewportSize({width: 320, height: 844});
+  await snapshot(page, `streaks-320-${lang}`);
+});
+
 test('access states', async ({page, openApp}) => {
   await openApp('signed-out'); await snapshot(page, 'signed-out');
   await page.getByRole('button', {name: 'עברית', exact: true}).click();

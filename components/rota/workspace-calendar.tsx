@@ -1,9 +1,10 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import {streakCells} from '@/lib/rota/streaks';
+import type { CSSProperties } from 'react';
 import { Plus, Info, LockKeyhole } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { addDays, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
+import { addDays, dayOf, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { CalendarInteractions } from '@/hooks/use-calendar-interactions';
 import type { Language, Translate, FormatDate } from './workspace-types';
@@ -75,6 +76,11 @@ export function WorkspaceCalendar({
   } = interactions;
   // Display only: adjacent duties of one member read as a single bar.
   const streaks = streakCells(calendarBlocks, calendarState.assignments);
+  const cells = calendarCells(dateCells, calendarBlocks), draft = calendarState.months[month]?.status === 'draft';
+  const locked = (b?: Duty) => !!b && draft && !!calendarState.assignments[b.id]?.locked;
+  // A week with a lock or a +extra gives the phone a marks line under its dates, in every cell so the bars stay level.
+  const week = (date: string) => addDays(date, -dayOf(date));
+  const markedWeeks = new Set(cells.filter(c => locked(c.period) || (c.period && streaks[c.period.id]?.badge !== undefined)).map(c => week(c.date)));
   return (
     <CalendarSurface lang={lang} gridRef={dragContainer} gridClassName="gesture-grid" toolbar={<>
         {reopened ? <>
@@ -156,7 +162,7 @@ export function WorkspaceCalendar({
         </div>
       )}
       </>}>
-        {calendarCells(dateCells, calendarBlocks).map(({date:d, period:b, combined}) => {
+        {cells.map(({date:d, period:b, combined}) => {
           const a = b ? calendarState.assignments[b.id] : undefined,
             p = state.team.find((p) => p.id === a?.primary),
             mine = a?.primary === meId || a?.secondary === meId,
@@ -182,6 +188,8 @@ export function WorkspaceCalendar({
                 cell ? `streak-${cell.position}` : '',
                 cell?.breakBefore ? 'streak-break-before' : '',
                 cell?.breakAfter ? 'streak-break-after' : '',
+                cell?.nameColumns ? 'streak-label-cell' : '',
+                markedWeeks.has(week(d)) ? 'marks-week' : '',
                 // A holiday marks only its own dates inside a combined weekend.
                 combined && b?.specialDates?.includes(b.start) ? 'holiday-friday' : '',
                 combined && b?.specialDates?.includes(addDays(b!.start, 1)) ? 'holiday-saturday' : '',
@@ -202,7 +210,7 @@ export function WorkspaceCalendar({
               aria-label={`${b && ownPublishedDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
             >
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
-                {calendarState.months[month]?.status === 'draft' && a?.locked && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}
+                {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}
                 {cell?.badge !== undefined && <span className="tiny-badge">+{cell.badge}</span>}
               </CalendarDateLine>
               {b && (
@@ -215,11 +223,21 @@ export function WorkspaceCalendar({
                             borderInlineStartColor: p.color,
                             background: p.color,
                             color: ink(p.color),
-                          }
+                            '--chip-color': p.color,
+                          } as CSSProperties
                         : undefined
                     }
                   >
-                    {p ? cell?.showName === false ? (
+                    {p ? cell?.nameColumns ? (
+                      <>
+                        {/* The name centres across its whole row segment; the placeholder keeps this chip as tall as the rest of the bar. */}
+                        <span className="streak-continued" aria-hidden="true" />
+                        <span className="streak-label" style={{ '--streak-span': cell.nameColumns / (combined ? 2 : 1) } as CSSProperties}>
+                          {nickname(p.id)}
+                          {p.id === meId && <small> {t('(you)', '(אני)')}</small>}
+                        </span>
+                      </>
+                    ) : cell?.showName === false ? (
                       <span className="streak-continued" aria-hidden="true" />
                     ) : (
                       <span>
