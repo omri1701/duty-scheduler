@@ -10,8 +10,9 @@ export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; bou
   rotation?: number[];
   exceptions?: {consecutive?: [number, number][]; boundary?: {duty: number; boundary: string}[];
     weekends?: {engineer: number; weekends: number[]}[]}};
-/** Ordered objective facts: coverage, special, units, then ascending gaps, then
- * weekend rotation cost, preferred-date count and same-weekday repeats. */
+/** Ordered objective facts: coverage, special, units, the minimum gap, weekend
+ * rotation cost, same-weekday repeats, the whole ascending gap vector, then the
+ * preferred-date count. */
 export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
   rotation: number; preferred: number; repeats: number};
 
@@ -144,16 +145,14 @@ export function binaryValues(values: Record<string, number>) {
     return [key, Math.abs(n) <= 1e-8 ? 0 : 1];
   }));
 }
-/** Lexicographic objective order; lower is better. Missing gaps pad with infinity. */
+/** Lexicographic objective order; lower is better. Missing gaps pad with infinity:
+ * coverage, special, units, minimum gap, rotation, repeats, sorted gaps, preferred. */
 export function compareMetrics(a: Metrics, b: Metrics, spacing = true) {
-  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units];
-  const tail = (m: Metrics) => [m.rotation, -m.preferred, m.repeats];
+  const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []), m.rotation, m.repeats];
   const av = [...head(a), ...(spacing ? a.gaps.map(g => -g) : [])];
   const bv = [...head(b), ...(spacing ? b.gaps.map(g => -g) : [])];
   for (let i = 0; i < Math.max(av.length, bv.length); i++) {
     if ((av[i] ?? -Infinity) !== (bv[i] ?? -Infinity)) return (av[i] ?? -Infinity) < (bv[i] ?? -Infinity) ? -1 : 1;
   }
-  const at = tail(a), bt = tail(b);
-  for (let i = 0; i < at.length; i++) if (at[i] !== bt[i]) return at[i] < bt[i] ? -1 : 1;
-  return 0;
+  return a.preferred === b.preferred ? 0 : a.preferred > b.preferred ? -1 : 1;
 }

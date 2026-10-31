@@ -9,7 +9,7 @@ import {monthFixture} from '../lib/solver-spike/fixtures.ts';
 const solver = await createHighsAdapter(loadHighs);
 const duty = (day, units = 2, eligible = [0, 1], extra = {}) =>
   ({start: day * 1440, end: (day + 1) * 1440, units, days: 1, special: 0, eligible, ...extra});
-const key = m => [-m.coverage, -m.special, -m.units, ...m.gaps.map(g => -g), -Infinity, m.rotation, -m.preferred, m.repeats];
+const key = m => [-m.coverage, -m.special, -m.units, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, ...m.gaps.map(g => -g), -Infinity, -m.preferred];
 function compare(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const diff = (a[i] ?? -Infinity) - (b[i] ?? -Infinity);

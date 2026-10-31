@@ -222,9 +222,21 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     // million-scale costs produced >1e-7 drift on ordinary six-engineer months.
     return [random() % 1000, x(e, i)] as Term;
   })) : []};
-  // Below spacing: cross-month weekend fairness, explicit preferred dates, weekday
-  // variety, then the seeded tie. Only the seed is outside the verified metrics.
-  const secondary = [rotationStage, preference, repeats.stage, seeded];
+  // Directly below the proved minimum gap: cross-month weekend fairness, then weekday
+  // variety; then the remaining sorted-gap leximin, explicit preferred dates and the
+  // seeded tie. This list is the one place that fixes the order below the minimum gap.
+  const early = [rotationStage, repeats.stage], late = [preference, seeded];
+  let earlyDone = false;
+  const runEarly = () => {
+    for (const stage of early) {
+      if (stage === repeats.stage && stage.terms.length) {
+        session.addColumns(repeats.columns); session.addRows(repeats.rows);
+        columns += repeats.columns.length; rows += repeats.rows.length;
+      }
+      if (!optimize(stage)) return false;
+    }
+    return true;
+  };
   const objective = (name: string, m: Metrics, a: (number | null)[]) => name === 'seed'
     ? seeded.terms.reduce((sum, [c, variable]) => {
       const [, e, i] = variable.split('_').map(Number);
@@ -281,8 +293,11 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     if (!result) {termination = 'budget'; return false;}
     if (result.status === 'infeasible') throw Error('Optional-coverage model contradicts verified incumbent');
     const value = candidate(result, stage.terms, stage.name);
+    // Integer objective: a bound above value - 1 proves optimality; the native gap only
+    // guards against a bound reported far from the objective (it carries 1e-16 noise
+    // once fixed-level rows sit beside the continuous flows).
     const proved = value !== null && result.status === 'optimal' && result.bound > value - 1 &&
-      result.bound <= value + 1e-7 && result.gap === 0;
+      result.bound <= value + 1e-7 && result.gap <= 1e-9;
     if (proved && objective(stage.name, metrics, assignment) !== value) throw Error('Optimum contradicts verified incumbent');
     const {values: discarded, ...metadata} = result; void discarded;
     stages.push({...metadata, name: stage.name, objective: value, proved});
@@ -340,11 +355,13 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           finished = true;
         }
         else {
+          // The flows enforce the proved minimum gap while the rotation and weekday
+          // levels are solved; the gap-count (leximin) stages follow them.
           const flows = buildFlows(p, base.ids, floor);
           session.addColumns(flows.columns); session.addRows(flows.rows);
           columns += flows.columns.length; rows += flows.rows.length;
-          finished = true;
-          for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
+          earlyDone = true; finished = runEarly();
+          if (finished) for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
         }
       } else {
         stages.push({name: 'minimum-gap', status: termination, statusCode: 0, objective: floor,
@@ -352,13 +369,8 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           memoryBytes: adapter.memoryBytes, proved: false});
       }
     }
-    if (finished) for (const stage of secondary) {
-      if (stage === repeats.stage && stage.terms.length) {
-        session.addColumns(repeats.columns); session.addRows(repeats.rows);
-        columns += repeats.columns.length; rows += repeats.rows.length;
-      }
-      if (!optimize(stage)) {finished = false; break;}
-    }
+    if (finished && !earlyDone) {earlyDone = true; finished = runEarly();}
+    if (finished) for (const stage of late) if (!optimize(stage)) {finished = false; break;}
   } finally {session.dispose();}
   return {assignment, metrics, stages, thresholds, minimumGap, provedPrefix: prefix(),
     complete: metrics.deficits.every(n => n === 0) && assignment.every(e => e !== null),
