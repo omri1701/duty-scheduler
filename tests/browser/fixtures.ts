@@ -1,5 +1,5 @@
 import {test as base, expect, type Page} from '@playwright/test';
-import {addDays, blocks, dayOf} from '../../lib/rota/engine';
+import {addDays, blocks, dayOf, specialAt} from '../../lib/rota/engine';
 import {canManage, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
 import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
@@ -17,10 +17,12 @@ type Call = {name: string; params: Record<string, unknown>; user: string};
 export function seed(): Snapshot {
   const members = Object.entries(ids).map(([key, id], i) => ({id, name: ['Avery Admin', 'Alex Atlas', 'Blair Birch', 'Casey Cedar', 'Drew Dale', 'Eden Elm', 'Pat Pending'][i], email: `${key}@example.invalid`, role: key === 'admin' ? 'admin' : 'engineer', status: key === 'pending' ? 'pending' : 'approved', active: true, seniority: i, color: ['#adc9ee', '#f0ba95', '#c9b1de', '#9bcfbe', '#eacb96', '#b6c8d1', '#adc9ee'][i]}));
   // Fixed rows independent of the generator: snapshots catch renderer changes too.
-  const duties: DutyRow[] = blocks(MONTH, [{id: 'holiday', title: 'Holiday coverage', start: '2026-11-12', end: '2026-11-13', extra: 2}, {id: 'weekend-holiday', title: 'Weekend holiday', start: '2026-11-20', end: '2026-11-22', extra: 2}]).map((b, i) => ({
+  const specials = [{id: 'holiday', title: 'Holiday coverage', start: '2026-11-12', end: '2026-11-13', extra: 2}, {id: 'weekend-holiday', title: 'Weekend holiday', start: '2026-11-20', end: '2026-11-22', extra: 2}];
+  const duties: DutyRow[] = blocks(MONTH, specials).map((b, i) => ({
     id: `duty-${i}`, publication_id: pub, day: b.start, end_day: b.end,
     primary_id: members[i % 6].id, secondary_id: b.start === '2026-11-02' ? ids.c : null,
-    locked: false, manager_override: false, title: b.title ?? '', extra_points: b.title ? 2 : 0, points: b.points,
+    locked: false, manager_override: false, title: b.title ?? '', extra_points: specialAt(specials, b.start)?.extra ?? 0,
+    saturday_extra_points: b.end === addDays(b.start, 2) ? specialAt(specials, addDays(b.start, 1))?.extra ?? 0 : 0, points: b.points,
   }));
   duties.find(d => d.day === '2026-11-02')!.primary_id = ids.a;
   duties.find(d => d.day === '2026-11-03')!.primary_id = ids.b;
@@ -62,8 +64,9 @@ export class Backend {
       facts: {month, members, seniority: this.raw.members.filter(m => m.active && m.status === 'approved').sort((a, b) => a.seniority - b.seniority).map(m => m.id),
         duties: canonicalDuties(month, calendar).map(d => ({id: d.id, startDate: d.startDate, endDate: d.endDate, units: d.units,
           primary: state.assignments[d.id]?.primary || null, secondary: state.assignments[d.id]?.secondary || null,
-          title: state.specials.find(s => s.start <= d.startDate && s.end > d.startDate)?.title ?? '',
-          extra: state.specials.find(s => s.start <= d.startDate && s.end > d.startDate)?.extra ?? 0, weekendId: d.weekendId ?? null})),
+          title: (specialAt(state.specials, d.startDate) ?? (d.dates.length === 2 ? specialAt(state.specials, d.dates[1]) : undefined))?.title ?? '',
+          extra: specialAt(state.specials, d.startDate)?.extra ?? 0, weekendId: d.weekendId ?? null,
+          ...(d.saturdayUnits !== undefined && d.saturdayUnits !== 1 ? {saturdayExtra: (d.saturdayUnits - 1) / 2} : {})})),
         neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
         sourcePublicationId: null, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
   }
@@ -122,7 +125,7 @@ export class Backend {
       const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0, 7) === month;
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
       this.raw.assignments.push(...f.duties.map(d => ({id: `generated-${d.id}`, publication_id: null, day: d.startDate, end_day: d.endDate, primary_id: assignments[d.id].primary,
-        secondary_id: d.secondary, title: d.title, extra_points: d.extra, points: d.units / 2, locked: f.locks.some(l => l.dutyId === d.id), manager_override: false})));
+        secondary_id: d.secondary, title: d.title, extra_points: d.extra, saturday_extra_points: d.saturdayExtra ?? 0, points: d.units / 2, locked: f.locks.some(l => l.dutyId === d.id), manager_override: false})));
       let m = this.raw.months.find(m => m.month === month);
       if (!m) {m = {month, deadline: addDays(month + '-01', -7), status: 'draft', generated: true, current_publication_id: null, publication_sequence: 0}; this.raw.months.push(m);}
       m.generated = true; meta.generation = {seed: p.p_seed, metrics};
@@ -136,7 +139,9 @@ export class Backend {
       const draftIds = new Map(this.raw.assignments.filter(d => d.publication_id === null).map(d => [d.day, d.id]));
       const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7);
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !state.months[owns(d)] || state.months[owns(d)].status === 'published' && p.p_publish !== owns(d));
-      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: draftIds.get(d.day) ?? `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
+      // Mirrors the stored points column: every holiday date adds its own extra.
+      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: draftIds.get(d.day) ?? `saved-${i}`, publication_id: null,
+        points: d.end_day === addDays(d.day, 2) ? 1 + d.extra_points + (d.saturday_extra_points ?? 0) : ([5, 6].includes(dayOf(d.day)) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {
         const metadata = this.allocations.get(month);
         if (metadata) metadata.locks = this.raw.assignments.filter(d => d.publication_id === null && d.locked && owns(d) === month).map(d => ({dutyId: d.day, engineer: d.primary_id!}));

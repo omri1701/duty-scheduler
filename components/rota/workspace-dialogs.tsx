@@ -161,8 +161,8 @@ export function SpecialDutyDialog({
           <DialogTitle>{t('A special duty block', 'מקטע תורנות מיוחד')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Each date is a separate duty. Choose the extra points per date.',
-              'כל יום הוא תורנות נפרדת. בחרו נקודות נוספות לכל יום.',
+              'Each date is a separate duty and adds the extra points; a weekend in the range stays one Friday–Sunday duty.',
+              'כל תאריך הוא תורנות נפרדת ומוסיף את הנקודות הנוספות; סוף שבוע בטווח נשאר תורנות אחת שישי–ראשון.',
             )}
           </DialogDescription>
         </DialogHeader>
@@ -216,8 +216,8 @@ export function SpecialDutyDialog({
           </strong>
           <span>
             {t(
-              'Weekday: 1 + extra. Friday / Saturday: ½ + extra each.',
-              'יום חול: 1 + תוספת. שישי / שבת: ½ + תוספת לכל יום.',
+              'Weekday: 1 + extra. Friday / Saturday: ½ + extra each, so a whole holiday weekend is 1 + 2 × extra.',
+              'יום חול: 1 + תוספת. שישי / שבת: ½ + תוספת לכל יום, כך שסוף שבוע חג שלם הוא 1 + 2 × תוספת.',
             )}
           </span>
           <span>

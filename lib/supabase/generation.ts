@@ -11,7 +11,7 @@ import {assertWritable} from './write-policy.ts';
 
 export type GenerationContext = ReturnType<typeof readGenerationContext>;
 type Duty = {id: string; startDate: string; endDate: string; units: number; primary: string | null;
-  secondary: string | null; title: string; extra: number; weekendId: string | null};
+  secondary: string | null; title: string; extra: number; saturdayExtra?: number; weekendId: string | null};
 type Envelope = {revision: number; fingerprint: string; accountingFingerprint: string; actualAtMs: number;
   coverageStartMs: number; generationAllowed: boolean; actual: {events: CompensationEvent[]};
   facts: {month: string; duties: Duty[]; members: Member[]; seniority: string[]; neighbors: Neighbor[];
@@ -37,7 +37,8 @@ export function readGenerationContext(value: unknown) {
     !object(f.constraints) || !nullableString(f.allocationId) || !nullableString(f.sourcePublicationId) ||
     !(f.allocation === null || object(f.allocation)) ||
     f.duties.some(d => !object(d) || !string(d.id) || !string(d.startDate) || !string(d.endDate) || !integer(d.units) ||
-      !nullableString(d.primary) || !nullableString(d.secondary) || !string(d.title) || typeof d.extra !== 'number' || !nullableString(d.weekendId)) ||
+      !nullableString(d.primary) || !nullableString(d.secondary) || !string(d.title) || typeof d.extra !== 'number' ||
+      (d.saturdayExtra !== undefined && typeof d.saturdayExtra !== 'number') || !nullableString(d.weekendId)) ||
     f.members.some(m => !object(m) || !string(m.id) || ['active', 'approved', 'eligible'].some(k => typeof m[k] !== 'boolean')) ||
     f.neighbors.some(n => !object(n) || ['id', 'ownerMonth', 'start', 'end', 'engineer'].some(k => !string(n[k])) || !['published', 'working'].includes(String(n.source))) ||
     f.locks.some(l => !object(l) || !string(l.dutyId) || !string(l.engineer)) ||
@@ -47,7 +48,14 @@ export function readGenerationContext(value: unknown) {
   const calendar: GenerationInput['calendar'] = {specials: [], splitWeekends: []};
   for (const d of facts.duties) {
     halfUnits(d.extra);
-    if (d.title || d.extra) calendar.specials!.push({id: d.id, start: d.startDate, end: d.endDate, extra: d.extra});
+    const saturdayExtra = d.saturdayExtra ?? 0, combined = d.endDate === addDays(d.startDate, 2);
+    halfUnits(saturdayExtra);
+    if (!combined && saturdayExtra) throw Error('Invalid generation facts');
+    // A combined weekend stores each date's extra; differing extras are two ranges.
+    if (combined && d.extra !== saturdayExtra) {
+      if (d.title || d.extra) calendar.specials!.push({id: d.id, start: d.startDate, end: addDays(d.startDate, 1), extra: d.extra});
+      if (saturdayExtra) calendar.specials!.push({id: d.id + '/sat', start: addDays(d.startDate, 1), end: d.endDate, extra: saturdayExtra});
+    } else if (d.title || d.extra) calendar.specials!.push({id: d.id, start: d.startDate, end: d.endDate, extra: d.extra});
     if ([5, 6].includes(dayOf(d.startDate)) && d.endDate === addDays(d.startDate, 1)) {
       const friday = dayOf(d.startDate) === 5 ? d.startDate : addDays(d.startDate, -1);
       if (!calendar.splitWeekends!.includes(friday)) calendar.splitWeekends!.push(friday);
@@ -55,7 +63,8 @@ export function readGenerationContext(value: unknown) {
   }
   const duties = canonicalDuties(facts.month, calendar);
   if (duties.length !== facts.duties.length || duties.some((d, i) => d.id !== facts.duties[i].id ||
-    d.endDate !== facts.duties[i].endDate || d.units !== facts.duties[i].units) ||
+    d.endDate !== facts.duties[i].endDate || d.units !== facts.duties[i].units ||
+    d.saturdayUnits !== (d.endDate === addDays(d.startDate, 2) ? 1 + halfUnits(facts.duties[i].saturdayExtra ?? 0) : undefined)) ||
     coverageStart(facts.month, calendar) !== raw.coverageStartMs || raw.generationAllowed !== (raw.actualAtMs < raw.coverageStartMs)) throw Error('Noncanonical generation context');
   const actual = replay(raw.actual.events);
   const input: AllocationInput = {schedule: {month: facts.month, sourceRevision: String(raw.revision), calendar,

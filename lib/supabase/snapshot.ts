@@ -1,9 +1,9 @@
-import {addDays,dayOf,blocks,ownerMonth,type State,type Special} from '../rota/engine.ts';
+import {addDays,dayOf,blocks,ownerMonth,specialAt,type State,type Special} from '../rota/engine.ts';
 import type {PublishedMonth} from '../scheduling/rotation.ts';
 export type Member={id:string;email:string|null;is_temporary?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
 export type Lookup={code:string;label:string};
 export type Role=Lookup&{can_manage:boolean};
-export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;locked?:boolean;manager_override:boolean;title:string;extra_points:number;points:number};
+export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;locked?:boolean;manager_override:boolean;title:string;extra_points:number;/** Combined weekends only: the Saturday date's own extra; absent in rows saved before it existed. */saturday_extra_points?:number;points:number};
 export type Publication={id:string;month:string;version:number;published_at:string;published_by:string};
 export type SwapRequest={id:string;month:string;source_publication_id:string|null;requester_id:string;other_id:string;from_day:string;from_end_day:string;to_day:string;to_end_day:string;explanation:string;status:'awaiting_engineer'|'awaiting_admin'|'approved'|'declined'|'rejected'|'cancelled'|'invalidated';accepted_by:string|null;accepted_at:string|null;created_at:string;resolved_at:string|null;resolved_by:string|null;result_publication_id:string|null;override_reason:string};
 export type Snapshot={swapRequests?:SwapRequest[];revision:number|null;members:Member[];months:{month:string;deadline:string;status:'draft'|'published';generated:boolean;current_publication_id:string|null;publication_sequence:number}[];constraints:{member_id:string;day:string;kind:'no'|'prefer';note:string}[];assignments:DutyRow[];publications:Publication[];roles:Role[];memberStatuses:Lookup[];monthStatuses:Lookup[];constraintTypes:Lookup[]};
@@ -22,7 +22,7 @@ const snapshotChecks = {
  members: rows({id:text,email:nullableText,is_temporary:value=>value===undefined||boolean(value),name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
  months: rows({month:text,deadline:text,status:oneOf('draft','published'),generated:boolean,current_publication_id:nullableText,publication_sequence:number}),
  constraints: rows({member_id:text,day:text,kind:oneOf('no','prefer'),note:text}),
- assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,locked:value=>value===undefined||boolean(value),manager_override:boolean,title:text,extra_points:number,points:number}),
+ assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,locked:value=>value===undefined||boolean(value),manager_override:boolean,title:text,extra_points:number,saturday_extra_points:value=>value===undefined||number(value),points:number}),
  publications: rows({id:text,month:text,version:number,published_at:text,published_by:text}),
  roles: rows({...lookup,can_manage:boolean}),
  memberStatuses: rows(lookup), monthStatuses: rows(lookup), constraintTypes: rows(lookup),
@@ -39,7 +39,13 @@ function applyRows(state:State,rows:DutyRow[]){
  const specials:Special[]=[],splits=new Set<string>();
  for(const row of rows){
   state.assignments[row.day]={primary:row.primary_id??'',secondary:row.secondary_id??undefined,locked:row.locked||undefined,override:row.manager_override||undefined};
-  if(row.title||Number(row.extra_points)>0)specials.push({id:row.id,title:row.title,start:row.day,end:row.end_day,extra:Number(row.extra_points)});
+  // A combined weekend row stores each date's extra; differing extras become two ranges.
+  const extra=Number(row.extra_points),saturdayExtra=Number(row.saturday_extra_points??0);
+  if(row.end_day===addDays(row.day,2)&&extra!==saturdayExtra){
+   if(extra>0)specials.push({id:row.id,title:row.title,start:row.day,end:addDays(row.day,1),extra});
+   if(saturdayExtra>0)specials.push({id:row.id+'/sat',title:row.title,start:addDays(row.day,1),end:row.end_day,extra:saturdayExtra});
+  }
+  else if(row.title||extra>0)specials.push({id:row.id,title:row.title,start:row.day,end:row.end_day,extra});
   if(row.end_day===addDays(row.day,1)&&[5,6].includes(dayOf(row.day)))splits.add(dayOf(row.day)===5?row.day:addDays(row.day,-1));
  }
  state.specials=specials;state.splitWeekends=[...splits];return state;
@@ -70,6 +76,8 @@ export function schedulePayload(s:State,month?:string,publish=false,reviewedLock
   // Include only explicit data or duties belonging to an existing month; never invent a carried assignment.
    if(months.has(ownerMonth(duty))&&s.months[ownerMonth(duty)]&&(s.months[ownerMonth(duty)].status==='draft'||publish&&ownerMonth(duty)===month))duties.set(duty.id,duty);
  }
-  return {...(reviewedLocks?{lock_edits:reviewedLocks}:{}),team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,locked:!!s.assignments[d.id]?.locked,title:d.title??'',extra_points:d.points-(d.weekendId?(d.end===addDays(d.start,2)?1:0.5):1)}))};
+  // Each row stores its own date's extra; a combined weekend also stores Saturday's.
+  const extraAt=(date:string)=>specialAt(s.specials,date)?.extra??0;
+  return {...(reviewedLocks?{lock_edits:reviewedLocks}:{}),team:s.team.map(({id,color,active})=>({id,color,active})),months:Object.fromEntries([...months].filter(m=>s.months[m]).map(m=>[m,s.months[m]])),duties:[...duties.values()].map(d=>({day:d.start,end_day:d.end,primary_id:s.assignments[d.id]?.primary||null,secondary_id:s.assignments[d.id]?.secondary||null,manager_override:!!s.assignments[d.id]?.override,locked:!!s.assignments[d.id]?.locked,title:d.title??'',extra_points:extraAt(d.start),saturday_extra_points:d.end===addDays(d.start,2)?extraAt(addDays(d.start,1)):0}))};
 }
 export {todayIsrael} from '../rota/calendar-dates.ts';

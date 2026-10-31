@@ -298,6 +298,23 @@ test('combined/split cross-year ownership, final block completion and shared wei
   h = publish(h, publication('dec2', '2027-12', [duty('2027-12-31', 'a', 1), duty('2028-01-01', 'b', 1)]), 'dec1');
   assert.deepEqual(amounts(h), [['a', 'b', 1]]);
   assert.throws(() => publish(h, publication('bad', '2028-01', [duty('2028-01-01', 'a', 1)])), /invalid-published-duty/);
+  // A combined holiday weekend carries each date's own points: +2 on both dates is 10 units with
+  // saturdayUnits 5, so a later hand split moves exactly the Saturday's 5.
+  let holiday = publish(setup(), publication('h1', '2027-12', [{...duty('2027-12-31', 'a', 10, '2028-01-02'), saturdayUnits: 5}]));
+  holiday = publish(holiday, publication('h2', '2027-12', [duty('2027-12-31', 'a', 5), duty('2028-01-01', 'b', 5)]), 'h1');
+  assert.deepEqual(amounts(holiday), [['a', 'b', 5]]);
+  // A Friday-only +0.5 holiday: Friday 2 units, Saturday its ordinary 1 (saturdayUnits absent).
+  let odd = publish(setup(), publication('o1', '2027-12', [duty('2027-12-31', 'a', 3, '2028-01-02')]));
+  odd = publish(odd, publication('o2', '2027-12', [duty('2027-12-31', 'b', 2), duty('2028-01-01', 'a', 1)]), 'o1');
+  assert.deepEqual(amounts(odd), [['a', 'b', 2]]);
+  // A Saturday-only +1 holiday keeps Friday at one unit and gives Saturday three.
+  let saturday = publish(setup(), publication('s1', '2027-12', [{...duty('2027-12-31', 'a', 4, '2028-01-02'), saturdayUnits: 3}]));
+  saturday = publish(saturday, publication('s2', '2027-12', [duty('2027-12-31', 'a', 1), duty('2028-01-01', 'b', 3)]), 's1');
+  assert.deepEqual(amounts(saturday), [['a', 'b', 3]]);
+  for (const bad of [{units: 1}, {units: 4, saturdayUnits: 4}, {units: 4, saturdayUnits: 0}, {units: 4, saturdayUnits: 1.5}, {units: 90, saturdayUnits: 45}, {units: 84, saturdayUnits: 42}])
+    assert.throws(() => publish(setup(), publication('bad', '2027-12', [{...duty('2027-12-31', 'a', 2, '2028-01-02'), ...bad}])), /invalid-published-duty-weight/, JSON.stringify(bad));
+  assert.throws(() => publish(setup(), publication('flag', '2027-12', [{...duty('2027-12-30', 'a', 2), saturdayUnits: 1}])), /invalid-published-duty/);
+  invariant(holiday); invariant(odd); invariant(saturday);
   let weighted = publish(setup(), publication('w1', '2026-11', [duty('2026-11-02', 'a', 6)]));
   weighted = publish(weighted, publication('w2', '2026-11', [duty('2026-11-02', 'b', 4)]), 'w1');
   assert.deepEqual(amounts(weighted), [['a', 'b', 4]], 'only shared old/new committed weight transfers');

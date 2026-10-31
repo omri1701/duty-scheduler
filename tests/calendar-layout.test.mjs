@@ -26,7 +26,9 @@ test('verified private splits/specials still control the real calendar, never th
   const privateBlocks=blocks(month,[{id:'private',title:'Private holiday',start:'2026-08-14',end:'2026-08-15',extra:2}],['2026-08-07']);
   const actual=calendarCells(days,privateBlocks);
   assert(actual.some(c=>c.date==='2026-08-08'));
-  assert(actual.some(c=>c.date==='2026-08-15'));
+  // A holiday weekend stays one combined cell; its Saturday is not a separate cell.
+  assert(actual.some(c=>c.date==='2026-08-14'&&c.combined&&c.period?.kind==='special'));
+  assert(!actual.some(c=>c.date==='2026-08-15'));
   assert(!plain.some(c=>c.date==='2026-08-08'));
   assert(!plain.some(c=>c.date==='2026-08-15'));
   assert(!actual.some(c=>c.date==='2026-07-31'));

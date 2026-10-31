@@ -2,27 +2,45 @@ import {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
 export {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
 export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string };
 export type Special = { id: string; title: string; start: string; end: string; extra: number };
-export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string };
+export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string; /** Dates of this duty covered by a special range (a combined weekend may have one or both). */ specialDates?: string[] };
 export type Assignment = { primary: string; secondary?: string; locked?: boolean; override?: boolean };
 export type Constraints = Record<string, Record<string, 'no'|'prefer'>>;
 export type State = { team: Engineer[]; splitWeekends?: string[]; specials: Special[]; constraints: Constraints; constraintNotes?: Record<string, Record<string,string>>; assignments: Record<string, Assignment>; months: Record<string, { deadline: string; status: 'draft'|'published'; generated?: boolean }>; version: number };
 export const overlap=(a:{start:string;end:string},b:{start:string;end:string})=>a.start<b.end&&b.start<a.end;
 export const ownerMonth=(b:Duty)=>(b.weekendId??b.start).slice(0,7);
+export const specialAt=(specials:Special[],date:string)=>specials.find(s=>s.start<=date&&date<s.end);
 export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]):Duty[]{
  const begin=month+'-01',end=monthNext(month)+'-01',all:Duty[]=[];
  for(let d=addDays(begin,-2);d<addDays(end,2);d=addDays(d,1)){
   const dow=dayOf(d),weekendId=dow===5?d:dow===6?addDays(d,-1):undefined;
-  const sp=specials.find(s=>s.start<=d&&d<s.end);
-  const split=weekendId&&(splitWeekends.includes(weekendId)||specials.some(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})));
-  if(weekendId&&!split){if(dow===6)continue;all.push({id:d,start:d,end:addDays(d,2),points:1,kind:'weekend',weekendId});}
-  else all.push({id:d,start:d,end:addDays(d,1),points:(weekendId?0.5:1)+(sp?.extra??0),kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),...(sp?{title:sp.title,specialId:sp.id}:{})});
+  const combined=!!weekendId&&!splitWeekends.includes(weekendId);
+  if(combined&&dow===6)continue;
+  // Every holiday date adds its own extra: weekday 1 + extra, Friday or Saturday 0.5 + extra.
+  // A weekend touched by a special stays one combined Friday–Sunday duty worth the sum of
+  // its two dates; only a hand split separates the halves, each keeping its own date's points.
+  const covered=combined?[d,addDays(d,1)]:[d],sps=covered.map(x=>specialAt(specials,x)),sp=sps.find(Boolean);
+  const points=covered.reduce((v,_,i)=>v+(weekendId?0.5:1)+(sps[i]?.extra??0),0);
+  all.push({id:d,start:d,end:addDays(d,covered.length),points,kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),
+   ...(sp?{title:sp.title,specialId:sp.id,specialDates:covered.filter((_,i)=>sps[i])}:{})});
  }
  return all.filter(b=>(b.start<end&&b.end>begin)||ownerMonth(b)===month);
+}
+/** Remove the extra points from every date of one duty: each covering special range is cut
+ * around that date. A combined weekend stays combined and a hand split stays split. */
+export function removeSpecialDates(s:State,duty:Duty):State{
+ let specials=s.specials;
+ for(const date of dates(duty.start,duty.end)){
+  const sp=specialAt(specials,date);
+  if(!sp)continue;
+  // Deterministic ids (no Web Crypto: insecure origins lack randomUUID); a later cut of the
+  // remainder nests another date, so ids stay unique.
+  specials=specials.flatMap(x=>x.id!==sp.id?[x]:[{...x,end:date},{...x,id:`${x.id}/${addDays(date,1)}`,start:addDays(date,1)}].filter(x=>x.start<x.end));
+ }
+ return {...s,specials};
 }
 export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
  const assignments={...s.assignments};
  const splitWeekends=(s.splitWeekends??[]).filter(f=>{
-  if(s.specials.some(sp=>overlap(sp,{start:f,end:addDays(f,2)})))return true;
   const a=assignments[f],b=assignments[addDays(f,1)];
   // Only an explicit edit of this weekend can change a locked duty's shape.
   if((a?.locked||b?.locked)&&f!==reviewedWeekend)return true;

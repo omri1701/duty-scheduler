@@ -8,17 +8,19 @@ CREATE TABLE public.duty_assignments (
     end_day date NOT NULL,
     title text DEFAULT ''::text NOT NULL,
     extra_points numeric DEFAULT 0 NOT NULL,
+    locked boolean DEFAULT false NOT NULL,
+    saturday_extra_points numeric DEFAULT 0 NOT NULL,
     points numeric GENERATED ALWAYS AS ((
 CASE
-    WHEN (end_day = (day + 2)) THEN (1)::numeric
-    WHEN (EXTRACT(dow FROM day) = ANY (ARRAY[(5)::numeric, (6)::numeric])) THEN 0.5
-    ELSE (1)::numeric
-END + extra_points)) STORED,
-    locked boolean DEFAULT false NOT NULL,
+    WHEN (end_day = (day + 2)) THEN (((1)::numeric + extra_points) + saturday_extra_points)
+    WHEN (EXTRACT(dow FROM day) = ANY (ARRAY[(5)::numeric, (6)::numeric])) THEN (0.5 + extra_points)
+    ELSE ((1)::numeric + extra_points)
+END)) STORED,
     CONSTRAINT duty_assignment_lock_primary CHECK (NOT locked OR primary_id IS NOT NULL),
-    CONSTRAINT duty_assignment_span CHECK (((end_day = (day + 1)) OR ((EXTRACT(dow FROM day) = (5)::numeric) AND (end_day = (day + 2)) AND (extra_points = (0)::numeric) AND (title = ''::text)))),
+    CONSTRAINT duty_assignment_span CHECK (((end_day = (day + 1)) OR ((EXTRACT(dow FROM day) = (5)::numeric) AND (end_day = (day + 2))))),
     CONSTRAINT duty_assignments_check CHECK (((primary_id IS NULL) OR (primary_id IS DISTINCT FROM secondary_id))),
     CONSTRAINT duty_assignments_extra_points_check CHECK (((extra_points >= (0)::numeric) AND (extra_points <= (20)::numeric))),
+    CONSTRAINT duty_assignments_saturday_extra_points_check CHECK (((saturday_extra_points >= (0)::numeric) AND (saturday_extra_points <= (20)::numeric) AND ((end_day = (day + 2)) OR (saturday_extra_points = (0)::numeric)))),
     CONSTRAINT duty_assignments_title_check CHECK ((length(title) <= 60))
 );
 

@@ -199,26 +199,32 @@ test('multiple reverse transfers reserve distinct original source slices and ear
   assert.equal(reconcile(result.preview.events, end).net.e02, -2); exclusivity(result.publication);
 });
 
-test('weighted cross-year weekend halves bind real units and their own completion instants', async () => {
-  for (const weekend of ['2027-12-31', '2028-01-01']) {
-    const {input, assignments} = scenario('weighted'), debtor = assignments[weekend].primary;
-    const units = sum(canonicalDuties(input.schedule.month, input.schedule.calendar)
-      .filter(d => assignments[d.id].primary === debtor).map(d => d.units));
-    input.events = send(input.events, {kind: 'claim', debtorId: debtor, creditorId: 'bridge', units}, 'weighted-debt');
-    const claim = replay(input.events).claims[0], draft = draftFor(input, assignments, [], [{claim, units}]);
-    // Every debtor unit is repayment. Only this weighted half actually performs
-    // work; other missing duties must not fund the rest of the selected debt.
-    const partial = structuredClone(assignments);
-    for (const [date, a] of Object.entries(partial)) if (a.primary === debtor && date !== weekend) a.primary = null;
-    const result = await bindAllocation(input, draft, partial, {...envelope, publicationId: 'december'});
-    assert.equal(result.bindable, true); assert.equal(result.publishable, false);
-    const reservations = result.publication.reservations;
-    assert.equal(sum(reservations.map(r => r.capacity.units)), 5);
-    assert.ok(reservations.every(r => r.capacity.date === weekend && r.capacity.offset + r.capacity.units <= 5));
-    const end = handover(weekend === '2027-12-31' ? '2028-01-01' : '2028-01-02') * 60000;
-    assert.equal(reconcile(result.preview.events, end - 1).net[debtor], -units);
-    assert.equal(reconcile(result.preview.events, end).net[debtor], -units + 5); exclusivity(result.publication);
+test('a weighted cross-year holiday weekend binds real units per date and completes at its Sunday end', async () => {
+  // The +2 special covers both weekend dates and keeps the 31 December weekend combined:
+  // 5 units on Friday and 5 on the January Saturday, both earned only when the duty ends on
+  // 2 January at 09:00.
+  const weekend = '2027-12-31', {input, assignments} = scenario('weighted'), debtor = assignments[weekend].primary;
+  assert.equal(assignments['2028-01-01'], undefined);
+  const units = sum(canonicalDuties(input.schedule.month, input.schedule.calendar)
+    .filter(d => assignments[d.id].primary === debtor).map(d => d.units));
+  input.events = send(input.events, {kind: 'claim', debtorId: debtor, creditorId: 'bridge', units}, 'weighted-debt');
+  const claim = replay(input.events).claims[0], draft = draftFor(input, assignments, [], [{claim, units}]);
+  // Every debtor unit is repayment. Only this weighted weekend actually performs
+  // work; other missing duties must not fund the rest of the selected debt.
+  const partial = structuredClone(assignments);
+  for (const [date, a] of Object.entries(partial)) if (a.primary === debtor && date !== weekend) a.primary = null;
+  const result = await bindAllocation(input, draft, partial, {...envelope, publicationId: 'december'});
+  assert.equal(result.bindable, true, JSON.stringify(result.diagnostics)); assert.equal(result.publishable, false);
+  const reservations = result.publication.reservations;
+  assert.equal(sum(reservations.map(r => r.capacity.units)), 10);
+  assert.equal(result.publication.duties.find(d => d.startDate === weekend).saturdayUnits, 5);
+  for (const date of ['2027-12-31', '2028-01-01']) {
+    assert.equal(sum(reservations.filter(r => r.capacity.date === date).map(r => r.capacity.units)), 5);
+    assert.ok(reservations.filter(r => r.capacity.date === date).every(r => r.capacity.offset + r.capacity.units <= 5));
   }
+  const end = handover('2028-01-02') * 60000;
+  assert.equal(reconcile(result.preview.events, end - 1).net[debtor], -units);
+  assert.equal(reconcile(result.preview.events, end).net[debtor], -units + 10); exclusivity(result.publication);
 });
 
 test('combined weekend splits accounting atoms but never earns before the real Sunday end', async () => {

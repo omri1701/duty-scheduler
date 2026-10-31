@@ -395,3 +395,49 @@ do $$begin if (select allocation from public.duty_allocations where publication_
 rollback;`;
 sql(convert);
 console.log('PASS: the migration converts a legacy working draft into per-person changes with the same routing, leaves pending or malformed legacy drafts alone without failing, and those drafts need a new confirmation');
+
+// Holiday weekends: a combined Friday row may carry a title and each date's own extra
+// (extra_points for Friday, saturday_extra_points for Saturday) and weighs 1 + both extras;
+// hand-split halves keep their own date's points (0.5 + extra). The stored points column and
+// duty_private.generation_duties apply the same formula as canonicalDuties.
+const row=(day,end_day,k,title,extra_points,saturday_extra_points=0,locked=false)=>({day,end_day,primary_id:ids[k],secondary_id:null,manager_override:false,title,extra_points,saturday_extra_points,locked});
+const holidayDuties=[row('2027-12-31','2028-01-02',5,'New Year',2,2),
+ row('2027-12-03','2027-12-04',6,'Half',0.5),row('2027-12-04','2027-12-05',7,'',0),
+ row('2027-12-10','2027-12-11',8,'Even',2),row('2027-12-11','2027-12-12',9,'Even',1),
+ row('2027-12-17','2027-12-19',10,'Eve',1.5,0),row('2027-12-24','2027-12-26',11,'Sat',0,1)];
+const expectedUnits={'2027-12-31':10,'2027-12-03':2,'2027-12-04':1,'2027-12-10':5,'2027-12-11':3,'2027-12-17':5,'2027-12-24':4};
+const expectedPoints={'2027-12-31':5,'2027-12-03':1,'2027-12-04':0.5,'2027-12-10':2.5,'2027-12-11':1.5,'2027-12-17':2.5,'2027-12-24':2};
+const saveHoliday=(duties,lockEdits)=>`select public.duty_save_schedule(${quote({team:[],months:{[month]:{status:'draft',deadline:'2027-11-24',generated:false}},duties,...(lockEdits?{lock_edits:lockEdits}:{})})},${rev},null);`;
+let holiday=setup+saveHoliday(holidayDuties)+`
+reset role;
+do $$declare d jsonb:=duty_private.generation_duties('${month}'); u jsonb; item jsonb;
+begin
+ select jsonb_object_agg(x->>'id',x->'units') into u from jsonb_array_elements(d) x;
+ if (select jsonb_object_agg(k,u->k) from jsonb_object_keys(${quote(expectedUnits)}) k)<>${quote(expectedUnits)}
+  then raise exception 'generation_duties units differ from canonical weights: %',u; end if;
+ if (select count(*) from jsonb_array_elements(d) x where x->>'id' in ('2028-01-01','2027-12-18','2027-12-25'))<>0 then raise exception 'combined holiday weekends must stay one duty'; end if;
+ select value into item from jsonb_array_elements(d) where value->>'id'='2027-12-31';
+ if item->>'extra'<>'2' or item->>'saturdayExtra'<>'2' then raise exception 'combined row must report both extras: %',item; end if;
+ select value into item from jsonb_array_elements(d) where value->>'id'='2027-12-17';
+ if item->>'extra'<>'1.5' or item ? 'saturdayExtra' then raise exception 'a Friday-only holiday reports no Saturday extra: %',item; end if;
+ select value into item from jsonb_array_elements(d) where value->>'id'='2027-12-24';
+ if item->>'extra'<>'0' or item->>'saturdayExtra'<>'1' then raise exception 'a Saturday-only holiday reports Saturday''s extra: %',item; end if;
+ if (select jsonb_object_agg(day,points) from public.duty_assignments where publication_id is null and day in (select jsonb_object_keys(${quote(expectedPoints)})::date))
+  <>${quote(expectedPoints)} then raise exception 'stored points differ from canonical weights'; end if;
+ -- Saturday's extra belongs to a combined row only.
+ begin update public.duty_assignments set saturday_extra_points=1 where publication_id is null and day='2027-12-03'; raise exception 'Saturday extra accepted on a half';
+ exception when check_violation then null; end;
+ -- Removing the extra changes a locked duty's points: the save must review that lock explicitly.
+ update public.duty_assignments set locked=true where publication_id is null and day='2027-12-31';
+end$$;
+set local role authenticated;
+`+failure(saveHoliday(holidayDuties.map(d=>d.day==='2027-12-31'?{...d,title:'',extra_points:0,saturday_extra_points:0}:d)),'Explicitly review locks before changing locked work')+
+saveHoliday(holidayDuties.map(d=>d.day==='2027-12-31'?{...d,title:'',extra_points:0,saturday_extra_points:0}:d),['2027-12-31'])+`
+reset role;
+do $$begin
+ if (select points from public.duty_assignments where publication_id is null and day='2027-12-31')<>1 then raise exception 'reviewed removal must leave a plain combined weekend'; end if;
+ if (select count(*) from jsonb_array_elements(duty_private.generation_duties('${month}')) x where x->>'id'='2027-12-31' and x->>'units'='2' and not x ? 'saturdayExtra')<>1 then raise exception 'plain weekend facts'; end if;
+end$$;
+rollback;`;
+sql(holiday);
+console.log('PASS: combined holiday weekends weigh 1 + each date\'s extra as one duty, hand-split halves keep their own date\'s points (generation_duties and the stored points column), Saturday\'s extra is refused outside a combined row, and removing a locked duty\'s extra needs an explicit lock review');

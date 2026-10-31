@@ -12,8 +12,8 @@ begin
  -- Old versions may contain adjacent coverage. Only Friday-owned rows belong
  -- to this draft; retain the original historical publication byte-for-byte.
  delete from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=v.month;
- insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points,locked)
- select day,end_day,primary_id,secondary_id,manager_override,title,extra_points,locked
+ insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
+ select day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked
  from public.duty_assignments where publication_id=p_publication and duty_private.duty_owner(day)=v.month;
  delete from public.duty_allocations where month=v.month and publication_id is null;
  insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)

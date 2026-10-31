@@ -23,10 +23,15 @@ Unavailable or globally unattainable allocations remain valid partial problems.
 
 The calendar builder owns the entire required coverage; callers cannot supply a
 subset of duties to evade coverage or the opening cutoff. Friday owns both halves
-of a weekend, including a split Saturday in the next month/year. Configured
-special ranges split touched weekends into daily duties; marked holiday dates
-affect coverage priority without changing structure or weight. Overlapping special
-ranges are rejected. All internal weights, targets and deficits are integer
+of a weekend, including a split Saturday in the next month/year. A special range
+touching a weekend keeps it combined as one holiday weekend; every holiday date
+adds its own extra (weekday 2 + 2·extra units, Friday or Saturday 1 + 2·extra), so
+the combined duty weighs the sum of its two dates and reports the Saturday's own
+units as `saturdayUnits` for accounting. Only an explicit split separates the
+halves, each keeping its own date's units, so splitting never changes the
+weekend's total. Marked holiday
+dates affect coverage priority without changing structure or weight. Overlapping
+special ranges are rejected. All internal weights, targets and deficits are integer
 half-point units; divide by two for display. No physical duty is divided by the solver.
 
 ```ts

@@ -13,13 +13,18 @@ function atoms(s: State, publication: Publication) {
   for (const d of [...publication.duties].sort((a, b) => compareId(a.startDate, b.startDate))) {
     requireDate(d.startDate); requireDate(d.endDate); units(d.units, true);
     const combined = d.endDate === addDays(d.startDate, 2) && dayOf(d.startDate) === 5;
-    const base = [5, 6].includes(dayOf(d.startDate)) ? 1 : 2;
+    const base = combined || ![5, 6].includes(dayOf(d.startDate)) ? 2 : 1;
     if (!s.members.has(d.primaryId) || owner(d.startDate) !== publication.month ||
-      (!combined && d.endDate !== addDays(d.startDate, 1)) || (combined && d.units !== 2)) fail('invalid-published-duty');
-    if (!combined && (d.units < base || d.units > base + 40)) fail('invalid-published-duty-weight');
+      (!combined && (d.endDate !== addDays(d.startDate, 1) || d.saturdayUnits !== undefined))) fail('invalid-published-duty');
+    if (d.units < base || d.units > (combined ? 82 : base + 40)) fail('invalid-published-duty-weight');
+    // A combined weekend has one atom per date, each carrying its own date's points:
+    // Saturday its saturdayUnits (one plus twice its extra), Friday the rest.
+    const saturday = combined ? d.saturdayUnits ?? 1 : 0;
+    if (combined && (!Number.isSafeInteger(saturday) || saturday < 1 || saturday > 41 || d.units - saturday < 1 || d.units - saturday > 41)) fail('invalid-published-duty-weight');
     for (let date = d.startDate; date < d.endDate; date = addDays(date, 1)) {
       if (result.has(date)) fail('overlapping-published-duty');
-      result.set(date, {date, units: combined ? 1 : d.units, primaryId: d.primaryId, endInstantMs: handover(d.endDate) * 60000});
+      const amount = combined ? (date === d.startDate ? d.units - saturday : saturday) : d.units;
+      result.set(date, {date, units: amount, primaryId: d.primaryId, endInstantMs: handover(d.endDate) * 60000});
     }
   }
   return result;

@@ -42,6 +42,13 @@ for(const at of [completion-1,completion+1]) {
 // Split weekend comparison, temporary/permanent exemptions and weighted swaps.
 h=publish(setup(),publication('weekend',[duty('2026-11-06','a',2,'2026-11-08')]));
 keep(publish(h,publication('split',[duty('2026-11-06','a',1,'2026-11-07'),duty('2026-11-07','b',1,'2026-11-08')]),'weekend'));
+// Holiday weekends: each date keeps its own units; a combined duty names Saturday's (saturdayUnits).
+h=publish(setup(),publication('holiday',[{...duty('2026-11-06','a',10,'2026-11-08'),saturdayUnits:5}]));
+keep(publish(h,publication('holiday-split',[duty('2026-11-06','a',5,'2026-11-07'),duty('2026-11-07','b',5,'2026-11-08')]),'holiday'));
+h=publish(setup(),publication('friday',[duty('2026-11-06','a',3,'2026-11-08')]));
+keep(publish(h,publication('friday-split',[duty('2026-11-06','b',2,'2026-11-07'),duty('2026-11-07','a',1,'2026-11-08')]),'friday'));
+h=publish(setup(),publication('saturday',[{...duty('2026-11-06','a',4,'2026-11-08'),saturdayUnits:3}]));
+keep(publish(h,publication('saturday-split',[duty('2026-11-06','a',1,'2026-11-07'),duty('2026-11-07','b',3,'2026-11-08')]),'saturday'));
 for(const kind of ['temporary','permanent']) {
  h=publish(setup(),publication('v1',[duty('2026-11-02','a')]));
  keep(publish(h,publication('v2',[duty('2026-11-02','b')],[],[{id:'intent',kind,fromId:'a',toId:'b',capacity:[{date:'2026-11-02',offset:0,units:2}]}]),'v1'));
