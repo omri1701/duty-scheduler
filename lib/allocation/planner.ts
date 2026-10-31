@@ -109,9 +109,9 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     baseline[id] + ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
   let draft = build({}, []), hand: Hand = {}, pairs: Pair[] = [];
   if (retained) {
-    const kept = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
+    const keptHand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
     const keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
-    if (fits(kept) && Object.keys(kept).length) {hand = kept; pairs = keptPairs; draft = build(hand, pairs);}
+    if (fits(keptHand) && Object.keys(keptHand).length) {hand = keptHand; pairs = keptPairs; draft = build(hand, pairs);}
   }
   // A manager's edit of a non-weekend member (even back to zero) keeps them in the hand
   // state, so the default is only added where no one has decided otherwise.
