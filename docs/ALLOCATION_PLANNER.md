@@ -174,6 +174,11 @@ the same ceiling.
 total, before and after Generate and after Save → reopen. An edit or drag whose
 counterpart no one can absorb is refused, never left unplaced
 (`unplaced-allocation-change`; above the total, `allocation-above-month-total`).
+One exception (decision 2026-11-01): when no one free can take a − on a member who
+received dragged points (or a + on one who gave them), the member's own drags of
+that kind are undone, newest first, so the points go back to whoever they came
+from. A month where everyone dragged their points onto one member can then be
+lowered with − instead of being stuck.
 Before, a two-member team could press + until 77 / 26 points, and a − with no
 counterpart left the plan short. No member's net Temporary exceeds the month total
 either way (`temporary-above-month-total`; the database checks it too). With these,
