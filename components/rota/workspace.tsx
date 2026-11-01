@@ -367,6 +367,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                   viewingDraft={viewingDraft}
                   setVersion={setVersion}
                   clearCount={draft.clear.count}
+                  clearBusy={allocation.busy}
                   onClearBoard={() => draft.clear.setOpen(true)}
                   onSpecial={() => {
                     draft.special.setOpen(true);

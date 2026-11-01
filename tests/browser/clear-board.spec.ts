@@ -47,6 +47,7 @@ test('Clear board confirms first, keeps locks, holidays, constraints and history
   await expect(duty(page, '2026-11-12')).toContainText('Holiday coverage');
   // Nothing left to clear: the action stays visible but disabled.
   await expect(clearButton(page)).toBeDisabled();
+  await expect(clearButton(page)).toHaveAttribute('title', 'No unlocked duties to clear.');
 
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(page.getByText('Duties restored.', {exact: true})).toBeVisible();
@@ -87,4 +88,33 @@ test('Clear board is in Hebrew RTL and offers nothing on the published version o
   await expect(page.getByRole('button', {name: 'פתיחת טיוטה', exact: true})).toBeVisible();
   await expectNoClear();
   expect(backend.raw.assignments.filter(r => r.publication_id).every(r => r.primary_id)).toBe(true);
+});
+
+test('Clear board waits for Generate, and Undo leaves with the month instead of failing', async ({page, backend, openApp}) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await openApp();
+  await clearButton(page).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Clear board', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'Undo', exact: true})).toBeVisible();
+  // Undo only edits the cleared month, so another month never offers it.
+  await page.getByRole('button', {name: 'Next month', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'Undo', exact: true})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Previous month', exact: true}).click();
+  expect(backend.calls.filter(c => c.name === 'duty_save_schedule')).toHaveLength(1);
+
+  // While Generate runs, a clear would race its save: disabled, with the reason.
+  await page.getByRole('button', {name: 'Generate month', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  // The open plan hides the calendar from the accessibility tree, so match the button itself.
+  const behindPlan = page.locator('.calendar-draft-tools button', {hasText: 'Clear board'});
+  await expect(behindPlan).toBeDisabled({timeout: 30_000});
+  await expect(behindPlan).toHaveAttribute('title', 'Wait for Generate to finish.');
+  await page.getByRole('dialog').getByRole('button', {name: 'Cancel', exact: true}).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Close', exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(clearButton(page)).toBeDisabled();
+  await expect(clearButton(page)).toHaveAttribute('title', 'No unlocked duties to clear.');
+  expect(errors).toEqual([]);
 });

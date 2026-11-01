@@ -33,6 +33,7 @@ export function WorkspaceCalendar({
   setVersion,
   onSpecial,
   clearCount = 0,
+  clearBusy = false,
   onClearBoard,
   metrics,
   interactions,
@@ -62,6 +63,8 @@ export function WorkspaceCalendar({
   onSpecial: () => void;
   /** Unlocked duties Clear board would remove from this draft. */
   clearCount?: number;
+  /** Generate is saving; a clear now would race it. */
+  clearBusy?: boolean;
   onClearBoard?: () => void;
   metrics: WorkspaceMetrics;
   interactions: CalendarInteractions;
@@ -96,7 +99,8 @@ export function WorkspaceCalendar({
         </> : (isManager || !!publication) && <CalendarFilters t={t} value={view} onChange={setView}/>}
         {/* Draft tools wrap together. Clear board is a fresh start for the draft only; the published version is never cleared. */}
         <div className="calendar-draft-tools" style={{ display: viewingDraft ? undefined : 'none' }}>
-          {viewingDraft && onClearBoard && <Button variant="ghost" disabled={readOnly || !clearCount} onClick={onClearBoard}>
+          {viewingDraft && onClearBoard && <Button variant="ghost" disabled={readOnly || clearBusy || !clearCount} onClick={onClearBoard}
+            title={clearBusy ? t('Wait for Generate to finish.', 'יש להמתין לסיום השיבוץ.') : !clearCount ? t('No unlocked duties to clear.', 'אין תורנויות לא נעולות לניקוי.') : undefined}>
             <Eraser />
             {t('Clear board', 'ניקוי הלוח')}
           </Button>}

@@ -65,6 +65,9 @@ export function useWorkspaceDraft({
   // Undo runs after later renders, so it saves against the newest state, never the cleared one.
   const latest = useRef(update);
   useEffect(() => {latest.current = update;});
+  // Undo belongs to the cleared draft: leaving the month or its draft drops the offer.
+  const clearToast = useRef<string | number | undefined>(undefined);
+  useEffect(() => () => {if (clearToast.current !== undefined) toast.dismiss(clearToast.current);}, [month, monthDetails.status]);
   const [clearOpen, setClearOpen] = useState(false);
   const clearable = useMemo(() => isManager && monthDetails.status === 'draft' ? Object.keys(clearableAssignments(state, month)).length : 0,
     [isManager, monthDetails.status, state, month]);
@@ -74,7 +77,7 @@ export function useWorkspaceDraft({
     setClearOpen(false);
     setSelected(null);
     selectSwap(null);
-    toast.success(count === 1 ? t('Cleared 1 duty.', 'תורנות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} תורנויות נוקו.`), {
+    clearToast.current = toast.success(count === 1 ? t('Cleared 1 duty.', 'תורנות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} תורנויות נוקו.`), {
       duration: 10000,
       action: {
         label: t('Undo', 'שחזור'),
