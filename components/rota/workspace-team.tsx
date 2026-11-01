@@ -9,6 +9,7 @@ import type { Balance } from '@/lib/supabase/balance';
 import { addDays, dayOf, type State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { Language, Translate, UpdateDraft } from './workspace-types';
+import {userMessage} from '@/lib/messages';
 export function WorkspaceTeam({
   remote,
   state,
@@ -60,7 +61,7 @@ export function WorkspaceTeam({
         name={id=>remote.snapshot?.members.find(m=>m.id===id)?.name??t('Former teammate','חבר צוות לשעבר')}
         onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
         roles={remote.snapshot?.roles ?? []}
-        onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
+                onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(userMessage(e.message, t)))}
         noWeekendIds={remote.snapshot?.members.filter((m) => m.no_weekends).map((m) => m.id) ?? []}
         onNoWeekends={(id, noWeekends) =>
           remote
@@ -72,7 +73,7 @@ export function WorkspaceTeam({
                 [5, 6].includes(dayOf(day)) && drafts.includes((dayOf(day) === 6 ? addDays(day, -1) : day).slice(0, 7)));
               if (noWeekends && locked) toast.warning(t('A locked weekend is kept. Unlock it in the calendar to free it.', 'סוף שבוע נעול נשמר. אפשר לבטל את הנעילה בלוח כדי לשחרר אותו.'));
             })
-            .catch((e) => toast.error(e.message))
+            .catch((e) => toast.error(userMessage(e.message, t)))
         }
         selfId={meId}
         readOnly={remote.readOnly||!isManager}
@@ -111,7 +112,7 @@ export function WorkspaceTeam({
                       remote
                         .review(m.id, 'approved')
                         .then(() => toast.success(t('Member approved', 'החבר אושר')))
-                        .catch((e) => toast.error(e.message))
+                        .catch((e) => toast.error(userMessage(e.message, t)))
                     }
                   >
                     {t('Approve', 'אישור')}
@@ -120,7 +121,7 @@ export function WorkspaceTeam({
                     variant="outline"
                     disabled={remote.readOnly}
                     onClick={() =>
-                      remote.review(m.id, 'rejected').catch((e) => toast.error(e.message))
+                      remote.review(m.id, 'rejected').catch((e) => toast.error(userMessage(e.message, t)))
                     }
                   >
                     {t('Decline', 'דחייה')}

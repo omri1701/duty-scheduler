@@ -10,6 +10,9 @@ begin
  select * into v from public.duty_publications where id=p_publication;
  if v.id is null then raise exception 'Version no longer exists'; end if;
  select id into replacement from public.duty_publications where month=v.month and id<>v.id order by version desc limit 1;
+ -- Deleting the current version can't bring back one from before a re-plan (decision 2026-11-01).
+ if replacement is not null and exists(select 1 from public.duty_months where current_publication_id=v.id)
+  and duty_private.compensation_replanned(duty_private.compensation_state(),v.month,replacement) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(v.month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
  -- Deleting the final publication must not silently discard the only schedule.
  -- Keep an already-open draft, otherwise copy the version before deleting it.
  if replacement is null and exists(select 1 from public.duty_months where current_publication_id=v.id and status='published') then

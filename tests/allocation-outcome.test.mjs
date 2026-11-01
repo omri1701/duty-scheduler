@@ -22,7 +22,7 @@ test('plan notes count back-to-back days per member; an approved fixed pair is n
 
 import loadHighs from 'highs';
 import {createHighsAdapter, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
-import {record, project, sliceClaim} from '../lib/compensation/index.ts';
+import {record, project, sliceClaim, replanEvents} from '../lib/compensation/index.ts';
 import {proposeAllocation, transferAllocation, editAllocation, compileAllocation, planAllocation, bindAllocation, persistedDraft} from '../lib/allocation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
 import {monthScenario} from './fixtures/generation.mjs';
@@ -324,4 +324,78 @@ test('several creditors: each creditor has its own turns, newest first', () => {
   assert.deepEqual(repaid(d), [['m10', 'm00', 1], ['m09', 'm00', 1], ['m11', 'm01', 1], ['m09', 'm01', 1]]);
   assert.deepEqual([d.targetsUnits.m00, d.targetsUnits.m01], [0, 0]);
   assert.equal(planAllocation(i, d).confirmable, true);
+});
+
+/** Generate and publish a month into the ledger; returns the plan's input with the new events. */
+async function publishMonth(i, d, seed = 7) {
+  const r = solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(i.seniority.map(id => [id, d.targetsUnits[id] / 2]))},
+    {now: i.now, seed, seconds: 30}));
+  assert.equal(r.complete, true, i.schedule.month);
+  const bound = await bindAllocation(i, d, r.assignments, {publicationId: `pub-${i.schedule.month}-${i.events.length}`, sourceKey: `publish/${i.schedule.month}/${i.events.length}`, actor: 'm'});
+  assert.equal(bound.bindable && bound.publishable, true, `${i.schedule.month}: ${bound.diagnostics.at(-1)?.code}`);
+  return bound.preview.events;
+}
+const nets = (events, at) => Object.fromEntries(Object.entries(project(events, at, at).projected.net).filter(([, n]) => n));
+
+test('re-planning a published month starts from the ledger without its own entries: 27/0 lowered to 2 and republished', async () => {
+  // The reported December (2026-11-01): Local Admin took every member's points (+25 temporary),
+  // December was published, then reopened to lower Local Admin to 2. The reopened plan was
+  // checked against a ledger that already held December's own debts, so it looped on "Team data
+  // changed". Now December is planned from the ledger with its own entries reversed.
+  const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
+  const admin = 'Local Admin', i = team('2026-12', names, []);
+  let d = proposeAllocation(i).draft;
+  for (const id of names.slice(1)) d = drag(i, d, id, admin, d.targetsUnits[id]);
+  assert.ok(names.slice(1).every(id => d.targetsUnits[id] === 0));
+  const published = await publishMonth(i, d);
+  const owed = d.targetsUnits[admin] - d.baselineUnits[admin];
+  assert.deepEqual(nets(published, i.now), {...Object.fromEntries(names.slice(1).map(id => [id, -d.baselineUnits[id]])), [admin]: owed});
+  // Reopen: the ledger without December's own entries owes nothing; the published plan reviews as published.
+  const reopened = {...i, now: i.now + 1000, events: replanEvents(published, '2026-12', i.now + 1000)};
+  assert.deepEqual(nets(reopened.events, reopened.now), {});
+  const copy = reviewAllocation(reopened, persistedDraft(d));
+  assert.deepEqual(copy.targetsUnits, d.targetsUnits);
+  // Lower Local Admin to their fair share and republish: December's debts are replaced, not added to.
+  const lowered = editAllocation(reopened, copy, {engineer: admin, deltaUnits: -owed, kind: 'temporary'}).draft;
+  assert.equal(lowered.targetsUnits[admin], d.baselineUnits[admin]);
+  const republished = await publishMonth(reopened, lowered);
+  assert.deepEqual(nets(republished, reopened.now), {}, 'no one owes anything after the new plan');
+  // A partial lowering keeps exactly the new plan's debts.
+  const part = 2 * Math.floor(owed / 4), half = editAllocation(reopened, copy, {engineer: admin, deltaUnits: -part, kind: 'temporary'}).draft;
+  const halfway = await publishMonth(reopened, half);
+  assert.equal(nets(halfway, reopened.now)[admin], owed - part);
+  // The month can be re-planned again: its earlier corrections stay, only the live entries reverse.
+  const again = replanEvents(halfway, '2026-12', reopened.now + 1000);
+  assert.deepEqual(nets(again, reopened.now + 1000), {});
+});
+
+test('a published month whose points a later month already repays can\'t be re-planned: the later month is named', async () => {
+  const names = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const december = team('2026-12', names, []);
+  let d = proposeAllocation(december).draft;
+  d = drag(december, drag(december, d, 'B', 'A'), 'C', 'A');
+  const events = await publishMonth(december, d);
+  // January, planned before December starts, repays A from December's debts; once January is
+  // published, December can't be replaced.
+  const january = {...december, events, now: december.now + 86400000,
+    schedule: {...december.schedule, month: '2027-01', sourceRevision: 'team-2027-01'}};
+  const j = proposeAllocation(january).draft;
+  assert.ok(j.repayments.length, 'January repays December');
+  assert.doesNotThrow(() => replanEvents(events, '2026-12', january.now), 'before January is published, December can still be re-planned');
+  const both = await publishMonth(january, j);
+  assert.throws(() => replanEvents(both, '2026-12', january.now + 1000), /review-replan-later:2027-01/);
+  // Once December has started, its plan is kept.
+  assert.throws(() => replanEvents(events, '2026-12', Date.parse('2026-12-03T12:00:00Z')), /review-replan-started/);
+});
+
+test('after "Compensation changed" the plan names the months that changed and whose balance moved', async () => {
+  const {ledgerChange} = await import('../lib/allocation/outcome.ts');
+  const names = ['A', 'B', 'C'], i = team('2027-01', names, []);
+  const before = {events: i.events, net: {A: 0, B: 0, C: 0}};
+  const events = record(i.events, {operation: {kind: 'publication', month: '2026-12', beforeId: null, after: {id: 'dec', month: '2026-12', duties: [], intents: [], reservations: []}},
+    sourceKey: 'publish/dec', at: i.events.at(-1).at + 1, actor: 'm'}).events;
+  // The month's own re-plan events are how it is read, not a change.
+  const own = {...events.at(-1), sourceKey: 'replan/x/1/delete', operation: {kind: 'publication', month: '2027-01', beforeId: 'jan', after: null, mode: 'delete'}};
+  assert.deepEqual(ledgerChange('2027-01', before, {events: [...events, own], net: {A: 2, B: -2, C: 0}}), {months: ['2026-12'], balances: [['A', 2], ['B', -2]]});
+  assert.deepEqual(ledgerChange('2027-01', before, before), {months: [], balances: []});
 });

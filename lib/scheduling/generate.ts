@@ -50,7 +50,8 @@ export function finishGeneration(prepared: PreparedGeneration, raw: SolverOutput
   const diagnostics: Diagnostic[] = [...prepared.diagnostics];
   for (const d of uncovered) {
     diagnostics.push({code: 'uncovered-duty', certainty: 'fact', dutyId: d.id, dates: d.dates, units: d.units});
-    for (const b of prepared.problem.boundaries ?? []) if (d.start <= b.end && b.start <= d.end) {
+    // Only an overlap restricts: touching a neighbouring duty is a back-to-back day (decision 2026-11-01).
+    for (const b of prepared.problem.boundaries ?? []) if (d.start < b.end && b.start < d.end) {
       diagnostics.push({code: 'binding-neighbor-restriction', certainty: 'fact', dutyId: d.id,
         engineer: prepared.members[b.engineer].id, sources: prepared.neighborSources.get(b.id)});
     }

@@ -13,7 +13,7 @@ export type GenerationContext = ReturnType<typeof readGenerationContext>;
 type Duty = {id: string; startDate: string; endDate: string; units: number; primary: string | null;
   secondary: string | null; title: string; extra: number; saturdayExtra?: number; weekendId: string | null};
 type Envelope = {revision: number; fingerprint: string; accountingFingerprint: string; actualAtMs: number;
-  coverageStartMs: number; generationAllowed: boolean; actual: {events: CompensationEvent[]};
+  coverageStartMs: number; generationAllowed: boolean; actual: {events: CompensationEvent[]}; replanBlocked?: string | null;
   facts: {month: string; duties: Duty[]; members: Member[]; seniority: string[]; neighbors: Neighbor[];
     constraints: NonNullable<GenerationInput['constraints']>; allocation: AllocationDraft | null;
     allocationId: string | null; sourcePublicationId: string | null; generation: unknown;
@@ -30,7 +30,7 @@ export function readGenerationContext(value: unknown) {
   if (!object(value) || !integer(value.revision) || value.revision < 0 || !string(value.fingerprint) ||
     !string(value.accountingFingerprint) || !integer(value.actualAtMs) || !integer(value.coverageStartMs) ||
     typeof value.generationAllowed !== 'boolean' || !object(value.actual) || !Array.isArray(value.actual.events) ||
-    !object(value.facts)) throw Error('Invalid generation context');
+    !(value.replanBlocked === undefined || nullableString(value.replanBlocked)) || !object(value.facts)) throw Error('Invalid generation context');
   const f = value.facts;
   if (!string(f.month) || !Array.isArray(f.duties) || !f.duties.length || !Array.isArray(f.members) ||
     !strings(f.seniority) || !Array.isArray(f.neighbors) || !Array.isArray(f.locks) || !Array.isArray(f.approvals) ||
@@ -78,6 +78,9 @@ export function readGenerationContext(value: unknown) {
     actualAtMs: raw.actualAtMs, coverageStartMs: raw.coverageStartMs, generationAllowed: raw.generationAllowed,
     input, generationInput, actual, projected: project(actual.events, raw.actualAtMs, Math.max(raw.actualAtMs, raw.coverageStartMs)).projected,
     allocation: facts.allocation, allocationId: facts.allocationId, sourcePublicationId: facts.sourcePublicationId,
+    // A published month is planned from the ledger without its own entries; this names
+    // why its plan can't be replaced (review-replan-later:<month>, review-replan-started).
+    replanBlocked: raw.replanBlocked ?? null,
     generation: facts.generation, assignments: Object.fromEntries(facts.duties.map(d => [d.id,
       {primary: d.primary, ...(d.secondary ? {secondary: d.secondary} : {})}])) as PrimaryAssignments};
 }

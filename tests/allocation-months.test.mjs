@@ -8,11 +8,11 @@ import loadHighs from 'highs';
 import {createHighsAdapter, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
 import {proposeAllocation, allocationDivisible, allocationCeilings, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation,
   bindAllocation, balanced, persistedDraft, unplacedChanges} from '../lib/allocation/index.ts';
-import {reviewAllocation} from '../lib/allocation/review.ts';
+import {reopenAllocation, reviewAllocation} from '../lib/allocation/review.ts';
 import {context} from '../lib/allocation/model.ts';
 import {partitionable} from '../lib/allocation/fit.ts';
 import {canonicalDuties} from '../lib/scheduling/calendar.ts';
-import {record, project} from '../lib/compensation/index.ts';
+import {record, project, replanEvents} from '../lib/compensation/index.ts';
 import {rng, pick, lockedOf, greedy} from './fixtures/allocation.mjs';
 
 const SEQ = Number(process.env.MONTHS_SEQ ?? 3), LEN = Number(process.env.MONTHS_LEN ?? 4), SEED = Number(process.env.MONTHS_SEED ?? 20261101);
@@ -21,7 +21,7 @@ const solver = await createHighsAdapter(loadHighs);
 // Edits the manager can be refused, with the reason the plan shows; anything else is a bug.
 const REFUSED = /edit-below-locked-points|permanent-below-fair-share|permanent-above-month-total|temporary-above-month-total|allocation-above-month-total|unplaced-allocation-change/;
 // Plans the ledger can't book, each named by its own note before Generate.
-const EXPLAINED = /^review-(compound-reverse-obligation|unavailable-reverse-obligation|normalized-deferral-route|circular-route)$/;
+const EXPLAINED = /^review-(compound-reverse-obligation|unavailable-reverse-obligation|normalized-deferral-route|circular-route|existing-reservation-normalization)$/;
 const nextMonth = m => {const [y, n] = m.split('-').map(Number); return n === 12 ? `${y + 1}-01` : `${y}-${String(n + 1).padStart(2, '0')}`;};
 const far = month => Date.parse(`${month}-01T00:00:00Z`) + 400 * 86400000;
 
@@ -171,6 +171,38 @@ test('months: proposals book, edits book or are named, Generate agrees, and the 
       const live = after.claims.filter(k => !k.frozen);
       assert.ok(!live.some(k => live.some(o => k.creditorId === o.debtorId)), `${name}: no member both owes and is owed`);
       t.events = bound.preview.events; t.at = i.now; stats.published++;
+      // Re-edit the published month before it starts (decision 2026-11-01): it is planned from the
+      // ledger without its own entries, its copy reviews as published, and a new plan replaces it.
+      if (r() < 0.35) {
+        const at = i.now + 1000, reopened = {...i, now: at, events: replanEvents(t.events, month, at)};
+        assert.deepEqual(project(reopened.events, far(month), far(month)).actual.net, before.net, `${name}: reopened without its own entries`);
+        let e = reopenAllocation(reopened, persistedDraft(d));
+        assert.equal(sum(Object.values(e.targetsUnits)), c.total, `${name}: the reopened copy places the month`);
+        for (let k = 1 + Math.floor(r() * 4); k > 0; k--) {
+          try {e = edit(r, reopened, e, `${s}-${m}-re${k}`);} catch (error) {assert.match(error.message, REFUSED, `${name}: re-edit refusal`);}
+        }
+        if (!balanced(e) || !planAllocation(reopened, e).confirmable) e = reopenAllocation(reopened, persistedDraft(d));
+        // Reversing the month's lots can change how its debts net, so even the published plan
+        // may not book again: the plan names why, and the fair proposal always books.
+        const again0 = planAllocation(reopened, e);
+        if (!again0.confirmable) {
+          assert.match(again0.diagnostics.find(g => /^review-/.test(g.code))?.code ?? '', EXPLAINED, `${name}: a reopened plan that can't book names why`);
+          stats.reopenedUnbookable = (stats.reopenedUnbookable ?? 0) + 1;
+          e = proposeAllocation(reopened).draft;
+          assert.equal(planAllocation(reopened, e).confirmable, true, `${name}: the fair proposal books`);
+        }
+        const again = assign(reopened, e, s * 100 + m + 50);
+        if (again) {
+          const rebound = await bindAllocation(reopened, e, again, {publicationId: `pub-${month}-again`, sourceKey: `publish/${month}/again`, actor: 'manager'});
+          assert.equal(rebound.bindable && rebound.publishable, true, `${name}: the new plan replaces the published one (${rebound.diagnostics.at(-1)?.code})`);
+          const replaced = project(rebound.preview.events, far(month), far(month)).actual, plan = compileAllocation(reopened, e, again).plan;
+          const carried = Object.fromEntries(t.ids.map(id => [id, before.net[id] ?? 0]));
+          for (const x of plan.intents) if (x.kind === 'temporary') {carried[x.toId] += x.units; carried[x.fromId] -= x.units;}
+          for (const x of plan.repayments) {carried[x.claim.debtorId] += x.units; carried[x.claim.creditorId] -= x.units;}
+          for (const id of t.ids) assert.equal(replaced.net[id] ?? 0, carried[id], `${name}: ${id}'s debts after the re-plan`);
+          t.events = rebound.preview.events; t.at = at; stats.replanned = (stats.replanned ?? 0) + 1;
+        }
+      }
     }
   }
   console.log(JSON.stringify(stats));

@@ -47,9 +47,9 @@ const SCENARIOS = {
 };
 const EXPECTED = /edit-below-locked-points|permanent-below-fair-share|permanent-above-month-total|temporary-above-month-total|allocation-above-month-total|unplaced-allocation-change/;
 // Review codes Plan the month explains with a specific note (allocationMessage).
-const EXPLAINED = /^review-(compound-reverse-obligation|unavailable-reverse-obligation|normalized-deferral-route|circular-route)$/;
+const EXPLAINED = /^review-(compound-reverse-obligation|unavailable-reverse-obligation|normalized-deferral-route|circular-route|existing-reservation-normalization)$/;
 test('every review code the fuzz accepts has its own note in Plan the month', () => {
-  const dialog = readFileSync(new URL('../components/rota/allocation-dialog.tsx', import.meta.url), 'utf8');
+  const dialog = readFileSync(new URL('../lib/messages.ts', import.meta.url), 'utf8');
   for (const code of EXPLAINED.source.slice('^review-('.length, -')$'.length).split('|')) assert.ok(dialog.includes(`/review-${code}/.test(message)`), code);
 });
 

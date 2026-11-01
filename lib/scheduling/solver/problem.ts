@@ -25,11 +25,18 @@ export function approvedPair(p: Problem, i: number, j: number) {
 export function approvedBoundary(p: Problem, i: number, b: Boundary) {
   return p.exceptions?.boundary?.some(a => a.duty === i && a.boundary === b.id) ?? false;
 }
-/** A neighbouring month's duty of the same engineer overlapping or touching duty i, unless approved. */
+/** A neighbouring month's duty of the same engineer overlapping duty i, or touching it while
+ * locked without approval. An unlocked touch is a back-to-back day (boundaryTouches). */
 export function boundaryBlocked(p: Problem, e: number, i: number) {
   const d = p.duties[i];
   return (p.boundaries ?? []).some(b => b.engineer === e && d.start <= b.end && b.start <= d.end &&
-    !(d.lock === e && approvedBoundary(p, i, b)));
+    ((d.start < b.end && b.start < d.end) || (d.lock === e && !approvedBoundary(p, i, b))));
+}
+/** Back-to-back days with the same engineer's neighbouring-month duties (decision 2026-11-01):
+ * a last resort counted with the back-to-back pairs inside the month. Locked, a touch needs approval. */
+export function boundaryTouches(p: Problem, e: number, i: number) {
+  const d = p.duties[i];
+  return d.lock === e ? 0 : (p.boundaries ?? []).filter(b => b.engineer === e && (d.start === b.end || d.end === b.start)).length;
 }
 /** Weekends an engineer holds without penalty: one, or every approved locked weekend. */
 export function weekendAllowance(p: Problem, e: number) {
@@ -123,7 +130,9 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     if (d.weekend !== undefined) weekends[e].add(d.weekend);
     for (const b of p.boundaries ?? []) if (b.engineer === e && d.start <= b.end && b.start <= d.end) {
       const touching = d.start === b.end || d.end === b.start;
-      if (!touching || d.lock !== e || !approvedBoundary(p, i, b)) throw Error('Boundary conflict');
+      // An unlocked touch is a back-to-back day; locked, it needs the manager's approval.
+      if (!touching || (d.lock === e && !approvedBoundary(p, i, b))) throw Error('Boundary conflict');
+      if (d.lock !== e) adjacent++;
     }
     const previous = selected[e].at(-1);
     if (previous !== undefined) {

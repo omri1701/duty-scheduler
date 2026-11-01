@@ -3,6 +3,7 @@ import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
 import {equalShares, fitPartition, partitionable} from './fit.ts';
 import {availability, ceilings, context, grain, type Context} from './model.ts';
+import {validateDraft} from './edits.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
 
 /** A non-weekend member's standing extra (decision 2026-11-01): +1 Permanent point
@@ -128,7 +129,12 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   if (retained) {
     const keptHand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
     const keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
-    if (fits(keptHand) && Object.keys(keptHand).length) {hand = keptHand; pairs = keptPairs; draft = build(hand, pairs);}
+    if (fits(keptHand) && Object.keys(keptHand).length) {
+      // The automatic balance around the retained changes must fit too (a permanent
+      // point never below anyone's floor); otherwise the plain proposal stands.
+      const kept = build(keptHand, keptPairs);
+      try {validateDraft(c, input.seniority, kept); hand = keptHand; pairs = keptPairs; draft = kept;} catch {/* the plain proposal */}
+    }
   }
   // A manager's edit of a non-weekend member (even back to zero) keeps them in the hand
   // state, so the default is only added where no one has decided otherwise.
@@ -142,6 +148,7 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     // Like a repayment step, the default never leaves an exact month only partly schedulable.
     const proposed = build(next, pairs);
     if (exact(draft.targetsUnits) && !exact(proposed.targetsUnits)) continue;
+    try {validateDraft(c, input.seniority, proposed);} catch {continue;}
     hand = next; draft = proposed;
   }
   return {draft, projection: c.projection};
