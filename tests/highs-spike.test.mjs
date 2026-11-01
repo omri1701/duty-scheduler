@@ -46,7 +46,10 @@ function referenceMetrics(p, a) {
     totals[e] += d.units; coverage += d.days; special += d.special;
     for (const b of p.boundaries ?? []) {
       if (e !== b.engineer || d.end < b.start || b.end < d.start) continue;
-      if (d.lock !== e || !p.exceptions?.boundary?.some(v => v.duty === i && v.boundary === b.id)) throw Error('boundary');
+      // Touching a neighbouring month's duty is a back-to-back day; locked, it needs approval.
+      if (d.end !== b.start && d.start !== b.end) throw Error('boundary');
+      if (d.lock !== e) adjacent++;
+      else if (!p.exceptions?.boundary?.some(v => v.duty === i && v.boundary === b.id)) throw Error('boundary');
     }
   });
   for (let e = 0; e < totals.length; e++) {
@@ -287,6 +290,27 @@ test('boundary union, fixed zero gaps, scoped weekend exceptions and partial pat
   assert.equal(r.metrics.adjacent, 0);
   assert.equal(r.metrics.gaps[0], 6 * 1440);
   assert.ok(r.stages.some(s => s.name.startsWith('gap:') && s.proved));
+});
+
+test("a duty touching the same engineer's duty in the neighbouring month is a back-to-back day, a last resort (decision 2026-11-01)", () => {
+  const touch = {id: 'november', engineer: 0, start: -1440, end: 0, source: 'published'};
+  // Only engineer 0 can take the first day: Generate uses the touch and counts it, never fails on it.
+  const only = {targets: [2, 2], spacing: true, duties: [duty(0, 2, [0]), duty(3, 2, [1])], boundaries: [touch]};
+  checkProblem(only);
+  const forced = solveProblem(solver, only);
+  assert.deepEqual(forced.assignment, [0, 1]);
+  assert.equal(forced.metrics.adjacent, 1);
+  assert.equal(forced.allStagesProved, true);
+  assert.deepEqual(key(forced.metrics), key(enumerate(only)));
+  assert.deepEqual(forced.metrics, referenceMetrics(only, forced.assignment));
+  // Someone else can take it: the touch is avoided, like a back-to-back pair inside the month.
+  const spare = {...only, duties: [duty(0), duty(3)]};
+  const avoided = solveProblem(solver, spare);
+  assert.equal(avoided.assignment[0], 1);
+  assert.equal(avoided.metrics.adjacent, 0);
+  // Overlapping stays impossible, and a locked touch still needs the manager's approval.
+  assert.throws(() => validateAssignment({...only, boundaries: [{...touch, end: 720}]}, [0, 1]), /Boundary conflict/);
+  assert.throws(() => checkProblem({...only, duties: [duty(0, 2, [0], {lock: 0}), duty(3, 2, [1])]}));
 });
 
 test('Friday-owned cross-year coverage prevents a Sunday boundary handover assignment', () => {

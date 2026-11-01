@@ -374,11 +374,13 @@ test('the hard availability ceiling counts every available duty; back-to-back da
     ['2026-11-01', '2026-11-02', '2026-11-03'].includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
   assert.equal(availableCeilings(i).e00, 6);
   assert.equal(allocationCeilings(i).e00, 4);
-  // A duty locked to someone else and a handover into the neighbouring month are not available.
+  // A duty locked to someone else is not available. A handover into the neighbouring month is a
+  // back-to-back day (decision 2026-11-01): available as a last resort, never in the spaced ceiling.
   i.schedule.locks = [{dutyId: '2026-11-02', engineer: 'e01'}];
   i.schedule.neighbors = [{id: 'oct', ownerMonth: '2026-10', start: '2026-10-31', end: '2026-11-01', engineer: 'e00', source: 'published'}];
   i.schedule.constraints.e01 = {};
-  assert.equal(availableCeilings(i).e00, 2);
+  assert.equal(availableCeilings(i).e00, 4);
+  assert.equal(allocationCeilings(i).e00, 2);
 });
 
 test('automatic counterparts: receivers fewest points newest first, givers most points senior first, one member per kind', () => {

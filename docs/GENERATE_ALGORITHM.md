@@ -959,7 +959,7 @@ Every generated assignment, complete or partial, satisfies:
 | H2 | Assigned primary points never exceed the confirmed target; complete coverage implies every target is exact. |
 | H3 | Automatic primaries are active approved eligible members and available on all covered duty dates. |
 | H4 | Explicit primary locks and narrowly scoped approved fixed exceptions are preserved. |
-| H5 | No automatic primary duty touching the same engineer's duty in a neighboring month; locked consecutive pairs need their exact approval. |
+| H5 | No primary duty overlapping the same engineer's duty in a neighboring month. An automatic one touching it is a back-to-back day, a last resort counted with the pairs inside the month (decision 2026-11-01); a locked one, like locked consecutive pairs, needs its exact approval. |
 | H6 | Locked weekends beyond one per engineer per owner month need the explicit approval. |
 | H7 | Canonical combined/split structure, weights, actual intervals and Friday ownership remain unchanged. |
 | H8 | Other months' assignments, locks, drafts, publication pointers and history remain unchanged. |

@@ -28,6 +28,7 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
     totals[e] += d.units; coverage += d.dates.length; special += d.specialDates.length;
     preferred += d.dates.filter(date => input.constraints?.[a.primary!]?.[date] === 'prefer').length;
     if (totals[e] > halfUnits(input.targets[a.primary])) fail('target-exceeded', d.id);
+    const touched = new Set<string>(); // live and working copies of one neighbouring duty are one guard
     for (const n of input.neighbors ?? []) {
       if (n.engineer !== a.primary) continue;
       const start = handover(n.start), end = handover(n.end);
@@ -44,7 +45,9 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
       // still needs its boundary review, and an overlap is never possible.
       const touching = d.start === end || d.end === start;
       if (!touching || (lock && !approved)) fail('neighbor-conflict', d.id);
+      if (!lock) touched.add(`${n.ownerMonth}/${n.start}/${n.end}`);
     }
+    adjacent += touched.size;
   }
   for (const [e, member] of members.entries()) {
     const selected = duties.filter(d => assignments[d.id].primary === member.id);

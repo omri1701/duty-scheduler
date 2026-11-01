@@ -113,8 +113,8 @@ Unavailable members keep their fair baseline; the manager moves their work
 
 **Availability ceilings.** `availableCeilings` (`lib/allocation/model.ts`) gives each
 member the units of every duty they may take: covered duties they are available
-for, not locked to someone else and not touching their own duty in a neighbouring
-month, never below their own locked points. Generate fills such a target with
+for, not locked to someone else and not overlapping their own duty in a neighbouring
+month (touching it is a back-to-back day), never below their own locked points. Generate fills such a target with
 back-to-back duties and extra weekends as a last resort, so this is the hard
 ceiling. `allocationCeilings` is the spaced ceiling: the same duties without two
 back-to-back duties unless approved; automatic repayments stay within it. Both
