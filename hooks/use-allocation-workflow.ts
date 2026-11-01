@@ -3,9 +3,11 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
-import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
+import {allocationTotals, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {availableCeilings, context} from '@/lib/allocation/model';
+import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -24,6 +26,9 @@ type Phase = 'idle' | 'loading' | 'confirming' | 'generating' | 'saving';
 let pairSerial = 0;
 const pairId = () => `pair-${Date.now().toString(36)}-${(pairSerial++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 type Review = {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]};
+/** Why the ledger can't book a plan: the review code the dialog explains (allocationMessage). */
+const bookingProblem = (diagnostics: readonly {code: string}[]) =>
+  diagnostics.find(d => /^review-/.test(d.code))?.code ?? 'review-allocation-booking';
 /** Failures that only a fresh proposal resolves: an earlier saved format, an
  * ordinary baseline the duties cannot split into, or uneven-month credit. */
 const needsProposal = (message: string) => /invalid-ordinary-baseline|uneven-credit|invalid-allocation-(shape|changes|pair)|invalid-derived-transfers|invalid-hand-edits/.test(message);
@@ -105,19 +110,46 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
 
   const input = captured ? {...captured.input, schedule: {...captured.input.schedule, locks, approvals}} : null;
   const totals = input ? allocationTotals(input, draft, captured!.assignments) : null;
+  // After Generate the plan is where the month is reviewed: scheduled vs planned, back-to-back days.
+  // Keyed on the month flag: saving the plan clears the stored generation record, not the flag.
+  const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
+  const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
+    [captured, approvals, generatedMonth]);
+  // A target the month's duties can't make exactly (half a point in a whole-point month):
+  // allowed, Generate is then partial; the plan says so before Generate.
+  const divisible = useMemo(() => {
+    if (!open || !captured || !draft?.changes) return true;
+    try {return allocationDivisible({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft.targetsUnits);} catch {return true;}
+  }, [open, captured, locks, approvals, draft]);
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
+  // Above the spaced ceiling a target still fits availability but needs back-to-back days.
+  // Both ceilings are shown only in the open plan, so month browsing never builds them.
+  const spaced = useMemo(() => {
+    if (!captured || !open) return null;
+    try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
+  }, [captured, locks, approvals, open]);
   // Live simple check: a target above what availability allows warns on its row.
   const ceilings = useMemo(() => {
-    if (!captured) return null;
-    try {return allocationCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
-  }, [captured, locks, approvals]);
+    if (!captured || !open) return null;
+    try {return availableCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
+  }, [captured, locks, approvals, open]);
+  // A published month's plan is changed from the ledger without that month's own entries
+  // (decision 2026-11-01). Its copy keeps the published provenance until an edit, which
+  // starts from it reviewed against that ledger. A month whose plan can't be replaced
+  // (a later month already repays from it, or it has started) takes no edits.
+  const replanBlocked = captured?.replanBlocked ?? '';
+  const editable = useMemo(() => {
+    if (!captured || !draft?.changes || replanBlocked) return null;
+    const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
+    try {return draft.sourceKey === context(i).key ? draft : reopenAllocation(i, draft);} catch {return null;}
+  }, [captured, locks, approvals, draft, replanBlocked]);
   // Which + / − the library accepts at the current step: the dialog disables the rest,
   // so a + that no one can absorb never adds points the month does not have.
   const options = useMemo(() => {
-    if (!captured || !draft?.changes) return null;
-    try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft, step);} catch {return null;}
-  }, [captured, locks, approvals, draft, step]);
+    if (!captured || !editable) return null;
+    try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, editable, step);} catch {return null;}
+  }, [captured, locks, approvals, editable, step]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
@@ -134,6 +166,9 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   // The plan as if every point were worked: what is really repaid now and later.
   let planned: ReturnType<typeof planAllocation> | null = null;
   if (draft?.changes && input && !structural) {try {planned = planAllocation(input, draft);} catch {planned = null;}}
+  // A plan the ledger can't book is explained here, before Generate, never after it.
+  // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
+  if (planned && !planned.confirmable && !captured?.sourcePublicationId) structural = bookingProblem(planned.diagnostics);
   /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
   function plan(make: () => AllocationDraft) {
     setError('');
@@ -181,16 +216,18 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const unsupported = () => t('This browser cannot run the planner. Use a current browser with WebAssembly and Workers.', 'הדפדפן אינו תומך במתכנן. יש להשתמש בדפדפן עדכני שתומך ב־WebAssembly וב־Workers.');
   function edit(engineer: string, deltaUnits: number, kind: Kind) {
     if (!input || !draft || phase !== 'idle') return;
+    if (replanBlocked || !editable) {setError(replanBlocked || 'stale-allocation'); return;}
     const previous = {draft, locks, approvals};
-    if (plan(() => editAllocation(input, draft, {engineer, deltaUnits, kind}).draft)) {
+    if (plan(() => editAllocation(input, editable, {engineer, deltaUnits, kind}).draft)) {
       setHistory(h => [...h, previous]); setNotice(t('Points updated. Counterpart changes are shown below.', 'הנקודות עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
     }
   }
   /** Exact manual transfer of one point; temporary until made permanent. */
   function transfer(fromId: string, toId: string) {
     if (!input || !draft || phase !== 'idle' || fromId === toId) return;
+    if (replanBlocked || !editable) {setError(replanBlocked || 'stale-allocation'); return;}
     const previous = {draft, locks, approvals}, id = pairId();
-    if (plan(() => transferAllocation(input, draft, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
+    if (plan(() => transferAllocation(input, editable, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
       setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');
     }
   }
@@ -244,25 +281,34 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       const generationInput: GenerationInput = {...confirmed.generationInput,
         weekendRotation: weekendRotation(history, eligible, month), weekdayRotation: weekdayRotation(history, eligible, month)};
       const active = createGenerationWorker(now); worker.current = active;
-      const generated = await active.run(generationInput, {seconds: 30}, p => {
-        if (id === sequence.current) setProgress(p.metrics.coverage);
-      });
+      let generated: GenerationResult;
+      try {
+        generated = await active.run(generationInput, {seconds: 30}, p => {
+          if (id === sequence.current) setProgress(p.metrics.coverage);
+        });
+      } catch (e) {
+        // Cancellation, Worker loading and stale or closed windows keep their own messages.
+        // Anything else is an internal solver/validation failure: the detail goes to the console.
+        if (/Worker|WASM|fetch|load failed|stale|window-closed/i.test(errorMessage(e, ''))) throw e;
+        console.error('Generate failed', e);
+        throw Error(t('Generate couldn’t finish. Try again, or adjust the plan.', 'השיבוץ לא הושלם. אפשר לנסות שוב או לשנות את התוכנית.'));
+      }
       active.terminate(); worker.current = null;
       if (id !== sequence.current) return;
       acceptGeneration(generated, generationInput, now());
       // Compile against the actual returned assignments, never the allocation witness.
       // Copied publication intent is independently revalidated by the checked RPC.
-      if (!confirmed.sourcePublicationId &&
-        !compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments).confirmable) {
-        throw Error('Allocation requires review before saving.');
-      }
+      const compiled = confirmed.sourcePublicationId ? null : compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments);
+      if (compiled && !compiled.confirmable) throw Error(bookingProblem(compiled.diagnostics));
       if (id !== sequence.current) return;
       acceptGeneration(generated, generationInput, now());
       setPhase('saving'); rpc.current = true;
       const saved = await latest.current.saveGeneration(confirmed, generated.assignments, generated.reproduction.settings.seed);
       if (id !== sequence.current) return;
       accept(saved); setResult(generated); setOpen(false); setNotice('');
-      toast.success(generated.complete ? t('Draft ready. Review, then publish.', 'הטיוטה מוכנה לבדיקה ולפרסום.') : t('Partial draft saved. Review uncovered dates.', 'טיוטה חלקית נשמרה. יש לבדוק את התאריכים ללא כיסוי.'));
+      // The plan is where the result is reviewed: the toast leads there.
+      toast.success(generated.complete ? t('Draft ready. Review it in Plan the month.', 'הטיוטה מוכנה. אפשר לבדוק אותה בתכנון החודש.') : t('Partial draft saved. Review it in Plan the month.', 'טיוטה חלקית נשמרה. אפשר לבדוק אותה בתכנון החודש.'),
+        {action: {label: t('Review', 'בדיקה'), onClick: () => {void show();}}});
     } catch (e) {if (id === sequence.current) {failure = e; setReviewed(false);}}
     finally {
       rpc.current = false;
@@ -271,15 +317,28 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     // Never retry the failed write: read the month again, review the retained
     // targets (or a new proposal when only that resolves it), then explain.
     if (failure) {
-      if (await refresh(errorMessage(failure, ''))) fail(failure);
+      const before = captured, message = errorMessage(failure, '');
+      if (await refresh(message)) fail(/Compensation changed/.test(message) && contextRef.current ? changed(before, contextRef.current) ?? failure : failure);
     }
+  }
+  /** Says what changed in the points ledger since the plan was read (decision 2026-11-01):
+   * which months changed and whose balance moved, never only that something changed. */
+  function changed(before: GenerationContext, after: GenerationContext) {
+    const {months, balances} = ledgerChange(month, {events: before.input.events, net: before.projected.net}, {events: after.input.events, net: after.projected.net});
+    if (!months.length && !balances.length) return null;
+    const team = latest.current.state?.team ?? [], name = (id: string) => team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
+    const label = (m: string, lang: string) => new Date(`${m}-15T00:00:00Z`).toLocaleString(lang, {month: 'long', year: 'numeric', timeZone: 'UTC'});
+    const moved = balances.map(([id, units]) => `${name(id)} ${units > 0 ? '+' : '−'}${Math.abs(units) / 2}`).join(', ');
+    const en = months.length ? `${months.map(m => label(m, 'en')).join(', ')} changed` : 'Points changed', he = months.length ? `${months.map(m => label(m, 'he')).join(', ')} השתנה` : 'הנקודות השתנו';
+    return Error(t(`${en}${moved ? ` (balances: ${moved})` : ''}, so the month was refreshed and your targets were kept. Check them, then confirm again.`,
+      `${he}${moved ? ` (מאזנים: ${moved})` : ''}, ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.`));
   }
   function cancel() {
     if (rpc.current) return;
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, options,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},

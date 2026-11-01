@@ -13,6 +13,8 @@ export function WorkspaceToolbar({
   busy,
   generationClosed = false,
   allocationMismatch = false,
+  reviewNotes = 0,
+  publishBlocked = '',
   metrics,
   blockCount,
   t,
@@ -32,6 +34,10 @@ export function WorkspaceToolbar({
   busy: boolean;
   generationClosed?: boolean;
   allocationMismatch?: boolean;
+  /** Notes waiting in Plan the month after Generate; a dot marks them. */
+  reviewNotes?: number;
+  /** Why Publish is disabled, for its tooltip. */
+  publishBlocked?: string;
   metrics: WorkspaceMetrics;
   blockCount: number;
   t: Translate;
@@ -44,7 +50,9 @@ export function WorkspaceToolbar({
   reopened: boolean;
   onCancelDraft: () => void;
 }) {
-  const generateLabel = busy ? t('Generating…','משבץ…') : monthDetails.generated ? t('Regenerate','שיבוץ מחדש') : t('Generate month','יצירת שיבוץ');
+  // A generated month is reviewed (and regenerated) in Plan the month, so the action says so.
+  const generateLabel = busy ? t('Generating…','משבץ…') : monthDetails.generated ? t('Review plan','בדיקת התוכנית') : t('Generate month','יצירת שיבוץ');
+  const review = monthDetails.generated && !busy;
   return (
     <div className="month-toolbar-container">
     <div className="month-toolbar" dir={t('ltr','rtl')}>
@@ -85,20 +93,22 @@ export function WorkspaceToolbar({
                 <Button
                   className="generate-month-action"
                   variant="outline"
-                  disabled={readOnly || busy || generationClosed || !metrics.active.length}
-                  title={generationClosed ? t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך ידנית או לבצע החלפות.') : undefined}
+                  disabled={readOnly || busy || (generationClosed && !review) || !metrics.active.length}
+                  title={review && reviewNotes ? t('Notes are waiting in Plan the month', 'הערות ממתינות בתכנון החודש') : generationClosed && !review ? t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך ידנית או לבצע החלפות.') : undefined}
                   onClick={runGenerate}
                   aria-label={generateLabel}
                 >
                   <Sparkles className={busy ? 'spin' : ''} />
                   <span className="workflow-label">{generateLabel}</span>
+                  {review && reviewNotes > 0 && <span className="review-dot" aria-hidden="true"/>}
                 </Button>
                 {reopened && <Button className="cancel-draft-action" data-draft-action variant="outline" disabled={readOnly || busy} onClick={onCancelDraft}>{t('Cancel draft', 'ביטול טיוטה')}</Button>}
                 <Button
                   className="publish-month-action"
                   disabled={
-                    readOnly || allocationMismatch || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
+                    readOnly || allocationMismatch || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount || !!publishBlocked
                   }
+                  title={publishBlocked || undefined}
                   onClick={onPublish}
                 >
                   <Check />

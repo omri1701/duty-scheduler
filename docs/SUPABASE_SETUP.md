@@ -558,7 +558,7 @@ Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject (at a
 pending stage) yields `rejected`; requester Cancel in either pending state yields
 `cancelled`.
 
-Admin proposals (migration `20261031215452_admin_proposed_swaps.sql`): an admin may
+Admin proposals (migration `20261101202610_admin_proposed_swaps.sql`): an admin may
 pass any two members' duties to `duty_request_swap`; engineers still offer only their
 own primary duty. The request records `proposed_by` and stays `awaiting_engineer`
 until both members accepted their own side (`requester_accepted_at` for the
@@ -589,7 +589,7 @@ counterpart duty changes from B to C, `other_id` becomes C, status returns to
 `requester_accepted_at`) are cleared: both members answer the new pairing. C must
 explicitly accept. If the requester loses their original slot, a slot disappears/changes
 span or points (compared with the immutable requested copy, migration
-`20261101114532_swap_consent_points.sql`), a date expires on revalidation, or no live
+`20261101202611_swap_consent_points.sql`), a date expires on revalidation, or no live
 publication remains, the request becomes `invalidated`. Unrelated slot changes preserve
 consent. Approval posts the swap's point difference to the ledger once as a `change`
 between the two members; swapping back nets it to zero, and a swapped duty that carried a

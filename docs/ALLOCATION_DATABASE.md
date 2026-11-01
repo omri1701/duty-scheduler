@@ -142,7 +142,18 @@ uses the existing authoritative transition/normalization/reservation validator.
 A temporary A→B followed by permanent B→C charges A→B once, funded by C's work.
 Deferral retains the original source path and uses its available normalized suffix
 for retained repayment. Reverse burdens reserve existing obligations instead of
-netting them away before completion. Secondary coverage contributes no capacity.
+netting them away before completion; since `20261031213827_deferred_repayment_by_debtor`
+a deferred repayment handed to a member who owes the same creditor is one too, so it
+reserves that member's own debt instead of failing `review-normalized-deferral-route`.
+Since `20261101060243_permanent_legs_owe_nothing` permanent legs owe nothing in a
+route. A point a member received permanently and hands on temporarily to someone who
+owes them is that person's repayment, instead of failing
+`review-compound-reverse-obligation`; a temporary leg before the reverse leg (someone
+else's debt) still needs review. A route back to its own carrier drops the permanent
+legs out of it instead of publishing an intent from a member to themselves; that
+member's own debt returning to them fails `review-circular-route`. The plan names
+any of these before Generate, which stays disabled until the plan can be booked.
+Secondary coverage contributes no capacity.
 
 Copied intent IDs never create another origin. Still-live unchanged reservations
 retain their IDs; restored or rearranged still-outstanding repayment can rebind
@@ -152,11 +163,52 @@ requires explicit refresh/review; targets are not silently changed. Approved swa
 retain the existing cancellation/rerouting accounting instead of forcing repayment
 onto replacement work. Ledger snapshots survive publication deletion.
 
-Changing allocation transfer provenance over an existing publication requires
+**Re-planning a published month** (decision 2026-11-01, migration
+`20261101121634_replan_published_month`). A new plan for a published month starts
+from the ledger without that month's own entries: `duty_private.compensation_replan`
+(mirrored by `lib/compensation/replan.ts`) reverses every lot the month's
+publications booked with an audited `correct` event (`replan/<publication>/<lot>`,
+reason "Re-planned <month>") and then deletes the publication
+(`replan/<publication>/delete`), which cancels its pending repayments.
+`generation_context` returns that ledger for a published month (and
+`replanBlocked`), `confirm_allocation` and `save_generation` check a changed plan
+against it, and `compensation_publication` appends the same events for real, in the
+publishing transaction, before booking the new plan as the month's first version.
+Nothing is rewritten: the old publication, its events and the corrections stay in the
+history. It is refused while another month's repayment uses one of those lots
+(`review-replan-later:<month>`: change that month first), once the month has started
+(`review-replan-started`), or after a hand settlement of one (`review-replan-settled`).
+An unchanged copy keeps its published provenance and rebinds as before.
+
+Across history (migration `20261101124753_replan_history`): a month whose only version
+was deleted keeps its own debts live (its repayments are cancelled), and a new plan
+reverses them too, so they are never counted twice. Re-plan keys carry the ledger
+position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
+again. A re-plan is also refused, naming the month, when reversing the lots would
+change a debt another month's pending repayment is reserved on: a reversal nets
+against the oldest opposing debt, and that repayment would be held and never settle.
+Deleting that month's only version first unblocks it. A version from before a
+re-plan can't become current again (`duty_private.compensation_replanned`): restoring
+it, deleting the version that re-planned it, or publishing a copy of it is refused
+with "<Month> was re-planned after this version, so its points can't come back.
+Reopen the month and change its plan instead." Re-planning reaches any plan.
+
+Review fixes (migration `20261101192755_replan_order_and_deleted_start`): the plan
+screen, `confirm_allocation`, `save_generation` and Publish all re-plan at the current
+instant and project the ledger to opening afterwards, so a repayment settling before
+opening never moves the re-plan keys a plan repays (`invalid-repayment-source` and a
+Refresh loop before). A month whose only version was deleted counts as started by its
+last version: once its first duty is worked a new plan is refused
+(`review-replan-started`), the worked days keep their debts, and Publish waits with the
+reason before the click. `review-replan-later:unknown` (a repayment from the month's
+points settled by a month no longer published) has its own message.
+
+Changing allocation transfer provenance over an existing publication otherwise requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the
 existing audited manual accounting operations remain available. Compound reverse
-routes and ambiguous normalized deferrals likewise require review.
+routes (a temporary leg before the reverse leg), circular routes and ambiguous
+normalized deferrals likewise require review.
 
 Baseline validation is an exact decision over owned canonical weights,
 independent of the scheduling solver and its proofs. Those weights come from
@@ -185,7 +237,18 @@ node supabase/tests/generation.mjs supabase_db_duty-scheduler
 node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
 node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
 node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
+node supabase/tests/monkey.mjs supabase_db_duty-scheduler 100 1   # steps, seed; resets the database at the end
 ```
+
+`monkey.mjs` (decision 2026-11-01) drives random action sequences through the checked
+RPCs over four months, only where the UI allows them: plan and re-plan with extreme
+edits, Confirm & generate, publish, reopen, cancel, restore or delete any version, edit,
+lock and unlock duties, swaps (request, accept, approve), availability and deadlines,
+in any order. Each step is skipped where the UI disables it, with the same checks
+(publish blockers, `duty_replanned_versions`, `swapProblem`; the swap dialogs' availability
+alert names both parties' and cover's conflicts). Every action must succeed, and after each
+the ledger must replay exactly, balance and have no live chain. A refusal the UI did not
+prevent is a finding; its message must not be the generic fallback.
 
 The generation fixture rolls back every synthetic case. It covers authorization,
 malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,

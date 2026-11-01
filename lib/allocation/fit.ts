@@ -15,6 +15,33 @@ export function equalShares(weights: readonly number[], n: number) {
   return [...Array(n - left).fill(share), ...Array(left).fill(share + q)] as number[];
 }
 
+/** Whether the month's duties can give every member exactly its target: each
+ * member keeps its `locked` duty weights and every other duty goes to someone.
+ * Weights only (calendar rules are Generate's); a search past `limit` steps
+ * answers true rather than block a plan it could not decide. */
+export function partitionable(free: readonly number[], locked: readonly (readonly number[])[], targets: readonly number[], limit = 20_000) {
+  const rest = targets.map((t, e) => t - locked[e].reduce((a, b) => a + b, 0));
+  if (rest.some(r => r < 0) || rest.reduce((a, b) => a + b, 0) !== free.reduce((a, b) => a + b, 0)) return false;
+  const values = [...new Set(free)].sort((a, b) => b - a), memo = new Map<string, boolean>();
+  let steps = 0;
+  const fits = (e: number, counts: number[]): boolean => {
+    if (e === rest.length - 1) return true; // the sums agree, so the last member takes exactly what is left
+    const key = e + ':' + counts.join();
+    if (memo.has(key)) return memo.get(key)!;
+    const take = (t: number, left: number): boolean => {
+      if (++steps > limit) return true;
+      if (t === values.length) return left === 0 && fits(e + 1, counts);
+      for (let k = Math.min(counts[t], Math.floor(left / values[t])); k >= 0; k--) {
+        counts[t] -= k; const ok = take(t + 1, left - k * values[t]); counts[t] += k;
+        if (ok) return true;
+      }
+      return false;
+    };
+    const ok = take(0, rest[e]); memo.set(key, ok); return ok;
+  };
+  return fits(0, values.map(v => free.filter(w => w === v).length));
+}
+
 /** The ordinary baseline is an exact, minimum-squared-cost partition of the
  * indivisible canonical duty weights (duty_private.allocation_baseline). Return
  * that partition's shares, ascending. The equal split is used whenever it is a

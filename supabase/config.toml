@@ -90,6 +90,10 @@ schema_paths = [
   "./schemas/functions/duty_private/compensation_publication.sql",
   "./schemas/functions/duty_private/compensation_reconcile.sql",
   "./schemas/functions/duty_private/compensation_record.sql",
+  "./schemas/functions/duty_private/compensation_replan.sql",
+  "./schemas/functions/duty_private/compensation_replan_step.sql",
+  "./schemas/functions/duty_private/compensation_replanned.sql",
+  "./schemas/functions/duty_private/replanned_versions.sql",
   "./schemas/functions/duty_private/compensation_reserve.sql",
   "./schemas/functions/duty_private/compensation_segment.sql",
   "./schemas/functions/duty_private/compensation_slice.sql",
@@ -132,6 +136,7 @@ schema_paths = [
   "./schemas/functions/public/duty_balance.sql",
   "./schemas/functions/duty_private/swap_availability.sql",
   "./schemas/functions/public/duty_swap_availability.sql",
+  "./schemas/functions/public/duty_replanned_versions.sql",
   "./schemas/grants/functions.sql",
   "./schemas/grants/tables.sql",
 ]

@@ -51,7 +51,7 @@ test('lock-only save retains the existing override and failed saves keep the loc
   await cell.click(); await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
   backend.failNextSave = true;
   await dialog.getByRole('button', {name: 'Save assignment', exact: true}).click();
-  await expect(page.getByText('Synthetic stale revision. Refresh and try again.', {exact: true})).toBeVisible();
+  await expect(page.getByText('The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', {exact: true})).toBeVisible();
   await expect(dialog.getByRole('button', {name: 'Unlock duty', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await expect(cell.getByRole('img', {name: 'Locked duty'})).toHaveCount(0);
   expect(backend.raw.assignments.find(d => d.id === original.id)?.locked).toBe(false);
@@ -99,7 +99,7 @@ test('saved locks survive reloads and repeated real generations; unlocking relea
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   async function generate() {
-    await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
+    await page.getByRole('button', {name: /^(Generate month|Review plan)$/}).click();
     await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
     const confirm = page.getByRole('button', {name: 'Confirm & generate', exact: true});
     await expect(confirm).toBeEnabled({timeout: 30_000});

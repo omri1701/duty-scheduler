@@ -114,6 +114,9 @@ REVOKE ALL ON FUNCTION duty_private.compensation_now() FROM PUBLIC, anon, authen
 REVOKE ALL ON FUNCTION duty_private.compensation_publication(text, uuid, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reconcile(jsonb, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_record(jsonb, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replanned(jsonb, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replan_step(jsonb, jsonb, text, bigint, text, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reserve(jsonb, jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_segment(jsonb, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_slice(jsonb, bigint, bigint) FROM PUBLIC, anon, authenticated, service_role;
@@ -197,3 +200,8 @@ GRANT EXECUTE ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid)
 
 REVOKE ALL ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) TO authenticated;
+REVOKE ALL ON FUNCTION duty_private.replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.replanned_versions(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_replanned_versions(text) TO authenticated;

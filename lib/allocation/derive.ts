@@ -56,7 +56,9 @@ export type Hand = Readonly<Record<string, Change>>;
  * member with most points (senior first); then each kind's hand total, permanent
  * first, is placed on members WITHOUT hand changes in duty steps, refreshing the
  * ranking after each step (receivers: fewest points, newest first; givers: most
- * points, senior first), never crossing a lock. A member already balancing the
+ * points, senior first), never crossing a lock. Receivers take one step per round
+ * (decision 2026-10-31): nobody gets a second step until every eligible receiver
+ * has one, so a −2 gives one point to each of two members. A member already balancing the
  * other kind is chosen last, so one hand change of each kind lands on two
  * different members. A permanent receiver's fair share plus its permanent
  * change stays within the month's total points. Whatever cannot be placed is returned as `unplaced` and
@@ -70,7 +72,9 @@ export function balanceChanges(c: Context, seniority: readonly string[], baselin
   const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id])
     .sort((a, b) => other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
   // A permanent receiver's fair share plus punishment never exceeds the month's total points.
-  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total).sort((a, b) => other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
+  const received: Record<string, number> = {};
+  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total)
+    .sort((a, b) => (received[a] ?? 0) - (received[b] ?? 0) || other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
   for (const id of seniority) {
     if (hand[id]) continue;
     while (full(id) < c.locked[id]) {
@@ -82,11 +86,13 @@ export function balanceChanges(c: Context, seniority: readonly string[], baselin
   const unplaced = zeroChange();
   for (const kind of KINDS) {
     let remaining = 0 - c.ids.reduce((n, id) => n + (hand[id]?.[kind] ?? 0), 0);
+    for (const id of c.ids) received[id] = 0;
     while (remaining) {
       const sign = Math.sign(remaining), units = Math.min(Math.abs(remaining), g);
       const chosen = sign > 0 ? receivers(kind, units)[0] : givers(kind, units)[0];
       if (!chosen) break;
       changes[chosen][kind] += sign * units; remaining -= sign * units;
+      if (sign > 0) received[chosen]++;
     }
     unplaced[kind] = remaining;
   }

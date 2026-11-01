@@ -9,11 +9,12 @@ import {useHoldDrag} from '@/hooks/use-hold-drag';
 import {ink,type Engineer} from '@/lib/rota/engine';
 import {NetBalance} from '@/components/rota/net-balance';
 import type {Balance} from '@/lib/supabase/balance';
+import {userMessage} from '@/lib/messages';
 export function TeamList({balance=null,name=id=>id,team,revision,monthTotals,historyTotals,lang,onReorder,onActive,readOnly=false,saving=false,selfId='e0',roles=[],onRole,temporaryIds=[],onRename}:{balance?:Balance|null;name?:(id:string)=>string;temporaryIds?:string[];onRename?:(id:string)=>void;roles?:Role[];onRole?:(id:string,role:string)=>void;readOnly?:boolean;saving?:boolean;selfId?:string;team:Engineer[];revision:number;monthTotals:Record<string,number>;historyTotals:Record<string,number>;lang:'en'|'he';onReorder:(team:Engineer[])=>boolean|void|Promise<boolean|void>;onActive:(id:string,active:boolean)=>void}){
  const t=(a:string,b:string)=>lang==='en'?a:b,source=useRef<string|null>(null);
  const focusAfterMove=useRef<string|null>(null);
  const failureMessage=t('Could not reorder. Try again.','\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05e0\u05d5\u05ea \u05d0\u05ea \u05d4\u05e1\u05d3\u05e8. \u05e0\u05e1\u05d5 \u05e9\u05d5\u05d1.');
- const {displayed,moving,reorder}=useOptimisticTeam(team,revision,readOnly,onReorder,failureMessage);
+ const {displayed,moving,reorder}=useOptimisticTeam(team,revision,readOnly,onReorder,failureMessage,e=>userMessage(e instanceof Error?e.message:'',t));
  const [dragging,setDragging]=useState<string|null>(null),[announcement,setAnnouncement]=useState('');
  async function move(from:string,to:string,keyboard=false){
   if(moving||saving||readOnly)return;
