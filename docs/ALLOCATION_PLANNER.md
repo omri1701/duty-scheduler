@@ -39,7 +39,10 @@ one of them has repaid one (2 below).
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
    newest members who are not repaying this month, and only then, newest first,
-   to repayers. Availability and locks never change the baseline. Who repays
+   to repayers. Availability and locks never change the baseline's shares. Only
+   when a lock makes that arrangement impossible to schedule (a locked 2.5-point
+   holiday day needs an odd share) do two members swap shares, nearest in that
+   order first (decision 2026-11-01). Who repays
    depends on the creditors' shares and the reverse, so the proposal settles both
    (a creditor's own remainder adds to its relief).
    The database accepts only an exact, minimum-squared-cost partition of the

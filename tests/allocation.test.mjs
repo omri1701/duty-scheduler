@@ -4,10 +4,11 @@ import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
 import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
-import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
+import {proposeAllocation, allocationDivisible, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
   retainedChanges, editOptions, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
 import {balanceChanges} from '../lib/allocation/derive.ts';
 import {context} from '../lib/allocation/model.ts';
+import {partitionable} from '../lib/allocation/fit.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -846,4 +847,35 @@ test('duplicate/unexplained accounting slices are rejected', () => {
   below.targetsUnits.e11 -= 2; below.targetsUnits.e00 += 2; below.transfers = deriveTransfers(i.seniority, below.changes, []);
   assert.throws(() => compiled(i, below, {}), /permanent-below-fair-share/);
   assert.equal(solver.activeModels, 0);
+});
+
+test('partitionable: exact points from the month’s duty weights, locked duties kept by their member', () => {
+  // Two half duties: at most two members on half points, and never one alone.
+  assert.equal(partitionable([1, 1, 2, 2, 2], [[], [], []], [3, 3, 2]), true);
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2], [[], [], []], [3, 3, 3]), false, 'sums differ');
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2], [[], [], []], [3, 3, 4]), true);
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2, 2], [[], [], []], [5, 3, 4]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2], [[], [], []], [5, 5, 4]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2, 2], [[], [], []], [5, 5, 6]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2], [[], [], [], []], [3, 3, 3, 5]), false, 'three odd points, two odd duties');
+  // 1.5 points can't come from 1, 2.5 and 4-point duties.
+  assert.equal(partitionable([2, 5, 8, 2, 2], [[], []], [3, 16]), false);
+  // A locked 2.5-point duty: 4 points would need another 1.5, which no duty makes.
+  assert.equal(partitionable([5, 2, 2, 2, 2], [[5], []], [8, 10]), false);
+  assert.equal(partitionable([5, 2, 2, 2, 2], [[5], []], [9, 9]), true);
+  assert.equal(partitionable([2, 2], [[2]], [6]), true, 'one member takes everything');
+});
+
+test('a lock that needs an odd share swaps two members’ shares, nearest in order; the shares stay the same', () => {
+  // e02 is locked on a 2.5-point holiday day. The ordered arrangement gave e02 4 points, leaving 1.5
+  // that no duty makes, so Generate was partial. Swapping with e01 (3.5 points) makes it exact.
+  const i = owe(owe(scenario('normal', 9), 'e00', 'e06', 2, 'a'), 'e08', 'e07', 3, 'b');
+  i.schedule.calendar = {specials: [{id: 'h', start: '2026-11-02', end: '2026-11-08', extra: 1.5}], splitWeekends: ['2026-11-06']};
+  i.schedule.locks = [{dutyId: '2026-11-03', engineer: 'e02'}];
+  const d = proposal(i).draft;
+  assert.deepEqual([d.baselineUnits.e01, d.baselineUnits.e02], [8, 7]);
+  assert.deepEqual(Object.values(d.baselineUnits).sort(), [7, 7, 7, 8, 8, 8, 8, 8, 9], 'the same shares');
+  assert.equal(allocationDivisible(i, d.targetsUnits), true);
+  assert.equal(solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(Object.entries(d.targetsUnits).map(([k, v]) => [k, v / 2]))},
+    {now: i.now, seed: 17, seconds: 20})).complete, true);
 });

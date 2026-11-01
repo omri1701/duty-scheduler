@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {proposeAllocation, allocationCeilings, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
+import {proposeAllocation, allocationDivisible, allocationCeilings, editAllocation, transferAllocation, classifyTransfer, compileAllocation, planAllocation, bindAllocation,
   nettedCompensation, deriveTransfers, unevenTransfers, balanced, unplacedChanges, retainedChanges, permanentFloor, permanentCeiling} from '../lib/allocation/index.ts';
 import {validateDraft, persistedDraft} from '../lib/allocation/edits.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
@@ -278,6 +278,11 @@ test('fuzz: every proposal books, on random teams, debts, locks and holidays', {
     // (follow-up). Its invariants stay covered by the sequences above.
     check(name, i, c, prop, prop.draft, [], {netting: false});
     assert.equal(planAllocation(i, prop.draft).confirmable, true, `${name}: the proposal books`);
+    if (process.env.FUZZ_DEBUG && !allocationDivisible(i, prop.draft.targetsUnits)) console.log('INDIVISIBLE', name, JSON.stringify({cal: i.schedule.calendar, locks: i.schedule.locks,
+      units: canonicalDuties(i.schedule.month, i.schedule.calendar).map(du => du.units).join(), baseline: prop.draft.baselineUnits, offered: prop.draft.offeredUnits,
+      targets: prop.draft.targetsUnits, changes: prop.draft.changes, repay: prop.draft.repayments.map(x => [x.claim.debtorId, x.claim.creditorId, x.units]),
+      constraints: Object.keys(i.schedule.constraints ?? {})}));
+    assert.ok(allocationDivisible(i, prop.draft.targetsUnits), `${name}: the month's duties make the proposal's exact points`);
     await bindCheck(name, i, c, prop, prop.draft, []);
   }
   console.log(JSON.stringify({randomProposals: stats.randomProposals, randomRefused: stats.randomRefused ?? 0}));
