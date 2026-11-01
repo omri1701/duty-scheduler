@@ -7,7 +7,8 @@ import {canonicalDuties, handover} from '../../lib/scheduling/calendar.ts';
 import {replay} from '../../lib/compensation/index.ts';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
 import {deriveTransfers} from '../../lib/allocation/derive.ts';
-import {proposeAllocation, transferAllocation, planAllocation, persistedDraft, balanced} from '../../lib/allocation/index.ts';
+import {proposeAllocation, transferAllocation, editAllocation, planAllocation, persistedDraft, balanced} from '../../lib/allocation/index.ts';
+import {reviewAllocation} from '../../lib/allocation/review.ts';
 const container=process.argv[2];assert.match(container??'',/^supabase_db_[\w-]+$/);
 const ids=Array.from({length:13},(_,i)=>`73000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
 const manager=ids[0],month='2027-12',duties=canonicalDuties(month,{}),zero=()=>Object.fromEntries(ids.map(id=>[id,0]));
@@ -333,6 +334,36 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  assert.equal(views.loan.net[giver],2,'the creditor owes the giver one point');
  assert.equal(Object.values(repaid(views.loan)).reduce((a,b)=>a+b,0),4,'the turns still repay two points');
  console.log('PASS: a point received permanently repays the debtor it is handed to, and handed back to its giver is a plain loan');
+}
+
+// Re-planning a published month through the checked RPCs (decision 2026-11-01): one member takes
+// three others' points, the month is published, restored, lowered by half and published again. The
+// reopened context is the ledger without the month's own entries; publishing reverses them with
+// audited corrections and a deletion, so only the new plan's debts remain.
+{
+ const taker=ids[6],givers=[ids[5],ids[7],ids[8]];
+ const input=readGenerationContext(sql(setup+`select v from context;rollback;`).at(-1)).input;
+ let first=proposeAllocation(input).draft;
+ for(const g of givers)first=transferAllocation(input,first,{id:`to-${g}`,fromId:g,toId:taker,units:first.targetsUnits[g],kind:'temporary'}).draft;
+ const owed=first.targetsUnits[taker]-first.baselineUnits[taker],part=2*Math.floor(owed/4);
+ const lowered=editAllocation(input,first,{engineer:taker,deltaUnits:-part,kind:'temporary'}).draft;
+ const pub=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
+ const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;`;
+ const rows=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+view+
+  `select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+
+  `select jsonb_build_object('reopened',v) from context;`+confirm(persistedDraft(lowered))+save(arrangement(lowered.targetsUnits))+pub+view+'rollback;');
+ const [published,replaced]=rows.filter(r=>r.view).map(r=>r.view),reopened=readGenerationContext(rows.find(r=>r.reopened).reopened);
+ assert.deepEqual([published.net[taker],...givers.map(g=>published.net[g])],[owed,...givers.map(g=>-first.baselineUnits[g])],'published: the givers owe the taker');
+ assert.equal(reopened.replanBlocked,null);
+ assert.ok(Object.values(reopened.projected.net).every(n=>n===0),'reopened: the ledger without the month\'s own entries owes nothing');
+ const copy=reviewAllocation(reopened.input,reopened.allocation);
+ assert.deepEqual(copy.targetsUnits,first.targetsUnits,'the copy reviews as published');
+ assert.deepEqual(editAllocation(reopened.input,copy,{engineer:taker,deltaUnits:-part,kind:'temporary'}).draft.targetsUnits,lowered.targetsUnits);
+ assert.equal(replaced.net[taker],owed-part,'republished: only the new plan\'s debts remain');
+ const replans=replaced.events.filter(e=>e.sourceKey.startsWith('replan/'));
+ assert.ok(replans.some(e=>e.operation.kind==='correct'&&e.reason===`Re-planned ${month}`)&&replans.at(-1).operation.mode==='delete','audited corrections, then the deletion');
+ assert.deepEqual(ordered(replaced),ordered(replay(replaced.events)));
+ console.log('PASS: a published month re-planned through the RPCs is planned without its own entries and republished with only the new plan\'s debts');
 }
 
 // Client equals database: random plans over shared debts (several members owe one creditor,

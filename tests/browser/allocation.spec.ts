@@ -2,6 +2,8 @@ import {test, expect, ids, MONTH, type Backend} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
 import {record} from '../../lib/compensation';
+import {readGenerationContext} from '../../lib/supabase/generation';
+import {proposeAllocation, transferAllocation, persistedDraft} from '../../lib/allocation';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -281,6 +283,43 @@ test('a plan the ledger can’t book says why before Generate and keeps it disab
   await expect(generate).toBeDisabled(); await expect(page.getByRole('button', {name: 'Save', exact: true})).toBeDisabled();
   await page.locator('.allocation-toast').getByRole('button', {name: 'Make permanent', exact: true}).click();
   await expect(note).toHaveCount(0); await expect(generate).toBeEnabled();
+});
+
+/** A reopened published month whose copy has everyone's points dragged onto Avery Admin. The copy
+ * keeps the source key of the ledger it was published from, as a real restored copy does. */
+function reopenedCopy(backend: Backend) {
+  fresh(backend);
+  const {input} = readGenerationContext(backend.generationEnvelope(MONTH));
+  let draft = proposeAllocation(input).draft;
+  for (const id of input.seniority.filter(id => id !== ids.admin)) {
+    draft = transferAllocation(input, draft, {id: `to-avery-${id}`, fromId: id, toId: ids.admin, units: draft.targetsUnits[id], kind: 'temporary'}).draft;
+  }
+  backend.allocations.set(MONTH, {draft: {...persistedDraft(draft), sourceKey: 'published-ledger'}, locks: [], approvals: []});
+  backend.sourcePublication = 'published-v1'; backend.replanBlocked = null;
+  return draft;
+}
+
+test('a reopened published month is changed from the ledger without its own entries: − on the member who took every point works', async ({page, backend, openApp}) => {
+  // The reported December (2026-11-01): − was blocked and "Team data changed" looped.
+  const draft = reopenedCopy(backend), avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas');
+  await openApp(); await openPlan(page);
+  await expect(avery.target).toHaveText(String(draft.targetsUnits[ids.admin] / 2));
+  await expect(alex.target).toHaveText('0');
+  await avery.row.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  // The point goes back to whoever dragged it last; nothing is refreshed.
+  await expect(avery.target).toHaveText(String(draft.targetsUnits[ids.admin] / 2 - 1));
+  await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+});
+
+test('a published month that a later month already repays from says so and takes no edits', async ({page, backend, openApp}) => {
+  reopenedCopy(backend); backend.replanBlocked = 'review-replan-later:2026-12';
+  await openApp(); await openPlan(page);
+  await expect(page.getByRole('dialog').getByRole('note').filter({hasText: 'already planned'}))
+    .toHaveText('December 2026 is already planned from this month’s points, so change December 2026 first.');
+  await expect(member(page, 'Avery Admin').row.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true})).toBeDisabled();
+  // Regenerating the published plan as it is stays available.
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
 });
 
 test('dragging one engineer onto another gives one exact temporary point, then Make permanent persists and Undo restores', async ({page, backend, openApp}, info) => {

@@ -6,7 +6,7 @@ import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
-import {availableCeilings} from '@/lib/allocation/model';
+import {availableCeilings, context} from '@/lib/allocation/model';
 import {generatedNotes} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
@@ -134,12 +134,22 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!captured || !open) return null;
     try {return availableCeilings({...captured.input, schedule: {...captured.input.schedule, locks, approvals}});} catch {return null;}
   }, [captured, locks, approvals, open]);
+  // A published month's plan is changed from the ledger without that month's own entries
+  // (decision 2026-11-01). Its copy keeps the published provenance until an edit, which
+  // starts from it reviewed against that ledger. A month whose plan can't be replaced
+  // (a later month already repays from it, or it has started) takes no edits.
+  const replanBlocked = captured?.replanBlocked ?? '';
+  const editable = useMemo(() => {
+    if (!captured || !draft?.changes || replanBlocked) return null;
+    const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
+    try {return draft.sourceKey === context(i).key ? draft : reviewAllocation(i, draft);} catch {return null;}
+  }, [captured, locks, approvals, draft, replanBlocked]);
   // Which + / − the library accepts at the current step: the dialog disables the rest,
   // so a + that no one can absorb never adds points the month does not have.
   const options = useMemo(() => {
-    if (!captured || !draft?.changes) return null;
-    try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft, step);} catch {return null;}
-  }, [captured, locks, approvals, draft, step]);
+    if (!captured || !editable) return null;
+    try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, editable, step);} catch {return null;}
+  }, [captured, locks, approvals, editable, step]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
@@ -206,16 +216,18 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const unsupported = () => t('This browser cannot run the planner. Use a current browser with WebAssembly and Workers.', 'הדפדפן אינו תומך במתכנן. יש להשתמש בדפדפן עדכני שתומך ב־WebAssembly וב־Workers.');
   function edit(engineer: string, deltaUnits: number, kind: Kind) {
     if (!input || !draft || phase !== 'idle') return;
+    if (replanBlocked || !editable) {setError(replanBlocked || 'stale-allocation'); return;}
     const previous = {draft, locks, approvals};
-    if (plan(() => editAllocation(input, draft, {engineer, deltaUnits, kind}).draft)) {
+    if (plan(() => editAllocation(input, editable, {engineer, deltaUnits, kind}).draft)) {
       setHistory(h => [...h, previous]); setNotice(t('Points updated. Counterpart changes are shown below.', 'הנקודות עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
     }
   }
   /** Exact manual transfer of one point; temporary until made permanent. */
   function transfer(fromId: string, toId: string) {
     if (!input || !draft || phase !== 'idle' || fromId === toId) return;
+    if (replanBlocked || !editable) {setError(replanBlocked || 'stale-allocation'); return;}
     const previous = {draft, locks, approvals}, id = pairId();
-    if (plan(() => transferAllocation(input, draft, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
+    if (plan(() => transferAllocation(input, editable, {id, fromId, toId, units: 2, kind: 'temporary'}).draft)) {
       setHistory(h => [...h, previous]); setMoved({id, fromId, toId}); setNotice('');
     }
   }
@@ -313,7 +325,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},

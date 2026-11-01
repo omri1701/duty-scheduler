@@ -159,6 +159,10 @@ show Whole team / My duties; engineers see no filter on an unpublished month.
 Managers reopen a published month to edit a draft, with independent Draft / Published
 and My duties controls. Special Block appears only in Draft. Cancel Draft requires
 confirmation and atomically deletes the working draft, returning to the current publication without creating a version or copying working rows.
+Before the month starts, Plan the month can change a reopened published month's points:
+it plans from the ledger without that month's own debts, and publishing replaces them
+(audited corrections, then the new plan). A month a later month already repays from
+says so and takes no point edits; change the later month first.
 Managers use the normal own-duty request workflow in Published and direct swaps in Draft.
 Schedule and Constraints share the same visible Sunday–Saturday rows. When the
 first is Saturday, both omit the entire first row and start on Sunday the 2nd.

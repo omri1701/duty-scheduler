@@ -16,6 +16,9 @@ begin
  -- Copies retain original reviewed provenance, even when its claims have already
  -- settled. A new proposal must use current unreserved sources instead.
  if old_meta.source_publication_id is null or old_meta.allocation IS DISTINCT FROM p_allocation then
+  -- A new plan for a published month is checked against the ledger without that month's
+  -- own entries, as its publication will book it (decision 2026-11-01).
+  projected:=duty_private.compensation_replan(projected,p_month,greatest((ctx->>'actualAtMs')::bigint,(ctx->>'coverageStartMs')::bigint));
   perform duty_private.allocation_compile(facts,p_allocation,checked->'actualUnits',projected);
   perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits');
   -- The transfer list is derived, never chosen: the per-person changes and the
@@ -29,7 +32,6 @@ begin
   if old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
    and (select array_agg(key order by key) from jsonb_each(old_meta.allocation->'baselineUnits'))=(select array_agg(key order by key) from jsonb_each(p_allocation->'baselineUnits'))
    and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then raise exception 'Ordinary baseline is immutable. Classify target changes as transfers.'; end if;
-  if old_meta.source_publication_id is not null and p_allocation->'transfers'<>'[]' then raise exception 'Review published transfer lineage before changing allocation'; end if;
  end if;
  insert into public.duty_allocations(month,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint)
  values(p_month,p_allocation,p_locks,p_approvals,ctx->>'accountingFingerprint',md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d)))

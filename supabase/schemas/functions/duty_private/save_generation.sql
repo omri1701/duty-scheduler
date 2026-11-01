@@ -18,6 +18,7 @@ begin
  checked:=duty_private.generation_validate(f,meta.allocation->'targetsUnits',p_assignments);
  if meta.source_publication_id is null then
   s:=duty_private.compensation_reconcile(duty_private.compensation_state(),(ctx->>'coverageStartMs')::bigint,false);
+  s:=duty_private.compensation_replan(s,p_month,(ctx->>'coverageStartMs')::bigint);
   perform duty_private.allocation_compile(f,meta.allocation,checked->'actualUnits',s);
  end if;
  if duty_private.compensation_now()>=(ctx->>'coverageStartMs')::bigint then raise exception 'generation-window-closed'; end if;

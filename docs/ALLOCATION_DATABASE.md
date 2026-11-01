@@ -163,7 +163,24 @@ requires explicit refresh/review; targets are not silently changed. Approved swa
 retain the existing cancellation/rerouting accounting instead of forcing repayment
 onto replacement work. Ledger snapshots survive publication deletion.
 
-Changing allocation transfer provenance over an existing publication requires
+**Re-planning a published month** (decision 2026-11-01, migration
+`20261101121634_replan_published_month`). A new plan for a published month starts
+from the ledger without that month's own entries: `duty_private.compensation_replan`
+(mirrored by `lib/compensation/replan.ts`) reverses every lot the month's
+publications booked with an audited `correct` event (`replan/<publication>/<lot>`,
+reason "Re-planned <month>") and then deletes the publication
+(`replan/<publication>/delete`), which cancels its pending repayments.
+`generation_context` returns that ledger for a published month (and
+`replanBlocked`), `confirm_allocation` and `save_generation` check a changed plan
+against it, and `compensation_publication` appends the same events for real, in the
+publishing transaction, before booking the new plan as the month's first version.
+Nothing is rewritten: the old publication, its events and the corrections stay in the
+history. It is refused while another month's repayment uses one of those lots
+(`review-replan-later:<month>`: change that month first), once the month has started
+(`review-replan-started`), or after a hand settlement of one (`review-replan-settled`).
+An unchanged copy keeps its published provenance and rebinds as before.
+
+Changing allocation transfer provenance over an existing publication otherwise requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the
 existing audited manual accounting operations remain available. Compound reverse

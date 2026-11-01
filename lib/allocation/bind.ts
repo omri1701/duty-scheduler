@@ -29,7 +29,9 @@ export async function bindAllocation(source: AllocationInput, allocation: Alloca
   if (!compiled.plan || !compiled.confirmable) return failure('allocation-binding-requires-review');
   if (!envelope.publicationId.trim() || !envelope.sourceKey.trim() || !envelope.actor.trim()) return failure('missing-binding-identity');
   const month = input.schedule.month;
-  if (input.events.some(e => e.operation.kind === 'publication' && e.operation.month === month)) {
+  // A published month is bound only after its re-plan deleted that publication (replanEvents).
+  const latest = input.events.findLast(e => e.operation.kind === 'publication' && e.operation.month === month)?.operation;
+  if (latest?.kind === 'publication' && latest.after) {
     return failure('review-existing-publication-lineage');
   }
   const duties = canonicalDuties(month, input.schedule.calendar);

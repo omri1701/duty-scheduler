@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
-import {record,replay,reconcile,normalize,sliceClaim,project} from '../../lib/compensation/index.ts';
+import {record,replay,reconcile,normalize,sliceClaim,project,replanEvents} from '../../lib/compensation/index.ts';
 import {handover} from '../../lib/scheduling/calendar.ts';
 const container=process.argv[2];
 assert.match(container??'',/^supabase_db_[\w-]+$/);
@@ -76,12 +76,37 @@ for(let seed=1;seed<=20;seed++) {
  const edges=Array.from({length:9},(_,i)=>{const a=rand()%4,b=(a+1+rand()%3)%4;return {debtorId:String(a),creditorId:String(b),path:[{lotId:'s'+i,offset:0,units:1+rand()%5}],priority:{at:1,sequence:i+1,lotId:'s'+i}}});
  graphs.push({edges,expected:normalize(edges,new Set(['0','1','2','3']))});
 }
+// Re-planning a published month (decision 2026-11-01): the same corrections and deletion as
+// lib/compensation/replan.ts, or the same refusal.
+const replans=[];
+const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,month,at))}catch(e){expected={error:e.code??e.message}}replans.push({events:h,month,at,expected})};
+{
+ const intent=(id,fromId,toId,date)=>({id,kind:'temporary',fromId,toId,capacity:[{date,offset:0,units:2}]});
+ let n=owe(setup(),'c','a',4,'old');
+ const r=plan(n,'november-repayment',2);
+ n=publish(n,publication('nov',[duty('2026-11-02','c'),duty('2026-11-04','d',2,'2026-11-05')],[{...r,claim:sliceClaim(replay(n).claims.find(k=>k.debtorId==='c'),2)}],[intent('nov-intent','b','d','2026-11-04')]));
+ replanCase(n,'2026-11',100);
+ // Its lots corrected once already: a second re-plan reverses only what is live.
+ const twice=publish(replanEvents(n,'2026-11',100),publication('nov-2',[duty('2026-11-02','b'),duty('2026-11-04','d',2,'2026-11-05')],[],[intent('nov-2-intent','b','d','2026-11-04')]));
+ replanCase(twice,'2026-11',200);
+ // December repays November's lot: November can't be replaced.
+ const lot=replay(n).claims.find(k=>k.debtorId==='b'&&k.creditorId==='d');
+ const dec=publish(n,publication('dec',[duty('2026-12-02','b',2,'2026-12-03')],[{id:'december-repayment',capacity:{date:'2026-12-02',offset:0,units:2},claim:sliceClaim(lot,2)}],[],'2026-12'));
+ replanCase(dec,'2026-11',300);
+ replanCase(n,'2026-11',completion+1);
+}
 const sql=`begin;
+create function pg_temp.compensation_replan_case(events jsonb, month text, instant bigint) returns jsonb language plpgsql as $$
+declare s jsonb:='{"events":[],"members":{},"lots":{},"claims":[],"contributions":{},"settlements":{},"publications":{},"intents":{},"normalizations":[]}';e jsonb;
+begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;
+ return duty_private.compensation_view(duty_private.compensation_replan(duty_private.compensation_reconcile(s,instant,false),month,instant));
+exception when raise_exception then return jsonb_build_object('error',SQLERRM);end $$;
 create function pg_temp.compensation_replay(events jsonb) returns jsonb language plpgsql as $$
 declare s jsonb:='{"events":[],"members":{},"lots":{},"claims":[],"contributions":{},"settlements":{},"publications":{},"intents":{},"normalizations":[]}';e jsonb;
 begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;return duty_private.compensation_view(s);end $$;
 ${cases.map(v=>`select pg_temp.compensation_replay(${quote(v.events)});`).join('\n')}
 ${graphs.map(({edges})=>`select duty_private.compensation_normalize(${quote(edges)},'{"0":{"active":true},"1":{"active":true},"2":{"active":true},"3":{"active":true}}');`).join('\n')}
+${replans.map(c=>`select pg_temp.compensation_replan_case(${quote(c.events)},'${c.month}',${c.at});`).join('\n')}
 rollback;`;
 const r=spawnSync('docker',['exec','-i',container,'psql','-XqAt','-U','postgres','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8',maxBuffer:16*1024*1024});
 assert.equal(r.status,0,r.stderr);
@@ -89,9 +114,11 @@ const rows=r.stdout.trim().split('\n').map(JSON.parse);
 function sorted(v) {v=structuredClone(v);for(const k of ['members','lots','contributions','settlements','publications'])v[k]?.sort((a,b)=>a.id.localeCompare(b.id));return v}
 for(let i=0;i<cases.length;i++)assert.deepEqual(sorted(rows[i]),sorted(cases[i]),'SQL/core replay case '+i);
 for(let i=0;i<graphs.length;i++)assert.deepEqual(rows[cases.length+i],graphs[i].expected,'SQL/core graph '+i);
+for(let i=0;i<replans.length;i++){const row=rows[cases.length+graphs.length+i];assert.deepEqual(row.error?row:sorted(row),replans[i].expected.error?replans[i].expected:sorted(replans[i].expected),'SQL/core re-plan '+i)}
+assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','review-replan-later:2026-12','review-replan-started']);
 // Projection uses the same pure core after the SQL event suffix is persisted.
 assert.equal(project(cases[7].events,100,completion).actual.events.length,cases[7].events.length);
-console.log(`PASS: ${cases.length} SQL/core histories and ${graphs.length} graph normalizations match exactly (claims, lots, provenance, holds, settlements, publications and events)`);
+console.log(`PASS: ${cases.length} SQL/core histories, ${graphs.length} graph normalizations and ${replans.length} re-plans match exactly (claims, lots, provenance, holds, settlements, publications and events)`);
 // Validate histories produced by real RPCs/hooks too, including malformed-input
 // refusals and the mid-weekend completed-fact adapter, not only pure operations.
 for(const file of ['compensation.sql','compensation-settlement.sql']) {

@@ -1,7 +1,7 @@
 CREATE FUNCTION duty_private.compensation_publication(month text, publication uuid, metadata jsonb DEFAULT NULL, deleting boolean DEFAULT false) RETURNS void
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb;
+declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb; ledger text;
 begin
  perform 1 from public.duty_workspace where id for update;
  s:=duty_private.compensation_state(); before_pub:=s->'publications'->month;
@@ -10,6 +10,17 @@ begin
  -- Ordinary copies retain accounting metadata and contribution identities.
  if before_pub->>'id'=publication::text then return; end if;
  if before_pub is null and publication is null then return; end if;
+ ledger:=md5((s->'events')::text);
+ select * into allocation from public.duty_allocations where publication_id=publication and duty_allocations.month=month;
+ -- A new plan for a published month replaces that month's ledger entries in this
+ -- transaction (decision 2026-11-01): audited corrections reverse every lot its
+ -- publications booked and the publication is deleted, cancelling its pending
+ -- repayments; the plan is then booked as a first publication. Refused while another
+ -- month's repayment uses those lots (review-replan-later:<month>) or once it started.
+ if not deleting and publication is not null and before_pub is not null and allocation.month is not null and allocation.source_publication_id is null then
+  if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+  s:=duty_private.compensation_replan(s,month,instant,true); before_pub:=null;
+ end if;
  after_pub:=duty_private.compensation_snapshot(publication);
  if deleting and after_pub is not null then
   select x->'operation'->'after' into known from jsonb_array_elements(s->'events') x where x->'operation'->>'kind'='publication' and x->'operation'->'after'->>'id'=publication::text limit 1;
@@ -44,11 +55,10 @@ begin
       and day::date>=(old->>'startDate')::date and day::date<(old->>'endDate')::date)
    ) a),'[]'));
   end if;
-  select * into allocation from public.duty_allocations where publication_id=publication and duty_allocations.month=month;
   if allocation.month is not null then
    if metadata is not null then raise exception 'Allocation accounting is server-owned'; end if;
    if allocation.source_publication_id is null then
-    if allocation.accounting_fingerprint<>md5((s->'events')::text) then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+    if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
     if before_pub is not null and allocation.allocation->'transfers'<>'[]' then raise exception 'Review published transfer lineage before changing allocation'; end if;
     facts:=duty_private.generation_facts(month);
     metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);

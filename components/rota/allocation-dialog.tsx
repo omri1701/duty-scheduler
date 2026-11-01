@@ -24,6 +24,14 @@ export function allocationMessage(message: string, t: Translate) {
   if (/review-unavailable-reverse-obligation/.test(message)) return t('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.', 'מישהו מקבל בחזרה יותר נקודות ממה שהוא עדיין חייב, ולכן לא ניתן לרשום את התוכנית. אפשר להפוך את הנקודה לקבועה, להעביר פחות נקודות, או לבטל את השינוי האחרון.');
   if (/review-normalized-deferral-route/.test(message)) return t('A postponed repayment would pass through several people, so this plan can’t be booked. Undo the last change.', 'החזר שנדחה היה עובר דרך כמה אנשים, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
   if (/review-circular-route/.test(message)) return t('A point someone lent comes back to them, so this plan can’t be booked. Undo the last change.', 'נקודה שמישהו העביר חוזרת אליו, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
+  // A published month's plan is replaced from the ledger without its own entries, unless (decision 2026-11-01):
+  const later = /review-replan-later:(\d{4}-\d{2})/.exec(message)?.[1];
+  if (later) {
+    const name = (lang: string) => new Date(`${later}-15T00:00:00Z`).toLocaleString(lang, {month: 'long', year: 'numeric', timeZone: 'UTC'});
+    return t(`${name('en')} is already planned from this month’s points, so change ${name('en')} first.`, `${name('he')} כבר תוכנן על סמך הנקודות של החודש הזה, ולכן יש לשנות קודם את ${name('he')}.`);
+  }
+  if (/review-replan-started/.test(message)) return t('This month has started, so its plan can’t be replaced. Change single duties in the calendar instead.', 'החודש הזה כבר התחיל, ולכן לא ניתן להחליף את התוכנית שלו. אפשר לשנות תורנויות בודדות בלוח.');
+  if (/review-replan-settled/.test(message)) return t('A repayment from this month’s points was settled by hand, so its plan can’t be replaced.', 'החזר מהנקודות של החודש הזה נרשם ידנית, ולכן לא ניתן להחליף את התוכנית שלו.');
   if (/review-allocation-booking/.test(message)) return t('This plan can’t be booked as it is. Undo the last change, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. אפשר לבטל את השינוי האחרון ולנסות שוב.');
   if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way, so a new proposal replaced it. Check it, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש ולכן הוחלפה ההקצאה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
   if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needed a fresh proposal, so one replaced it. Check it, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דרש הצעה חדשה, והיא הוחלפה. כדאי לבדוק ולאשר שוב.');
@@ -43,6 +51,8 @@ export function allocationMessage(message: string, t: Translate) {
   if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
   if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
   if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
+  // Say what changed: the points ledger, or the team and calendar.
+  if (/Compensation changed/.test(message)) return t('Points changed since this plan was made (another month was published or a repayment was recorded), so the month was refreshed and your targets were kept. Check them, then confirm again.', 'הנקודות השתנו מאז שהתוכנית נבנתה (חודש אחר פורסם או נרשם החזר), ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection, then try again in a current browser. Your saved draft is kept.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
   if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('Team or compensation changes needed a fresh review. The month was refreshed; check the targets, then confirm again.', 'שינויים בצוות או בפיצוי דרשו בדיקה מחדש. החודש רוענן; כדאי לבדוק את היעדים ולאשר שוב.');
@@ -115,6 +125,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
       {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
       {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
+      {f.replanBlocked && <p className="allocation-attention" role="note">{allocationMessage(f.replanBlocked, t)}</p>}
       {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       <p className="plan-sr" id="plan-no-counterpart">{t('No one else can take on less. Drag a point instead.', 'אין מי שיכול לקבל פחות. אפשר לגרור נקודה במקום.')}</p>
@@ -128,7 +139,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           // Ceiling: fair share plus a permanent punishment never exceeds the month's total points.
           const ceiling = permanent && r.permanent + f.step > r.permanentMax, capNote = `plan-cap-${r.id}`;
           // The library's own verdict: a + no one else can absorb (or past a floor or ceiling) is disabled.
-          const allowed = f.options?.[r.id]?.[kind], up = !ceiling && (allowed?.up ?? true), down = !floor && (allowed?.down ?? true);
+          const allowed = f.options?.[r.id]?.[kind], up = !ceiling && (allowed?.up ?? !f.replanBlocked), down = !floor && (allowed?.down ?? !f.replanBlocked);
           return <div className={`plan-row${active === r.id ? ' active' : ''}${over === r.id ? ' drop-target' : ''}${dragging === r.id ? ' dragging' : ''}`} role="row" key={r.id} data-engineer={r.id}
             style={{'--member': member(r.id)?.color ?? '#c8d3c4'} as CSSProperties}
             onPointerEnter={e => {if (e.pointerType === 'mouse') setActive(r.id);}} onPointerLeave={e => {if (e.pointerType === 'mouse') setActive(a => a === r.id ? null : a);}}
