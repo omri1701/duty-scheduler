@@ -957,7 +957,7 @@ Every generated assignment, complete or partial, satisfies:
 |---|---|
 | H1 | Each canonical owned block is assigned to at most one primary; unassigned blocks are explicit. A complete result covers all. |
 | H2 | Assigned primary points never exceed the confirmed target; complete coverage implies every target is exact. |
-| H3 | Automatic primaries are active approved eligible members and available on all covered duty dates. |
+| H3 | Automatic primaries are active approved eligible members and available on all covered duty dates. A non-weekend member is never an automatic primary on a weekend duty (section 10.2). |
 | H4 | Explicit primary locks and narrowly scoped approved fixed exceptions are preserved. |
 | H5 | No primary duty overlapping the same engineer's duty in a neighboring month. An automatic one touching it is a back-to-back day, a last resort counted with the pairs inside the month (decision 2026-11-01); a locked one, like locked consecutive pairs, needs its exact approval. |
 | H6 | Locked weekends beyond one per engineer per owner month need the explicit approval. |
@@ -1004,6 +1004,20 @@ engineers and four weekends each takes two (cost 2, not 3/1 or 4/0); with five,
 three and two. Strict alternation would hand every weekend of a 26-duty month to
 one of two members, so splitting them costs one back-to-back pair, which ranks
 below the weekend split. The solver never splits a combined weekend.
+
+*Decision 2026-11-01 (model v7):* an admin can mark a member **non-weekend** in Team
+(`duty_members.no_weekends`, set only through the admin-only checked RPC
+`duty_set_no_weekends`; a standing setting). Generate never places that member on a
+weekend duty: combined, holiday or either half of a split weekend. It is a hard
+eligibility rule (`prepareGeneration` removes the member from every weekend duty's
+candidates), not a weighted penalty; weekday rules, spacing and the rest are
+unchanged. A weekend the manager locked to the member is kept and honoured, never
+deleted, and Plan the month warns about it. `duty_private.save_generation` and
+`requireWeekendEligibility` (`lib/scheduling/validate.ts`) refuse Generate output
+that places the member on any other weekend (`non-weekend-primary`). Manual
+calendar edits stay the manager's call, so publication and the general validator do
+not apply the rule. Plan the month gives the member a default +1 Permanent
+([allocation planner](ALLOCATION_PLANNER.md)).
 
 ### 10.3 Fixed neighboring assignments
 
@@ -1178,7 +1192,8 @@ any month of the current cycle counts as one while the cycle is in progress
 members join the next cycle level with the team, never due first. A skipped
 member keeps count zero and remains due in later months. Locked weekend duties
 count through the same weight. Secondary cover, working drafts and the month
-being generated are ignored. The state is a soft objective only: the checked
+being generated are ignored. Non-weekend members (section 10.2) are left out
+(`generationRotations`): they never count as due and never hold a cycle open. The state is a soft objective only: the checked
 database save does not revalidate it.
 
 ### 11.4 Weekday rotation state

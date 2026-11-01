@@ -107,6 +107,20 @@ one of them has repaid one (2 below).
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.
+4. **Non-weekend members (decision 2026-11-01).** A member the admin marked
+   "No weekends" in Team gets **+1 Permanent** (`NON_WEEKEND_UNITS`, no repayment:
+   their standing extra for skipping weekends) as a hand change, so the automatic
+   balance takes the point from the others, one step per member as usual, and the
+   total stays the month total. The admin can still edit or remove it that month;
+   an edit (even back to zero) keeps the member in the hand state, so a fresh
+   proposal never re-adds it. The default is left out when it would break a floor
+   or the month cap (fair + Permanent ≤ total), exceed the member's availability
+   ceiling, find no counterpart, or leave an exact month unable to give everyone
+   exactly its points (the same `partitionable` check as a repayment turn). A saved plan is never changed: turning the
+   setting on applies from the month's next fresh proposal. The row shows
+   "No weekends · +1" (the member's current Permanent), and a short warning when a
+   weekend locked to them is kept. The checked confirmation needs nothing new: the
+   change is an ordinary per-person Permanent change.
 
 Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
@@ -332,6 +346,7 @@ and provenance are unchanged.
 
 ```sh
 node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
+node --test tests/non-weekend.test.mjs   # non-weekend default, caps, Generate eligibility and rotation
 node --test tests/allocation-fuzz.test.mjs   # FUZZ_SEQ, FUZZ_LEN, FUZZ_SEED widen the bounded run
 node --test tests/allocation-months.test.mjs   # several months published in a row; MONTHS_SEQ, MONTHS_LEN
 node --test tests/allocation-lifecycle.test.mjs   # extremes, back to fair, re-plan, delete, later months; LIFE_SEQ, LIFE_LEN

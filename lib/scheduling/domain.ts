@@ -4,7 +4,7 @@ import {checkProblem, type Problem} from './solver/problem.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export const CORE_VERSION = 'duty-generation-v1';
-export const MODEL_VERSION = 'highs-leximin-v6';
+export const MODEL_VERSION = 'highs-leximin-v7';
 /** Exact canonical serialization, not a lossy hash. Input arrays are sets of facts. */
 function canonicalKey(value: unknown, sets: boolean): string {
   if (Array.isArray(value)) {
@@ -26,7 +26,8 @@ export function prepareGeneration(source: GenerationInput) {
   const input = structuredClone(source), duties = canonicalDuties(input.month, input.calendar);
   if (!input.sourceRevision?.trim()) fail('missing-source-revision');
   unique(input.members.map(e => e.id), 'duplicate-member');
-  if (input.members.some(e => !e.id || [e.active, e.approved, e.eligible].some(v => typeof v !== 'boolean'))) fail('invalid-member');
+  if (input.members.some(e => !e.id || [e.active, e.approved, e.eligible].some(v => typeof v !== 'boolean') ||
+    (e.noWeekends !== undefined && typeof e.noWeekends !== 'boolean'))) fail('invalid-member');
   const members = input.members.filter(e => e.active && e.approved && e.eligible).sort((a, b) => a.id < b.id ? -1 : 1);
   const memberIds = new Set(input.members.map(e => e.id));
   const engineers = new Map(members.map((e, i) => [e.id, i]));
@@ -114,6 +115,8 @@ export function prepareGeneration(source: GenerationInput) {
       const locked = locks.get(d.id), secondary = input.secondary?.[d.id];
       const eligible = members.flatMap((m, e) => {
         if (m.id === secondary) return [];
+        // A non-weekend member never takes a weekend; a weekend locked to them is kept.
+        if (d.weekendId && m.noWeekends && locked !== m.id) return [];
         const denied = unavailable(m.id, d.id);
         const approved = locked === m.id && approvals.some(a => a.rule === 'availability' && a.dutyId === d.id && a.engineer === m.id);
         if (denied.length && !approved) return [];

@@ -3,7 +3,7 @@ import {solveProblem, type Progress} from './solver/model.ts';
 import type {SolverAdapter} from './solver/highs-adapter.ts';
 import {CORE_VERSION, MODEL_VERSION, inputKey, snapshotKey, prepareGeneration, type PreparedGeneration} from './domain.ts';
 import {requireGenerationWindow} from './calendar.ts';
-import {validatePrepared, type PrimaryAssignments} from './validate.ts';
+import {requireWeekendEligibility, validatePrepared, type PrimaryAssignments} from './validate.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export type RunOptions = {now: number; seed?: number; seconds?: number; nodes?: number};
@@ -45,6 +45,7 @@ export function finishGeneration(prepared: PreparedGeneration, raw: SolverOutput
   const assignments = mapAssignments(prepared, raw.assignment);
   const metrics = validatePrepared(prepared, assignments);
   if (JSON.stringify(metrics) !== JSON.stringify(raw.metrics)) throw new GenerationError('solver-domain-validation-mismatch');
+  requireWeekendEligibility(prepared, assignments);
   const uncovered = prepared.duties.filter(d => assignments[d.id].primary === null);
   const diagnostics: Diagnostic[] = [...prepared.diagnostics];
   for (const d of uncovered) {
@@ -85,8 +86,9 @@ export function acceptGeneration(result: GenerationResult, currentInput: Generat
     result.reproduction.modelVersion !== MODEL_VERSION) throw new GenerationError('stale-generation');
   const {resultKey, ...facts} = result;
   if (resultKey !== snapshotKey(facts)) throw new GenerationError('altered-generation-result');
-  const metrics = validatePrepared(prepareGeneration(currentInput), result.assignments);
+  const prepared = prepareGeneration(currentInput), metrics = validatePrepared(prepared, result.assignments);
   if (JSON.stringify(metrics) !== JSON.stringify(result.metrics)) throw new GenerationError('altered-generation-result');
+  requireWeekendEligibility(prepared, result.assignments);
   return result;
 }
 export function solveGeneration(adapter: SolverAdapter, request: GenerationRequest, onProgress?: (progress: GenerationProgress) => void) {

@@ -12,9 +12,9 @@ import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
-import {weekdayRotation, weekendRotation} from '@/lib/scheduling/rotation';
+import {generationRotations} from '@/lib/scheduling/rotation';
 import {publishedHistory} from '@/lib/supabase/snapshot';
-import {addDays} from '@/lib/rota/calendar-dates';
+import {addDays, dayOf} from '@/lib/rota/calendar-dates';
 import {acceptGeneration, type GenerationResult} from '@/lib/scheduling/generate';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {GenerationContext} from '@/lib/supabase/generation';
@@ -115,6 +115,16 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
   const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
     [captured, approvals, generatedMonth]);
+  // Non-weekend members, and whether one still holds a weekend the manager locked
+  // (kept, never deleted; the plan warns about it).
+  const noWeekends = useMemo(() => Object.fromEntries((captured?.input.schedule.members ?? []).filter(m => m.noWeekends)
+    .map(m => [m.id, {lockedWeekend: locks.some(l => l.engineer === m.id && [5, 6].includes(dayOf(l.dutyId)))}])), [captured, locks]);
+  // How many participants still take weekends, when someone doesn't: with one or none,
+  // Generate can leave weekends empty, so the plan says so before Generate.
+  const weekendTakers = useMemo(() => {
+    const members = (captured?.input.schedule.members ?? []).filter(m => m.active && m.approved && m.eligible);
+    return members.some(m => m.noWeekends) ? members.filter(m => !m.noWeekends).length : null;
+  }, [captured]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
   // allowed, Generate is then partial; the plan says so before Generate.
   const divisible = useMemo(() => {
@@ -276,10 +286,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       setPhase('generating');
       // Weekend and weekday rotation state comes from the published months the workspace
       // already holds; both are soft objectives, so the checked save does not revalidate them.
-      const eligible = confirmed.generationInput.members.filter(m => m.active && m.approved && m.eligible).map(m => m.id);
+      // Non-weekend members are left out of the weekend rotation (see generationRotations).
       const history = latest.current.snapshot ? publishedHistory(latest.current.snapshot, month) : [];
       const generationInput: GenerationInput = {...confirmed.generationInput,
-        weekendRotation: weekendRotation(history, eligible, month), weekdayRotation: weekdayRotation(history, eligible, month)};
+        ...generationRotations(history, confirmed.generationInput.members, month)};
       const active = createGenerationWorker(now); worker.current = active;
       let generated: GenerationResult;
       try {
@@ -339,7 +349,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
-    locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, noWeekends, weekendTakers, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

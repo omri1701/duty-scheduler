@@ -2,7 +2,7 @@ export * from './types.ts';
 export {canonicalDuties, coverageStart, halfUnits, handover, requireGenerationWindow} from './calendar.ts';
 export {CORE_VERSION, MODEL_VERSION, inputKey, prepareGeneration} from './domain.ts';
 export {validateGeneration} from './validate.ts';
-export {weekdayRotation, weekendRotation} from './rotation.ts';
+export {generationRotations, weekdayRotation, weekendRotation} from './rotation.ts';
 export type {PublishedMonth} from './rotation.ts';
 export type {PrimaryAssignments} from './validate.ts';
 export {acceptGeneration, createGenerationRequest, solveGeneration} from './generate.ts';

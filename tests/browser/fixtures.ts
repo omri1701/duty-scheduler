@@ -66,7 +66,7 @@ export class Backend {
     const state = fromSnapshot(this.raw, ids.admin);
     const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
     const metadata = this.allocations.get(month);
-    const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved'}));
+    const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved', ...(m.no_weekends ? {noWeekends: true} : {})}));
     return {revision: this.raw.revision, actualAtMs: this.generationNow, coverageStartMs: coverageStart(month, calendar),
       generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: this.events.length ? `events-${this.events.length}` : 'empty-events', actual: {events: this.events},
       ...(this.replanBlocked !== undefined ? {replanBlocked: this.replanBlocked} : {}),
@@ -178,6 +178,10 @@ export class Backend {
       expect(admin).toBe(true);
       const member=this.raw.members.find(m=>m.id===p.p_member&&m.is_temporary)!;
       expect(member).toBeTruthy();member.name=String(p.p_name).trim();
+    } else if (name === 'duty_set_no_weekends') {
+      expect(admin).toBe(true); expect(typeof p.p_no_weekends).toBe('boolean');
+      const member = this.raw.members.find(m => m.id === p.p_member && m.status === 'approved')!;
+      expect(member).toBeTruthy(); member.no_weekends = p.p_no_weekends as boolean;
     } else if (name === 'duty_rename_self') {
       this.raw.members.find(m => m.id === user)!.name = p.p_name as string;
     } else if (name === 'duty_review_member') {

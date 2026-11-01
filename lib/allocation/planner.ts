@@ -2,9 +2,13 @@ import {sliceClaim} from '../compensation/index.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
 import {equalShares, fitPartition, partitionable} from './fit.ts';
-import {ceilings, context, grain, type Context} from './model.ts';
+import {availability, ceilings, context, grain, type Context} from './model.ts';
 import {validateDraft} from './edits.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
+
+/** A non-weekend member's standing extra (decision 2026-11-01): +1 Permanent point
+ * every month for skipping weekends. Proposed by default, editable that month. */
+export const NON_WEEKEND_UNITS = 2;
 
 /** Per-person changes worth keeping across proposals: the hand changes, pairs and
  * the confirmed ordinary baseline (immutable while duties and participants stand). */
@@ -27,6 +31,11 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
  *    temporary credit (`uneven`).
  * 3. Locks are floors: a member below them takes temporary work from the member
  *    with most points (most senior on ties), as part of the automatic balance.
+ * 4. Each non-weekend member the manager has not edited gets +1 Permanent
+ *    (`NON_WEEKEND_UNITS`) as a hand change, which the automatic balance takes from
+ *    the others as usual. It is left out when it would break a floor or the month
+ *    cap, exceed the member's availability, find no counterpart, or leave an exact
+ *    month only partly schedulable.
  * `retained` hand changes and pairs of members still present are reapplied
  * when they fit the new proposal; otherwise the plain proposal stands. A
  * retained baseline that is the same partition keeps its arrangement, so a
@@ -114,18 +123,33 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
       transfers: deriveTransfers(input.seniority, changes, pairs), uneven: unevenTransfers(input.seniority, weights, baseline, changes),
       sourceKey: c.key, ...(Object.keys(hand).length ? {hand: Object.keys(hand)} : {})};
   };
-  let draft = build({}, []);
+  const fits = (hand: Hand) => Object.entries(hand).every(([id, ch]) => ch.permanent >= -Math.min(baseline[id], offered[id]) &&
+    baseline[id] + ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
+  let draft = build({}, []), hand: Hand = {}, pairs: Pair[] = [];
   if (retained) {
-    const hand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
-    const pairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
-    const fits = Object.entries(hand).every(([id, ch]) => ch.permanent >= -Math.min(baseline[id], offered[id]) &&
-      baseline[id] + ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
-    if (fits && Object.keys(hand).length) {
+    const keptHand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
+    const keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
+    if (fits(keptHand) && Object.keys(keptHand).length) {
       // The automatic balance around the retained changes must fit too (a permanent
       // point never below anyone's floor); otherwise the plain proposal stands.
-      const kept = build(hand, pairs);
-      try {validateDraft(c, input.seniority, kept); draft = kept;} catch {/* the plain proposal */}
+      const kept = build(keptHand, keptPairs);
+      try {validateDraft(c, input.seniority, kept); hand = keptHand; pairs = keptPairs; draft = kept;} catch {/* the plain proposal */}
     }
+  }
+  // A manager's edit of a non-weekend member (even back to zero) keeps them in the hand
+  // state, so the default is only added where no one has decided otherwise.
+  const noWeekends = new Set(input.schedule.members.filter(m => m.noWeekends).map(m => m.id)), available = availability(c);
+  for (const id of input.seniority) {
+    if (!noWeekends.has(id) || hand[id]) continue;
+    const next = {...hand, [id]: {temporary: 0, permanent: NON_WEEKEND_UNITS}};
+    if (!fits(next) || offered[id] + NON_WEEKEND_UNITS > available[id]) continue;
+    const {unplaced} = balanceChanges(c, input.seniority, baseline, offered, next);
+    if (unplaced.temporary || unplaced.permanent) continue;
+    // Like a repayment step, the default never leaves an exact month only partly schedulable.
+    const proposed = build(next, pairs);
+    if (exact(draft.targetsUnits) && !exact(proposed.targetsUnits)) continue;
+    try {validateDraft(c, input.seniority, proposed);} catch {continue;}
+    hand = next; draft = proposed;
   }
   return {draft, projection: c.projection};
 }

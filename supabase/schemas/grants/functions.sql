@@ -200,3 +200,9 @@ GRANT EXECUTE ON FUNCTION duty_private.replanned_versions(text) TO authenticated
 
 REVOKE ALL ON FUNCTION public.duty_replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_replanned_versions(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_no_weekends(uuid, boolean, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_no_weekends(uuid, boolean, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) TO authenticated;

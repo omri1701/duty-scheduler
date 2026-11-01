@@ -118,6 +118,8 @@
     "schemas/functions/duty_private/balance.sql",
     "schemas/functions/public/duty_balance.sql",
     "schemas/functions/public/duty_replanned_versions.sql",
+    "schemas/functions/duty_private/set_no_weekends.sql",
+    "schemas/functions/public/duty_set_no_weekends.sql",
     "schemas/grants/functions.sql",
     "schemas/grants/tables.sql"
   ],
