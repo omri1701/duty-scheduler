@@ -589,7 +589,7 @@ the existing 30-second mechanism; no push/email notifications are sent.
 
 ## Published duty edit
 
-Migration `20261031230637_published_duty_edit.sql` adds the admin-only checked RPC
+Migration `20261101202324_published_duty_edit.sql` adds the admin-only checked RPC
 `duty_edit_published_duty(p_publication uuid,p_day date,p_primary uuid,p_extra_points numeric,
 p_saturday_extra_points numeric,p_kind text,p_revision bigint,p_override_reason text)`.
 It requires an active approved admin and the last accepted revision, and refuses a
@@ -627,7 +627,7 @@ reconciled by the existing pointer trigger (the requester's duty invalidates the
 request; the counterpart's asks the new engineer). New points invalidate a pending
 request that includes the duty, because consent was given at the earlier points. A
 later month that already repays a debt keeps its version. Editing the duty back holds that
-repayment (no double charge). Migration `20261101120101_published_edit_lifecycle.sql`
+repayment (no double charge). Migration `20261101202325_published_edit_lifecycle.sql`
 adds these lifecycle rules. Regressions: `supabase/tests/published-edit.sql` and
 `supabase/tests/published-edit-lifecycle.mjs` (empty disposable LOCAL, rolled back).
 

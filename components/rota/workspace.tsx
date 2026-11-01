@@ -33,14 +33,14 @@ import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import { useWorkspaceDraft } from '@/hooks/use-workspace-draft';
 import {useAllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import {AllocationDialog} from './allocation-dialog';
-import {AllocationOutcome} from './allocation-outcome';
-import {allocationTotals} from '@/lib/allocation/review';
+import {allocationTotals, repaymentsTaken} from '@/lib/allocation/review';
 import {useIsraelToday} from '@/hooks/use-israel-today';
 import { useCalendarInteractions } from '@/hooks/use-calendar-interactions';
 import { fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics, visibleCalendarBlocks } from '@/lib/rota/workspace-data';
+import {userMessage} from '@/lib/messages';
 export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
@@ -125,6 +125,24 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const generationClosed = allocation.closed;
   const confirmedTotals = allocation.captured?.allocation ? allocationTotals(allocation.captured.input, allocation.captured.allocation, allocation.captured.assignments) : null;
   const allocationMismatch = !!confirmedTotals?.rows.some(r => r.assigned !== r.target);
+  const captured = allocation.captured;
+  const taken = useMemo(() => !!captured?.allocation && !captured.sourcePublicationId && repaymentsTaken(captured.input, captured.allocation), [captured]);
+  // Plan the month is where a generated month is reviewed; the toolbar marks waiting notes.
+  const outcome = allocation.outcome?.generated ? allocation.outcome : null;
+  const reviewNotes = !outcome || !confirmedTotals ? 0 : confirmedTotals.rows.filter(r => r.assigned !== r.target || outcome.backToBack[r.id]).length +
+    (confirmedTotals.uncovered.length ? 1 : 0) + (allocation.result && !allocation.result.search.allStagesProved ? 1 : 0);
+  // Why Publish is disabled, in one line: who differs from the saved plan, and open duties.
+  const unassigned = metrics.owned.length - metrics.assigned;
+  // Before Generate the calendar already says to generate; the line starts once there is a result to publish.
+  const publishBlockers = metrics.assigned && (monthDetails.generated || unassigned === 0) ? [
+    ...(confirmedTotals?.rows.filter(r => r.assigned !== r.target).map(r => t(`${nickname(r.id)}: ${r.assigned / 2} scheduled, plan says ${r.target / 2}`,
+      `${nickname(r.id)}: שובצו ${r.assigned / 2}, בתוכנית ${r.target / 2}`)) ?? []),
+    ...(unassigned > 0 ? [t(`${unassigned} without a primary`, `${unassigned} ללא שיבוץ`)] : []),
+    // A new plan for a published month replaces its entries on Publish; when that is no longer
+    // possible (the month started, or a later month repays from it) Publish says why before the click.
+    ...(captured?.allocation && !captured.sourcePublicationId && allocation.replanBlocked ? [userMessage(allocation.replanBlocked, t)] : []),
+    ...(taken ? [t('A month published since this plan was confirmed repays the same debt. Open the plan and confirm it again', 'חודש שפורסם אחרי שהתוכנית אושרה מחזיר את אותו חוב. יש לפתוח את התוכנית ולאשר אותה שוב')] : []),
+  ] : [];
   const { selected, setSelected } = draft.editor;
   const interactions = useCalendarInteractions({
     remote,
@@ -165,7 +183,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
       toast.success(t('Constraints saved.', 'האילוצים נשמרו.'));
       return true;
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(userMessage((e as Error).message, t));
       return false;
     }
   }
@@ -274,14 +292,14 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         <InspectionWarning environment={remote.environment} lang={lang}/>
         {remote?.error && (
           <div className="warning-note" role="alert">
-            {remote.error}
+            {userMessage(remote.error, t)}
             <Button
               variant="ghost"
               onClick={() =>
                 remote
                   .refresh()
                   .then(() => remote.clearError())
-                  .catch((e) => toast.error(e.message))
+                  .catch((e) => toast.error(userMessage(e.message, t)))
               }
             >
               {t('Refresh', 'רענון')}
@@ -307,6 +325,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               busy={allocation.busy}
               generationClosed={generationClosed}
               allocationMismatch={allocationMismatch}
+              reviewNotes={reviewNotes}
+              publishBlocked={publishBlockers.join(' · ')}
               metrics={metrics}
               blockCount={metrics.owned.length}
               t={t}
@@ -318,7 +338,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               onCancelDraft={() => setCancelDraftMonth(month)}
               onReopen={async () => {
                 if (!publication) return;
-                try {await remote.restore(publication)} catch (e) {toast.error((e as Error).message)}
+                try {await remote.restore(publication)} catch (e) {toast.error(userMessage((e as Error).message, t))}
               }}
               onPublish={() => setPublishOpen(true)}
             />
@@ -328,7 +348,10 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               style={{ display: tab === 'schedule' ? undefined : 'none' }}
             >
               {isManager && generationClosed && monthDetails.status === 'draft' && <p className="generation-cutoff-note">{t('Coverage has started. Use manual assignments or swaps; generation is closed.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות; השיבוץ האוטומטי נסגר.')}</p>}
-              {isManager && viewingDraft && <AllocationOutcome flow={allocation} state={state} lang={lang} t={t}/>}
+              {isManager && viewingDraft && !remote.readOnly && !!publishBlockers.length && <p className="publish-blocked-note" role="note">
+                <span>{t('Publish waits: ', 'הפרסום ממתין: ')}{publishBlockers.join(' · ')}</span>
+                {confirmedTotals && <Button size="sm" variant="link" disabled={allocation.busy} onClick={allocation.show}>{t('Open plan', 'פתיחת התוכנית')}</Button>}
+              </p>}
               <div className="workspace-grid">
                 <WorkspaceCalendar
                   state={state}
@@ -476,7 +499,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           setCancelDraftMonth(null);
           setCalendarChoice({month, status: 'published', version: 'draft', mine: false});
           toast.success(t('Published schedule restored.', '\u05d4\u05dc\u05d5\u05d7 \u05e9\u05e4\u05d5\u05e8\u05e1\u05dd \u05e9\u05d5\u05d7\u05d6\u05e8.'));
-        } catch (e) {toast.error((e as Error).message)}
+        } catch (e) {toast.error(userMessage((e as Error).message, t))}
       }}/>
       <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
       <MonthSettingsDialog

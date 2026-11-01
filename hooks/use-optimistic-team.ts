@@ -8,7 +8,8 @@ const sameOrder = (ids: string[], team: Engineer[]) =>
 
 // Store only order: profile/role/active changes always come from current props.
 export function useOptimisticTeam(team: Engineer[], revision: number, readOnly: boolean,
- save: (team: Engineer[]) => boolean | void | Promise<boolean | void>, failureMessage: string) {
+ save: (team: Engineer[]) => boolean | void | Promise<boolean | void>, failureMessage: string,
+ describe: (error: unknown) => string | undefined = () => undefined) {
  const [optimistic, setOptimistic] = useState<{ids: string[]; revision: number} | null>(null);
  const [saving, setSaving] = useState(false);
  const lock = useRef(false);
@@ -35,7 +36,8 @@ export function useOptimisticTeam(team: Engineer[], revision: number, readOnly: 
    return true;
   } catch (error) {
    setOptimistic(current => current === operation ? null : current);
-   toast.error(failureMessage, {description: error instanceof Error ? error.message : undefined});
+   // The caller says why in the user's language; the raw server text is never shown.
+   toast.error(failureMessage, {description: describe(error)});
    return false;
   } finally {
    lock.current = false;

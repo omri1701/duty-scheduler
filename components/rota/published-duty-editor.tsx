@@ -3,6 +3,7 @@ import {useRef,useState} from 'react';
 import {Copy,ArrowLeftRight} from 'lucide-react';
 import {toast} from 'sonner';
 import {shortDate} from '@/lib/date-format';
+import {userMessage} from '@/lib/messages';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
 import {EditorDialog} from '@/components/rota/editor-dialog';
@@ -48,7 +49,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
   if(lock.current||busy||!ready||!publication)return;
   lock.current=true;setPending(true);
   try{const result=await remote.editPublishedDuty(publication,row.day,edit);toast.success(t(`Published version ${result.version}.`,`פורסמה גרסה ${result.version}.`));onClose()}
-  catch(e){toast.error((e as Error).message)}
+  catch(e){toast.error(userMessage((e as Error).message,t))}
   finally{lock.current=false;setPending(false)}
  }
  function extraField(label:string,value:string,set:(v:string)=>void){

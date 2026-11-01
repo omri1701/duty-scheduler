@@ -151,7 +151,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
   if(failure!=='external success'){
    await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
    await expect(page.locator('[data-sonner-toast]')).toContainText(failure==='network'?'לא ניתן לשנות את הסדר. נסו שוב.':'Could not reorder. Try again.');
-   await expect(page.locator('[data-sonner-toast]')).toContainText(failure==='network'?'Service temporarily unavailable.':'Workspace changed. Refresh and try again.');
+   await expect(page.locator('[data-sonner-toast]')).toContainText(failure==='network'?'לא ניתן היה להתחבר לשרת':'changed in another tab');
   }else await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
   await page.waitForTimeout(350);
   const frames=await finishRecording(page);
@@ -186,7 +186,7 @@ test('failed keyboard reorder retains focus and respects reduced motion',async({
  const initial=await order(page),handle=rows(page).first().locator('.team-grip');
  backend.failNextSave=true;
  await handle.focus();await page.keyboard.press('ArrowDown');
- await expect(page.locator('[data-sonner-toast]')).toContainText('Synthetic stale revision');
+ await expect(page.locator('[data-sonner-toast]')).toContainText('changed in another tab');
  await expect.poll(()=>order(page)).toEqual(initial);
  await expect(handle).toBeFocused();
  expect(await rows(page).evaluateAll(els=>els.flatMap(el=>el.getAnimations()).length)).toBe(0);

@@ -103,6 +103,7 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   const priority = (t: Token) => isRepayment(t) || reverseClaim(t) ? 1 : t.trail.length && t.origin !== t.carrier ? 2 : 0;
   const plan: CompiledPlan = {repayments: [], deferred: [], intents: [], funding: [], unfundedUnits: {}};
   const reserved: {claim: ClaimRef; units: number}[] = [];
+  let provenanceReview = false;
   for (const id of c.ids) {
     let capacity = capacityUnits[id] ?? 0;
     plan.unfundedUnits[id] = draft.targetsUnits[id] - capacity;
@@ -118,17 +119,34 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
       if (!isRepayment(paid) && paid.trail.length && paid.origin !== paid.carrier) route.push({fromId: paid.origin, toId: paid.carrier,
         units: funded, kind: 'temporary', transferIds: paid.trail,
         ...(paid.claim ? {deferredClaim: ref(paid.claim)} : {})});
+      // A route back to its own carrier (C gave a point permanently, then was handed
+      // one): permanent legs owe nothing, so those out of C are dropped (decision
+      // 2026-11-01). A debt of C's own that returns to C can't be funded by C's work.
+      while (route.length && route[0].fromId === id) {
+        if (route[0].kind !== 'permanent') {
+          provenanceReview = true;
+          diagnostics.push({code: 'review-circular-route', certainty: 'fact', engineer: id, units: funded});
+          route.length = 0; break;
+        }
+        route.shift();
+      }
       if (route.length) plan.funding.push({carrierId: id, units: funded, route});
     }
   }
   // A new temporary C->D burden can fund D's existing debt to C. Reserve that
   // debt oldest first instead of posting an opposing claim that would cancel it
   // immediately on publication, before any of the repayment work has completed.
-  let provenanceReview = false;
+  // The same holds for a deferred repayment (decision 2026-10-31): when B's lowered
+  // target hands B's repayment to C over to D, and D owes C too, the point is D's
+  // own repayment to C. B's debt stays open, D's drops, nothing new is owed to D.
+  // Permanent legs before it owe nothing (decision 2026-11-01): when A gives C a
+  // point permanently and C hands that point to D, it is still C's own work, so D
+  // repays C with it as if C had handed over its own share.
   for (const funding of plan.funding) {
-    const reverse = funding.route.filter(t => t.kind === 'temporary' && !t.deferredClaim &&
+    const reverse = funding.route.filter(t => t.kind === 'temporary' &&
       c.projection.projected.claims.some(c => c.debtorId === t.toId && c.creditorId === t.fromId));
-    if (reverse.length && (funding.route.length !== 1 || reverse[0].toId !== funding.carrierId)) {
+    if (reverse.length && (reverse.length !== 1 || reverse[0] !== funding.route.at(-1) || reverse[0].toId !== funding.carrierId ||
+      funding.route.slice(0, -1).some(t => t.kind !== 'permanent'))) {
       provenanceReview = true;
       diagnostics.push({code: 'review-compound-reverse-obligation', certainty: 'fact', units: funding.units});
       continue;
@@ -173,6 +191,19 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   });
   const normalized = normalize([...c.projection.projected.claims, ...additions],
     new Set(c.projection.actual.members.filter(m => m.active).map(m => m.id))).claims;
+  // The new temporary work must not net away a debt another month's pending repayment is
+  // reserved on today: publishing would hold that repayment, and the checked RPC refuses it
+  // (review-existing-reservation-normalization). Say so before Generate (decision 2026-11-01).
+  const located = (claims: readonly ClaimRef[], ref: ClaimRef) => claims.some(k => k.debtorId === ref.debtorId && k.creditorId === ref.creditorId &&
+    k.path.length === ref.path.length && ref.path.every((p, i) => p.lotId === k.path[i].lotId && p.offset >= k.path[i].offset &&
+      p.offset + p.units <= k.path[i].offset + k.path[0].units && p.offset - k.path[i].offset === ref.path[0].offset - k.path[0].offset));
+  const published = normalize([...c.projection.actual.claims, ...additions],
+    new Set(c.projection.actual.members.filter(m => m.active).map(m => m.id))).claims;
+  if (c.projection.actual.contributions.some(k => k.status === 'pending' &&
+    located(c.projection.actual.claims, k.claim) && !located(published, k.claim))) {
+    provenanceReview = true;
+    diagnostics.push({code: 'review-existing-reservation-normalization', certainty: 'fact'});
+  }
   for (const intent of plan.intents) {
     if (!intent.deferredClaim) continue;
     const addition = additions[temporaryIntents.indexOf(intent)], id = addition.path[0].lotId;

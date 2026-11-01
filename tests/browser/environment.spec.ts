@@ -22,7 +22,7 @@ for(const {name,url,origin,badge} of [
   if(badge==='PROD'){
    expect(backend.calls.every(c=>c.name==='duty_load')).toBe(true);
    await expect(page.getByRole('note')).toContainText('not database-enforced');
-   await expect(page.getByRole('button',{name:'Regenerate',exact:true})).toBeDisabled();
+   await expect(page.getByRole('button',{name:'Review plan',exact:true})).toBeDisabled();
    const actions=page.getByRole('button',{name:'Month actions'});
    if(await actions.isVisible()){
     await actions.click();

@@ -13,6 +13,7 @@ type Operation<Args, Returns = null> = {Args: Args; Returns: Returns};
 export type Functions = {
   duty_load: Operation<Record<string, never>, unknown>;
   duty_balance: Operation<Record<string, never>, unknown>;
+  duty_replanned_versions: Operation<{p_month: string}, unknown>;
   duty_generation_context: Operation<Revision & {p_month: string}, unknown>;
   duty_confirm_allocation: Operation<Revision & {p_month: string; p_allocation: AllocationDraft;
     p_locks: NonNullable<GenerationInput['locks']>; p_approvals: Approval[]; p_fingerprint: string}, unknown>;
@@ -36,7 +37,7 @@ export type Functions = {
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;
-export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
+export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
 export type MutationArgs<N extends MutationName> = Omit<Functions[N]['Args'], 'p_revision'>;
 
 export function errorMessage(error: unknown, fallback: string): string {

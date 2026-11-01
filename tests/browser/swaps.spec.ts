@@ -19,6 +19,22 @@ test('published drag and keyboard request cancellation do not edit duties', asyn
   expect(backend.raw.assignments.find(d => d.day === '2026-11-02' && d.publication_id)!.primary_id).toBe(ids.a);
 });
 
+test('a swap the server would refuse is disabled with a note before the click', async ({page, openApp, backend}) => {
+  // Decision 2026-11-01: the requester's own availability and a second weekend are checked before Confirm Request.
+  backend.raw.constraints.push({member_id: ids.a, day: '2026-11-05', kind: 'no', note: ''});
+  for (const d of backend.raw.assignments.filter(d => d.day === '2026-11-13')) d.primary_id = ids.a;
+  await openApp('a');
+  await duty(page, '2026-11-02').click(); await duty(page, '2026-11-05').click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('note')).toHaveText('You marked 5 Nov 2026 unavailable. Choose another duty.');
+  await expect(page.getByRole('button', {name: 'Confirm Request'})).toBeDisabled();
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await duty(page, '2026-11-02').click(); await duty(page, '2026-11-06').click();
+  await expect(dialog.getByRole('note')).toHaveText('This swap would give you a second weekend this month. Choose another duty.');
+  await expect(page.getByRole('button', {name: 'Confirm Request'})).toBeDisabled();
+  expect(backend.calls.filter(c => c.name === 'duty_request_swap')).toHaveLength(0);
+});
+
 test('consent gates admin review; rejection, approval and invalidation update each identity', async ({page, browser, openApp, backend}) => {
   await openApp('a');
   // Separate contexts are essential: sign-in state must not leak between identities.
@@ -56,7 +72,7 @@ test('consent gates admin review; rejection, approval and invalidation update ea
     await duty(page, '2026-11-03').click(); await duty(page, '2026-11-02').click(); await confirmRequest(page);
     backend.invalidated = true;
     await b.reload(); await b.getByRole('button', {name: 'Accept', exact: true}).click();
-    await expect(b.getByText('This request was invalidated because its published duties are no longer eligible.', {exact: true})).toBeVisible();
+    await expect(b.getByText('This swap request no longer applies: its duties changed. Ask for a new swap.', {exact: true})).toBeVisible();
     await page.reload(); await expect(page.getByText('Invalidated', {exact: true})).toBeVisible();
   } finally {await bc.close(); await ac.close();}
 });

@@ -1,6 +1,9 @@
 import {test, expect, ids, MONTH, type Backend} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
+import {record} from '../../lib/compensation';
+import {readGenerationContext} from '../../lib/supabase/generation';
+import {proposeAllocation, transferAllocation, persistedDraft} from '../../lib/allocation';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -11,7 +14,7 @@ function acceptedDraft(backend: Backend) {
   backend.raw.assignments.push({id: 'accepted', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: ids.admin, secondary_id: ids.a, title: '', extra_points: 0, points: 1, locked: false, manager_override: false});
 }
 async function openPlan(page: import('@playwright/test').Page) {
-  await page.getByRole('button', {name: /^(Generate month|Regenerate)$/}).click();
+  await page.getByRole('button', {name: /^(Generate month|Review plan)$/}).click();
   await expect(page.getByRole('dialog', {name: 'Plan the month'})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
 }
@@ -27,6 +30,7 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   await expect(first.locator('.plan-chip.temporary')).toHaveText('−1 temporary');
   await expect(page.getByRole('button', {name: '0.5', exact: true})).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+  await expect(page.getByRole('dialog').getByRole('note').filter({hasText: 'Generate will leave a gap'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(values.first()).toHaveText(String(original));
   await page.getByRole('button', {name: '0.5', exact: true}).click();
@@ -37,8 +41,10 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   await expect(first.locator('.plan-chip.permanent')).toHaveText('+0.5 permanent');
   await expect(values.first()).toHaveText(String(original + .5));
   // A half point is placed with a counterpart at once; whole-point duties make it
-  // partial at Generate, which never blocks the plan.
+  // partial at Generate, which never blocks the plan. The plan says so first.
   await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  const gap = page.getByRole('dialog').getByRole('note').filter({hasText: 'Generate will leave a gap'});
+  await expect(gap).toHaveText('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.');
   await page.locator('.plan-row').nth(1).getByRole('button', {name: 'Decrease Permanent · Alex Atlas', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await expect(page.getByRole('dialog')).toContainText('Permanent');
@@ -208,11 +214,15 @@ for (const [width, lang] of [[320, 'he'], [375, 'en'], [1440, 'en']] as const) {
 test('opening the plan runs no Worker; a target above availability warns on its row without blocking', async ({page, backend, openApp}) => {
   fresh(backend);
   backend.raw.constraints = Array.from({length: 30}, (_, i) => ({member_id: ids.a, day: `2026-11-${String(i + 1).padStart(2, '0')}`, kind: 'no' as const, note: 'Synthetic vacation'}));
+  // Blair is available only for 1–5 November: five points fit, but only three without back-to-back days.
+  backend.raw.constraints.push(...Array.from({length: 25}, (_, i) => ({member_id: ids.b, day: `2026-11-${String(i + 6).padStart(2, '0')}`, kind: 'no' as const, note: 'Synthetic vacation'})));
   let workers = 0; page.on('worker', () => {workers++;});
   await openApp(); await openPlan(page);
-  const alex = member(page, 'Alex Atlas');
+  const alex = member(page, 'Alex Atlas'), blair = member(page, 'Blair Birch');
   await expect(alex.row.getByRole('note')).toHaveText('Availability allows about 0');
   await expect(page.locator('.allocation-row-warning')).toHaveCount(1);
+  expect(await targetOf(blair)).toBeGreaterThan(3);
+  await expect(blair.row.getByRole('note')).toHaveText('This needs some back-to-back days');
   await alex.row.getByRole('button', {name: 'Decrease Temporary · Alex Atlas', exact: true}).click();
   await expect(alex.target).toHaveText('3');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
@@ -256,6 +266,74 @@ const member = (page: import('@playwright/test').Page, name: string) => {
   return {row, target: row.locator('output'), permanent: row.locator('.plan-chip.permanent')};
 };
 const targetOf = async (m: ReturnType<typeof member>) => Number(await m.target.textContent());
+
+test('a plan the ledger can’t book says why before Generate and keeps it disabled; Make permanent books it', async ({page, backend, openApp}, info) => {
+  test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');
+  // Alex owes Avery one point and the plan already repays it. One more point from Avery would
+  // hand Alex back more than Alex owes: named here, never a generic failure after Generate.
+  fresh(backend);
+  const members = Object.values(ids).filter(id => id !== ids.pending);
+  backend.events = record(record([], {operation: {kind: 'members', members: members.map(id => ({id, active: true}))}, sourceKey: 'members', at: 1, actor: ids.admin}).events,
+    {operation: {kind: 'claim', debtorId: ids.a, creditorId: ids.admin, units: 2}, sourceKey: 'owed', at: 2, actor: ids.admin, reason: 'Reviewed fixture'}).events;
+  await openApp(); await openPlan(page);
+  const avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas'), generate = page.getByRole('button', {name: 'Confirm & generate', exact: true});
+  await avery.row.getByRole('rowheader').dragTo(alex.row);
+  const note = page.getByRole('dialog').locator('.warning-note');
+  await expect(note).toHaveText('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.');
+  await expect(generate).toBeDisabled(); await expect(page.getByRole('button', {name: 'Save', exact: true})).toBeDisabled();
+  await page.locator('.allocation-toast').getByRole('button', {name: 'Make permanent', exact: true}).click();
+  await expect(note).toHaveCount(0); await expect(generate).toBeEnabled();
+});
+
+/** A reopened published month whose copy has everyone's points dragged onto Avery Admin. The copy
+ * keeps the source key of the ledger it was published from, as a real restored copy does. */
+function reopenedCopy(backend: Backend) {
+  fresh(backend);
+  const {input} = readGenerationContext(backend.generationEnvelope(MONTH));
+  let draft = proposeAllocation(input).draft;
+  for (const id of input.seniority.filter(id => id !== ids.admin)) {
+    draft = transferAllocation(input, draft, {id: `to-avery-${id}`, fromId: id, toId: ids.admin, units: draft.targetsUnits[id], kind: 'temporary'}).draft;
+  }
+  backend.allocations.set(MONTH, {draft: {...persistedDraft(draft), sourceKey: 'published-ledger'}, locks: [], approvals: []});
+  backend.sourcePublication = 'published-v1'; backend.replanBlocked = null;
+  return draft;
+}
+
+test('a reopened published month is changed from the ledger without its own entries: − on the member who took every point works', async ({page, backend, openApp}) => {
+  // The reported December (2026-11-01): − was blocked and "Team data changed" looped.
+  const draft = reopenedCopy(backend), avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas');
+  await openApp(); await openPlan(page);
+  await expect(avery.target).toHaveText(String(draft.targetsUnits[ids.admin] / 2));
+  await expect(alex.target).toHaveText('0');
+  await avery.row.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  // The point goes back to whoever dragged it last; nothing is refreshed.
+  await expect(avery.target).toHaveText(String(draft.targetsUnits[ids.admin] / 2 - 1));
+  await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+});
+
+test('a published month that a later month already repays from says so and takes no edits', async ({page, backend, openApp}) => {
+  reopenedCopy(backend); backend.replanBlocked = 'review-replan-later:2026-12';
+  await openApp(); await openPlan(page);
+  await expect(page.getByRole('dialog').getByRole('note').filter({hasText: 'already planned'}))
+    .toHaveText('December 2026 is already planned from this month’s points, so change December 2026 first.');
+  await expect(member(page, 'Avery Admin').row.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true})).toBeDisabled();
+  // Regenerating the published plan as it is stays available.
+  await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+});
+
+test('a new plan for a published month that can no longer be replaced says why Publish waits before the click', async ({page, backend, openApp}) => {
+  // Review of #62: the month's only version was deleted after its first duty was worked, so
+  // publishing the new plan would erase the worked days' debts (review-replan-started).
+  fresh(backend); await openApp(); await openPlan(page);
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeEnabled();
+  backend.replanBlocked = 'review-replan-started';
+  await page.reload();
+  await expect(page.locator('.publish-blocked-note')).toContainText('This month has started, so its plan can’t be replaced.');
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+});
 
 test('dragging one engineer onto another gives one exact temporary point, then Make permanent persists and Undo restores', async ({page, backend, openApp}, info) => {
   test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');
@@ -342,13 +420,16 @@ test('long-press opens Give 1 point to… in Hebrew RTL on touch', async ({page,
 test('real generation Worker saves a verified partial, retains targets and emergency cover, and blocks publication', async ({page, backend, openApp}) => {
   fresh(backend, 2);
   backend.raw.assignments.push({id: 'emergency', publication_id: null, day: '2026-11-02', end_day: '2026-11-03', primary_id: null, secondary_id: ids.a, title: '', extra_points: 0, points: 1, manager_override: false});
+  // Two members now cover every other date (extra weekends and back-to-back days are last resorts); nobody can take the 18th.
+  backend.raw.constraints.push(...[ids.admin, ids.a].map(member_id => ({member_id, day: '2026-11-18', kind: 'no' as const, note: 'Synthetic vacation'})));
   await openApp(); await openPlan(page);
   const targets = await page.locator('.plan-row output').allTextContents();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  await expect(page.getByText('Partial · Requires Manager Resolution', {exact: true})).toBeVisible();
-  await expect(page.locator('.allocation-uncovered')).toContainText('Uncovered dates');
+  // No result panel: one line says why Publish waits and leads into the plan, where the notes are.
+  await expect(page.locator('.publish-blocked-note')).toContainText('1 without a primary');
   await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(1);
   expect(backend.raw.assignments.find(d => d.day === '2026-11-02')!.secondary_id).toBe(ids.a);
   const confirm = backend.calls.find(c => c.name === 'duty_confirm_allocation')!, save = backend.calls.find(c => c.name === 'duty_save_generation')!;
   expect(save.params.p_revision).toBe(Number(confirm.params.p_revision) + 1);
@@ -356,8 +437,11 @@ test('real generation Worker saves a verified partial, retains targets and emerg
   const metrics = validateGeneration({month: MONTH, sourceRevision: String(context.revision), calendar: {}, members: context.facts.members, constraints: context.facts.constraints,
     targets: Object.fromEntries(Object.entries(allocation.targetsUnits).map(([id, u]) => [id, u / 2])), secondary: {'2026-11-02': ids.a}}, save.params.p_assignments as Parameters<typeof validateGeneration>[1]);
   expect(metrics.deficits.some(n => n > 0)).toBe(true);
-  await page.getByRole('button', {name: 'Review allocation', exact: true}).click();
+  await page.getByRole('button', {name: 'Open plan', exact: true}).click();
   await expect(page.locator('.plan-row output')).toHaveText(targets);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await expect(dialog.getByRole('note').filter({hasText: 'Uncovered: '})).toContainText('18 Nov');
+  await expect(dialog.locator('.allocation-row-warning').filter({hasText: /scheduled, plan says/})).not.toHaveCount(0);
 });
 
 test('fractional monotonic time generates and saves through a real Worker', async ({page, backend, openApp}) => {
@@ -371,9 +455,39 @@ test('fractional monotonic time generates and saves through a real Worker', asyn
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   expect(workers).toBe(1); // Only Generate solves; the allocation plan is plain arithmetic.
-  await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled(); await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
   expect(backend.raw.months[0].generated).toBe(true);
+});
+
+test('after Generate the plan is the review: a saved change shows why Publish waits and the plan names the difference', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  // The toast leads into the plan; nothing is waiting yet, so no dot and no Publish note.
+  await expect(page.getByRole('button', {name: 'Review', exact: true})).toBeVisible();
+  const review = page.getByRole('button', {name: 'Review plan', exact: true});
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(0);
+  await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeEnabled();
+  // The plan stays editable after Generate: one point less for Avery, saved without regenerating.
+  await review.click();
+  await expect(dialog.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
+  await expect(dialog.locator('.allocation-row-warning')).toHaveCount(0);
+  const avery = await targetOf(member(page, 'Avery Admin'));
+  await dialog.getByRole('button', {name: 'Decrease Temporary · Avery Admin', exact: true}).click();
+  await expect(member(page, 'Avery Admin').row.locator('.allocation-row-warning')).toHaveText(`${avery} scheduled, plan says ${avery - 1}`);
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
+  // Publish re-checks against the saved plan and says why it waits, with a way back in.
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+  await expect(page.locator('.publish-blocked-note')).toContainText(`Avery: ${avery} scheduled, plan says ${avery - 1}`);
+  await expect(page.locator('.generate-month-action .review-dot')).toHaveCount(1);
+  await page.locator('.publish-blocked-note').getByRole('button', {name: 'Open plan', exact: true}).click();
+  await expect(member(page, 'Avery Admin').row.locator('.allocation-row-warning')).toHaveText(`${avery} scheduled, plan says ${avery - 1}`);
 });
 
 test('cancelling synchronous WASM retains accepted assignments and a fresh Worker can retry', async ({page, backend, openApp}) => {
@@ -428,6 +542,28 @@ test('a real Worker asset failure retains the accepted draft and recovers withou
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
   expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
+});
+
+test('an internal solver failure shows a short message and keeps the detail in the console', async ({page, backend, openApp}) => {
+  fresh(backend); acceptedDraft(backend);
+  // A Worker that reports an internal solver error, as "Objective mismatch" did.
+  await page.addInitScript(() => {
+    class FailingWorker {
+      onmessage: ((event: {data: unknown}) => void) | null = null; onerror: (() => void) | null = null;
+      postMessage(message: {id: number}) {setTimeout(() => this.onmessage?.({data: {id: message.id, type: 'error', message: 'Objective mismatch'}}), 10);}
+      terminate() {}
+    }
+    Object.defineProperty(window, 'Worker', {value: FailingWorker});
+  });
+  const logged: string[] = []; page.on('console', m => {if (m.type() === 'error') logged.push(m.text());});
+  await openApp(); await openPlan(page);
+  const before = structuredClone(backend.raw.assignments);
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  const alert = page.getByRole('dialog', {name: 'Plan the month'}).getByRole('alert');
+  await expect(alert).toHaveText('Generate couldn’t finish. Try again, or adjust the plan.', {timeout: 15_000});
+  expect(logged.some(text => text.includes('Generate failed') && text.includes('Objective mismatch'))).toBe(true);
+  expect(backend.raw.assignments).toEqual(before);
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(0);
 });
 
 test('a refresh that cannot read the month offers Try again in place of Confirm', async ({page, backend, openApp}) => {
@@ -578,7 +714,7 @@ for (const count of [12, 24]) {
     const solve = performance.now(); await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
     await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
     const generationMs = performance.now() - solve;
-    await expect(page.getByText('All duties covered', {exact: true})).toBeVisible();
+    await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled(); await expect(page.locator('.publish-blocked-note')).toHaveCount(0);
     await info.attach('allocation-timing.json', {body: JSON.stringify({count, project: info.project.name, proposalMs, generationMs, includes: 'Worker initialization, domain work, intercepted checked RPCs and UI feedback'}), contentType: 'application/json'});
   });
 }

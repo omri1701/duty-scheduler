@@ -17,7 +17,7 @@ import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation
 
 const input = {schedule, seniority, events, now}; // schedule omits confirmed targets
 const proposal = proposeAllocation(input);
-const ceilings = allocationCeilings(input); // live inline availability check
+const ceilings = allocationCeilings(input); // spaced ceiling: no back-to-back duties
 const edited = editAllocation(input, proposal.draft, {engineer: seniority[0], deltaUnits: -2, kind: 'temporary'});
 // Actual generated/manually reviewed assignments, including null primary holes.
 const final = compileAllocation(input, edited.draft, actualDraftAssignments);
@@ -30,9 +30,21 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 
 `proposeAllocation(input)` is plain, deterministic arithmetic:
 
+**One extra each, before anyone gets two (decision 2026-11-01).** A member's
+extra point this month is either a larger ordinary share (a remainder) or a point
+of repayment. Nobody gets a second remainder until every eligible member has one
+extra, and among a creditor's debtors nobody repays a second point before every
+one of them has repaid one (2 below).
+
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
-   newest members. Availability and locks never change the baseline.
+   newest members who are not repaying this month, and only then, newest first,
+   to repayers. Availability and locks never change the baseline's shares. Only
+   when a lock makes that arrangement impossible to schedule (a locked 2.5-point
+   holiday day needs an odd share) do two members swap shares, nearest in that
+   order first (decision 2026-11-01). Who repays
+   depends on the creditors' shares and the reverse, so the proposal settles both
+   (a creditor's own remainder adds to its relief).
    The database accepts only an exact, minimum-squared-cost partition of the
    indivisible duty weights (`duty_private.allocation_baseline`). Weights follow
    the canonical calendar: a weekday is 1 + extra, a holiday weekend touched by a
@@ -42,7 +54,7 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    weekends split by hand: equal 4.5 each is impossible), `fitPartition` in
    `lib/allocation/fit.ts` runs a small exact
    search over duty counts, with no solver, and the larger shares go to the
-   newest members. The dialog then shows one note naming who gets more. The
+   same members as remainders. The dialog then shows one note naming who gets more. The
    search is capped; a pathological calendar shows a clear message
    (`allocation-fit-limit`) instead of freezing. The database's own optimality
    proof is slower: about 8 s locally for that 14-day case, which is the
@@ -69,10 +81,29 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
    proposals, edits and review recompute it from the baseline and the
    per-person changes under the current seniority, and the checked database
    derives the same list and refuses any other.
-2. **Repayment.** Open projected obligations are repaid oldest first, in whole
-   steps, capped by the debtor's availability ceiling (below) and by the
-   creditor's locked floor. An older claim that does not fit is skipped and stays
-   open; a younger one may still progress. There is no fixed monthly cap.
+2. **Repayment in turns.** Each creditor's relief this month (its share above its
+   locks, so it never goes below them or below 0, and never work carried as uneven
+   credit) is repaid by its own debtors **in turns**: one point at a time to the
+   debtor who has repaid least of its current debt to that creditor (repayment
+   work already published counts), **newest member first** on ties, each from its
+   own oldest debt, within its availability ceiling (below). A second round starts
+   only after every debtor of that creditor who still owes has had one, and the
+   turns carry on into the next month. Creditors are served in the order of their
+   oldest debt, each with its own turns. A single debtor repays as much as the
+   relief allows (A owes B two points: A +2, B −2 this month). The rest carries
+   over and is never forgiven. Examples: in the reported January, Shira and Omer
+   repay Local Admin one point each, instead of Tamar repaying both; B, C and D
+   owing A two points each, with A's share at three points, repay one point each
+   in November and again in December; with A's share at two, D and C repay in
+   November and B goes first in December.
+   A turn never leaves the month unable to give every member exactly its points
+   (decision 2026-11-01, `partitionable`): each member keeps its locked duties and
+   every other duty must go to someone. Half a point changes which members need
+   a half duty (a split weekend half, or a holiday day worth x.5 points), and the
+   month has only so many, so a step that would break the split shrinks to half a
+   point or passes to the next debtor. A creditor relieved down to 0.5 in a month
+   with no half duty keeps 1 instead. Before, such proposals were partial at
+   Generate.
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.
@@ -80,12 +111,16 @@ const binding = await bindAllocation(input, edited.draft, actualDraftAssignments
 Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
 
-**Availability ceiling.** `allocationCeilings` gives each member the most units of
-duties they may take: covered duties they are available for and that are not
-locked to someone else, with no two back-to-back duties unless approved, and never
-below their own locked points. It ignores weekend caps, neighbors and shared
-capacity, so it is a live hint, not a proof. The dialog recomputes it on every
-change and shows one short warning on a row whose target exceeds it. It never
+**Availability ceilings.** `availableCeilings` (`lib/allocation/model.ts`) gives each
+member the units of every duty they may take: covered duties they are available
+for, not locked to someone else and not overlapping their own duty in a neighbouring
+month (touching it is a back-to-back day), never below their own locked points. Generate fills such a target with
+back-to-back duties and extra weekends as a last resort, so this is the hard
+ceiling. `allocationCeilings` is the spaced ceiling: the same duties without two
+back-to-back duties unless approved; automatic repayments stay within it. Both
+ignore shared capacity, so they are live hints, not proofs. The dialog recomputes
+them on every change; above the hard ceiling a row warns "Availability allows
+about N", between the two it notes "This needs some back-to-back days". Neither
 blocks; Generate remains the exact check.
 
 ### Superseded: solver-proven allocation preview
@@ -109,7 +144,8 @@ every edit: lock floors first, then each kind's hand total (permanent first) is
 placed on members without hand changes in duty steps, refreshing the ranking after
 each step: receivers have the fewest points, newest first; givers the most points,
 senior first; a member already balancing the other kind comes last; locks are
-never crossed. So the same per-person state gives the same table whatever the
+never crossed. Receivers take one step per round (decision 2026-10-31): a −2 gives
+one point to each of two members rather than two to one. So the same per-person state gives the same table whatever the
 click order, an automatic point never sticks on a member later edited by hand (a
 minus on a member holding only an automatic point removes it and the point moves
 on), and hand changes never cancel each other implicitly; a drag routes a specific
@@ -138,6 +174,11 @@ the same ceiling.
 total, before and after Generate and after Save → reopen. An edit or drag whose
 counterpart no one can absorb is refused, never left unplaced
 (`unplaced-allocation-change`; above the total, `allocation-above-month-total`).
+One exception (decision 2026-11-01): when no one free can take a − on a member who
+received dragged points (or a + on one who gave them), the member's own drags of
+that kind are undone, newest first, so the points go back to whoever they came
+from. A month where everyone dragged their points onto one member can then be
+lowered with − instead of being stuck.
 Before, a two-member team could press + until 77 / 26 points, and a − with no
 counterpart left the plan short. No member's net Temporary exceeds the month total
 either way (`temporary-above-month-total`; the database checks it too). With these,
@@ -188,7 +229,11 @@ trail. Third-party deferral creates creditor-to-carrier intent, preserving the
 original debt rather than creating a second debtor shortfall. Permanent transfers
 remain exempt from new claims and do not settle/forgive the old debt. Temporary
 work that can repay an existing reverse obligation is classified as repayment,
-preventing premature opposing-claim cancellation on publication.
+preventing premature opposing-claim cancellation on publication. The same holds for
+a deferred repayment (decision 2026-10-31): when B's lowered target hands B's
+repayment to C over to D, and D owes C too, the point repays D's own oldest open
+debt to C. B's debt stays open, D's drops, nothing new is owed to D, and the units
+repaid to C are unchanged. Only when D's open debt runs out does the plan need review.
 
 Funded temporary intent is normalized in a pure preview before repayment source
 slices are selected. This matters because a chain bypass consumes the oldest
@@ -200,7 +245,12 @@ intent retains its original `deferredClaim`; `normalizedDeferredClaims` separate
 explains the FIFO slices consumed by normalization. Original counterparts and
 transfer IDs remain available rather than being rewritten to the final worker.
 Ambiguous compound routes remain unbound and require explicit review before
-confirmation. `unfundedUnits` retains all target shortfalls, and unassigned burden
+confirmation. Permanent legs owe nothing (decision 2026-11-01): a reverse leg after
+only permanent legs is the debtor's own repayment (A gives C a point for good, C
+hands it to D who owes C: D repays C), and a route back to its own carrier drops
+the permanent legs out of it. Plan the month names any review code with its own
+note and keeps **Confirm & generate** disabled until the plan can be booked, so a
+plan never fails as a whole after Generate. `unfundedUnits` retains all target shortfalls, and unassigned burden
 creates no new claim.
 Partial compilation uses exactly the assigned units, funding ordinary work before
 oldest repayment and temporary burden. It does not optimize or fill missing work.
@@ -283,6 +333,9 @@ and provenance are unchanged.
 ```sh
 node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
 node --test tests/allocation-fuzz.test.mjs   # FUZZ_SEQ, FUZZ_LEN, FUZZ_SEED widen the bounded run
+node --test tests/allocation-months.test.mjs   # several months published in a row; MONTHS_SEQ, MONTHS_LEN
+node --test tests/allocation-lifecycle.test.mjs   # extremes, back to fair, re-plan, delete, later months; LIFE_SEQ, LIFE_LEN
+node --test tests/messages.test.mjs   # every error code and server sentence has an English and Hebrew message
 pnpm exec tsc --noEmit
 pnpm exec eslint lib/allocation lib/compensation/publication.ts lib/compensation/types.ts tests/allocation.test.mjs tests/allocation-binding.test.mjs
 ```

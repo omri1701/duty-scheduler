@@ -1,6 +1,6 @@
 import {context} from './model.ts';
 import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
-import {unevenTransfers} from './planner.ts';
+import {proposeAllocation, retainedChanges, unevenTransfers} from './planner.ts';
 import {inferHand} from './derive.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {inputKey} from '../scheduling/domain.ts';
@@ -23,6 +23,23 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
   }
   validateDraft(c, input.seniority, draft);
   return draft;
+}
+
+/** A confirmed plan whose repayments today's ledger no longer offers (review of #62): a month
+ * published since repays the same debt. Publish waits with this before the click instead of
+ * failing after it; opening the plan proposes again. A copy keeps its provenance (the RPC decides). */
+export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
+  try {reviewAllocation(input, saved); return false;}
+  catch (e) {return /repayment-source/.test((e as Error).message);}
+}
+
+/** A published plan reopened to change it (decision 2026-11-01): reviewed against the
+ * ledger without the month's own entries. Its repayments may name debts that net
+ * differently there; then the plan is proposed again keeping its per-person changes
+ * and drags, so the controls never lock. */
+export function reopenAllocation(input: AllocationInput, saved: AllocationDraft) {
+  try {return reviewAllocation(input, saved);}
+  catch {return proposeAllocation(input, retainedChanges(saved)).draft;}
 }
 
 /** A member's net change. A copied snapshot from before per-person changes

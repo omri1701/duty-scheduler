@@ -75,8 +75,15 @@ A wall-clock-limited unfinished search does not promise identical incumbents;
 use the recorded seed, node budget, package/runtime/environment and sufficient
 time for deterministic completed replay.
 
-Model `highs-leximin-v5` adds the cross-month weekday rotation level to the
-verified metrics and moves the sorted-gap leximin below the seed, where it only
+Model `highs-leximin-v6` turns the one-weekend cap and the ban on back-to-back
+duties into last resorts. Two counter levels sit directly below the member targets
+and above every spacing level: extra weekends (`extraWeekends`), then unapproved
+back-to-back pairs (`adjacent`). A target that needs either is now filled instead
+of leaving duties open, and a proved zero restores the old hard rows, so ordinary
+months produce exactly the v5 schedules. A back-to-back pair, approved or not, is
+no spacing gap: the minimum gap and the gap vector measure the other gaps.
+Model v5 added the cross-month weekday rotation level to the
+verified metrics and moved the sorted-gap leximin below the seed, where it only
 breaks ties: above the seed (v4) it pushed every pair towards fourteen days, so
 consecutive months repeated the same weekday pattern. v4 had added the weekend
 rotation, preferred-date and same-weekday levels and placed rotation and weekday
@@ -92,8 +99,10 @@ reproduction must use the recorded model version.
 ## Constraints, objectives and acceptance
 
 Automatic primaries respect covered-date availability, eligibility, identity
-exclusion, target ceilings, consecutive duties and one distinct weekend per
-owner month. Secondary coverage is preserved and contributes no primary points,
+exclusion, target ceilings and boundary handovers. Back-to-back duties and a
+second weekend in the owner month are last resorts: allowed only when coverage
+and the targets need them, then as few as possible (see below). Secondary coverage
+is preserved and contributes no primary points,
 weekends or gaps. Existing unavailable/inactive secondary members are flagged
 for separate publication review; unknown identities are structural errors.
 
@@ -101,7 +110,10 @@ Availability approval covers exactly the locked duty's unavailable dates.
 Consecutive approval covers an identified pair of locks. Boundary approval
 acknowledges the selected lock and the exact neighboring commitment. Additional
 weekend approval names exactly the engineer's reviewed locked weekend identities;
-it permits no third automatic weekend. There is no generic override flag.
+a further automatic weekend counts as extra. Locked duties still need these
+approvals: an unapproved locked back-to-back pair or second locked weekend is an
+invalid fixed input, in the engine and in `duty_private.generation_validate`.
+There is no generic override flag.
 
 The source adapter supplies **both** current live publications and
 existing working commitments from neighboring owners, including actual cross-month
@@ -112,20 +124,31 @@ Neighbors are constants, never returned as writable selected-month assignments.
 
 Optimization uses one optional-coverage MILP. It proves and fixes each priority
 before advancing: covered dates, marked special dates, assigned point units,
+extra weekends, unapproved back-to-back pairs,
 maximum minimum elapsed gap, weekend rotation cost, same-weekday repeats,
 cross-month weekday rotation cost, preferred date count, a seeded integer tie
 objective, then the full sorted-gap leximin as a tie-breaker. The order below
 the minimum gap is fixed in one place (the `quality` list in `solver/model.ts`).
 A combined weekend counts two dates. Missing gaps are padded with infinity;
-external-only pairs are omitted. Approved locked zero gaps remain in the
-objective. There is no average-gap or weighted-priority shortcut. Threshold/clique
+external-only pairs are omitted. Back-to-back pairs (gap 0, approved or not) are
+no gaps. There is no average-gap or weighted-priority shortcut. Threshold/clique
 search, exact capacity cuts and continuous successor flows reuse the foundation
 from PR #31, with one disposable native model per run. The rotation costs reuse
 the weekend OR columns and the assignment columns; repeat counters are continuous
-columns added only once spacing is proved. A nonnegative level whose incumbent is
+columns added only once spacing is proved. Extra weekends cost 1 + 2 + … + k for
+k weekends above a member's allowance (one, or their approved locked weekends), so
+they spread: two members with four weekends take two each. Both last-resort
+counters are continuous columns (`z`, `b`) added after the targets are proved. A
+proved zero bounds them at zero, which restores the hard one-weekend and
+no-adjacency rows, the clique threshold rows and the capacity cuts. Above zero,
+an engineer whose back-to-back pairs stay possible gets one threshold row per close
+pair (both duties only with another of theirs in between), locked duties no
+longer bound the minimum gap from above (back-to-back duties may fill the space
+between them), and the weekend capacity cuts are skipped. A nonnegative level whose incumbent is
 already zero is fixed by identity without a native solve. The independent
-validator recomputes the rotation, repeat, weekday-rotation and preferred facts
-from source dates, constraints and the rotation maps.
+validator recomputes the extra-weekend, back-to-back, rotation, repeat,
+weekday-rotation and preferred facts from source dates, constraints and the
+rotation maps.
 
 The default and maximum domain search budget is 30 seconds across all stages,
 including model construction. Solving stops early when finished. WASM loading,
@@ -167,7 +190,7 @@ pnpm exec tsc --noEmit
 pnpm exec eslint lib/scheduling lib/solver-spike tests/generation.test.mjs tests/rotation.test.mjs tests/fixtures/generation.mjs scripts/benchmark-generation.mjs
 pnpm build
 pnpm exec playwright test tests/browser/solver-spike.spec.ts --workers=1
-node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --scenarios=normal,availability,weighted,locked,boundary,tight,shared-shortage,small-team,larger-team,rotation,weekday-rotation --output=docs/benchmarks/generation-2026-10-31-v5.jsonl
+node scripts/benchmark-generation.mjs --seconds=30 --repeat=3 --scenarios=normal,availability,weighted,locked,boundary,tight,shared-shortage,small-team,larger-team,rotation,weekday-rotation --output=docs/benchmarks/generation-2026-10-31-v6.jsonl
 ```
 
 Regression coverage includes real 12-engineer months, three years of owned
@@ -178,32 +201,42 @@ automatic seeds, deterministic completed replay, weekend and weekday rotation
 state from published months, the rotation, weekday and weekday-rotation levels
 against the exhaustive oracle, seed variety of assignments and gap patterns
 across a whole ordinary month, and a simulated sequence of generated months in
-which every member covers all five weekdays within one cycle. An independent
+which every member covers all five weekdays within one cycle. Last-resort
+regressions cover a 25-point target (exactly the 23 unavoidable back-to-back pairs),
+a two-member month (weekends 2/2, all five weekdays each, one pair), zero pairs and
+extra weekends on twelve seeds of the ordinary month, and free approved pairs and
+weekends. An independent
 exhaustive oracle checks small real-month scenarios against the quality vector
-(coverage, special, units, minimum gap, rotation, repeats, weekday rotation,
-preferred); the retained solver tests, which run without seeded ties, also
+(coverage, special, units, extra weekends, back-to-back pairs, minimum gap,
+rotation, repeats, weekday rotation, preferred); the retained solver tests, which run without seeded ties, also
 enumerate the full leximin on varied weighted, partial, boundary and
 fixed-exception instances.
 Existing application engine and snapshot regressions still exercise the legacy behavior.
 
-Recorded Node 23 / Windows x64 / Intel i9-10900KF results for model v5 (three
+Recorded Node 23 / Windows x64 / Intel i9-10900KF results for model v6 (three
 sequential runs per scenario, one fresh WASM instance per scenario; node limit
-1,000,000, seed 17; the first run of each scenario includes JIT warm-up), with the
-v4 range of the same day for comparison:
+1,000,000, seed 17; the first run of each scenario includes JIT warm-up), with v5
+(develop) measured in the same session for comparison:
 
-| Scenario | Engineers | v5 end-to-end | v4 end-to-end | Outcome |
+| Scenario | Engineers | v6 end-to-end | v5 end-to-end | Outcome |
 |---|---:|---:|---:|---|
-| Ordinary | 12 | 1.11–1.52 s | 1.42–3.73 s | Complete, all objectives proved, 0 repeats |
-| Availability/preferences | 12 | 0.96–1.02 s | 1.11–1.16 s | Complete, all objectives proved |
-| Weighted specials and splits | 12 | 1.25–1.32 s | 1.27–1.29 s | Complete, all objectives proved |
-| Locks | 12 | 0.84–0.88 s | 0.85–0.90 s | Complete, all objectives proved |
-| Live/working boundaries | 12 | 1.87–2.14 s | 2.61–2.76 s | Complete, all objectives proved, 0 repeats |
-| Tight availability | 12 | 0.14–0.15 s | 0.16–0.20 s | Complete, all objectives proved |
-| Shared opportunity shortage | 12 | 1.11–1.14 s | 1.92–2.22 s | Optimal partial, 27/30 dates |
-| Five weekends, small team | 2 | 0.15 s | 0.15–0.16 s | Optimal partial, 25/31 dates (11 unavoidable repeats) |
-| Larger team | 24 | 0.36–0.38 s | 0.38–0.41 s | Complete, all objectives proved |
-| Weekend rotation state | 12 | 6.29–6.67 s | 1.09–1.25 s | Complete, all objectives proved; one turn forced by the minimum gap |
-| Weekday rotation state | 12 | 1.80–2.18 s | — | Complete, all objectives proved; one covered weekday forced |
+| Ordinary | 12 | 1.37–1.79 s | 1.24–1.71 s | Complete, all objectives proved, 0 repeats |
+| Availability/preferences | 12 | 1.00–1.04 s | 1.05–1.12 s | Complete, all objectives proved |
+| Weighted specials and splits | 12 | 1.19–1.44 s | 0.69–0.76 s | Complete, all objectives proved |
+| Locks | 12 | 0.62–0.64 s | 0.87–0.95 s | Complete, all objectives proved |
+| Live/working boundaries | 12 | 2.05–2.27 s | 2.09–2.15 s | Complete, all objectives proved, 0 repeats |
+| Tight availability | 12 | 0.17–0.19 s | 0.16–0.17 s | Complete, all objectives proved |
+| Shared opportunity shortage | 12 | 1.32–1.41 s | 1.32–1.33 s | Optimal partial, 27/30 dates |
+| Five weekends, small team | 2 | 0.24–0.27 s | 0.16–0.18 s | Complete (v5: 25/31 dates); weekends 3/2, one back-to-back pair, 11 unavoidable repeats |
+| Larger team | 24 | 0.56–0.57 s | 0.40–0.45 s | Complete, all objectives proved |
+| Weekend rotation state | 12 | 5.42–5.46 s | 7.47–7.56 s | Complete, all objectives proved; one turn forced by the minimum gap |
+| Weekday rotation state | 12 | 1.96–2.03 s | 2.15–2.23 s | Complete, all objectives proved; one covered weekday forced |
+
+Every scenario except the small team needs no last resort: both counter levels
+prove zero by identity or within 0.07 s, and with seeds 17 and 5 all ten such
+fixtures return exactly the v5 assignments. The weighted month's later stages
+take about 0.5 s longer (the capacity cuts now join after the last-resort levels
+instead of at the root); the weekend rotation fixture got 2 s faster.
 
 Below the seed the gap-count stages only confirm the incumbent, so most fixtures
 got faster (their LP relaxations are pinned by the fixed seed row). The weekend
@@ -214,8 +247,8 @@ the gap pattern: on the ordinary month twelve seeds give twelve different sorted
 gap vectors at the same eleven-day minimum with no repeat, where v4 gave
 `[11,11,12,12,12×5,14,14,14,14,15]` days for every seed. Raw inputs are
 reproducible through `tests/fixtures/generation.mjs`; hashes, settings, stage
-proofs and measurements are in the [v5 benchmark record](benchmarks/generation-2026-10-31-v5.jsonl)
-(the [v4](benchmarks/generation-2026-10-31.jsonl) and [v2](benchmarks/generation-2026-10-24.jsonl)
+proofs and measurements are in the [v6 benchmark record](benchmarks/generation-2026-10-31-v6.jsonl)
+(the [v5](benchmarks/generation-2026-10-31-v5.jsonl), [v4](benchmarks/generation-2026-10-31.jsonl) and [v2](benchmarks/generation-2026-10-24.jsonl)
 records are kept). Every sample passed
 independent domain validation and disposed its native model. WASM linear memory
 ranged from about 20 to 61 MiB and stayed constant across each scenario's warm

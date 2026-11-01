@@ -111,7 +111,7 @@ test('a newer version from another tab names the stale editor and blocks Publish
   rows.find(d => d.day === '2026-11-03')!.primary_id = ids.a;
   backend.publish('2026-11', rows);
   await page.getByRole('button', {name: 'Publish change'}).click();
-  await expect(page.getByText('Synthetic stale publication. Refresh first.', {exact: true}).first()).toBeVisible();
+  await expect(page.getByText('A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.', {exact: true}).first()).toBeVisible();
   const review = page.getByRole('dialog', {name: 'Review and copy'});
   await expect(review.getByRole('alert')).toContainText('This month changed after you opened this duty');
   await expect(review.getByRole('button', {name: 'Publish change'})).toBeDisabled();

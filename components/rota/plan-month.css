@@ -65,6 +65,7 @@
 .plan-adjust button:disabled{opacity:.3;background:transparent;box-shadow:none}
 .plan-points{min-width:44px;text-align:center;font-size:22px;font-weight:700;letter-spacing:-.5px;color:var(--plan-ink)}
 .plan-row .allocation-row-warning{flex-basis:100%;margin:0;padding-inline-start:39px}
+.plan-row .allocation-row-note{flex-basis:100%;margin:0;padding-inline-start:39px;font-size:12px;color:var(--plan-muted)}
 
 .allocation-dialog .allocation-attention{margin-top:12px;border-radius:10px}
 .allocation-dialog .allocation-details{margin-top:12px;padding:6px 16px;border:1px solid var(--plan-line);border-radius:14px;background:var(--plan-card)}
@@ -95,3 +96,10 @@
 }
 @media(max-width:380px){.allocation-dialog .allocation-footer small{display:none}}
 @media(prefers-reduced-motion:reduce){.plan-pie>svg,.plan-pie-detail,.plan-chip{animation:none}}
+
+/* After Generate: the toolbar's Review plan marks notes waiting in the plan, and one
+   line says why Publish waits, with a way into the plan. */
+.workflow-actions>.generate-month-action{position:relative}
+.generate-month-action .review-dot{position:absolute;top:6px;inset-inline-end:6px;width:7px;height:7px;border-radius:50%;background:#d08a2e}
+.publish-blocked-note{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#956223}
+.publish-blocked-note button{height:auto;padding:0;font-size:12px}

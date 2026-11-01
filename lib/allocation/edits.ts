@@ -145,7 +145,23 @@ function applyEdit(c: Context, input: AllocationInput, source: AllocationDraft, 
   // A whole step that would overshoot the ceiling is refused, never half applied.
   if (next.permanent > permanentCeiling(c.total, source, edit.engineer)) throw Error('permanent-above-month-total');
   if (source.offeredUnits[edit.engineer] + next.temporary + next.permanent < c.locked[edit.engineer]) throw Error('edit-below-locked-points');
-  return rebuild(c, input, source, {...hand, [edit.engineer]: next}, source.pairs);
+  const edited = {...hand, [edit.engineer]: next};
+  try {return rebuild(c, input, source, edited, source.pairs);} catch (error) {
+    if (!(error instanceof Error) || error.message !== 'unplaced-allocation-change') throw error;
+    // No one free can take it, e.g. everyone else dragged their points onto this member
+    // (decision 2026-11-01): undo the member's own drags of that kind, newest first, so
+    // the points go back to whoever they came from (a − on a receiver, a + on a giver).
+    const pairs = structuredClone(source.pairs), back = {...edited};
+    let left = Math.abs(edit.deltaUnits);
+    for (const p of [...pairs].reverse()) {
+      if (!left || p.kind !== edit.kind || (edit.deltaUnits < 0 ? p.toId : p.fromId) !== edit.engineer) continue;
+      const n = Math.min(left, p.units), other = edit.deltaUnits < 0 ? p.fromId : p.toId, was = back[other] ?? {...source.changes[other]};
+      back[other] = {...was, [edit.kind]: was[edit.kind] + (edit.deltaUnits < 0 ? n : -n)};
+      p.units -= n; left -= n;
+    }
+    if (left) throw error;
+    return rebuild(c, input, source, back, pairs.filter(p => p.units));
+  }
 }
 
 /** One exact manual transfer, such as dragging one member onto another: a
