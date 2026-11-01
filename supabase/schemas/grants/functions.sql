@@ -111,7 +111,7 @@ REVOKE ALL ON FUNCTION duty_private.compensation_lot(jsonb, jsonb, text, text, t
 REVOKE ALL ON FUNCTION duty_private.compensation_members() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_normalize(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_now() FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION duty_private.compensation_publication(text, uuid, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_publication(text, uuid, jsonb, boolean, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reconcile(jsonb, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_record(jsonb, text, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
@@ -194,6 +194,12 @@ GRANT EXECUTE ON FUNCTION duty_private.balance() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.duty_balance() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_balance() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) TO authenticated;
 
 REVOKE ALL ON FUNCTION duty_private.replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION duty_private.replanned_versions(text) TO authenticated;

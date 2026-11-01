@@ -319,9 +319,11 @@ jobs:
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swaps.sql
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/balance.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/published-edit.sql
           # Parity runs the real compensation/settlement SQL RPC fixtures too.
           node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
           node supabase/tests/generation.mjs supabase_db_duty-scheduler
+          node supabase/tests/published-edit-lifecycle.mjs supabase_db_duty-scheduler
           node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
           node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
           node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler

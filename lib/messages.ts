@@ -8,6 +8,9 @@ export function userMessage(raw: string, t: Translate): string {
   const message = raw.replace(/^publication-binding:/, '');
   if (/Service temporarily unavailable|^(TypeError: )?Failed to fetch$|^NetworkError when attempting to fetch resource\.?$/.test(message)) return t('Couldn’t reach the server. Check your connection, then try again.', 'לא ניתן היה להתחבר לשרת. יש לבדוק את החיבור ולנסות שוב.');
   if (/The team data changed\. Refresh|stale revision|Workspace changed/.test(message)) return t('The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', 'הלוח השתנה בכרטיסייה אחרת או על ידי מישהו אחר, ולכן רוענן. כדאי לבדוק ולנסות שוב.');
+  // A published duty edit names its own refusals; checked before the generic "changed" ones.
+  const edited = EDITS.find(([pattern]) => pattern.test(message));
+  if (edited) return t(edited[1], edited[2]);
   // Schedule and calendar rules (validate.ts, generation_validate, the checked RPCs).
   if (/neighbor-conflict|Boundary conflict|Invalid boundary/.test(message)) return t('A locked duty touches the same person’s duty in the next or previous month. Review it in the calendar, or unlock it.', 'תורנות נעולה צמודה לתורנות של אותו אדם בחודש הקודם או הבא. יש לבדוק אותה בלוח או לבטל את הנעילה.');
   if (/lock-changed|Explicitly review locks|Invalid lock review|Missing lock|Lock requires its existing primary/.test(message)) return t('A locked duty changed. Review the locks in the calendar, then try again.', 'תורנות נעולה השתנתה. יש לבדוק את הנעילות בלוח ולנסות שוב.');
@@ -72,6 +75,19 @@ export function userMessage(raw: string, t: Translate): string {
   }
   return message;
 }
+
+// duty_edit_published_duty's own sentences.
+const EDITS: readonly (readonly [RegExp, string, string])[] = [
+  [/This publication changed\. Refresh first/, 'A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.', 'פורסמה גרסה חדשה של החודש או שנפתחה טיוטה. יש לסגור את התורנות, לפתוח אותה שוב ואז לערוך.'],
+  [/^Nothing changed$/, 'Nothing changed. Choose another engineer or other extra points.', 'לא השתנה דבר. יש לבחור מהנדס אחר או נקודות נוספות אחרות.'],
+  [/Choose Temporary or Permanent/, 'Choose Temporary or Permanent.', 'יש לבחור זמני או קבוע.'],
+  [/Keep the override reason under 500 characters/, 'Keep the override reason under 500 characters.', 'נימוק החריגה צריך להיות קצר מ־500 תווים.'],
+  [/Publish or cancel the open draft before editing published duties/, 'This month has an open draft. Publish or cancel it, then edit the published duty.', 'לחודש יש טיוטה פתוחה. יש לפרסם או לבטל אותה, ואז לערוך את התורנות שפורסמה.'],
+  [/Choose a duty in this published month/, 'Choose a duty from this published month.', 'יש לבחור תורנות מהחודש שפורסם.'],
+  [/This duty has no primary engineer/, 'This duty has no engineer, so it can’t be edited here.', 'לתורנות הזו אין מהנדס, ולכן לא ניתן לערוך אותה כאן.'],
+  [/Choose an active approved engineer/, 'Choose an active team member.', 'יש לבחור חבר צוות פעיל.'],
+  [/Extra points must be 0 to 20 in half points/, 'Use 0 to 20 extra points in steps of 0.5.', 'יש להזין 0 עד 20 נקודות נוספות בקפיצות של 0.5.'],
+];
 
 const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   // Solver and validation internals: Generate didn't finish; nothing was saved.

@@ -14,6 +14,7 @@ import type {AllocationDraft} from '@/lib/allocation/types';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {PrimaryAssignments} from '@/lib/scheduling/validate';
 import {balance as readBalance} from '@/lib/supabase/balance';
+import type {PublishedEdit} from '@/lib/supabase/published-edit';
 import {replannedVersions} from '@/lib/supabase/versions';
 
 export function useTeamWorkspace(){
@@ -80,6 +81,7 @@ export function useTeamWorkspace(){
    const result=await workspace.mutate('duty_resolve_swap',{p_request:id,p_action:action,p_override_reason:overrideReason});
    if(result==='invalidated')throw Error('This request was invalidated because its published duties are no longer eligible.');
   },
+  editPublishedDuty:(publication:string,day:string,edit:PublishedEdit)=>workspace.mutate('duty_edit_published_duty',{p_publication:publication,p_day:day,p_primary:edit.primary,p_extra_points:edit.extra,p_saturday_extra_points:edit.saturdayExtra,p_kind:edit.kind,p_override_reason:edit.overrideReason.trim()}),
   review:(person:string,status:'approved'|'rejected')=>workspace.mutate('duty_review_member',{p_member:person,p_status:status}).then(()=>{}),
   addTemporaryMember:(name:string)=>workspace.mutate('duty_add_temporary_member',{p_name:name}),
   renameTemporaryMember:(person:string,name:string)=>workspace.mutate('duty_rename_temporary_member',{p_member:person,p_name:name}).then(()=>{}),

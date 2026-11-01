@@ -49,3 +49,8 @@ test('the plan\'s own notes pass through unchanged', () => {
   // No month reserves the repayment any more: named on its own, not the generic Refresh (review of #62).
   assert.equal(userMessage('review-replan-later:unknown', english), 'A month that is no longer published already repaid from this month’s points, so its plan can’t be replaced. Change single duties in the calendar instead.');
 });
+
+test('a published duty edit names its own refusal, not the generic refresh', () => {
+  assert.equal(userMessage('This publication changed. Refresh first.', english), 'A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.');
+  assert.equal(userMessage('Nothing changed', english), 'Nothing changed. Choose another engineer or other extra points.');
+});
