@@ -36,7 +36,6 @@ export const SPEC_MAP = {
   'components/auth/': startup,
   'components/environment-indicator.tsx': ['environment', 'startup'],
   'components/rota/allocation-dialog.tsx': allocation,
-  'components/rota/allocation-outcome.tsx': allocation,
   'components/rota/availability-editor.tsx': editors,
   'components/rota/calendar-presentation.tsx': calendar,
   'components/rota/duty-editor.tsx': editors,

@@ -29,8 +29,8 @@ workload, removes locks, relaxes automatic constraints or rewrites another month
 
 The system supports the typical team of approximately 12 engineers, smaller and
 larger teams, and two-engineer teams. Support includes producing a verified,
-clearly labeled partial draft when full coverage is impossible. A small team
-does not receive an automatic exemption from weekend or consecutive-duty rules.
+clearly labeled partial draft when full coverage is impossible. Back-to-back
+duties and extra weekends are last resorts for every team size (section 10.1).
 
 ### 1.1 Requirements and engineering decisions
 
@@ -81,7 +81,7 @@ The existing PR branch was inspected before editing.
 | Incomplete coverage | Unassigned duties and warnings are possible, but without the new target/partial-result model. | Best possible valid partial draft; uncovered dates, per-engineer shortfalls and optimization status. |
 | Seniority | Soft multipliers from 1.00 to 1.22 plus remainder preferences. | Approximately equal ordinary allocations; seniority only breaks equivalent choices in favor of newer engineers. |
 | History/compensation | Month-independent balance; no persistent compensation ledger. | Auditable linked obligations, normalization, oldest feasible repayment and projected opening balances. |
-| Consecutive duties | Allowed; short gaps penalized softly. | Automatic consecutive duties forbidden, including boundary conflicts and separate split halves. |
+| Consecutive duties | Allowed; short gaps penalized softly. | Automatic back-to-back duties only as a last resort, minimized right below the targets (section 10.1); boundary handovers stay forbidden. |
 | Locks | Legacy optional `locked` type remains; generation ignores it and payloads do not persist locks. | Explicit persistent manager locks with specific approved exception scope. |
 | Regeneration | Replaces selected-month primaries, including manual assignments. | Before owner-month coverage starts, fresh arrangement each time; only explicit locks preserve particular primaries. Confirmed targets and other persistent inputs survive. Generate/Regenerate disabled once coverage starts; manual changes/swaps remain available. |
 | Randomness | Fresh cryptographic seed in the UI; deterministic engine seeds available. | Fresh seed on every Generate; equivalent input/version/settings/seed reproducibility. Seed acts only after higher objectives. |
@@ -162,7 +162,7 @@ Generate preserves the explicit combined/split structure and Special Blocks.
 It cannot split, merge or reweight duties to improve its result. Representation
 normalization outside Generate is allowed only when it preserves primary and
 secondary coverage, points, owner, lock/exception meaning and accounting lineage.
-In particular, separate special daily duties cannot be merged to evade adjacency.
+In particular, separate special daily duties cannot be merged to hide a back-to-back pair.
 
 The existing calendar may omit a leading Saturday row and show other neighboring
 dates read-only. Visible cells are not the ownership or solver-input authority.
@@ -247,7 +247,7 @@ locked points above target. Disable Generate and explain the repair.
 
 **Structurally valid but incomplete allocation:** weighted targets cannot all be
 attained, some engineers/dates unavailable, shared capacity insufficient,
-consecutive restrictions or weekend caps prevent full coverage. Keep Generate
+or neighboring-month handovers prevent full coverage. Keep Generate
 available; show the known limitation and produce valid partial output.
 
 Target 3 / Locked 1 leaves 2 to generate. Target 3 / Locked 3 permits no more.
@@ -279,11 +279,15 @@ unlocking; preserve secondary coverage.
 ## 5. Ordinary fairness and compensation-aware proposals
 
 > **Superseded for the allocation preview (decision 2026-10-30).** Plan the month
-> no longer solves. Its proposal is synchronous arithmetic: equal ordinary shares
-> with remainders newest first; open obligations repaid oldest first, capped by the
-> debtor's availability ceiling and the creditor's locked floor; locks as floors.
-> A simple per-member availability ceiling (available covered duties, no
-> back-to-back duties) warns inline and never blocks. Generate is the only solver
+> no longer solves. Its proposal is synchronous arithmetic: one extra point each
+> before anyone gets two (decision 2026-11-01): each creditor's relief is repaid
+> by its debtors in turns, one point at a time, newest member first, the turns
+> carrying over between months, within the debtor's availability ceiling;
+> remainders go newest first to members not repaying; locks as floors.
+> A simple per-member availability ceiling (available covered duties not locked
+> to someone else) warns inline and never blocks; a softer note says when a
+> target needs back-to-back days. Automatic repayments stay within the spaced
+> ceiling (no back-to-back duties). Generate is the only solver
 > step and the exact check, and keeps partial results. The global-model proposal
 > and feasibility proofs described in sections 5–6 below are kept as the original
 > design record. Current behavior: [ALLOCATION_PLANNER.md](ALLOCATION_PLANNER.md).
@@ -357,7 +361,9 @@ stored with the allocation so it is not recomputed later to manufacture history.
 
 Read actual obligations, simulate published work through the selected month's
 operational opening, normalize the resulting graph and propose repayment of the
-oldest feasible units. There is no fixed monthly repayment cap.
+oldest feasible units. *Superseded for the proposal (decision 2026-11-01):* each
+creditor's debtors repay in turns, one point at a time, newest member first, each
+from its own oldest debt; see `docs/ALLOCATION_PLANNER.md`.
 
 For an ordinary normalized obligation `debtor D -> creditor C`, proposed
 repayment `s` increases D's target by `s` and decreases C's by `s`.
@@ -870,10 +876,19 @@ the achieved amount or hide unfulfilled work.
   action stores the plan through the same checked confirmation without
   generating; reopening restores it.
 
-Partial output is prominently **Partial / Requires Manager Resolution**.
-A complete result can say “All duties covered”; “Optimal” is only appropriate
-for objective stages with proof. Low-level bounds and solver terms belong in
-diagnostics, not primary manager copy.
+*Decision 2026-10-31:* there is no separate result panel on the calendar. Plan
+the month is where a generated month is reviewed. After Generate a toast offers
+**Review**, the toolbar action reads **Review plan** with a dot while notes wait,
+and the plan shows short notes: per person "N scheduled, plan says M" where they
+differ and the number of back-to-back days Generate needed, and at the top the
+uncovered dates and "Best found; search limit reached." when the search stopped
+early. The manager fixes a difference by hand with Temporary or Permanent and
+Save; nothing matches the plan to the schedule automatically. When Publish is
+disabled, one line under the toolbar says why (who differs from the saved plan
+and by how much, or how many duties have no primary) with **Open plan**; Publish
+re-checks against the saved plan. “Optimal” is only appropriate for objective
+stages with proof. Low-level bounds and solver terms belong in diagnostics, not
+primary manager copy.
 
 Within the V1 generation window, the manager can change temporary/permanent
 targets, explicitly select/lock a duty including a permitted override,
@@ -907,13 +922,13 @@ events. Regeneration is not Cancel Draft and cannot discard locks.
 | Rule | Allowed manager exception |
 |---|---|
 | Availability | Only the specifically assigned/locked duty and recorded unavailable dates. |
-| Consecutive duties | Only the explicitly reviewed conflicting fixed pair involving a manager lock. Both duties must remain fixed; no automatic new adjacent assignment is authorized. |
+| Consecutive duties | Only the explicitly reviewed conflicting fixed pair involving a manager lock. Both duties must remain fixed. An approved pair costs nothing; Generate's own back-to-back duties never need an approval (section 10.1). |
 | Adjacent-month consecutive conflict | The selected-month manager lock may explicitly acknowledge the identified fixed neighboring duty. Do not edit or mark the neighbor overridden. |
-| Additional weekend | Only the reviewed locked weekend assignment(s); no general relaxation of the engineer's cap. |
+| Additional weekend | Only the reviewed locked weekend assignment(s); they become the engineer's free allowance. |
 | Target ceiling, eligibility, primary/secondary identity, canonical non-overlap, authorization/revision/history | No automatic or generic scheduling override. |
 
 For an engineer with approved locks on two distinct weekends, retain those
-specific weekends; do not allow the solver to add a third. Without a locked
+specific weekends; a third is an extra weekend (section 10.2). Without a locked
 weekend, the normal one-weekend allowance applies. An availability-only lock
 cannot approve a second weekend or a consecutive pair.
 
@@ -944,8 +959,8 @@ Every generated assignment, complete or partial, satisfies:
 | H2 | Assigned primary points never exceed the confirmed target; complete coverage implies every target is exact. |
 | H3 | Automatic primaries are active approved eligible members and available on all covered duty dates. |
 | H4 | Explicit primary locks and narrowly scoped approved fixed exceptions are preserved. |
-| H5 | No automatic consecutive primary duties, including conflicts with fixed context. |
-| H6 | At most one distinct primary weekend per engineer per owner month, except the explicitly approved locked weekends. |
+| H5 | No primary duty overlapping the same engineer's duty in a neighboring month. An automatic one touching it is a back-to-back day, a last resort counted with the pairs inside the month (decision 2026-11-01); a locked one, like locked consecutive pairs, needs its exact approval. |
+| H6 | Locked weekends beyond one per engineer per owner month need the explicit approval. |
 | H7 | Canonical combined/split structure, weights, actual intervals and Friday ownership remain unchanged. |
 | H8 | Other months' assignments, locks, drafts, publication pointers and history remain unchanged. |
 | H9 | Primary and secondary identities differ; valid foreign keys and other database integrity rules remain enforced. |
@@ -954,18 +969,27 @@ Every generated assignment, complete or partial, satisfies:
 Hard rules never become weighted penalties. A partial result relaxes coverage
 and target *fulfillment*, not availability, target ceilings or other invariants.
 
+*Decision 2026-10-31 (model v6):* back-to-back duties inside the month and more
+than one weekend per engineer are no longer hard rules but **last resorts**:
+Generate uses them only when coverage and the targets need them, and as few as
+possible (priorities 3a and 3b in section 11). A member may then take very many
+duties and several weekends if the confirmed targets require it. Locked duties
+still need their exact approvals (section 9.2).
+
 ### 10.1 Consecutive blocks
 
-For the same engineer, intervals that meet at a handover are consecutive.
-Forbidden automatic sequences include Monday → Tuesday, Thursday → combined
-Friday–Saturday, combined weekend → Sunday, and adjoining last/first duties
-across an owner-month boundary.
+For the same engineer, intervals that meet at a handover are consecutive
+(back-to-back): Monday → Tuesday, Thursday → combined Friday–Saturday, combined
+weekend → Sunday, split Friday → split Saturday (hand-split holiday halves too),
+and adjoining last/first duties across an owner-month boundary.
 
 A combined weekend is one block; Friday → Saturday inside that block is not
-two assignments. Split Friday and Saturday are separate blocks and cannot both
-be assigned automatically to the same engineer. Hand-split holiday halves
-follow the same rule. Explicit fixed-pair manager approval is the only permitted
-consecutive exception.
+two assignments. Inside the month, every unapproved back-to-back pair counts one
+at priority 3b, so Generate takes one only when no assignment with fewer pairs
+covers as much and meets as many targets. An explicitly approved fixed pair
+costs nothing. A back-to-back pair, approved or not, is no spacing gap (section
+11.1). Adjoining duties across an owner-month boundary stay forbidden unless the
+manager approves the locked handover.
 
 ### 10.2 Weekend capacity and small teams
 
@@ -973,10 +997,13 @@ Count distinct Friday weekend identities among primary assignments owned by the
 month. Either half consumes that weekend; emergency assignments consume none.
 The cap is not a count of daily weekend rows.
 
-With two engineers and five ordinary combined weekends, at most two distinct
-weekends can be automatically covered; the other three remain open unless
-explicit manager intervention resolves them. Weekday alternation/spacing still
-applies. The solver does not split or waive the cap to achieve full coverage.
+One weekend per engineer is the free allowance (the approved locked weekends,
+when there are more). Each weekend above it is an extra weekend at priority 3a,
+and k extra weekends cost 1 + 2 + … + k, so they spread across members. With two
+engineers and four weekends each takes two (cost 2, not 3/1 or 4/0); with five,
+three and two. Strict alternation would hand every weekend of a 26-duty month to
+one of two members, so splitting them costs one back-to-back pair, which ranks
+below the weekend split. The solver never splits a combined weekend.
 
 ### 10.3 Fixed neighboring assignments
 
@@ -1030,8 +1057,10 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 1 | Maximum calendar-day coverage | Maximize the number of owned covered dates. Combined weekends count 2; single daily blocks count 1. |
 | 2 | Special/holiday coverage | At the same date coverage, maximize covered dates explicitly marked special/holiday. |
 | 3 | Minimum missing target points | At the same first two values, minimize total unmet primary points. Never exceed an individual's target. |
+| 3a | Fewest extra weekends | Minimize the sum over members of 1 + 2 + … + k for k weekends above the member's allowance (section 10.2). |
+| 3b | Fewest back-to-back pairs | Minimize unapproved back-to-back pairs inside the month (section 10.1). |
 | 4 | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
-| 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend. |
+| 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend, counted once per weekend a member receives (an extra weekend costs the turns again). |
 | 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
 | 7 | Weekday rotation across months | Give each Sunday–Thursday duty to a member who has not covered that weekday in the current weekday cycle (section 11.4): minimize the sum, over assigned weekday duties, of the member's count for that weekday. |
 | 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |
@@ -1089,18 +1118,17 @@ entirely outside the month. An engineer with fewer than two applicable
 intervals contributes no gap; no gap is created for an unassigned duty.
 
 The primary gap objective is the minimum of these values, not their average.
-Locked fixed-pair exceptions remain in the measured list. A zero gap fixed by
-manager choice cannot be improved, but it must not be erased to claim a higher
-global minimum.
+Back-to-back pairs (zero free minutes, approved or not) are not spacing gaps:
+priority 3b already counts the unapproved ones, so the minimum gap and the gap
+vector measure the other pairs. One unavoidable pair therefore does not reduce
+everyone else's spacing to zero.
 
 For the final tie-breaker (priority 10), lexicographically maximize the sorted
 ascending gap vector among schedules equal on every higher level including the
 seed. Compare variable-length vectors padded with positive infinity for missing
 pairs; an empty pair set has a vacuous infinite minimum. Higher coverage and
 point objectives are fixed first, so this convention cannot reward leaving an
-otherwise coverable duty empty. A fixed zero gap (an approved consecutive pair)
-stays in the measured list and in the minimum, so it can never be erased to
-claim a higher global minimum.
+otherwise coverable duty empty.
 
 Use a chronological successor-arc model or an equivalent verified method for
 successive-pair gaps. Finite precomputed gap thresholds/counts can implement
@@ -1244,8 +1272,8 @@ existing full-coverage and integrity checks until the manager resolves it.
 | Nobody available on one duty | Mark its covered date(s) unassigned. Manager can deliberately assign/lock an override. |
 | Two engineers each have three distinct usable opportunities for three points | Scarcity alone is not failure. Preserve their opportunities in the global search. |
 | Two engineers need six points from the same three one-point duties | Explain the proven shared-capacity shortage and produce the best partial result. |
-| Available dates are all consecutive | Respect adjacency, leave necessary holes and show unmet points. |
-| Availability allows enough points but only through extra weekends | Enforce the cap, identify the blocked weekends and leave them uncovered. |
+| Available dates are all consecutive | Fill the target with back-to-back duties, as few as coverage allows; Plan the month notes that it needs back-to-back days. |
+| Availability allows enough points but only through extra weekends | Give the extra weekends, spread as evenly as the targets allow. |
 | Only a four-point duty is usable for a three-point target | Do not assign it; retain unmet points and consider other engineers without changing any target. |
 | A lock consumes another engineer's only slot | Keep the lock and show the resulting shortfall; a valid lock is not removed to improve coverage. |
 | Lock exceeds target or has an unauthorized fixed conflict | Structural error; repair the allocation/approval before running. |
@@ -1296,10 +1324,10 @@ availability lock is fixed authorized input, not an excluded automatic edge.
 | Target ceiling | `a[e] = sum_d(q[d] × x[e,d]) <= t[e]`. |
 | Visible shortfall | Integer `m[e] = t[e] − a[e] >= 0`. |
 | Valid lock e on d | `x[e,d] = 1`, hence `u[d] = 0`. |
-| Forbidden consecutive pair a,b | `x[e,a] + x[e,b] <= 1`, except the specifically approved fixed pair. |
+| Back-to-back pair a,b | `b[e,a] >= x[e,a] + x[e,b] - 1`, `0 <= b <= 1`, counted at priority 3b; none for the specifically approved fixed pair. A proved zero sets `b = 0`, i.e. `x[e,a] + x[e,b] <= 1`. |
 | Fixed neighboring conflict | Exclude/fix to zero the conflicting automatic variable. |
 | Weekend usage | Binary `y[e,w]` is the OR of primary assignments with Friday identity w. |
-| Ordinary weekend limit | `sum_w(y[e,w]) <= 1`. With additional approved locked weekends, constrain usage to those specific fixed weekend identities. |
+| Extra weekends | `z[e,k] >= sum_w(y[e,w]) - k`, `z >= 0`, for k from the allowance up, counted at priority 3a. A proved zero sets `z = 0`, i.e. `sum_w(y[e,w]) <=` the allowance. |
 | Month isolation | Neighbor assignments are constants, not writable variables or selected-month point totals. |
 
 An exact OR can use `y[e,w] >= x[e,d]` for each relevant d and
@@ -1307,8 +1335,8 @@ An exact OR can use `y[e,w] >= x[e,d]` for each relevant d and
 Do not count split rows as separate weekends.
 
 Structural validation precedes the model. In particular, an approved fixed
-consecutive pair is not wrongly rejected by a blanket pair constraint, and an
-unapproved pair is not silently allowed just because both assignments are locks.
+consecutive pair is not wrongly rejected or penalized, and an unapproved pair is
+not silently allowed just because both assignments are locks.
 
 An equivalent implementation can remove locked duties from free variables and
 use remaining capacity `t[e] − l[e]`; do not count locks twice.
@@ -1321,7 +1349,11 @@ In order, maximize/minimize:
 1. `C = sum_d(c[d] × (1 − u[d]))`.
 2. `H = sum_d(h[d] × (1 − u[d]))`, fixing optimal C.
 3. `U = sum_e(m[e])`, fixing optimal C and H.
-4. The maximum minimum gap from section 11 (threshold search), fixing C, H and U.
+3a. Extra weekends `sum_{e,k} z[e,k]`, then 3b. back-to-back pairs `sum b[e,a]`,
+   each fixed once proved. A proved zero bounds those columns at zero, which is
+   exactly the former hard one-weekend and no-adjacency rows.
+4. The maximum minimum gap from section 11 (threshold search), fixing C, H, U and
+   both last-resort counts. Back-to-back pairs are exempt from the gap floor.
 5. Weekend rotation cost `sum_e(turns[e] × sum_w y[e,w])`, then same-weekday
    repeats `sum_{e,wd} r[e,wd]` with continuous `r[e,wd] >= sum_{d on wd} x[e,d] − 1`,
    then the weekday rotation cost `sum_{e,d} count[e][wd(d)] × x[e,d]`, each fixed
@@ -2124,7 +2156,7 @@ ledger. Manual changes and swaps remain available under their existing rules.
 | Approved lock conflicts with an available candidate's only slot | Preserve lock, optimize remaining coverage and show scarcity. |
 | Unapproved conflicting locks | Structural error; no solver policy can choose which mandatory lock to discard. |
 | Two engineers and many weekends | Preserve the cap and return uncovered weekends; alternate feasible weekdays. |
-| Five split weekends | Separate-day consecutiveness and distinct-weekend cap may require more participants than combined weekends; do not merge them automatically. |
+| Five split weekends | Split halves taken by one member are a back-to-back pair, so Generate prefers different members; do not merge them automatically. |
 | First-of-month Saturday / year boundary / leap day | Canonical coverage/ownership remains exact; no date is duplicated or lost. |
 | Neighbor publication differs from its draft | Both bind as labeled context; neither is rewritten; only published work enters repayment projection. |
 | Preserved inactive/unavailable secondary | No primary points or spacing effect; keep publication integrity warning for separate manager review. |
@@ -2166,7 +2198,10 @@ of the UI/server time gate.
 | M3 | Target 3 with only a 4-point candidate | Candidate remains unassigned to that engineer, unmet 3 shown; other valid work generated. |
 | M4 | Two engineers target 3 each, same three separated one-point slots only | At most 3 of 6 points assigned between them; shared shortage proved when search completes; partial generation allowed. |
 | M5 | Two constrained engineers with disjoint three-slot opportunities | Preserve their scarce slots and achieve each exact 3 when the rest of the model permits full coverage. |
-| M6 | Same engineer is the only candidate for two consecutive days | At most one day assigned; no target increase or consecutive exception invented. |
+| M6 | Same engineer is the only candidate for two consecutive days | Both assigned when the target needs them, as one back-to-back pair; one day when the target needs only one; no target increase. |
+| M6a | One member with a 25-point target in a 26-duty month | Complete; exactly the 23 unavoidable back-to-back pairs and three weekends; the other member's single duty splits the run. |
+| M6b | Two members, four weekends, equal targets | Weekends 2/2 at the cost of one back-to-back pair; each member covers all five weekdays; the minimum gap stays one day. |
+| M6c | Ordinary twelve-member month | No back-to-back pair and no extra weekend on any seed; the same schedule as model v5. |
 | M7 | Fixed previous/next primary touches selected boundary duty | That engineer cannot receive the conflicting automatic duty, including Friday-owned cross-month ranges. |
 | M8 | Two engineers, five combined weekends, no exceptions | At most two weekend blocks/four weekend dates assigned automatically; remaining weekends visible. |
 | M9 | Valid locks plus scarce remaining opportunities | Every locked variable is retained; no extra work beyond target, even if keeping a lock reduces coverage. |
@@ -2193,7 +2228,7 @@ of the UI/server time gate.
 | B2 | Ordinary combined/split weekend | Combined 1 or separate 0.5/0.5; one shared Friday identity; primary-only distinct-weekend counting. |
 | B3 | 31 December 2027 / 1 January 2028, leading Saturday and leap day | Weekend entirely December-owned; no independent January Saturday; leap date covered exactly once. |
 | B4 | Special range over a weekend, +2, cross-owner | One combined 5-point holiday weekend (each date +2); split by hand it is 2.5 + 2.5; a range touching only Friday gives 3 combined and 2.5 + 0.5 split; owner-scoped dates/points preserved. |
-| B5 | Availability/consecutive manager exceptions | Specific reviewed fixed assignment/pair retained; automatic neighboring violations remain prohibited. |
+| B5 | Availability/consecutive manager exceptions | Specific reviewed fixed assignment/pair retained and unpenalized; an automatic neighboring-month handover remains prohibited. |
 | B6 | Target 3 with locks 1, 3 or 4 | Remaining 2, 0, or structural invalidity respectively; equal locks receive no extra primary points. |
 | B7 | Engineer unavailable all month; everyone unavailable on a duty | Valid targets remain unchanged; corresponding deficits and uncovered dates shown in partial output. |
 | B8 | Temporary decrease, next recipient blocked, newest reached | Skip globally blocked recipient, wrap once, preserve source/counterpart provenance and exact half units. |
@@ -2205,7 +2240,7 @@ of the UI/server time gate.
 | B14 | A duty acquired through a permanent transfer is later ordinarily replaced | Original exemption persists; the separate new ordinary transfer is classified once, not permanently exempted by duty identity. |
 | B15 | Debtor offered 5, manager temporarily confirms 4 | Assigned points never exceed 4; unperformed repayment carries forward; solver cannot restore 5. |
 | B16 | 0.5 claim, only whole-point realizable target changes | Do not round/overpay; leave 0.5 outstanding unless reviewed adjustments make it feasible. |
-| B17 | Valid locks on two explicitly approved weekends | Those weekends retained; no third automatic weekend or blanket consecutive exception. |
+| B17 | Valid locks on two explicitly approved weekends | Those weekends retained at no cost; a third automatic weekend only as an extra weekend the targets need. |
 
 ### 18.3 Compensation-accounting tests
 

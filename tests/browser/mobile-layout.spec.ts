@@ -70,7 +70,7 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
 test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone-specific controls.');
   await openApp();
-  await expect(page.getByRole('button', {name: 'Regenerate', exact: true})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeVisible();
   await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeVisible();
   await monthAction(page, 'Change month deadline');
   await expect(page.getByRole('dialog')).toBeVisible();

@@ -9,6 +9,8 @@ begin
  if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
  select * into v from public.duty_publications where id=p_publication;
  if v.id is null then raise exception 'Version no longer exists'; end if;
+ -- A version from before a re-plan can't come back: its ledger entries were reversed (decision 2026-11-01).
+ if duty_private.compensation_replanned(duty_private.compensation_state(),v.month,v.id) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(v.month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
  -- Old versions may contain adjacent coverage. Only Friday-owned rows belong
  -- to this draft; retain the original historical publication byte-for-byte.
  delete from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=v.month;

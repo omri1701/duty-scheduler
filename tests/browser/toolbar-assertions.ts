@@ -33,7 +33,7 @@ export async function assertToolbar(page: Page) {
   await expect(page.locator('.month-title button').first().locator('svg')).toHaveClass(new RegExp(evidence.direction==='rtl'?'lucide-chevron-right':'lucide-chevron-left'));
   const generating = await page.locator('.generate-month-action').count() > 0;
   if (generating) {
-    expect(evidence.visibleLabels, 'one visible Generate/Regenerate label').toBe(1);
+    expect(evidence.visibleLabels, 'one visible Generate/Review plan label').toBe(1);
   }
   if (await page.locator('.cancel-draft-action').count()) expect(evidence.workflows).toHaveLength(3);
   expect(Math.abs(evidence.title.x + evidence.title.width / 2 - evidence.toolbar.x - evidence.toolbar.width / 2), 'month centered in content').toBeLessThan(1);
