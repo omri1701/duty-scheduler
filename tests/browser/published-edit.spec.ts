@@ -98,3 +98,38 @@ test('a combined weekend edits both dates’ extras; engineers keep requesting s
     await expect(duty(engineer, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
   } finally {await context.close();}
 });
+
+test('a newer version from another tab names the stale editor and blocks Publish until the duty is reopened', async ({page, openApp, backend}) => {
+  await openApp();
+  await duty(page, '2026-11-03').click();
+  const dialog = page.getByRole('dialog', {name: 'Edit duty'});
+  await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
+  await page.getByRole('option', {name: 'Casey Cedar', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Review change'}).click();
+  // Another admin publishes a newer version of the month meanwhile.
+  const rows = backend.raw.assignments.filter(d => d.publication_id === backend.raw.months[0].current_publication_id).map(d => ({...d}));
+  rows.find(d => d.day === '2026-11-03')!.primary_id = ids.a;
+  backend.publish('2026-11', rows);
+  await page.getByRole('button', {name: 'Publish change'}).click();
+  await expect(page.getByText('Synthetic stale publication. Refresh first.', {exact: true}).first()).toBeVisible();
+  const review = page.getByRole('dialog', {name: 'Review and copy'});
+  await expect(review.getByRole('alert')).toContainText('This month changed after you opened this duty');
+  await expect(review.getByRole('button', {name: 'Publish change'})).toBeDisabled();
+  expect(call(backend)).toHaveLength(1);
+  await page.keyboard.press('Escape');
+  await duty(page, '2026-11-03').click();
+  const fresh = page.getByRole('dialog', {name: 'Edit duty'});
+  await expect(fresh.getByRole('alert')).toHaveCount(0);
+  await expect(fresh.getByRole('combobox', {name: 'Engineer', exact: true})).toHaveText('Alex Atlas');
+});
+
+test('a pending swap that includes the duty is named before the edit', async ({page, openApp, backend}) => {
+  const pub = backend.raw.months[0].current_publication_id!;
+  const at = (day: string) => backend.raw.assignments.find(d => d.publication_id === pub && d.day === day)!;
+  backend.raw.swapRequests = [{id: 'swap-1', month: '2026-11', source_publication_id: pub, requester_id: at('2026-11-03').primary_id!, other_id: at('2026-11-05').primary_id!,
+    from_day: '2026-11-03', from_end_day: '2026-11-04', to_day: '2026-11-05', to_end_day: '2026-11-06', explanation: '', status: 'awaiting_admin',
+    accepted_by: at('2026-11-05').primary_id!, accepted_at: '2026-11-01T08:00:00Z', created_at: '2026-11-01T07:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''}];
+  await openApp();
+  await duty(page, '2026-11-05').click();
+  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note')).toHaveText('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.');
+});

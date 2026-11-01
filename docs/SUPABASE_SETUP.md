@@ -608,14 +608,28 @@ the new engineer; approvals for the changed dates or the two engineers' weekends
 dropped). Accounting is recorded in the same transaction before the pointer moves.
 **Temporary** keeps the ordinary publication transition: the old engineer owes the
 new one each date's shared units (a published repayment on that duty routes through
-its creditor as for any replacement). **Permanent** adds the permanent intent
-`edit/<publication>` over exactly those units, so no debt. `compensation_publication`
+its creditor as for any replacement). **Permanent** gives the duty for good from its
+owner: the server walks the month's recorded publications back past Temporary moves
+(edits, swaps, a plan's temporary intent on that date) to the last permanent holder.
+When the holder is the owner, the permanent intent `edit/<publication>` covers exactly
+the shared units, so no debt. Returning the duty to its owner is the ordinary
+transition, which cancels the earlier Temporary debt. Giving it to a third engineer
+routes the holder's return (Temporary) and the owner's permanent gift in that one
+intent, so no debt stays behind for work nobody does. `compensation_publication`
 gained an optional server-built `edit` argument for this; existing callers are
 unchanged. The ledger event's manager-only reason records the kind and any override
-reason; `duty_balance` never returns it. Pending swap requests on the changed duty
-are reconciled by the existing pointer trigger (a new engineer resets consent; an
-extras-only edit keeps it, since the same admin still approves). Regression:
-`supabase/tests/published-edit.sql` (empty disposable LOCAL, rolled back).
+reason; `duty_balance` never returns it.
+
+The copied allocation's targets follow the edit (and, for new points, its calendar
+fingerprint), so a reopened copy of an edited version republishes unchanged without
+double counting. Pending swap requests on the changed duty: an engineer change is
+reconciled by the existing pointer trigger (the requester's duty invalidates the
+request; the counterpart's asks the new engineer). New points invalidate a pending
+request that includes the duty, because consent was given at the earlier points. A
+later month that already repays a debt keeps its version. Editing the duty back holds that
+repayment (no double charge). Migration `20261101120101_published_edit_lifecycle.sql`
+adds these lifecycle rules. Regressions: `supabase/tests/published-edit.sql` and
+`supabase/tests/published-edit-lifecycle.mjs` (empty disposable LOCAL, rolled back).
 
 ### Empty local Supabase database (PowerShell)
 

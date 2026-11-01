@@ -8,7 +8,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import {EditorDialog} from '@/components/rota/editor-dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
 import {addDays} from '@/lib/rota/engine';
-import {combinedWeekend,dutyPoints,editConflicts,editSummary,owedUnits,validExtra,type EditKind,type PublishedEdit} from '@/lib/supabase/published-edit';
+import {combinedWeekend,dutyPoints,editConflicts,editStale,editSummary,owedUnits,pendingSwaps,validExtra,type EditKind,type PublishedEdit} from '@/lib/supabase/published-edit';
 import type {DutyRow} from '@/lib/supabase/snapshot';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 
@@ -28,7 +28,9 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const changed=primary!==row.primary_id,conflicts=changed?editConflicts(raw,primary,row):[];
  const unchanged=!changed&&extraValue===row.extra_points&&saturdayValue===(row.saturday_extra_points??0);
  const edit:PublishedEdit={primary,extra:extraValue,saturdayExtra:saturdayValue,kind,overrideReason:conflicts.length?reason:''};
- const ready=validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()));
+ // A newer version or a reopened draft (another tab or admin) makes this copy stale; reopening the duty starts from the live one.
+ const stale=editStale(raw,row),swaps=pendingSwaps(raw,row).length;
+ const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()));
  const fmt=(day:string)=>shortDate(day,lang),last=addDays(row.end_day,-1);
  const members=raw.members.filter(m=>m.status==='approved'&&(m.active||m.id===row.primary_id)&&m.id!==row.secondary_id);
  const summary=ready?editSummary(row,edit,name,lang):'';
@@ -56,6 +58,8 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
   title={step==='edit'?t('Edit duty','עריכת תורנות'):t('Review and copy','בדיקה והעתקה')}
   description={`${fmt(row.day)}${last!==row.day?` – ${fmt(last)}`:''} · ${t('Published','פורסם')} · ${points(dutyPoints(row,row.extra_points,row.saturday_extra_points??0))}`}
   onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${row.day}"]`)?.focus()}}>
+  {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את התורנות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את התורנות מחדש.')}</p>}
+  {!stale&&!!swaps&&<p className="muted-copy" role="note">{t('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.','בקשת החלפה ממתינה כוללת את התורנות. הפרסום יבטל אותה, או יבקש מהמהנדס החדש לאשר שוב.')}</p>}
   {step==='edit'?<>
    <label className="field-label">{t('Engineer','מהנדס')}<Select disabled={busy} value={primary} onValueChange={v=>{setPrimary(v);setOverride(false);setReason('')}}>
     <SelectTrigger className="picker" aria-label={t('Engineer','מהנדס')}><SelectValue/></SelectTrigger>
@@ -85,7 +89,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
    <Button variant="outline" disabled={busy} onClick={copy}><Copy/>{t('Copy summary','העתקת הסיכום')}</Button>
    <div className="editor-actions">
     <Button variant="outline" disabled={busy} onClick={()=>setStep('edit')}>{t('Back','חזרה')}</Button>
-    <Button disabled={busy||remote.readOnly} onClick={save}>{t('Publish change','פרסום השינוי')}</Button>
+    <Button disabled={busy||remote.readOnly||!ready} onClick={save}>{t('Publish change','פרסום השינוי')}</Button>
    </div>
   </>}
  </EditorDialog>;

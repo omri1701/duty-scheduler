@@ -219,7 +219,8 @@ export class Backend {
     } else if (name === 'duty_edit_published_duty') {
       expect(admin).toBe(true);
       const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
-      if (!m) throw Error('This publication changed. Refresh first.');
+      // The database refuses a superseded version: 'This publication changed. Refresh first.'
+      if (!m) throw Error('Synthetic stale publication. Refresh first.');
       const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
       const row = rows.find(d => d.day === p.p_day)!, primary = p.p_primary as string, before = structuredClone(row);
       const changed = primary !== row.primary_id;

@@ -14,6 +14,16 @@ export function editablePublishedDuty(raw:Snapshot,month:string,today:string,day
  return raw.assignments.find(a=>!!publication&&a.publication_id===publication&&a.day===day&&a.day>=today&&owner(a)===month&&!!a.primary_id);
 }
 
+/** The opened row is no longer the live version: a newer version was published or a draft reopened. */
+export function editStale(raw:Snapshot,row:DutyRow){
+ const m=raw.months.find(m=>m.month===owner(row));
+ return !m||m.status!=='published'||m.current_publication_id!==row.publication_id;
+}
+
+/** Pending swap requests that include this duty: publishing an edit invalidates them or asks the new engineer again. */
+export const pendingSwaps=(raw:Snapshot,row:DutyRow)=>(raw.swapRequests??[]).filter(r=>
+ (r.status==='awaiting_engineer'||r.status==='awaiting_admin')&&(r.from_day===row.day||r.to_day===row.day));
+
 /** Half points only, 0 to 20: the database's own bounds. */
 export const validExtra=(value:number)=>Number.isFinite(value)&&value>=0&&value<=20&&Number.isInteger(value*2);
 

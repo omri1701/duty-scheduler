@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {dutyPoints,editConflicts,editSummary,editablePublishedDuty,owedUnits,validExtra} from '../lib/supabase/published-edit.ts';
+import {dutyPoints,editConflicts,editStale,editSummary,editablePublishedDuty,owedUnits,pendingSwaps,validExtra} from '../lib/supabase/published-edit.ts';
 
 const row=(day,end_day,extra_points=0,saturday_extra_points=0,primary_id='a')=>({id:day,publication_id:'p',day,end_day,primary_id,secondary_id:null,manager_override:false,title:'',extra_points,saturday_extra_points,points:0});
 const names={a:'Alex Atlas',b:'Blair Birch'},name=id=>names[id];
@@ -35,6 +35,24 @@ test('only the month’s current publication, today or later, with a primary is 
  assert.equal(editablePublishedDuty(raw,'2026-11','2026-11-01','2026-11-04'),undefined);
  assert.equal(editablePublishedDuty(raw,'2026-11','2026-11-01','2026-12-04'),undefined);
  assert.equal(editablePublishedDuty(raw,'2026-11','2026-10-01','2026-10-31'),undefined);
+});
+
+test('an opened duty is stale once a newer version is published or a draft is reopened',()=>{
+ const tuesday=row('2026-11-03','2026-11-04'),month=(status,current_publication_id)=>({months:[{month:'2026-11',status,current_publication_id}]});
+ assert.equal(editStale(month('published','p'),tuesday),false);
+ assert.equal(editStale(month('published','newer'),tuesday),true);
+ assert.equal(editStale(month('draft','p'),tuesday),true);
+ // A Saturday belongs to the month of its Friday.
+ assert.equal(editStale(month('published','p'),row('2026-11-07','2026-11-08')),false);
+ assert.equal(editStale({months:[]},tuesday),true);
+});
+
+test('pending swap requests that include the duty are named; resolved ones are not',()=>{
+ const request=(status,from_day,to_day)=>({status,from_day,to_day});
+ const raw={swapRequests:[request('awaiting_admin','2026-11-03','2026-11-05'),request('awaiting_engineer','2026-11-02','2026-11-03'),
+  request('approved','2026-11-03','2026-11-09'),request('invalidated','2026-11-03','2026-11-10'),request('awaiting_admin','2026-11-04','2026-11-05')]};
+ assert.equal(pendingSwaps(raw,row('2026-11-03','2026-11-04')).length,2);
+ assert.equal(pendingSwaps({},row('2026-11-03','2026-11-04')).length,0);
 });
 
 test('availability conflicts name each unavailable date of the duty',()=>{
