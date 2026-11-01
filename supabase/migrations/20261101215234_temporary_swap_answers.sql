@@ -158,5 +158,11 @@ CREATE TRIGGER duty_reconcile_member_swaps AFTER UPDATE OF active, status ON pub
 DROP POLICY swaps_read ON public.duty_swap_requests;
 CREATE POLICY swaps_read ON public.duty_swap_requests FOR SELECT TO authenticated USING ((( SELECT duty_private.is_member() AS is_member) AND ((requester_id = ( SELECT auth.uid() AS uid)) OR (proposed_by = ( SELECT auth.uid() AS uid)) OR ((other_id = ( SELECT auth.uid() AS uid)) AND (status = 'awaiting_engineer'::text)) OR (( SELECT duty_private.is_manager() AS is_manager) AND (status = 'awaiting_admin'::text)) OR (( SELECT duty_private.is_manager() AS is_manager) AND (status = 'awaiting_engineer'::text) AND (EXISTS ( SELECT 1 FROM public.duty_members m WHERE (m.is_temporary AND (((m.id = duty_swap_requests.other_id) AND (duty_swap_requests.accepted_by IS NULL)) OR ((m.id = duty_swap_requests.requester_id) AND (duty_swap_requests.proposed_by IS NOT NULL) AND (duty_swap_requests.requester_accepted_at IS NULL))))))))));
 
-SELECT duty_private.reconcile_swaps(month) FROM (SELECT DISTINCT month FROM public.duty_swap_requests
- WHERE status IN ('awaiting_engineer','awaiting_admin') ORDER BY month) pending;
+-- Only the new rule is applied to existing rows: a pending request with a party who
+-- is no longer active and approved is invalidated (as reconcile_swaps now does).
+UPDATE public.duty_workspace SET revision=revision+1 WHERE id AND EXISTS(SELECT 1 FROM public.duty_swap_requests r
+ WHERE r.status IN ('awaiting_engineer','awaiting_admin') AND EXISTS(SELECT 1 FROM public.duty_members m
+  WHERE m.id IN (r.requester_id,r.other_id) AND NOT (m.active AND m.status='approved')));
+UPDATE public.duty_swap_requests r SET status='invalidated',accepted_by=NULL,accepted_at=NULL,resolved_at=now(),resolved_by=NULL
+ WHERE r.status IN ('awaiting_engineer','awaiting_admin') AND EXISTS(SELECT 1 FROM public.duty_members m
+  WHERE m.id IN (r.requester_id,r.other_id) AND NOT (m.active AND m.status='approved'));

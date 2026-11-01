@@ -16,7 +16,8 @@ export function userMessage(raw: string, t: Translate): string {
   if (/ineligible-primary|An engineer is no longer active|An active engineer is required|Unknown approved team member/.test(message)) return t('A duty is assigned to someone who isn’t an active team member here. Choose someone else.', 'תורנות משובצת למישהו שאינו חבר צוות פעיל. יש לבחור מישהו אחר.');
   if (/overlapping-primary|Duty dates overlap|Published duty dates overlap|overlapping-published-duty/.test(message)) return t('Two duties overlap for the same person. Change one of them.', 'שתי תורנויות חופפות לאותו אדם. יש לשנות אחת מהן.');
   if (/A primary engineer cannot also be emergency cover|secondary-changed|invalid-secondary|Emergency engineer is inactive/.test(message)) return t('Emergency cover must be an active member other than the primary. Choose someone else for cover.', 'כיסוי החירום חייב להיות חבר פעיל שאינו התורן הראשי. יש לבחור מישהו אחר לכיסוי.');
-  if (/consecutive-primary|weekend-cap|This swap would create a second weekend/.test(message)) return t('Locked duties put someone on back-to-back days or a second weekend. Review those locks in the calendar.', 'תורנויות נעולות שמות מישהו בימים רצופים או בסוף שבוע שני. יש לבדוק את הנעילות האלה בלוח.');
+  if (/This swap would create a second weekend/.test(message)) return t('This swap would give someone a second weekend this month. Choose other duties, or decline or reject it.', 'ההחלפה הזו תיתן למישהו סוף שבוע שני החודש. יש לבחור תורנויות אחרות, או לסרב לה או לדחות אותה.');
+  if (/consecutive-primary|weekend-cap/.test(message)) return t('Locked duties put someone on back-to-back days or a second weekend. Review those locks in the calendar.', 'תורנויות נעולות שמות מישהו בימים רצופים או בסוף שבוע שני. יש לבדוק את הנעילות האלה בלוח.');
   if (/split-not-friday|duplicate-split|invalid-special|invalid-half-points|noncanonical-duty|invalid-published-duty/.test(message)) return t('A weekend split or special day doesn’t match the calendar. Refresh the month and set it again.', 'פיצול סוף שבוע או יום מיוחד אינו תואם ללוח. יש לרענן את החודש ולהגדיר אותו שוב.');
   if (/stale-generation|stale-request|stale-publication|stale-allocation|altered-generation-result/.test(message)) return t('The month changed in another tab, so this was refreshed. Check it, then try again.', 'החודש השתנה בכרטיסייה אחרת ולכן רוענן. כדאי לבדוק ולנסות שוב.');
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
@@ -58,14 +59,15 @@ export function userMessage(raw: string, t: Translate): string {
   if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
   if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
   if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
+  // The checked RPCs' own sentences, each in both languages, before the generic
+  // "changed" fallbacks below, which would otherwise swallow e.g. a swap's invalidation.
+  const said = SENTENCES.find(([pattern]) => pattern.test(message));
+  if (said) return t(said[1], said[2]);
   // Say what changed: the points ledger, or the team and calendar.
   if (/Compensation changed/.test(message)) return t('Points changed since this plan was made (another month was published or a repayment was recorded), so the month was refreshed and your targets were kept. Check them, then confirm again.', 'הנקודות השתנו מאז שהתוכנית נבנתה (חודש אחר פורסם או נרשם החזר), ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection, then try again in a current browser. Your saved draft is kept.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
   if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('Team or compensation changes needed a fresh review. The month was refreshed; check the targets, then confirm again.', 'שינויים בצוות או בפיצוי דרשו בדיקה מחדש. החודש רוענן; כדאי לבדוק את היעדים ולאשר שוב.');
-  // The checked RPCs' own sentences, each in both languages.
-  const said = SENTENCES.find(([pattern]) => pattern.test(message));
-  if (said) return t(said[1], said[2]);
   // Internal accounting and input checks a user can't reach directly: nothing was saved.
   if (/^[a-z][a-z0-9-]*(:.*)?$/.test(message) || /^(Invalid|Missing|Non-binary|Duplicate|Ineligible)\b/.test(message)) {
     return t('This change couldn’t be saved because it would break the schedule’s records. Nothing changed. Refresh the month and try again.', 'לא ניתן היה לשמור את השינוי כי הוא היה פוגע ברישומי הלוח. דבר לא השתנה. יש לרענן את החודש ולנסות שוב.');

@@ -105,11 +105,14 @@ begin
  select id into competing from public.duty_swap_requests where status='awaiting_engineer' and requester_id=auth.uid();
  select revision into rev from public.duty_workspace; perform public.duty_resolve_swap(request_id,'accept',rev);
  reset role; insert into public.duty_constraints values(engineer_id,'2099-10-06','no','Do not leak this note');
- update public.duty_members set active=false where id=other_id;
+ -- Inactive emergency cover blocks approval with a named reason (an inactive party
+ -- instead invalidates the request; see the admin-proposal block).
+ update public.duty_members set active=false where id=cover_id;
  perform set_config('request.jwt.claim.sub',admin_id::text,true); set local role authenticated;
  select revision into rev from public.duty_workspace;
- begin perform public.duty_resolve_swap(request_id,'approve',rev,'Admin exception'); raise exception 'Inactive approval accepted'; exception when raise_exception then if sqlerrm='Inactive approval accepted' then raise; end if; end;
- reset role; update public.duty_members set active=true where id=other_id;
+ begin perform public.duty_resolve_swap(request_id,'approve',rev,'Admin exception'); raise exception 'Inactive approval accepted';
+ exception when raise_exception then if sqlerrm<>'An engineer is no longer active and approved' then raise; end if; end;
+ reset role; update public.duty_members set active=true where id=cover_id;
  set local role authenticated;
  begin perform public.duty_resolve_swap(request_id,'approve',rev); raise exception 'Unavailable approval accepted'; exception when raise_exception then if sqlerrm='Unavailable approval accepted' then raise; end if; end;
  perform public.duty_resolve_swap(request_id,'approve',rev,'Explicit availability exception');
