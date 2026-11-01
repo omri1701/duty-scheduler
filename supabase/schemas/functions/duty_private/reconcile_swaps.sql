@@ -15,7 +15,10 @@ begin
    or b.primary_id is null or b.primary_id=r.requester_id
    or a.day<(now() at time zone 'Asia/Jerusalem')::date or b.day<(now() at time zone 'Asia/Jerusalem')::date
    or a.points<>coalesce((select points from public.duty_assignments where id=r.from_duty_id),a.points)
-   or b.points<>coalesce((select points from public.duty_assignments where id=r.to_duty_id),b.points) then
+   or b.points<>coalesce((select points from public.duty_assignments where id=r.to_duty_id),b.points)
+   -- Nobody waits on a member who can no longer sign in or take duties.
+   or not exists(select 1 from public.duty_members where id=a.primary_id and active and status='approved')
+   or not exists(select 1 from public.duty_members where id=b.primary_id and active and status='approved') then
    update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,
     resolved_at=now(),resolved_by=null where id=r.id;
   elsif b.primary_id is distinct from r.other_id then

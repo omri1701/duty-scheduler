@@ -18,6 +18,8 @@ GRANT ALL ON FUNCTION duty_private.is_member() TO authenticated;
 REVOKE ALL ON FUNCTION duty_private.join_team(p_name text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.join_team(p_name text) TO authenticated;
 
+REVOKE ALL ON FUNCTION duty_private.reconcile_member_swaps() FROM PUBLIC, anon, authenticated, service_role;
+
 REVOKE ALL ON FUNCTION duty_private.reconcile_publication_swaps() FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.reconcile_swaps(p_month text) FROM PUBLIC, anon, authenticated, service_role;

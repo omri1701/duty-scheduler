@@ -50,14 +50,22 @@ export function swapProblem(raw:Snapshot,month:string,source:DutyRow,target:Duty
  return null;
 }
 
-export function swapNeedsAction(r:SwapRequest,me:string,admin:boolean){
- return swapWaitingOn(r).includes(me)||(admin&&r.status==='awaiting_admin');
+/** Whose answer Accept or Decline records for this viewer, as resolve_swap decides: their own
+ * open side first; an admin also answers for a temporary member, who has no account
+ * (decision 2026-11-01), the requester's side before the other's. */
+export function swapAnswerFor(r:SwapRequest,me:string,admin:boolean,temporary:ReadonlySet<string>=new Set()){
+ const waiting=swapWaitingOn(r);
+ return waiting.includes(me)?me:admin?waiting.find(id=>temporary.has(id))??null:null;
 }
 
-export function visibleSwapRequests(requests:SwapRequest[],me:string,admin:boolean){
+export function swapNeedsAction(r:SwapRequest,me:string,admin:boolean,temporary?:ReadonlySet<string>){
+ return swapAnswerFor(r,me,admin,temporary)!==null||(admin&&r.status==='awaiting_admin');
+}
+
+export function visibleSwapRequests(requests:SwapRequest[],me:string,admin:boolean,temporary?:ReadonlySet<string>){
  return requests.filter(r=>r.requester_id===me||r.proposed_by===me||
-  (r.other_id===me&&r.status==='awaiting_engineer')||(admin&&r.status==='awaiting_admin'))
-  .sort((a,b)=>Number(swapNeedsAction(b,me,admin))-Number(swapNeedsAction(a,me,admin))||b.created_at.localeCompare(a.created_at));
+  (r.other_id===me&&r.status==='awaiting_engineer')||(admin&&r.status==='awaiting_admin')||swapAnswerFor(r,me,admin,temporary)!==null)
+  .sort((a,b)=>Number(swapNeedsAction(b,me,admin,temporary))-Number(swapNeedsAction(a,me,admin,temporary))||b.created_at.localeCompare(a.created_at));
 }
 
 /** A member's unavailability that blocks a swap: who and which date, never the note.

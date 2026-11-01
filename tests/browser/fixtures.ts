@@ -227,17 +227,18 @@ export class Backend {
       const r = this.raw.swapRequests!.find(r => r.id === p.p_request)!, action = p.p_action as string;
       if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
       if (this.invalidated) {r.status = 'invalidated'; this.invalidated = false; this.raw.revision!++; return 'invalidated';}
-      const requesterSide = !!r.proposed_by && user === r.requester_id;
-      if (['accept', 'decline'].includes(action)) {
-        expect(user === r.other_id || requesterSide).toBe(true); expect(r.status).toBe('awaiting_engineer');
-        expect(requesterSide ? r.requester_accepted_at : r.accepted_by).toBeFalsy();
-      }
+      // Mirrors resolve_swap: the caller's own open side, then an admin answers a temporary member's.
+      const temporary = (id: string) => !!this.raw.members.find(m => m.id === id)?.is_temporary;
+      const open = {requester: !!r.proposed_by && !r.requester_accepted_at, other: !r.accepted_by};
+      const side = user === r.other_id && open.other ? 'other' : user === r.requester_id && open.requester ? 'requester'
+        : admin && open.requester && temporary(r.requester_id) ? 'requester' : admin && open.other && temporary(r.other_id) ? 'other' : null;
+      if (['accept', 'decline'].includes(action)) {expect(r.status).toBe('awaiting_engineer'); expect(side).not.toBeNull();}
       if (action === 'approve') {expect(admin).toBe(true); expect(r.status).toBe('awaiting_admin');}
       if (action === 'reject') expect(admin).toBe(true);
       if (action === 'cancel') expect(user).toBe(r.proposed_by ?? r.requester_id);
       r.status = ({accept: 'awaiting_admin', decline: 'declined', approve: 'approved', reject: 'rejected', cancel: 'cancelled'} as Record<string, SwapRequest['status']>)[action];
       if (action === 'accept') {
-        if (requesterSide) r.requester_accepted_at = NOW; else {r.accepted_by = user; r.accepted_at = NOW;}
+        if (side === 'requester') r.requester_accepted_at = NOW; else {r.accepted_by = r.other_id; r.accepted_at = NOW;}
         if (!r.accepted_by || (r.proposed_by && !r.requester_accepted_at)) r.status = 'awaiting_engineer';
       }
       if (action === 'approve') {

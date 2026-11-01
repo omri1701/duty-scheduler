@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapNeedsAction,readSwapConflicts,swapSummary} from '../lib/supabase/swaps.ts';
+import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapAnswerFor,swapNeedsAction,readSwapConflicts,swapSummary} from '../lib/supabase/swaps.ts';
 import {todayIsrael} from '../lib/rota/calendar-dates.ts';
 
 test('Israeli midnight expires yesterday, including a continuing Friday weekend',()=>{
@@ -78,6 +78,30 @@ test('admin proposals wait on both members, then the admin; the proposer sees an
  assert.deepEqual(visibleSwapRequests([proposed],'admin',true).map(r=>r.id),['p']);
  assert.deepEqual(visibleSwapRequests([{...proposed,status:'approved'}],'admin',false).map(r=>r.id),['p']);
  assert.deepEqual(visibleSwapRequests([proposed],'c',true),[]);
+});
+
+test('an admin answers for a temporary member, never for anyone else, in resolve_swap order',()=>{
+ // Decision 2026-11-01: temporary members have no account, so their open side goes to the admins.
+ const base={id:'t',month:'2026-11',requester_id:'a',other_id:'tamar',status:'awaiting_engineer',created_at:'2026-10-09',accepted_by:null,requester_accepted_at:null};
+ const temp=new Set(['tamar','noa']);
+ assert.equal(swapAnswerFor(base,'admin',true,temp),'tamar');
+ assert.equal(swapAnswerFor(base,'admin',false,temp),null);
+ assert.equal(swapAnswerFor(base,'admin',true),null);
+ assert.equal(swapAnswerFor(base,'a',false,temp),null);
+ assert.equal(swapAnswerFor({...base,other_id:'b'},'admin',true,temp),null);
+ assert.equal(swapAnswerFor({...base,accepted_by:'tamar'},'admin',true,temp),null);
+ // Both parties temporary: the requester's side first, then the other's; the admin still approves after.
+ const both={...base,requester_id:'noa',proposed_by:'admin'};
+ assert.equal(swapAnswerFor(both,'admin',true,temp),'noa');
+ assert.equal(swapAnswerFor({...both,requester_accepted_at:'x'},'admin',true,temp),'tamar');
+ assert.equal(swapAnswerFor({...both,requester_accepted_at:'x',accepted_by:'tamar'},'admin',true,temp),null);
+ assert.equal(swapAnswerFor({...both,status:'awaiting_admin'},'admin',true,temp),null);
+ // An admin who is a party answers their own side first.
+ assert.equal(swapAnswerFor({...base,requester_id:'tamar',other_id:'admin',proposed_by:'boss'},'admin',true,temp),'admin');
+ assert.equal(swapNeedsAction(base,'admin',true,temp),true);
+ assert.deepEqual(visibleSwapRequests([base],'admin',true,temp).map(r=>r.id),['t']);
+ assert.deepEqual(visibleSwapRequests([base],'admin',true),[]);
+ assert.deepEqual(visibleSwapRequests([base],'c',false,temp),[]);
 });
 
 test('availability conflicts carry who and when only; malformed responses fail closed',()=>{

@@ -4,6 +4,7 @@ CREATE FUNCTION duty_private.resolve_swap(p_request uuid, p_action text, p_revis
     AS $$
 declare r public.duty_swap_requests; a public.duty_assignments; b public.duty_assignments;
  current_publication uuid; publication uuid; next_version integer; reason text:=trim(coalesce(p_override_reason,'')); side text; next_status text;
+ party boolean:=false;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
@@ -14,7 +15,10 @@ begin
  elsif p_action in ('accept','decline') then
   -- Each party answers only for their own side. A requester who asked for the
   -- swap consented by sending it; one an admin proposed it for must accept too.
-  if r.other_id<>auth.uid() and (r.requester_id<>auth.uid() or r.proposed_by is null) then
+  -- Temporary members have no account: an admin answers for them, and only for them.
+  party:=r.other_id=auth.uid() or (r.requester_id=auth.uid() and r.proposed_by is not null);
+  if not party and not (duty_private.is_manager() and exists(select 1 from public.duty_members m where m.is_temporary
+    and (m.id=r.other_id or (m.id=r.requester_id and r.proposed_by is not null)))) then
    raise exception 'Only the current counterpart can respond' using errcode='42501';
   end if;
  elsif p_action in ('approve','reject') then
@@ -29,13 +33,19 @@ begin
   return 'invalidated';
  end if;
  if p_action in ('accept','decline') then
-  if r.other_id=auth.uid() then side:='other';
-  elsif r.requester_id=auth.uid() and r.proposed_by is not null then side:='requester';
-  else raise exception 'The counterpart changed. Refresh first.' using errcode='40001'; end if;
   if r.status<>'awaiting_engineer' then raise exception 'Engineer consent already recorded'; end if;
-  if (side='other' and r.accepted_by is not null) or (side='requester' and r.requester_accepted_at is not null) then
+  -- The caller's own side first; then an admin answers a temporary member's open side,
+  -- the requester's before the other's (swapAnswerFor mirrors this order).
+  if r.other_id=auth.uid() and r.accepted_by is null then side:='other';
+  elsif r.requester_id=auth.uid() and r.proposed_by is not null and r.requester_accepted_at is null then side:='requester';
+  elsif duty_private.is_manager() and r.proposed_by is not null and r.requester_accepted_at is null
+   and exists(select 1 from public.duty_members where id=r.requester_id and is_temporary) then side:='requester';
+  elsif duty_private.is_manager() and r.accepted_by is null
+   and exists(select 1 from public.duty_members where id=r.other_id and is_temporary) then side:='other';
+  elsif r.other_id=auth.uid() or (r.requester_id=auth.uid() and r.proposed_by is not null) then
    raise exception 'Your answer is already recorded';
-  end if;
+  elsif party then raise exception 'The counterpart changed. Refresh first.' using errcode='40001';
+  else raise exception 'Only the current counterpart can respond' using errcode='42501'; end if;
  elsif p_action='approve' then
   -- Every swap ends with an explicit admin approval after both members accepted,
   -- even one an admin started or takes part in.
@@ -74,7 +84,7 @@ begin
   when 'decline' then 'declined' when 'approve' then 'approved' when 'reject' then 'rejected' else 'cancelled' end;
  -- Finalize before the publication trigger revalidates all other pending requests.
  update public.duty_swap_requests set status=next_status,
-  accepted_by=case when p_action='accept' and side='other' then auth.uid() else accepted_by end,
+  accepted_by=case when p_action='accept' and side='other' then r.other_id else accepted_by end,
   accepted_at=case when p_action='accept' and side='other' then now() else accepted_at end,
   requester_accepted_at=case when p_action='accept' and side='requester' then now() else requester_accepted_at end,
   resolved_at=case when p_action='accept' then null else now() end,

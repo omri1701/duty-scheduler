@@ -10,6 +10,7 @@ begin
  if has_function_privilege('authenticated','duty_private.reconcile_swaps(text)','EXECUTE')
   or has_function_privilege('anon','duty_private.reconcile_swaps(text)','EXECUTE')
   or has_function_privilege('authenticated','duty_private.reconcile_publication_swaps()','EXECUTE')
+  or has_function_privilege('authenticated','duty_private.reconcile_member_swaps()','EXECUTE')
   or has_function_privilege('anon','duty_private.reconcile_publication_swaps()','EXECUTE')
   or has_function_privilege('authenticated','duty_private.validate_swap(uuid,uuid,uuid,boolean)','EXECUTE')
   or has_function_privilege('anon','duty_private.validate_swap(uuid,uuid,uuid,boolean)','EXECUTE') then raise exception 'Internal helper exposed'; end if;
@@ -310,9 +311,20 @@ create function pg_temp.slot(p_day date) returns uuid language sql as $$
  where m.month='2098-03' and a.day=p_day$$;
 create function pg_temp.act(p_user uuid) returns bigint language plpgsql as $$
 begin perform set_config('request.jwt.claim.sub',p_user::text,true); return (select revision from public.duty_workspace); end $$;
+create function pg_temp.republish(p_owners jsonb,p_by uuid) returns void language plpgsql as $$
+declare old uuid; live uuid;
+begin
+ select current_publication_id into old from public.duty_months where month='2098-03';
+ update public.duty_months set publication_sequence=publication_sequence+1 where month='2098-03';
+ insert into public.duty_publications(month,version,published_by) select month,publication_sequence,p_by from public.duty_months where month='2098-03' returning id into live;
+ insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,extra_points)
+ select live,day,end_day,coalesce((p_owners->>day::text)::uuid,primary_id),secondary_id,extra_points from public.duty_assignments where publication_id=old;
+ update public.duty_months set current_publication_id=live where month='2098-03';
+end $$;
 do $$
 declare
  boss uuid:=gen_random_uuid(); x uuid:=gen_random_uuid(); y uuid:=gen_random_uuid(); z uuid:=gen_random_uuid();
+ tamar uuid:=gen_random_uuid(); noa uuid:=gen_random_uuid();
  pub uuid; live uuid; req uuid; rev bigint; history jsonb; result jsonb; extra numeric; net jsonb;
 begin
  delete from public.duty_constraints;
@@ -507,18 +519,67 @@ begin
   set local role authenticated;
  end loop;
 
- -- A party who becomes inactive blocks approval with a named reason; reject still works.
+ -- Temporary members have no account: an admin answers their open side, and only
+ -- theirs; the explicit final approval stays a separate step (decision 2026-11-01).
+ reset role;
+ insert into public.duty_members(id,name,role,status,active,is_temporary)
+ values(tamar,'Tamar','engineer','approved',true,true),(noa,'Noa','engineer','approved',true,true);
+ perform pg_temp.republish(jsonb_build_object('2098-03-03',tamar,'2098-03-04',noa),boss);
+ set local role authenticated;
+ -- An engineer asks a temporary member (before, nobody could ever answer it).
+ rev:=pg_temp.act(y); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-03'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(x);
+ if exists(select 1 from public.duty_swap_requests where id=req) then raise exception 'Outsider sees a request waiting on a temporary member'; end if;
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Engineer answered for a temporary member'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(boss);
+ if not exists(select 1 from public.duty_swap_requests where id=req) then raise exception 'Admin cannot see a request waiting on a temporary member'; end if;
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Approved before the temporary member answered';
+ exception when raise_exception then if sqlerrm<>'Both engineers must accept before admin review' then raise; end if; end;
+ perform public.duty_resolve_swap(req,'accept',rev);
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_admin' and accepted_by=tamar and resolved_by is null)
+  then raise exception 'Admin answer not recorded as the temporary member''s consent'; end if;
+ rev:=pg_temp.act(boss);
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Admin answered twice';
+ exception when raise_exception then if sqlerrm<>'Engineer consent already recorded' then raise; end if; end;
+ perform public.duty_resolve_swap(req,'approve',rev);
+ if (select primary_id from public.duty_assignments where id=pg_temp.slot('2098-03-03'))<>y
+  or (select primary_id from public.duty_assignments where id=pg_temp.slot('2098-03-02'))<>tamar then raise exception 'Temporary swap not published'; end if;
+ -- Only for temporary members: the admin answers Tamar's side, never Zohar's.
  rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-05'),'',rev);
  select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
- rev:=pg_temp.act(y); perform public.duty_resolve_swap(req,'accept',rev);
- rev:=pg_temp.act(z); perform public.duty_resolve_swap(req,'accept',rev);
- reset role; update public.duty_members set active=false where id=z; set local role authenticated;
+ if not exists(select 1 from public.duty_swap_requests where id=req and requester_id=tamar and other_id=z and proposed_by=boss) then raise exception 'Proposal with a temporary member not recorded'; end if;
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'accept',rev);
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_engineer' and requester_accepted_at is not null and accepted_by is null)
+  then raise exception 'Admin did not answer the temporary requester'; end if;
  rev:=pg_temp.act(boss);
- begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Inactive party approved';
- exception when raise_exception then if sqlerrm<>'An engineer is no longer active and approved' then raise; end if; end;
- perform public.duty_resolve_swap(req,'reject',rev);
- if (select status from public.duty_swap_requests where id=req)<>'rejected' then raise exception 'Swap with an inactive party could not be rejected'; end if;
+ begin perform public.duty_resolve_swap(req,'accept',rev); raise exception 'Admin answered for a regular member'; exception when insufficient_privilege then null; end;
+ rev:=pg_temp.act(z); perform public.duty_resolve_swap(req,'decline',rev);
+ -- Both parties temporary: the admin answers both sides, then still approves explicitly.
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-04'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'accept',rev);
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'accept',rev);
+ if not exists(select 1 from public.duty_swap_requests where id=req and status='awaiting_admin' and requester_accepted_at is not null and accepted_by=noa)
+  then raise exception 'Admin did not answer both temporary sides'; end if;
+ rev:=pg_temp.act(boss); perform public.duty_resolve_swap(req,'approve',rev);
+ if (select status from public.duty_swap_requests where id=req)<>'approved' then raise exception 'Temporary swap not approved'; end if;
+
+ -- Nobody waits on a member who can no longer sign in: deactivating a party
+ -- invalidates their pending swaps at either step (owners now: 03-02 Noa,
+ -- 03-03 Yael, 03-04 Tamar, 03-05 Zohar).
+ rev:=pg_temp.act(y); perform public.duty_request_swap(pg_temp.slot('2098-03-03'),pg_temp.slot('2098-03-05'),'',rev);
+ select id into req from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ rev:=pg_temp.act(z); perform public.duty_resolve_swap(req,'accept',rev);
+ rev:=pg_temp.act(boss); perform public.duty_request_swap(pg_temp.slot('2098-03-02'),pg_temp.slot('2098-03-04'),'',rev);
+ select id into live from public.duty_swap_requests where month='2098-03' and status='awaiting_engineer';
+ reset role; update public.duty_members set active=false where id in (y,noa);
+ if exists(select 1 from public.duty_swap_requests where id in (req,live) and status<>'invalidated') then raise exception 'A request kept waiting on an inactive member'; end if;
+ set local role authenticated;
+ rev:=pg_temp.act(boss);
+ begin perform public.duty_resolve_swap(req,'approve',rev); raise exception 'Swap with an inactive party approved';
+ exception when raise_exception then if sqlerrm<>'This request is no longer pending' then raise; end if; end;
 end $$;
-select 'PASS: admin-proposed swaps need both members and an explicit admin approval; admin parties are asked once; availability names who and when, never the note; consent covers counterpart and points; weighted swaps and swap-backs post once' as result;
+select 'PASS: admin-proposed swaps need both members and an explicit admin approval; admin parties are asked once; availability names who and when, never the note; consent covers counterpart and points; weighted swaps and swap-backs post once; admins answer for temporary members only; deactivation never leaves a swap waiting' as result;
 rollback;
 \ir swap-today.sql

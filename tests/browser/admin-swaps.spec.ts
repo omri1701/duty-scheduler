@@ -168,3 +168,36 @@ for (const lang of ['en', 'he'] as const) test(`availability is rechecked at con
   await expect(dialog).toBeHidden();
   expect(backend.raw.swapRequests![0]).toMatchObject({status: 'approved', override_reason: 'Recorded in the external system'});
 });
+
+for (const lang of ['en', 'he'] as const) test(`an admin answers for temporary members, then approves separately ${lang}`, async ({page, openApp, backend}) => {
+  // Decision 2026-11-01: temporary members have no account, so each open side goes to the admin.
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  const tamar = '90000000-0000-0000-0000-000000000001', noa = '90000000-0000-0000-0000-000000000002';
+  for (const [id, name] of [[tamar, 'Tamar Temp'], [noa, 'Noa Temp']]) backend.raw.members.push({id, name, email: null, is_temporary: true, role: 'engineer', status: 'approved', active: true, seniority: backend.raw.members.length, color: '#adc9ee'});
+  const current = backend.raw.months[0].current_publication_id;
+  for (const d of backend.raw.assignments.filter(d => d.publication_id === current)) {
+    if (d.day === '2026-11-02') d.primary_id = tamar;
+    if (d.day === '2026-11-03') d.primary_id = noa;
+  }
+  await openApp('admin'); await published(page, lang);
+  await pick(page, '2026-11-02', '2026-11-03');
+  await page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByText(t('Waiting for: Tamar Temp (Temporary, an admin answers), Noa Temp (Temporary, an admin answers)', 'ממתינה ל: Tamar Temp (זמני, מנהל עונה), Noa Temp (זמני, מנהל עונה)'), {exact: true})).toBeVisible();
+  // The requester's side first, then the other's; each answer is recorded as that member's.
+  await expect(page.getByText(t('Answer for Tamar Temp (Temporary)', 'מענה עבור Tamar Temp (זמני)'), {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: t('Accept', 'קבלה'), exact: true}).click();
+  await expect(page.getByText(t('Accepted. Waiting for the other engineer.', 'אושרה. ממתינה למהנדס השני.'), {exact: true})).toBeVisible();
+  await expect(page.getByText(t('Answer for Noa Temp (Temporary)', 'מענה עבור Noa Temp (זמני)'), {exact: true})).toBeVisible();
+  await page.getByRole('button', {name: t('Accept', 'קבלה'), exact: true}).click();
+  await expect(page.getByText(t('Accepted. Awaiting admin approval.', 'אושרה. ממתינה לאישור מנהל.'), {exact: true})).toBeVisible();
+  expect(backend.raw.swapRequests![0]).toMatchObject({requester_id: tamar, other_id: noa, status: 'awaiting_admin', accepted_by: noa, requester_accepted_at: NOW});
+  // Answering never publishes: the explicit approval with its summary still follows.
+  expect(backend.raw.publications).toHaveLength(1);
+  await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: t('Approve published swap', 'אישור החלפה בלוח שפורסם')});
+  await expect(dialog.getByLabel(t('Swap summary', 'סיכום ההחלפה'))).toContainText('Tamar Temp ⇄ Noa Temp');
+  await dialog.getByRole('button', {name: t('Approve & publish swap', 'אישור ופרסום ההחלפה')}).click();
+  await expect(dialog).toBeHidden();
+  expect(backend.raw.publications).toHaveLength(2);
+});

@@ -7,7 +7,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import type {SwapRequest} from '@/lib/supabase/snapshot';
 import {todayIsrael} from '@/lib/supabase/snapshot';
-import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapSummary,swapDuties,swapProblem,type SwapConflict,type SwapProblem} from '@/lib/supabase/swaps';
+import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapAnswerFor,swapSummary,swapDuties,swapProblem,type SwapConflict,type SwapProblem} from '@/lib/supabase/swaps';
 import {addDays} from '@/lib/rota/engine';
 import {toast} from 'sonner';
 import {userMessage} from '@/lib/messages';
@@ -41,7 +41,8 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
  // Availability comes from the server's alert; the weekend limit is checked here.
  const problem=eligible?swapProblem(raw,month,source!,target!,false):null;
  const requestConflicts=useSwapConflicts(remote,eligible?source!.id:undefined,eligible?target!.id:undefined);
- const requests=visibleSwapRequests(raw.swapRequests??[],me,remote.isAdmin);
+ const temporary=new Set(raw.members.filter(m=>m.is_temporary).map(m=>m.id));
+ const requests=visibleSwapRequests(raw.swapRequests??[],me,remote.isAdmin,temporary);
  const name=(id:string)=>raw.members.find(m=>m.id===id)?.name??t('Former member','חבר צוות קודם');
  const fmt=(day:string)=>new Date(day+'T12:00:00Z').toLocaleDateString(lang==='he'?'he-IL':'en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jerusalem'});
  const span=(start:string,end:string)=>fmt(start)+(end!==addDays(start,1)?` – ${fmt(addDays(end,-1))}`:'');
@@ -53,7 +54,7 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
  // invalidate or resolve the request while it is open.
  const latest=(r:SwapRequest|undefined)=>r&&(raw.swapRequests??[]).find(x=>x.id===r.id);
  const current=latest(review??undefined),reviewable=current?.status==='awaiting_admin';
- const consenting=latest(consent?.request),answerable=!!consenting&&swapWaitingOn(consenting).includes(me);
+ const consenting=latest(consent?.request),answerable=!!consenting&&swapAnswerFor(consenting,me,remote.isAdmin,temporary)!==null;
  const reviewed=current?swapDuties(raw,current):null;
  const reviewConflicts=useSwapConflicts(remote,reviewed?.source?.id,reviewed?.target?.id);
  const reviewProblem=current&&reviewed?.source&&reviewed.target?swapProblem(raw,current.month,reviewed.source,reviewed.target,false):null;
@@ -86,14 +87,15 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
   {requests.length>0&&<section className="calendar-panel swap-requests" aria-labelledby="swap-requests-heading">
    <div className="section-heading"><h3 id="swap-requests-heading">{t('Swap Requests','בקשות החלפה')}</h3></div>
    <div className="swap-request-list">{requests.map(r=>{
-    const waiting=swapWaitingOn(r),incoming=waiting.includes(me),admin=remote.isAdmin&&r.status==='awaiting_admin',pending=['awaiting_engineer','awaiting_admin'].includes(r.status);
+    // An admin answers for a temporary member, who cannot sign in.
+    const waiting=swapWaitingOn(r),answerFor=swapAnswerFor(r,me,remote.isAdmin,temporary),incoming=answerFor!==null,admin=remote.isAdmin&&r.status==='awaiting_admin',pending=['awaiting_engineer','awaiting_admin'].includes(r.status);
     // Consent may precede an availability override, never a second weekend.
     const duties=incoming?swapDuties(raw,r):null,refused=duties?.source&&duties.target?swapProblem(raw,r.month,duties.source,duties.target,false):null;
     return <article key={r.id} className={'swap-request-row '+(incoming?'incoming':admin?'admin-review':'outgoing')}>
-     <div className="swap-request-details"><div className="swap-request-meta"><small>{incoming?t('Incoming · your consent','נכנסת · לאישורך'):admin?t('Admin approval','אישור מנהל'):r.proposed_by===me?t('Proposed by you','הצעה שלך'):t('Outgoing','יוצאת')}</small><span className={'swap-status '+r.status}>{status(r.status)}</span></div>
+     <div className="swap-request-details"><div className="swap-request-meta"><small>{incoming?answerFor===me?t('Incoming · your consent','נכנסת · לאישורך'):t(`Answer for ${name(answerFor!)} (Temporary)`,`מענה עבור ${name(answerFor!)} (זמני)`):admin?t('Admin approval','אישור מנהל'):r.proposed_by===me?t('Proposed by you','הצעה שלך'):t('Outgoing','יוצאת')}</small><span className={'swap-status '+r.status}>{status(r.status)}</span></div>
       <strong>{name(r.requester_id)} ↔ {name(r.other_id)}</strong><p>{span(r.from_day,r.from_end_day)} ↔ {span(r.to_day,r.to_end_day)}</p>
       {r.proposed_by&&r.proposed_by!==me&&<small className="swap-proposer">{t('Proposed by','הוצעה על ידי')} {name(r.proposed_by)}</small>}
-      {waiting.length>0&&r.proposed_by&&<p className="swap-waiting">{t('Waiting for:','ממתינה ל:')} {waiting.map(name).join(', ')}</p>}
+      {waiting.length>0&&(r.proposed_by||waiting.some(id=>temporary.has(id)))&&<p className="swap-waiting">{t('Waiting for:','ממתינה ל:')} {waiting.map(id=>temporary.has(id)?t(`${name(id)} (Temporary, an admin answers)`,`${name(id)} (זמני, מנהל עונה)`):name(id)).join(', ')}</p>}
       {r.explanation&&<p className="swap-explanation">{r.explanation}</p>}{r.override_reason&&<small>{t('Admin override:','חריגת מנהל:')} {r.override_reason}</small>}
      </div>
      {pending&&<div className="swap-request-actions">{incoming&&<><Button size="sm" disabled={!!refused} onClick={()=>startAccept(r)}>{t('Accept','קבלה')}</Button><Button size="sm" variant="outline" onClick={()=>act(()=>remote.resolveSwap(r.id,'decline'),t('Request declined.','הבקשה סורבה.'))}>{t('Decline','סירוב')}</Button>{refused&&<p className="swap-explanation" role="note">{explain(refused,'accept')}</p>}</>}

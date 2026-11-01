@@ -604,11 +604,18 @@ request while older duplicates become Invalidated.
 
 RLS allows engineers to read initiated requests and incoming requests currently
 requiring their consent; approved admins additionally see requests awaiting admin
-approval, and a proposing admin keeps seeing their proposals. A former counterpart
+approval, and a proposing admin keeps seeing their proposals. Temporary members have
+no account, so admins see and answer (accept or decline) a temporary member's open side,
+and only that side (migration `20261101215234_temporary_swap_answers.sql`); the
+requester's side is answered before the other's when both are temporary, and the explicit
+final approval stays a separate step. A former counterpart
 immediately loses incoming visibility on reassignment. The approval and consent dialogs
 always show the latest copy of a request; one that changed while open shows why and cannot
-be approved from the stale view. A party who becomes inactive blocks consent and approval
-with "An engineer is no longer active and approved"; an admin rejects it.
+be approved from the stale view. Nobody waits on a member who can no longer sign in:
+deactivating a party, or withdrawing their approval, invalidates their pending swaps
+(trigger `duty_reconcile_member_swaps`; the migration does the same for existing ones).
+Inactive emergency cover still blocks consent and approval with "An engineer is no longer
+active and approved"; an admin rejects it.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
