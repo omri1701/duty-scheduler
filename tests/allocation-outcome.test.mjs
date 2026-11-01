@@ -121,6 +121,7 @@ function team(month, names, debts) {
   return {schedule, now: Date.parse(`${month}-01T00:00:00Z`) - 7 * 86400000, seniority: names, events};
 }
 const points = d => Object.fromEntries(Object.entries(d.targetsUnits).map(([id, u]) => [id, u / 2]));
+const repaidPoints = d => d.repayments.map(r => [r.claim.debtorId, r.claim.creditorId, r.units / 2]);
 
 test('one extra each before anyone gets two: the January case repays in turns, newest first', () => {
   // The reported January (decision 2026-11-01): Local Admin's relief this month is two points.
@@ -167,6 +168,66 @@ test('a point received permanently and handed to a debtor is that debtor\'s repa
   assert.equal(bound.bindable, true, bound.diagnostics.at(-1)?.code);
   const far = Date.parse('2027-01-01T00:00:00Z') + 70 * 86400000, after = project(bound.preview.events, far, far).actual;
   assert.deepEqual(byPair(after.claims.map(claim => ({claim, units: claim.units}))), {[`Avi>${admin}`]: 2, [`Dana>${admin}`]: 2, [`${engineer}>${admin}`]: 2});
+});
+
+test('the reported team over four months: December\'s drags are repaid in turns through January\'s edits until every debt is cleared', async () => {
+  // December: Local Engineer, Avi and Dana each hand Local Admin two points (drags). January: the
+  // turns repay Dana and Avi one point each, and the manager's edits route one more point through
+  // Local Engineer (the reported plan). February and March continue the turns from published work.
+  const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
+  const admin = 'Local Admin', engineer = 'Local Engineer';
+  let i = team('2026-12', names, []);
+  const month = m => {const s = structuredClone(i.schedule); s.month = m; s.sourceRevision = `team-${m}`; return {...i, schedule: s, now: Date.parse(`${m}-01T00:00:00Z`) - 7 * 86400000};};
+  const publish = async d => {
+    const r = solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(names.map(id => [id, d.targetsUnits[id] / 2]))},
+      {now: i.now, seed: 5, seconds: 30}));
+    assert.equal(r.complete, true, i.schedule.month);
+    assert.equal(compileAllocation(i, d, r.assignments).confirmable, true, i.schedule.month);
+    const bound = await bindAllocation(i, d, r.assignments, {publicationId: i.schedule.month, sourceKey: `publish/${i.schedule.month}`, actor: 'm'});
+    assert.equal(bound.bindable && bound.publishable, true, `${i.schedule.month}: ${bound.diagnostics.at(-1)?.code}`);
+    i = {...i, events: bound.preview.events};
+  };
+  const owed = () => byPair(project(i.events, i.now, i.now).projected.candidates.map(claim => ({claim, units: claim.units})));
+  let d = proposeAllocation(i).draft;
+  for (const from of [engineer, engineer, 'Avi', 'Avi', 'Dana', 'Dana']) d = drag(i, d, from, admin);
+  await publish(d);
+  i = month('2027-01');
+  assert.deepEqual(owed(), {[`Avi>${admin}`]: 4, [`Dana>${admin}`]: 4, [`${engineer}>${admin}`]: 4});
+  d = proposeAllocation(i).draft;
+  assert.deepEqual(repaidPoints(d), [['Dana', admin, 1], ['Avi', admin, 1]], 'January: newest first, one point each');
+  d = editAllocation(i, d, {engineer: admin, deltaUnits: 2, kind: 'permanent'}).draft;
+  d = editAllocation(i, drag(i, d, admin, engineer), {engineer: 'Omer', deltaUnits: -2, kind: 'permanent'}).draft;
+  assert.equal(planAllocation(i, d).confirmable, true, 'the reported plan books');
+  await publish(d);
+  i = month('2027-02');
+  // Everyone has repaid one point (Local Engineer through the drag): the turns go on newest first.
+  d = proposeAllocation(i).draft;
+  assert.deepEqual(repaidPoints(d), [['Dana', admin, 1], ['Avi', admin, 1]], 'February: still one point each, newest first');
+  await publish(d);
+  i = month('2027-03');
+  d = proposeAllocation(i).draft;
+  assert.deepEqual(repaidPoints(d), [[engineer, admin, 1]], 'March: the last point');
+  await publish(d);
+  i = month('2027-04');
+  assert.deepEqual(owed(), {}, 'every debt is cleared');
+});
+
+test('turns skip members who left or cannot work: a debt to someone away waits, an unavailable debtor\'s turn passes on', () => {
+  const names = ['A', 'B', 'C', 'D', 'E', 'F'], i = team('2026-11', names, [['F', 'A', 4], ['E', 'A', 4]]);
+  const away = (id, active) => ({...i, events: record(i.events, {operation: {kind: 'members', members: [{id, active}]}, sourceKey: `${id}-${active}`,
+    at: i.events.at(-1).at + 1, actor: 'manager'}).events});
+  const without = (x, id) => ({...x, seniority: x.seniority.filter(n => n !== id),
+    schedule: {...x.schedule, members: x.schedule.members.filter(m => m.id !== id)}});
+  // The creditor is away: its debts are frozen, no one repays them, and the plan still books.
+  const a = without(away('A', false), 'A'), d = proposeAllocation(a).draft;
+  assert.deepEqual(repaidPoints(d), []); assert.equal(planAllocation(a, d).confirmable, true);
+  // A debtor is away: the other debtor takes the creditor's relief.
+  const f = without(away('F', false), 'F');
+  assert.deepEqual(repaidPoints(proposeAllocation(f).draft), [['E', 'A', 2]]);
+  // A debtor who can't work this month passes the turn on.
+  const busy = structuredClone(i);
+  busy.schedule.constraints = {F: Object.fromEntries(canonicalDuties('2026-11', {}).flatMap(x => x.dates).map(x => [x, 'no']))};
+  assert.deepEqual(repaidPoints(proposeAllocation(busy).draft), [['E', 'A', 2]]);
 });
 
 test('a point given permanently and handed back temporarily is a plain loan: the route drops its permanent leg and binds', async () => {

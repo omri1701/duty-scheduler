@@ -228,15 +228,17 @@ test('uneven credit survives edits, protects the creditor’s carried work from 
   assert.throws(() => planAllocation(i, foreign), /invalid-uneven-credit/);
   const duplicate = structuredClone(r.draft); duplicate.uneven.push({...duplicate.uneven[0]});
   assert.throws(() => planAllocation(i, duplicate), /invalid-uneven-credit/);
-  // An old creditor with uneven credit keeps that half point: relief stops at 4.5 of its 5 points.
+  // An old creditor with uneven credit keeps that half point: relief stops below its 5 points. It
+  // stops at 4, not 4.5: no duty this month is half a point, so a 0.5 target could never be
+  // scheduled (decision 2026-11-01: a repayment step keeps the month exactly divisible).
   const owed = owe(holiday(), 'e00', 'e11', 20, 'old'), relief = proposal(owed);
   invariant(owed, relief);
-  assert.equal(total(relief.draft.repayments.map(p => p.units)), 9);
-  assert.equal(relief.draft.targetsUnits.e11, 1);
+  assert.equal(total(relief.draft.repayments.map(p => p.units)), 8);
+  assert.equal(relief.draft.targetsUnits.e11, 2);
   assert.equal(planAllocation(owed, relief.draft).confirmable, true);
   const greedy = structuredClone(relief.draft), [plan] = greedy.repayments;
   plan.units = 10; plan.claim.units = 10; plan.claim.path[0].units = 10;
-  greedy.offeredUnits.e00 += 1; greedy.offeredUnits.e11 -= 1; greedy.targetsUnits.e00 += 1; greedy.targetsUnits.e11 -= 1;
+  greedy.offeredUnits.e00 += 2; greedy.offeredUnits.e11 -= 2; greedy.targetsUnits.e00 += 2; greedy.targetsUnits.e11 -= 2;
   assert.throws(() => planAllocation(owed, greedy), /repayment-exceeds-creditor-relief/, 'relief cannot consume work carried for the debtor');
 });
 
@@ -304,7 +306,7 @@ test('repayment has no monthly cap beyond creditor relief and debtor availabilit
   assert.deepEqual(p.intents, []);
 });
 
-test('partial oldest repayment uses real half duties; a younger claim cannot take its capacity', () => {
+test('partial oldest repayment uses real half duties, and only as far as the month can be scheduled exactly', () => {
   const i = owe(owe(scenario(), 'e00', 'e11', 4, 'old'), 'e00', 'e10', 2, 'young');
   i.schedule.calendar.splitWeekends = ['2026-11-06'];
   const allowed = ['2026-11-01', '2026-11-04', '2026-11-06', '2026-11-09'];
@@ -312,7 +314,10 @@ test('partial oldest repayment uses real half duties; a younger claim cannot tak
     .flatMap(d => allowed.includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
   const r = proposal(i); invariant(i, r);
   assert.equal(allocationCeilings(i).e00, 7, 'three whole duties and one half duty');
-  assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['old', 3]]);
+  // The half duty takes e00's half point. Repaying all three units to the old creditor would leave
+  // three members on half points with only two half duties to give them, so the month could not be
+  // scheduled in full (decision 2026-11-01): the old creditor gets one point, the younger the half.
+  assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['old', 2], ['young', 1]]);
   assert.equal(r.draft.targetsUnits.e00, 7);
 });
 

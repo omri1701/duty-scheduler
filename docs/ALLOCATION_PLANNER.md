@@ -93,6 +93,14 @@ one of them has repaid one (2 below).
    owing A two points each, with A's share at three points, repay one point each
    in November and again in December; with A's share at two, D and C repay in
    November and B goes first in December.
+   A turn never leaves the month unable to give every member exactly its points
+   (decision 2026-11-01, `partitionable`): each member keeps its locked duties and
+   every other duty must go to someone. Half a point changes which members need
+   a half duty (a split weekend half, or a holiday day worth x.5 points), and the
+   month has only so many, so a step that would break the split shrinks to half a
+   point or passes to the next debtor. A creditor relieved down to 0.5 in a month
+   with no half duty keeps 1 instead. Before, such proposals were partial at
+   Generate.
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.

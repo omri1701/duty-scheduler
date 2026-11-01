@@ -1,7 +1,7 @@
 import {sliceClaim} from '../compensation/index.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
-import {equalShares, fitPartition} from './fit.ts';
+import {equalShares, fitPartition, partitionable} from './fit.ts';
 import {ceilings, context, grain, type Context} from './model.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
 
@@ -51,6 +51,12 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     return c.projection.actual.contributions.filter(k => k.status !== 'cancelled' && k.claim.debtorId === debtorId &&
       k.claim.creditorId === creditorId && k.claim.path.some(p => open.has(p.lotId))).reduce((n, k) => n + k.capacity.units, 0);
   };
+  // A step never leaves the month unable to give everyone exactly its points (decision
+  // 2026-11-01): half a point moves which members need an odd duty, and only so many exist.
+  const lockOf = new Map((input.schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
+  const free = c.prepared.duties.filter(d => !lockOf.has(d.id)).map(d => d.units);
+  const lockedWeights = c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units));
+  const exact = (units: Record<string, number>) => partitionable(free, lockedWeights, c.ids.map(id => units[id]));
   const repay = (baseline: Record<string, number>) => {
     const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
     const offered = {...baseline}, taken = new Map<string, number>(), order: string[] = [], repaying = new Set<string>();
@@ -67,6 +73,9 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
           .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
         if (!next || relief < g) break;
         let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
+        if (amount > 0 && exact(offered)) {
+          while (amount > 0 && !exact({...offered, [next]: offered[next] + amount, [creditorId]: offered[creditorId] - amount})) amount -= g;
+        }
         if (amount <= 0) {stuck.add(next); continue;}
         offered[next] += amount; offered[creditorId] -= amount; turns.set(next, turns.get(next)! + amount); repaying.add(next);
         for (const k of claims(next)) {
