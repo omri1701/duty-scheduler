@@ -36,6 +36,26 @@ export function CancelDraftDialog({open,onOpenChange,saving,lang,t,monthLabel,on
   </Dialog>;
 }
 
+export function ClearBoardDialog({open,onOpenChange,saving,lang,t,monthLabel,count,onConfirm}: DialogCopy & {
+  open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; monthLabel: string; count: number; onConfirm: () => Promise<void>;
+}) {
+  return <Dialog open={open} onOpenChange={value => {if (!saving) onOpenChange(value)}}>
+    <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving} onOpenAutoFocus={event => {
+      event.preventDefault();
+      document.getElementById('keep-board')?.focus();
+    }}>
+      <DialogHeader>
+        <DialogTitle>{count === 1 ? t('Clear 1 unlocked duty?', 'לנקות תורנות אחת שאינה נעולה?') : t(`Clear ${count} unlocked duties?`, `לנקות ${count} תורנויות שאינן נעולות?`)}</DialogTitle>
+        <DialogDescription>{monthLabel} · {t('Locked duties stay, and so do constraints, special duties and the plan.', 'תורנויות נעולות יישארו, וכך גם האילוצים, התורנויות המיוחדות והתוכנית.')}</DialogDescription>
+      </DialogHeader>
+      <div className="editor-actions">
+        <Button id="keep-board" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t('Cancel', 'ביטול')}</Button>
+        <Button variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button>
+      </div>
+    </DialogContent>
+  </Dialog>;
+}
+
 export function DraftSwapDialog({
   controller,
   state,

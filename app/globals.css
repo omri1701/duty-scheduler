@@ -171,7 +171,7 @@
  .workspace-grid{grid-template-columns:minmax(0,1fr);gap:14px}
  .calendar-panel,.availability-panel,.team-panel{border-radius:16px;min-width:0}
  .calendar-top{padding:10px;gap:6px;flex-wrap:wrap}
- .calendar-top>button{font-size:12px;padding-inline:8px;height:44px}
+ .calendar-top>button,.calendar-draft-tools>button{font-size:12px;padding-inline:8px;height:44px}
  .segmented{max-width:100%;padding:3px;gap:0;border-radius:12px;flex-wrap:wrap}
  .segmented button{font-size:12px;padding:8px;border-radius:9px;min-height:44px}
  .calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:0}
@@ -353,6 +353,9 @@
 .my-duties-toggle{border:1px solid #dce4df;border-radius:10px;padding:8px 10px;color:#526b5b;font-size:13px;background:#fff}
 .my-duties-toggle[aria-pressed=true]{background:#e4eedf;border-color:#9ab38d;color:#244c37}
 .calendar-top>button:last-child:not(.my-duties-toggle){margin-inline-start:auto}
+.calendar-draft-tools{display:flex;flex-wrap:nowrap;align-items:center;gap:inherit;margin-inline-start:auto;min-width:0;max-width:100%}
+.calendar-draft-tools[data-compact]>button{width:44px;min-width:44px;padding-inline:0}
+.calendar-draft-tools[data-compact] .draft-tool-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .calendar-grid .adjacent-duty{opacity:.6;cursor:default}
 .calendar-grid .day-cell{gap:5px}
 @container month-toolbar (min-width:960px){
@@ -373,7 +376,7 @@
  .calendar-top{gap:6px;padding-inline:8px}
  .calendar-top .segmented button{padding-inline:8px}
  .my-duties-toggle{font-size:12px;padding-inline:8px}
- .calendar-top>button{padding-inline:8px}
+ .calendar-top>button,.calendar-draft-tools>button{padding-inline:8px}
 }
 
 @media(min-width:601px){.calendar-grid .assignment-chip{line-height:20px}}
