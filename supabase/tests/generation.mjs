@@ -454,13 +454,16 @@ insert into public.duty_publications(month,version,published_by) values('2027-11
 insert into public.duty_assignments(publication_id,day,end_day,primary_id) select id,'2027-11-30','2027-12-01','${ids[5]}' from public.duty_publications;
 update public.duty_months set current_publication_id=(select id from public.duty_publications) where month='2027-11';
 insert into public.duty_assignments(day,end_day,primary_id) values('2027-11-30','2027-12-01','${ids[6]}');set local role authenticated;`+refresh+confirm();
-boundary+=`select v from context;`+failure(save(),'neighbor-conflict');
-const draftConflict=structuredClone(partial);draftConflict[duties[0].id]={primary:ids[6]};boundary+=failure(save(draftConflict),'neighbor-conflict');
+// Touching the same member's duty in the neighbouring month is a back-to-back day, a last
+// resort that saves (decision 2026-11-01); locked without its boundary review it is refused.
+boundary+=`select v from context;`+save();
+const draftConflict=structuredClone(partial);draftConflict[duties[0].id]={primary:ids[6]};boundary+=save(draftConflict);
+boundary+=failure(confirm(confirmedDraft,[{dutyId:duties[0].id,engineer:ids[6]}]),'neighbor-conflict');
 boundary+=`reset role;create or replace function duty_private.compensation_now() returns bigint language sql volatile set search_path='' as $$select ${handover('2028-01-01')*60000}::bigint$$;set local role authenticated;
 select public.duty_generation_context('2028-01',${rev});rollback;`;
 const boundaryViews=sql(boundary);assert.deepEqual(new Set(boundaryViews[0].facts.neighbors.map(n=>n.source)),new Set(['published','working']));
 assert.equal(boundaryViews[1].coverageStartMs,handover('2028-01-02')*60000);assert.equal(boundaryViews[1].generationAllowed,true);
-console.log('PASS: both neighboring live/draft commitments bind, and the Saturday-start owner opens on its Sunday handover');
+console.log('PASS: both neighboring live/draft commitments are known; touching one saves as a back-to-back day, locked it needs review; the Saturday-start owner opens on its Sunday handover');
 
 // Per-person changes: the floors, the derived transfer list and the relief floor
 // are enforced by the checked confirm, independently of the client.

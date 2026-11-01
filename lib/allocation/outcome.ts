@@ -5,8 +5,8 @@ import type {AllocationInput} from './types.ts';
 
 /** What Plan the month notes about a generated month, beside the totals: whether
  * anything is scheduled yet, and how many of each member's duties sit back-to-back
- * with another of theirs (Generate's last resort; an approved fixed pair is not
- * counted). Three days in a row count three. */
+ * with another of theirs, in this month or the neighbouring one (Generate's last
+ * resort; an approved fixed pair is not counted). Three days in a row count three. */
 export function generatedNotes(input: AllocationInput, assignments: PrimaryAssignments) {
   const duties = canonicalDuties(input.schedule.month, input.schedule.calendar), touching = new Set<number>();
   const approved = (a: string, b: string) => input.schedule.approvals?.some(v => v.rule === 'consecutive' && v.duties[0] === a && v.duties[1] === b);
@@ -15,6 +15,8 @@ export function generatedNotes(input: AllocationInput, assignments: PrimaryAssig
     if (next && primary && assignments[next.id]?.primary === primary && d.end === next.start && !approved(d.id, next.id)) {
       touching.add(i); touching.add(i + 1);
     }
+    // The same member's duty in the neighbouring month touches too (decision 2026-11-01).
+    if (primary && (input.schedule.neighbors ?? []).some(n => n.engineer === primary && (n.end === d.startDate || n.start === d.endDate))) touching.add(i);
   });
   const backToBack: Record<string, number> = {};
   for (const i of touching) {const id = assignments[duties[i].id].primary!; backToBack[id] = (backToBack[id] ?? 0) + 1;}

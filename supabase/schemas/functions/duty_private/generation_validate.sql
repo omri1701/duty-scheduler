@@ -73,8 +73,11 @@ begin
   totals:=jsonb_set(totals,array[engineer],to_jsonb(amount)); assigned:=assigned+(d->>'units')::bigint;
   for n in select value from jsonb_array_elements(f->'neighbors') where value->>'engineer'=engineer loop
    if (d->>'startDate')::date>(n->>'end')::date or (n->>'start')::date>(d->>'endDate')::date then continue; end if;
-   if not exists(select 1 from jsonb_array_elements(f->'approvals') v join jsonb_array_elements(f->'neighbors') reviewed on reviewed->>'id'=v->>'neighborId'
-     where v->>'rule'='boundary' and v->>'dutyId'=d->>'id' and reviewed-array['id','source']=n-array['id','source']) then raise exception 'neighbor-conflict'; end if;
+   -- Touching the same member's duty in the neighbouring month is a back-to-back day: a last
+   -- resort, allowed like one inside the month (decision 2026-11-01). A locked duty still
+   -- needs its boundary review, and an overlap is never possible.
+   if ((d->>'startDate')::date<(n->>'end')::date and (n->>'start')::date<(d->>'endDate')::date) or (l is not null and not exists(select 1 from jsonb_array_elements(f->'approvals') v join jsonb_array_elements(f->'neighbors') reviewed on reviewed->>'id'=v->>'neighborId'
+     where v->>'rule'='boundary' and v->>'dutyId'=d->>'id' and reviewed-array['id','source']=n-array['id','source'])) then raise exception 'neighbor-conflict'; end if;
   end loop;
  end loop;
  -- Generate may assign extra weekends and back-to-back duties as a last resort.

@@ -39,7 +39,11 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
         const reviewed = input.neighbors?.find(b => b.id === v.neighborId);
         return reviewed?.ownerMonth === n.ownerMonth && reviewed.start === n.start && reviewed.end === n.end && reviewed.engineer === n.engineer;
       });
-      if (!(lock && approved && (d.start === end || d.end === start))) fail('neighbor-conflict', d.id);
+      // Touching the same member's duty in the neighbouring month is a back-to-back day: a
+      // last resort, allowed like one inside the month (decision 2026-11-01). A locked duty
+      // still needs its boundary review, and an overlap is never possible.
+      const touching = d.start === end || d.end === start;
+      if (!touching || (lock && !approved)) fail('neighbor-conflict', d.id);
     }
   }
   for (const [e, member] of members.entries()) {
