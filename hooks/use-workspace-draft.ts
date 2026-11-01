@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import type { Translate, UpdateDraft } from '@/components/rota/workspace-types';
-import { prepareWorkspaceUpdate } from '@/lib/rota/workspace-data';
+import { prepareWorkspaceUpdate, clearableAssignments, clearBoard, restoreCleared } from '@/lib/rota/workspace-data';
 import {
   addDays,
   dates,
@@ -60,6 +60,28 @@ export function useWorkspaceDraft({
       toast.error((e as Error).message);
       return false;
     }
+  }
+  // Undo runs after later renders, so it saves against the newest state, never the cleared one.
+  const latest = useRef(update);
+  useEffect(() => {latest.current = update;});
+  const [clearOpen, setClearOpen] = useState(false);
+  const clearable = useMemo(() => isManager && monthDetails.status === 'draft' ? Object.keys(clearableAssignments(state, month)).length : 0,
+    [isManager, monthDetails.status, state, month]);
+  async function confirmClear() {
+    const cleared = clearableAssignments(state, month), count = Object.keys(cleared).length, generated = monthDetails.generated;
+    if (!count || !(await update((s) => clearBoard(s, month)))) return;
+    setClearOpen(false);
+    setSelected(null);
+    selectSwap(null);
+    toast.success(count === 1 ? t('Cleared 1 duty.', 'תורנות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} תורנויות נוקו.`), {
+      duration: 10000,
+      action: {
+        label: t('Undo', 'שחזור'),
+        onClick: async () => {
+          if (await latest.current((s) => restoreCleared(s, month, cleared, generated))) toast.success(t('Duties restored.', 'התורנויות שוחזרו.'));
+        },
+      },
+    });
   }
   function openDuty(b: Duty) {
     if (isManager && monthDetails.status === 'draft' && ownerMonth(b) === month) setSelected(b);
@@ -205,6 +227,7 @@ export function useWorkspaceDraft({
     update,
     resetSpecialDates,
     editor: { selected, setSelected, openDuty, save: saveDuty, removeSpecial },
+    clear: { open: clearOpen, setOpen: setClearOpen, count: clearable, confirm: confirmClear },
     special: {
       open: specialOpen,
       setOpen: setSpecialOpen,

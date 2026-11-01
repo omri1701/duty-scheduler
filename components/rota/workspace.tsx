@@ -25,6 +25,7 @@ import {
   MonthSettingsDialog,
   PublishDialog,
   CancelDraftDialog,
+  ClearBoardDialog,
   WorkspaceHelpDialog,
 } from './workspace-dialogs';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
@@ -158,6 +159,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     draft.swap.setSelection(null);
     setPublishOpen(false);
     setCancelDraftMonth(null);
+    draft.clear.setOpen(false);
   }
   async function saveConstraints(days: string[], kind: 'no' | 'prefer' | 'clear', note: string) {
     try {
@@ -357,6 +359,8 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
                   reopened={reopened}
                   viewingDraft={viewingDraft}
                   setVersion={setVersion}
+                  clearCount={draft.clear.count}
+                  onClearBoard={() => draft.clear.setOpen(true)}
                   onSpecial={() => {
                     draft.special.setOpen(true);
                     draft.special.setTitle('');
@@ -470,6 +474,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           toast.success(t('Published schedule restored.', '\u05d4\u05dc\u05d5\u05d7 \u05e9\u05e4\u05d5\u05e8\u05e1\u05dd \u05e9\u05d5\u05d7\u05d6\u05e8.'));
         } catch (e) {toast.error((e as Error).message)}
       }}/>
+      <ClearBoardDialog open={draft.clear.open} onOpenChange={draft.clear.setOpen} saving={remote.saving} lang={lang} t={t} monthLabel={monthLabel} count={draft.clear.count} onConfirm={draft.clear.confirm}/>
       <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
       <MonthSettingsDialog
         settings={settings}

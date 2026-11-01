@@ -2,7 +2,7 @@ import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, Cale
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import {streakCells} from '@/lib/rota/streaks';
 import type { CSSProperties } from 'react';
-import { Plus, Info, LockKeyhole } from 'lucide-react';
+import { Plus, Info, LockKeyhole, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, dayOf, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
@@ -32,6 +32,8 @@ export function WorkspaceCalendar({
   viewingDraft,
   setVersion,
   onSpecial,
+  clearCount = 0,
+  onClearBoard,
   metrics,
   interactions,
   blockCount,
@@ -58,6 +60,9 @@ export function WorkspaceCalendar({
   viewingDraft: boolean;
   setVersion: (version: string) => void;
   onSpecial: () => void;
+  /** Unlocked duties Clear board would remove from this draft. */
+  clearCount?: number;
+  onClearBoard?: () => void;
   metrics: WorkspaceMetrics;
   interactions: CalendarInteractions;
   blockCount: number;
@@ -89,17 +94,17 @@ export function WorkspaceCalendar({
           </div>
           <button className="my-duties-toggle" aria-pressed={view === 'me'} onClick={() => setView(view === 'me' ? 'team' : 'me')}>{t('My duties', '\u05d4\u05ea\u05d5\u05e8\u05e0\u05d5\u05d9\u05d5\u05ea \u05e9\u05dc\u05d9')}</button>
         </> : (isManager || !!publication) && <CalendarFilters t={t} value={view} onChange={setView}/>}
-        <Button
-          style={{ display: viewingDraft ? undefined : 'none' }}
-          variant="ghost"
-          onClick={() => {
-            onSpecial();
-          }}
-          disabled={readOnly}
-        >
-          <Plus />
-          {t('Special block', 'מקטע מיוחד')}
-        </Button>
+        {/* Draft tools wrap together. Clear board is a fresh start for the draft only; the published version is never cleared. */}
+        <div className="calendar-draft-tools" style={{ display: viewingDraft ? undefined : 'none' }}>
+          {viewingDraft && onClearBoard && <Button variant="ghost" disabled={readOnly || !clearCount} onClick={onClearBoard}>
+            <Eraser />
+            {t('Clear board', 'ניקוי הלוח')}
+          </Button>}
+          <Button variant="ghost" onClick={onSpecial} disabled={readOnly}>
+            <Plus />
+            {t('Special block', 'מקטע מיוחד')}
+          </Button>
+        </div>
       </>} beforeGrid={!isManager && monthDetails.status !== 'published' && (
         <div className="inline-note">
           {t('The manager has not published this month yet.', 'המנהל עדיין לא פרסם את החודש הזה.')}

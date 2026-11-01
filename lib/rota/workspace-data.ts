@@ -71,3 +71,26 @@ export function prepareWorkspaceUpdate(s: State, changed: State, month: string, 
   }
   return n;
 }
+
+/** Clear board: the unlocked assignments a draft month owns. A published month has none to clear. */
+export function clearableAssignments(state: State, month: string): State['assignments'] {
+  if (state.months[month]?.status === 'published') return {};
+  return Object.fromEntries(blocks(month, state.specials, state.splitWeekends).filter(b => ownerMonth(b) === month)
+    .flatMap(b => {const a = state.assignments[b.id]; return a && !a.locked && (a.primary || a.secondary) ? [[b.id, a]] : [];}));
+}
+
+/** Removes those assignments for a fresh start. Locks, specials, constraints and the plan stay. */
+export function clearBoard(state: State, month: string): State {
+  const cleared = clearableAssignments(state, month), assignments = {...state.assignments};
+  for (const id of Object.keys(cleared)) delete assignments[id];
+  const details = state.months[month];
+  return {...state, assignments, months: details ? {...state.months, [month]: {...details, generated: false}} : state.months};
+}
+
+/** Undo for Clear board: puts back only what is still empty, so later edits win. */
+export function restoreCleared(state: State, month: string, cleared: State['assignments'], generated?: boolean): State {
+  const owned = new Set(blocks(month, state.specials, state.splitWeekends).filter(b => ownerMonth(b) === month).map(b => b.id)), assignments = {...state.assignments};
+  for (const [id, a] of Object.entries(cleared)) if (owned.has(id) && !assignments[id]?.primary && !assignments[id]?.secondary) assignments[id] = a;
+  const details = state.months[month];
+  return {...state, assignments, months: details ? {...state.months, [month]: {...details, generated: details.generated || generated}} : state.months};
+}
