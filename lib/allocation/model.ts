@@ -1,4 +1,4 @@
-import {approvedPair, boundaryBlocked} from '../scheduling/solver/problem.ts';
+import {approvedPair, boundaryBlocked, boundaryTouches} from '../scheduling/solver/problem.ts';
 import {prepareGeneration, inputKey, snapshotKey} from '../scheduling/domain.ts';
 import {canonicalDuties, coverageStart} from '../scheduling/calendar.ts';
 import {project} from '../compensation/index.ts';
@@ -41,9 +41,9 @@ export function grain(c: Context) {
 }
 
 /** The hard availability ceiling, never a feasibility proof: the units of every duty a
- * member may take (available, not locked to someone else, not touching their own duty
- * in a neighbouring month). Generate fills such a target with back-to-back duties and
- * extra weekends as a last resort. Own locked points always fit. */
+ * member may take (available, not locked to someone else, not overlapping their own duty
+ * in a neighbouring month). Generate fills such a target with back-to-back duties (touching
+ * a neighbouring month's too) and extra weekends as a last resort. Own locked points always fit. */
 export function availability(c: Context): Record<string, number> {
   const {problem} = c.prepared;
   return Object.fromEntries(c.ids.map((id, e) => [id, Math.max(c.locked[id], sum(problem.duties.map((d, i) =>
@@ -60,7 +60,8 @@ export function ceilings(c: Context): Record<string, number> {
   return Object.fromEntries(c.ids.map((id, e) => {
     let take = 0, skip = 0, previous = -1; // best totals with/without the previous duty taken
     duties.forEach((d, i) => {
-      if (!d.eligible.includes(e) || (d.lock !== undefined && d.lock !== e) || boundaryBlocked(c.prepared.problem, e, i)) return;
+      if (!d.eligible.includes(e) || (d.lock !== undefined && d.lock !== e) || boundaryBlocked(c.prepared.problem, e, i) ||
+        boundaryTouches(c.prepared.problem, e, i)) return;
       const best = Math.max(take, skip);
       const joined = previous >= 0 && duties[previous].end === d.start && !approvedPair(c.prepared.problem, previous, i);
       [take, skip] = [(joined ? skip : best) + d.units, best]; previous = i;

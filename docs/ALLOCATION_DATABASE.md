@@ -163,7 +163,47 @@ requires explicit refresh/review; targets are not silently changed. Approved swa
 retain the existing cancellation/rerouting accounting instead of forcing repayment
 onto replacement work. Ledger snapshots survive publication deletion.
 
-Changing allocation transfer provenance over an existing publication requires
+**Re-planning a published month** (decision 2026-11-01, migration
+`20261101121634_replan_published_month`). A new plan for a published month starts
+from the ledger without that month's own entries: `duty_private.compensation_replan`
+(mirrored by `lib/compensation/replan.ts`) reverses every lot the month's
+publications booked with an audited `correct` event (`replan/<publication>/<lot>`,
+reason "Re-planned <month>") and then deletes the publication
+(`replan/<publication>/delete`), which cancels its pending repayments.
+`generation_context` returns that ledger for a published month (and
+`replanBlocked`), `confirm_allocation` and `save_generation` check a changed plan
+against it, and `compensation_publication` appends the same events for real, in the
+publishing transaction, before booking the new plan as the month's first version.
+Nothing is rewritten: the old publication, its events and the corrections stay in the
+history. It is refused while another month's repayment uses one of those lots
+(`review-replan-later:<month>`: change that month first), once the month has started
+(`review-replan-started`), or after a hand settlement of one (`review-replan-settled`).
+An unchanged copy keeps its published provenance and rebinds as before.
+
+Across history (migration `20261101124753_replan_history`): a month whose only version
+was deleted keeps its own debts live (its repayments are cancelled), and a new plan
+reverses them too, so they are never counted twice. Re-plan keys carry the ledger
+position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
+again. A re-plan is also refused, naming the month, when reversing the lots would
+change a debt another month's pending repayment is reserved on: a reversal nets
+against the oldest opposing debt, and that repayment would be held and never settle.
+Deleting that month's only version first unblocks it. A version from before a
+re-plan can't become current again (`duty_private.compensation_replanned`): restoring
+it, deleting the version that re-planned it, or publishing a copy of it is refused
+with "<Month> was re-planned after this version, so its points can't come back.
+Reopen the month and change its plan instead." Re-planning reaches any plan.
+
+Review fixes (migration `20261101192755_replan_order_and_deleted_start`): the plan
+screen, `confirm_allocation`, `save_generation` and Publish all re-plan at the current
+instant and project the ledger to opening afterwards, so a repayment settling before
+opening never moves the re-plan keys a plan repays (`invalid-repayment-source` and a
+Refresh loop before). A month whose only version was deleted counts as started by its
+last version: once its first duty is worked a new plan is refused
+(`review-replan-started`), the worked days keep their debts, and Publish waits with the
+reason before the click. `review-replan-later:unknown` (a repayment from the month's
+points settled by a month no longer published) has its own message.
+
+Changing allocation transfer provenance over an existing publication otherwise requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the
 existing audited manual accounting operations remain available. Compound reverse
@@ -197,7 +237,19 @@ node supabase/tests/generation.mjs supabase_db_duty-scheduler
 node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
 node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
 node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
+node supabase/tests/monkey.mjs supabase_db_duty-scheduler 100 1   # steps, seed; resets the database at the end
 ```
+
+`monkey.mjs` (decision 2026-11-01) drives random action sequences through the checked
+RPCs over four months, only where the UI allows them: plan and re-plan with extreme
+edits, Confirm & generate, publish, reopen, cancel, restore or delete any version, edit,
+lock and unlock duties, swaps (request, accept, approve), availability and deadlines,
+in any order. Each step is skipped where the UI disables it, with the same checks
+(publish blockers, `duty_replanned_versions`, `swapProblem` with the availability that
+person may read). Every action must succeed, and after each the ledger must replay
+exactly, balance and have no live chain. A refusal the UI did not prevent is a finding;
+its message must not be the generic fallback. One refusal is counted, not failed: a
+swap request onto a date the counterpart marked unavailable, which is private.
 
 The generation fixture rolls back every synthetic case. It covers authorization,
 malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,

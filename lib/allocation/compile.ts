@@ -191,6 +191,19 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   });
   const normalized = normalize([...c.projection.projected.claims, ...additions],
     new Set(c.projection.actual.members.filter(m => m.active).map(m => m.id))).claims;
+  // The new temporary work must not net away a debt another month's pending repayment is
+  // reserved on today: publishing would hold that repayment, and the checked RPC refuses it
+  // (review-existing-reservation-normalization). Say so before Generate (decision 2026-11-01).
+  const located = (claims: readonly ClaimRef[], ref: ClaimRef) => claims.some(k => k.debtorId === ref.debtorId && k.creditorId === ref.creditorId &&
+    k.path.length === ref.path.length && ref.path.every((p, i) => p.lotId === k.path[i].lotId && p.offset >= k.path[i].offset &&
+      p.offset + p.units <= k.path[i].offset + k.path[0].units && p.offset - k.path[i].offset === ref.path[0].offset - k.path[0].offset));
+  const published = normalize([...c.projection.actual.claims, ...additions],
+    new Set(c.projection.actual.members.filter(m => m.active).map(m => m.id))).claims;
+  if (c.projection.actual.contributions.some(k => k.status === 'pending' &&
+    located(c.projection.actual.claims, k.claim) && !located(published, k.claim))) {
+    provenanceReview = true;
+    diagnostics.push({code: 'review-existing-reservation-normalization', certainty: 'fact'});
+  }
   for (const intent of plan.intents) {
     if (!intent.deferredClaim) continue;
     const addition = additions[temporaryIntents.indexOf(intent)], id = addition.path[0].lotId;

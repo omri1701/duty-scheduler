@@ -1,4 +1,4 @@
-import {anchors, approvedPair, binaryValues, boundaryBlocked, checkProblem, compareGaps, compareQuality,
+import {anchors, approvedPair, binaryValues, boundaryBlocked, boundaryTouches, checkProblem, compareGaps, compareQuality,
   decodeAssignment, validateAssignment, weekendAllowance, type Metrics, type Problem} from './problem.ts';
 import type {Column, Row, Settings, SolverAdapter, SolverResult, Term} from './highs-adapter.ts';
 import {defaultSettings} from './settings.ts';
@@ -108,7 +108,8 @@ function buildRepeats(p: Problem, ids: number[][]) {
 
 /** Extra weekends: z[e,k] >= (weekends of e) - k for every k from the allowance up, so the
  * sum is 1 + 2 + … + (extra weekends) and extra weekends spread across members.
- * Back-to-back: b[e,i] >= x[e,i] + x[e,next] - 1 for each unapproved adjacent pair.
+ * Back-to-back: b[e,i] >= x[e,i] + x[e,next] - 1 for each unapproved adjacent pair, plus
+ * x[e,i] itself for each unlocked duty touching e's duty in a neighbouring month.
  * Continuous columns suffice: binary x makes both minima integral. A proved zero
  * bounds the columns at 0, which restores the hard one-weekend and no-adjacency rows. */
 function buildSlack(p: Problem, ids: number[][]) {
@@ -129,6 +130,7 @@ function buildSlack(p: Problem, ids: number[][]) {
       adjacent.columns.push({name: b}); adjacent.stage.terms.push([1, b]);
       adjacent.rows.push({terms: [[1, x(e, i)], [1, x(e, j)], [-1, b]], upper: 1});
     }
+    for (const i of ids[e]) {const n = boundaryTouches(p, e, i); if (n) adjacent.stage.terms.push([n, x(e, i)]);}
   }
   return [weekends, adjacent];
 }

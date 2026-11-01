@@ -50,12 +50,17 @@ export class Backend {
   failNextSave = false;
   /** Display-only projection served by duty_balance; null serves zero for everyone. */
   balance: Balance | null = null;
+  /** Versions a re-plan reversed, served by duty_replanned_versions. */
+  replanned: string[] = [];
   googleEnabled = false;
   allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
   generationNow = Date.parse(NOW);
   failGenerationSave = false;
   /** Compensation ledger served with the generation context; empty by default. */
   events: readonly CompensationEvent[] = [];
+  /** A reopened published month: its working copy's source publication, and why its plan can't be replaced. */
+  sourcePublication: string | null = null;
+  replanBlocked: string | null | undefined = undefined;
   oauthRequests: URL[] = [];
   generationEnvelope(month: string) {
     const state = fromSnapshot(this.raw, ids.admin);
@@ -64,6 +69,7 @@ export class Backend {
     const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved'}));
     return {revision: this.raw.revision, actualAtMs: this.generationNow, coverageStartMs: coverageStart(month, calendar),
       generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: this.events.length ? `events-${this.events.length}` : 'empty-events', actual: {events: this.events},
+      ...(this.replanBlocked !== undefined ? {replanBlocked: this.replanBlocked} : {}),
       facts: {month, members, seniority: this.raw.members.filter(m => m.active && m.status === 'approved').sort((a, b) => a.seniority - b.seniority).map(m => m.id),
         duties: canonicalDuties(month, calendar).map(d => ({id: d.id, startDate: d.startDate, endDate: d.endDate, units: d.units,
           primary: state.assignments[d.id]?.primary || null, secondary: state.assignments[d.id]?.secondary || null,
@@ -71,7 +77,7 @@ export class Backend {
           extra: specialAt(state.specials, d.startDate)?.extra ?? 0, weekendId: d.weekendId ?? null,
           ...(d.saturdayUnits !== undefined && d.saturdayUnits !== 1 ? {saturdayExtra: (d.saturdayUnits - 1) / 2} : {})})),
         neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
-        sourcePublicationId: null, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
+        sourcePublicationId: this.sourcePublication, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
   }
   snapshot(user: string) {
     const raw = structuredClone(this.raw), admin = canManage(raw, user);
@@ -100,6 +106,10 @@ export class Backend {
       return null;
     }
     if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_replanned_versions') {
+      if (!canManage(this.raw, user)) throw Error('Admin access required');
+      return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
+    }
     if (name === 'duty_balance') {
       const member = this.raw.members.find(m => m.id === user);
       if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');

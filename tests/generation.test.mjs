@@ -426,7 +426,7 @@ test('two members split the weekends 2/2 and vary their weekdays at the cost of 
   assert.ok(patterns.size > 1);
 });
 
-test('boundary union binds both sources, deduplicates facts, protects next owner and supports scoped locks', () => {
+test('boundary union deduplicates facts, touching a neighbour is one back-to-back day, and locks need scoped review', () => {
   const input = limitedMonth({'2026-11-01': ['a', 'b'], '2026-11-30': ['a', 'b']}, [4, 4]);
   input.neighbors = [
     {id: 'live', ownerMonth: '2026-10', start: '2026-10-30', end: '2026-11-01', engineer: 'a', source: 'published'},
@@ -436,9 +436,12 @@ test('boundary union binds both sources, deduplicates facts, protects next owner
   ];
   assert.equal(prepareGeneration(input).problem.boundaries.length, 3);
   const saved = structuredClone(input.neighbors), r = run(input);
-  assert.equal(r.assignments['2026-11-01'].primary, null);
+  // Both members touch a neighbouring duty on the 1st: a last resort (decision 2026-11-01), so it is
+  // covered with one back-to-back day, never left open; the live and working copies count once.
+  assert.notEqual(r.assignments['2026-11-01'].primary, null);
   assert.equal(r.assignments['2026-11-30'].primary, 'b');
-  assert.ok(r.diagnostics.some(d => d.code === 'binding-neighbor-restriction' && d.sources.some(s => s.includes('published'))));
+  assert.equal(r.metrics.adjacent, 1);
+  assert.deepEqual(validateGeneration(input, r.assignments), r.metrics);
   input.locks = [{dutyId: '2026-11-01', engineer: 'a'}];
   assert.throws(() => prepareGeneration(input), /invalid-fixed-input/);
   input.approvals = [{rule: 'boundary', dutyId: '2026-11-01', neighborId: 'live', reason: 'Reviewed adjacent commitment'}];

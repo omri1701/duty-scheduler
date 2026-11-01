@@ -3,6 +3,7 @@ import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
 import {equalShares, fitPartition, partitionable} from './fit.ts';
 import {ceilings, context, grain, type Context} from './model.ts';
+import {validateDraft} from './edits.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
 
 /** Per-person changes worth keeping across proposals: the hand changes, pairs and
@@ -119,7 +120,12 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     const pairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
     const fits = Object.entries(hand).every(([id, ch]) => ch.permanent >= -Math.min(baseline[id], offered[id]) &&
       baseline[id] + ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
-    if (fits && Object.keys(hand).length) draft = build(hand, pairs);
+    if (fits && Object.keys(hand).length) {
+      // The automatic balance around the retained changes must fit too (a permanent
+      // point never below anyone's floor); otherwise the plain proposal stands.
+      const kept = build(hand, pairs);
+      try {validateDraft(c, input.seniority, kept); draft = kept;} catch {/* the plain proposal */}
+    }
   }
   return {draft, projection: c.projection};
 }

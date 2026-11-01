@@ -51,7 +51,7 @@ test('lock-only save retains the existing override and failed saves keep the loc
   await cell.click(); await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
   backend.failNextSave = true;
   await dialog.getByRole('button', {name: 'Save assignment', exact: true}).click();
-  await expect(page.getByText('Synthetic stale revision. Refresh and try again.', {exact: true})).toBeVisible();
+  await expect(page.getByText('The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', {exact: true})).toBeVisible();
   await expect(dialog.getByRole('button', {name: 'Unlock duty', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await expect(cell.getByRole('img', {name: 'Locked duty'})).toHaveCount(0);
   expect(backend.raw.assignments.find(d => d.id === original.id)?.locked).toBe(false);

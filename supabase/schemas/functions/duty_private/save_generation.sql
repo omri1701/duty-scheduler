@@ -1,7 +1,7 @@
 CREATE FUNCTION duty_private.save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare ctx jsonb; f jsonb; checked jsonb; meta public.duty_allocations; d jsonb; s jsonb;
+declare ctx jsonb; f jsonb; checked jsonb; meta public.duty_allocations; d jsonb; s jsonb; instant bigint;
 begin
  ctx:=duty_private.generation_context(p_month,p_revision);
  if p_fingerprint IS DISTINCT FROM ctx->>'fingerprint' then raise exception 'Generation inputs changed. Refresh and review.' using errcode='40001'; end if;
@@ -17,7 +17,11 @@ begin
  if meta.calendar_fingerprint<>md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(f->'duties') d)) then raise exception 'Calendar changed. Confirm allocation again.' using errcode='40001'; end if;
  checked:=duty_private.generation_validate(f,meta.allocation->'targetsUnits',p_assignments);
  if meta.source_publication_id is null then
-  s:=duty_private.compensation_reconcile(duty_private.compensation_state(),(ctx->>'coverageStartMs')::bigint,false);
+  -- Re-planned now and projected after, as generation_context and Confirm do.
+  s:=duty_private.compensation_state();
+  instant:=greatest((ctx->>'actualAtMs')::bigint,coalesce((s->'events'->-1->>'at')::bigint,0));
+  s:=duty_private.compensation_replan(s,p_month,instant);
+  s:=duty_private.compensation_reconcile(s,greatest(instant,(ctx->>'coverageStartMs')::bigint,coalesce((s->'events'->-1->>'at')::bigint,0)),false);
   perform duty_private.allocation_compile(f,meta.allocation,checked->'actualUnits',s);
  end if;
  if duty_private.compensation_now()>=(ctx->>'coverageStartMs')::bigint then raise exception 'generation-window-closed'; end if;
