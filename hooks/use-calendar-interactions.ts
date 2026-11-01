@@ -20,6 +20,7 @@ export function useCalendarInteractions({
   monthDetails,
   openDuty,
   startSwap,
+  editPublished,
 }: {
   remote: TeamWorkspace;
   state: State;
@@ -32,6 +33,8 @@ export function useCalendarInteractions({
   monthDetails: State['months'][string];
   openDuty: (duty: Duty) => void;
   startSwap: (from: string, to: string) => void;
+  /** Admins only: opens Edit duty for an editable published duty, else returns false. */
+  editPublished?: (day: string) => boolean;
 }) {
   const meId = remote.user!.id;
   const mobile = useMobileLayout();
@@ -68,6 +71,11 @@ export function useCalendarInteractions({
     }
     if (keyboardSource && requestTarget(keyboardSource, b.id)) {
       finishCalendarSwap(keyboardSource, b.id);
+      return;
+    }
+    // A regular press edits for admins; a swap starts by drag or from the editor.
+    if (keyboardSource !== b.id && editPublished?.(b.id)) {
+      setKeyboardSource(null);
       return;
     }
     if (ownPublishedDays.has(b.id)) setKeyboardSource(keyboardSource === b.id ? null : b.id);

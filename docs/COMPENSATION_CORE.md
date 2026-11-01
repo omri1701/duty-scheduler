@@ -160,7 +160,9 @@ the [allocation database contract](ALLOCATION_DATABASE.md); UI and application
 Generate integration remain future work.
 
 The pointer hook records Publish, approved swaps and live-version deletion in
-their existing transactions. Reopen/restore and Cancel Draft keep the live
+their existing transactions. An admin's published duty edit records its own
+publication event first (Temporary: the ordinary transfer; Permanent: a reviewed
+permanent intent over the shared units), so the hook finds that version recorded. Reopen/restore and Cancel Draft keep the live
 commitment. Existing historical rota edits remain permitted: accounting retains
 already completed facts rather than rewriting earned history. Explicit audited
 corrections handle their compensation. Deleting a version retains all event

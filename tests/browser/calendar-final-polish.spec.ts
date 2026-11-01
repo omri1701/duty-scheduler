@@ -105,7 +105,13 @@ for(const role of ['admin','a'] as const)for(const method of ['tap','drag']) {
     await expect(duty(page,'2026-11-01')).toBeDisabled();
     await duty(page,'2026-11-03').click();
     await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');
-    if(method==='tap') {await duty(page,'2026-11-02').click();await duty(page,'2026-11-03').click();}
+    // An admin's tap opens Edit duty; their own duty can start a swap from there.
+    if(role==='admin'){await expect(page.getByRole('dialog',{name:'Edit duty'})).toBeVisible();await page.keyboard.press('Escape');}
+    if(method==='tap') {
+      await duty(page,'2026-11-02').click();
+      if(role==='admin')await page.getByRole('button',{name:'Request a swap instead',exact:true}).click();
+      await duty(page,'2026-11-03').click();
+    }
     else await drag(page,info.project.name==='mobile');
     await page.getByRole('button',{name:'Confirm Request',exact:true}).click();
     expect(backend.raw.swapRequests![0]).toMatchObject({requester_id:ids[role],from_day:'2026-11-02',to_day:'2026-11-03',status:'awaiting_engineer',accepted_by:null});

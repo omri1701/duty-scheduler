@@ -1,4 +1,4 @@
-import {test,expect,ids,duty,drag,keyboardRequest} from './fixtures';
+import {test,expect,ids,duty,drag} from './fixtures';
 import {blocks,ownerMonth} from '../../lib/rota/engine';
 import {webkit,devices} from '@playwright/test';
 
@@ -11,7 +11,10 @@ test('iPhone WebKit keeps published requests and bilingual version controls usab
     const context=await browser.newContext({...devices['iPhone 13'],locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});
     const page=await context.newPage();
     await openApp('admin',page);
-    await duty(page,'2026-11-02').tap(); await duty(page,'2026-11-03').tap();
+    // A tap opens Edit duty for admins; their own duty can still start a swap from there.
+    await duty(page,'2026-11-02').tap();
+    await page.getByRole('button',{name:'Request a swap instead',exact:true}).tap();
+    await duty(page,'2026-11-03').tap();
     await expect(page.getByRole('button',{name:'Confirm Request',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.getByRole('button',{name:'Reopen draft',exact:true}).click();
@@ -41,7 +44,7 @@ test('engineer sees filters only with a publication and never sees drafts',async
   await expect(duty(page,'2026-11-02')).toBeDisabled();
 });
 
-test('published manager requests from own duties by tap and drag, never directly edits',async({page,backend,openApp},info)=>{
+test('published manager taps to edit, requests from own duties from the editor or by drag',async({page,backend,openApp},info)=>{
   backend.raw.months[0].status='published';
   backend.raw.assignments.find(d=>d.publication_id && d.day==='2026-11-02')!.primary_id=ids.admin;
   await openApp();
@@ -51,8 +54,15 @@ test('published manager requests from own duties by tap and drag, never directly
   await expect(page.locator('.request-swap-hint,.month-title .status-badge')).toHaveCount(0);
   await duty(page,'2026-11-03').click();
   await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');
+  await expect(page.getByRole('dialog',{name:'Edit duty'})).toBeVisible();
+  // Another member's duty offers no swap from the editor.
+  await expect(page.getByRole('button',{name:'Request a swap instead',exact:true})).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await keyboardRequest(page);
+  await duty(page,'2026-11-02').focus(); await page.keyboard.press('Enter');
+  await page.getByRole('button',{name:'Request a swap instead',exact:true}).click();
+  await expect(duty(page,'2026-11-02')).toHaveAttribute('aria-pressed','true');
+  await duty(page,'2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('button',{name:'Confirm Request',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');
   await drag(page,info.project.name==='mobile');

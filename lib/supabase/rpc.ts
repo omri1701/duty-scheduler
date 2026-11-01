@@ -31,6 +31,8 @@ export type Functions = {
   duty_request_swap: Operation<Revision & {p_from: string; p_to: string; p_explanation: string}>;
   duty_resolve_swap: Operation<Revision & {p_request: string; p_action: 'accept' | 'decline' | 'approve' | 'reject' | 'cancel'; p_override_reason: string}, string>;
   duty_review_member: Operation<Revision & {p_member: string; p_status: 'approved' | 'rejected'}>;
+  duty_edit_published_duty: Operation<Revision & {p_publication: string; p_day: string; p_primary: string; p_extra_points: number;
+    p_saturday_extra_points: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number}>;
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;

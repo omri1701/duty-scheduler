@@ -587,6 +587,36 @@ The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
 
+## Published duty edit
+
+Migration `20261031230637_published_duty_edit.sql` adds the admin-only checked RPC
+`duty_edit_published_duty(p_publication uuid,p_day date,p_primary uuid,p_extra_points numeric,
+p_saturday_extra_points numeric,p_kind text,p_revision bigint,p_override_reason text)`.
+It requires an active approved admin and the last accepted revision, and refuses a
+publication that is no longer the month's current one, or a month with an open
+(reopened) draft: that draft was copied from the earlier version, so publishing it
+would silently undo the edit. Publish or cancel the draft first. The duty must belong to that
+month, start today or later in Asia/Jerusalem and have a primary; the new primary
+must be an active approved member who is not that duty's emergency cover. Extra
+points are 0–20 in half points (Saturday's only on a combined weekend). Availability
+is re-checked for the new primary: a conflict needs a reason that is not blank,
+including Unicode spaces (≤500 characters), and marks the row as an override. An unchanged edit is refused.
+
+The edit copies the current publication into a new version with only that row
+changed, carrying an existing allocation snapshot like an approved swap (locks follow
+the new engineer; approvals for the changed dates or the two engineers' weekends are
+dropped). Accounting is recorded in the same transaction before the pointer moves.
+**Temporary** keeps the ordinary publication transition: the old engineer owes the
+new one each date's shared units (a published repayment on that duty routes through
+its creditor as for any replacement). **Permanent** adds the permanent intent
+`edit/<publication>` over exactly those units, so no debt. `compensation_publication`
+gained an optional server-built `edit` argument for this; existing callers are
+unchanged. The ledger event's manager-only reason records the kind and any override
+reason; `duty_balance` never returns it. Pending swap requests on the changed duty
+are reconciled by the existing pointer trigger (a new engineer resets consent; an
+extras-only edit keeps it, since the same admin still approves). Regression:
+`supabase/tests/published-edit.sql` (empty disposable LOCAL, rolled back).
+
 ### Empty local Supabase database (PowerShell)
 
 Requires Docker Desktop and pnpm. The CLI database-only mode includes real

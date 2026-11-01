@@ -11,6 +11,8 @@ import { Info, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { DutyEditor } from '@/components/rota/duty-editor';
+import { PublishedDutyEditor } from '@/components/rota/published-duty-editor';
+import { editablePublishedDuty } from '@/lib/supabase/published-edit';
 import { ProfileDialog } from '@/components/rota/profile-dialog';
 import { PublicationHistory } from '@/components/rota/publication-history';
 import { SwapRequests } from '@/components/rota/swap-requests';
@@ -73,6 +75,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   const [person, setPerson] = useState(meId),
     [calendarChoice, setCalendarChoice] = useState({month: '', status: '', version: 'draft', mine: false});
   const [cancelDraftMonth, setCancelDraftMonth] = useState<string | null>(null);
+  const [publishedEdit, setPublishedEdit] = useState<string | null>(null);
   const t = (en: string, he: string) => (lang === 'en' ? en : he);
   const duties = useMemo(
     () => blocks(month, state.specials, state.splitWeekends),
@@ -135,7 +138,14 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     monthDetails,
     openDuty: draft.editor.openDuty,
     startSwap: draft.swap.start,
+    // A reopened month's draft was copied from this version; edits wait until it is published or cancelled.
+    editPublished: isManager && !remote.readOnly && monthDetails.status === 'published' ? (day) => {
+      if (!editablePublishedDuty(remote.snapshot!, month, today, day)) return false;
+      setPublishedEdit(day);
+      return true;
+    } : undefined,
   });
+  const publishedEditRow = publishedEdit ? editablePublishedDuty(remote.snapshot!, month, today, publishedEdit) : undefined;
   const { requestSelection, setRequestSelection } = interactions;
   function changeMonth(n: number) {
     const m = monthNext(month, n);
@@ -144,6 +154,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     interactions.resetSelection();
     setCalendarChoice({month: m, status: '', version: 'draft', mine: false});
     setSelected(null);
+    setPublishedEdit(null);
     draft.swap.setSelection(null);
     setPublishOpen(false);
     setCancelDraftMonth(null);
@@ -430,6 +441,19 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           }}
           onSave={draft.editor.save}
           onRemoveSpecial={draft.editor.removeSpecial}
+        />
+      )}
+      {publishedEditRow && (
+        <PublishedDutyEditor
+          key={publishedEditRow.day}
+          remote={remote}
+          row={publishedEditRow}
+          lang={lang}
+          onClose={() => setPublishedEdit(null)}
+          onSwap={interactions.ownPublishedDays.has(publishedEditRow.day) ? () => {
+            setPublishedEdit(null);
+            interactions.setKeyboardSource(publishedEditRow.day);
+          } : undefined}
         />
       )}
       <DraftSwapDialog

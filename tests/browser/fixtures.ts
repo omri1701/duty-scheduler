@@ -7,6 +7,7 @@ import type {AllocationDraft} from '../../lib/allocation/types';
 import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 import type {Balance} from '../../lib/supabase/balance';
+import {dutyPoints, owedUnits} from '../../lib/supabase/published-edit';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -215,6 +216,28 @@ export class Backend {
         r.result_publication_id = this.publish(MONTH, rows);
       }
       r.override_reason = p.p_override_reason as string;
+    } else if (name === 'duty_edit_published_duty') {
+      expect(admin).toBe(true);
+      const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
+      if (!m) throw Error('This publication changed. Refresh first.');
+      const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
+      const row = rows.find(d => d.day === p.p_day)!, primary = p.p_primary as string, before = structuredClone(row);
+      const changed = primary !== row.primary_id;
+      const conflict = changed && this.raw.constraints.some(c => c.member_id === primary && c.kind === 'no' && c.day >= row.day && c.day < row.end_day);
+      if (conflict && !String(p.p_override_reason).trim()) throw Error('Availability conflict. An admin must explicitly override with a reason.');
+      Object.assign(row, {primary_id: primary, extra_points: p.p_extra_points, saturday_extra_points: p.p_saturday_extra_points, manager_override: changed ? conflict : row.manager_override,
+        points: dutyPoints(row, p.p_extra_points as number, p.p_saturday_extra_points as number)});
+      // Display-only stand-in for the ledger: Temporary moves the published points as a change line.
+      if (changed && p.p_kind === 'temporary') {
+        const units = owedUnits(before, p.p_extra_points as number, p.p_saturday_extra_points as number);
+        const balance = this.balance ??= {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+        balance.net[before.primary_id!] -= units; balance.net[primary] += units;
+        balance.lines.push({memberId: before.primary_id!, counterpartId: primary, units: -units, kind: 'change', date: null, month: m.month},
+          {memberId: primary, counterpartId: before.primary_id!, units, kind: 'change', date: null, month: m.month});
+      }
+      const publication = this.publish(m.month, rows);
+      this.raw.revision!++;
+      return {publication, version: m.publication_sequence};
     } else throw Error(`Unexpected RPC: ${name}`);
     this.raw.revision!++;
     return null;

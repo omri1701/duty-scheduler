@@ -587,3 +587,6 @@
 .net-breakdown>div{display:grid;gap:2px}.net-breakdown p{display:flex;justify-content:space-between;gap:10px;font-weight:600}
 .net-breakdown small{display:block;font-size:12px;color:#6d7f66;overflow-wrap:anywhere}
 @media(max-width:600px){.team-row:has(.net-points){grid-template-columns:44px 28px minmax(0,1fr) 35px 35px 35px}.team-row:has(.net-points) .active-checkbox{grid-column:4/7}}
+.published-edit-dialog input[type=number]{width:100%}
+.published-edit-kind{display:grid;gap:8px}.published-edit-kind .segmented button{flex:1;min-height:44px;font-size:14px}
+.editor-dialog .published-edit-summary{white-space:pre-wrap;font-size:14px;line-height:1.55;max-height:none;resize:none;background:#f6f8f5;color:#213b33}
