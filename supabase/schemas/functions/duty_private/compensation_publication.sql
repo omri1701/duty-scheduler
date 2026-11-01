@@ -19,8 +19,15 @@ begin
  -- month's repayment uses those lots (review-replan-later:<month>) or once it started. A month
  -- whose only version was deleted keeps its lots live until then; they are reversed too.
  if not deleting and publication is not null and allocation.month is not null and allocation.source_publication_id is null then
-  if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
-  s:=duty_private.compensation_replan(s,month,instant,true); before_pub:=null;
+  -- The ledger may have moved since the plan was confirmed (another month published): the
+  -- re-plan and the binding below re-check every source, so the plan publishes whenever it
+  -- still books (decision 2026-11-01); only a plan that no longer books asks to refresh.
+  begin s:=duty_private.compensation_replan(s,month,instant,true);
+  exception when others then
+   if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+   raise;
+  end;
+  before_pub:=null;
  end if;
  after_pub:=duty_private.compensation_snapshot(publication);
  if deleting and after_pub is not null then
@@ -60,10 +67,13 @@ begin
   if allocation.month is not null then
    if metadata is not null then raise exception 'Allocation accounting is server-owned'; end if;
    if allocation.source_publication_id is null then
-    if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
     if before_pub is not null and allocation.allocation->'transfers'<>'[]' then raise exception 'Review published transfer lineage before changing allocation'; end if;
     facts:=duty_private.generation_facts(month);
-    metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);
+    begin metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);
+    exception when others then
+     if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+     raise;
+    end;
    elsif allocation.origin<>'swap' then
     if allocation.source_publication_id::text is distinct from s->'publications'->month->>'id' and duty_private.compensation_replanned(s,month,allocation.source_publication_id) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
     metadata:=duty_private.allocation_rebind(s,after_pub,allocation.source_publication_id,allocation.allocation_id,instant);
