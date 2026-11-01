@@ -349,10 +349,14 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  const lowered=editAllocation(input,first,{engineer:taker,deltaUnits:-part,kind:'temporary'}).draft;
  const pub=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
  const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;`;
- const rows=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+view+
+ const versions=key=>`select jsonb_build_object('${key}',public.duty_replanned_versions('${month}'),'first',(select current_publication_id from public.duty_months where month='${month}'));`;
+ const rows=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+view+versions('blockedBefore')+
   `select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+
   `create temp table first_version as select current_publication_id id from public.duty_months where month='${month}';`+
-  `select jsonb_build_object('reopened',v) from context;create temp table stale as select v from context;`+confirm(persistedDraft(lowered))+save(arrangement(lowered.targetsUnits))+pub+view+
+  `select jsonb_build_object('reopened',v) from context;create temp table stale as select v from context;`+confirm(persistedDraft(lowered))+save(arrangement(lowered.targetsUnits))+pub+view+versions('blockedAfter')+
+  // Versions learns which versions were reversed before the click; only admins may ask.
+  `set local request.jwt.claim.sub='${ids[2]}';`+failure(`select public.duty_replanned_versions('${month}')`,'Admin access required')+
+  failure(`select duty_private.replanned_versions('${month}')`,'Admin access required')+`set local request.jwt.claim.sub='${manager}';`+
   // A second tab still holding the context from before the re-plan can't confirm over it.
   failure(`select public.duty_confirm_allocation('${month}',${quote(persistedDraft(lowered))},'[]','[]',(select (v->>'revision')::bigint from stale),(select v->>'fingerprint' from stale))`,'revision|changed|Refresh')+
   // The version from before the re-plan can't come back: restoring it or deleting the
@@ -363,6 +367,9 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  const [published,replaced]=rows.filter(r=>r.view).map(r=>r.view),reopened=readGenerationContext(rows.find(r=>r.reopened).reopened);
  assert.deepEqual([published.net[taker],...givers.map(g=>published.net[g])],[owed,...givers.map(g=>-first.baselineUnits[g])],'published: the givers owe the taker');
  assert.equal(reopened.replanBlocked,null);
+ const before=rows.find(r=>r.blockedBefore),after=rows.find(r=>r.blockedAfter);
+ assert.deepEqual(before.blockedBefore,[],'no version is reversed before a re-plan');
+ assert.deepEqual(after.blockedAfter,[before.first],'the re-plan names the version it reversed');
  assert.ok(Object.values(reopened.projected.net).every(n=>n===0),'reopened: the ledger without the month\'s own entries owes nothing');
  const copy=reviewAllocation(reopened.input,reopened.allocation);
  assert.deepEqual(copy.targetsUnits,first.targetsUnits,'the copy reviews as published');

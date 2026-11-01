@@ -50,6 +50,8 @@ export class Backend {
   failNextSave = false;
   /** Display-only projection served by duty_balance; null serves zero for everyone. */
   balance: Balance | null = null;
+  /** Versions a re-plan reversed, served by duty_replanned_versions. */
+  replanned: string[] = [];
   googleEnabled = false;
   allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
   generationNow = Date.parse(NOW);
@@ -104,6 +106,10 @@ export class Backend {
       return null;
     }
     if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_replanned_versions') {
+      if (!canManage(this.raw, user)) throw Error('Admin access required');
+      return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
+    }
     if (name === 'duty_balance') {
       const member = this.raw.members.find(m => m.id === user);
       if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');

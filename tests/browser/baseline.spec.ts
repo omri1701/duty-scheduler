@@ -216,6 +216,28 @@ test('weekend editor saves split owners atomically', async ({page, openApp, back
   expect(state.duties.find(d => d.day === '2026-11-07')).toMatchObject({end_day: '2026-11-08', primary_id: ids.a});
 });
 
+test('versions a re-plan reversed are disabled with a note before the click', async ({page, openApp, backend}) => {
+  // v1 was re-planned into live v2 (decision 2026-11-01): restoring v1, or deleting v2 and
+  // bringing v1 back, is prevented in the dialog; v2 itself can still be restored.
+  const v1 = backend.raw.publications[0], v2 = {...v1, id: `${v1.id}-v2`, version: 2};
+  backend.raw.publications.push(v2);
+  backend.raw.assignments.push(...backend.raw.assignments.filter(d => d.publication_id === v1.id).map(d => ({...d, id: `${d.id}-v2`, publication_id: v2.id})));
+  backend.raw.months[0].current_publication_id = v2.id; backend.raw.months[0].publication_sequence = 2;
+  backend.replanned = [v1.id];
+  await openApp();
+  await monthAction(page, 'Versions');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('v2 · Live');
+  await expect(page.getByRole('button', {name: 'Restore as draft'})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'Delete version', exact: true})).toBeDisabled();
+  await expect(dialog.getByRole('note')).toHaveText('Deleting this version would bring back v1, from before the month was re-planned. Reopen the month and change its plan instead.');
+  await dialog.getByRole('button', {name: /^v1/}).click();
+  await expect(page.getByRole('button', {name: 'Restore as draft'})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'Delete version', exact: true})).toBeEnabled();
+  await expect(dialog.getByRole('note')).toHaveText('This month was re-planned after this version, so it can’t be restored. Reopen the month and change its plan instead.');
+  expect(backend.calls.filter(c => ['duty_restore_publication', 'duty_delete_publication'].includes(c.name))).toHaveLength(0);
+});
+
 test('history deletion requires confirmation and closes the last live version', async ({page, openApp, backend}) => {
   await openApp();
   await monthAction(page, 'Versions');
