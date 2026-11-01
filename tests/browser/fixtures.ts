@@ -7,6 +7,7 @@ import type {AllocationDraft} from '../../lib/allocation/types';
 import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 import type {Balance} from '../../lib/supabase/balance';
+import type {CompensationEvent} from '../../lib/compensation/types';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -53,6 +54,8 @@ export class Backend {
   allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
   generationNow = Date.parse(NOW);
   failGenerationSave = false;
+  /** Compensation ledger served with the generation context; empty by default. */
+  events: readonly CompensationEvent[] = [];
   oauthRequests: URL[] = [];
   generationEnvelope(month: string) {
     const state = fromSnapshot(this.raw, ids.admin);
@@ -60,7 +63,7 @@ export class Backend {
     const metadata = this.allocations.get(month);
     const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved'}));
     return {revision: this.raw.revision, actualAtMs: this.generationNow, coverageStartMs: coverageStart(month, calendar),
-      generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: 'empty-events', actual: {events: []},
+      generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: this.events.length ? `events-${this.events.length}` : 'empty-events', actual: {events: this.events},
       facts: {month, members, seniority: this.raw.members.filter(m => m.active && m.status === 'approved').sort((a, b) => a.seniority - b.seniority).map(m => m.id),
         duties: canonicalDuties(month, calendar).map(d => ({id: d.id, startDate: d.startDate, endDate: d.endDate, units: d.units,
           primary: state.assignments[d.id]?.primary || null, secondary: state.assignments[d.id]?.secondary || null,

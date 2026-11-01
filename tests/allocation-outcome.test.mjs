@@ -138,6 +138,58 @@ test('one extra each before anyone gets two: the January case repays in turns, n
   assert.deepEqual(proposeAllocation(i, {hand: {}, pairs: [], baselineUnits: d.baselineUnits}).draft.targetsUnits, d.targetsUnits);
 });
 
+test('a point received permanently and handed to a debtor is that debtor\'s repayment: the January 2027 plan books', async () => {
+  // The reported plan (2026-11-01): Local Engineer, Avi and Dana each owe Local Admin two points.
+  // The turns repay Dana and Avi one point each. The manager then gave Local Admin a point
+  // permanently, dragged a point from Local Admin to Local Engineer, and took a point permanently
+  // from Omer. Local Admin's point to Local Engineer is the one Local Admin just received
+  // permanently; it was refused after Generate ("can't be booked") as a compound route.
+  // Permanent legs owe nothing, so it is Local Engineer's own repayment to Local Admin.
+  const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
+  const admin = 'Local Admin', engineer = 'Local Engineer';
+  const i = team('2027-01', names, [[engineer, admin, 4], ['Avi', admin, 4], ['Dana', admin, 4]]);
+  let d = editAllocation(i, proposeAllocation(i).draft, {engineer: admin, deltaUnits: 2, kind: 'permanent'}).draft;
+  d = editAllocation(i, drag(i, d, admin, engineer), {engineer: 'Omer', deltaUnits: -2, kind: 'permanent'}).draft;
+  assert.deepEqual(points(d), {Avi: 3, Dana: 3, Eitan: 2, Lior: 2, [admin]: 0, [engineer]: 3, Maya: 2, Noa: 2, Omer: 2, Shira: 3, Tamar: 2, Yossi: 2});
+  assert.deepEqual(Object.fromEntries(Object.entries(d.changes).filter(([, c]) => c.temporary || c.permanent)),
+    {[admin]: {temporary: -2, permanent: 2}, [engineer]: {temporary: 2, permanent: 0}, Omer: {temporary: 0, permanent: -2}});
+  const planned = planAllocation(i, d);
+  assert.equal(planned.confirmable, true, JSON.stringify(planned.diagnostics));
+  assert.deepEqual(planned.plan.intents, [], 'no new debt: Omer\'s permanent point owes nothing, Local Engineer\'s point repays');
+  assert.deepEqual(byPair(planned.plan.repayments), {[`Avi>${admin}`]: 2, [`Dana>${admin}`]: 2, [`${engineer}>${admin}`]: 2});
+  assert.deepEqual(byPair(planned.plan.deferred), {[`Avi>${admin}`]: 2, [`Dana>${admin}`]: 2, [`${engineer}>${admin}`]: 2});
+  // Through Generate, compile and binding, then the ledger once the month is worked.
+  const r = solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(names.map(id => [id, d.targetsUnits[id] / 2]))},
+    {now: i.now, seed: 3, seconds: 30}));
+  assert.equal(r.complete, true);
+  assert.equal(compileAllocation(i, d, r.assignments).confirmable, true);
+  const bound = await bindAllocation(i, d, r.assignments, {publicationId: 'p', sourceKey: 'publish/p', actor: 'm'});
+  assert.equal(bound.bindable, true, bound.diagnostics.at(-1)?.code);
+  const far = Date.parse('2027-01-01T00:00:00Z') + 70 * 86400000, after = project(bound.preview.events, far, far).actual;
+  assert.deepEqual(byPair(after.claims.map(claim => ({claim, units: claim.units}))), {[`Avi>${admin}`]: 2, [`Dana>${admin}`]: 2, [`${engineer}>${admin}`]: 2});
+});
+
+test('a point given permanently and handed back temporarily is a plain loan: the route drops its permanent leg and binds', async () => {
+  // Omer gives Local Admin a point for good, then Local Admin, whose own share is all relief,
+  // hands that point back to Omer. Permanent legs owe nothing (decision 2026-11-01), so it books
+  // as Local Admin owing Omer one point; it was published as an intent from Omer to Omer before
+  // (invalid-endpoints).
+  const names = ['Local Admin', 'Local Engineer', 'Avi', 'Dana', 'Yossi', 'Noa', 'Eitan', 'Maya', 'Lior', 'Tamar', 'Omer', 'Shira'];
+  const admin = 'Local Admin', i = team('2027-01', names, [['Local Engineer', admin, 4], ['Avi', admin, 4], ['Dana', admin, 4]]);
+  const d = drag(i, drag(i, proposeAllocation(i).draft, 'Omer', admin, 2, 'permanent'), admin, 'Omer');
+  const planned = planAllocation(i, d);
+  assert.equal(planned.confirmable, true);
+  assert.deepEqual(planned.plan.funding.map(f => [f.carrierId, f.units, f.route.map(l => [l.fromId, l.toId, l.kind])]), [['Omer', 2, [[admin, 'Omer', 'temporary']]]]);
+  const r = solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(names.map(id => [id, d.targetsUnits[id] / 2]))},
+    {now: i.now, seed: 3, seconds: 30}));
+  assert.equal(r.complete, true);
+  const bound = await bindAllocation(i, d, r.assignments, {publicationId: 'p', sourceKey: 'publish/p', actor: 'm'});
+  assert.equal(bound.bindable, true, bound.diagnostics.at(-1)?.code);
+  const far = Date.parse('2027-01-01T00:00:00Z') + 70 * 86400000, after = project(bound.preview.events, far, far).actual;
+  assert.equal(after.net.Omer, 2, 'Local Admin owes Omer one point');
+  assert.equal(after.net[admin], 12 - 2 - 2 - 2, 'owed six points: Avi and Dana repaid one each, and Local Admin owes Omer one');
+});
+
 /** Publish a month's planned repayments as ledger reservations, one per duty-sized unit pair. */
 function publish(i, draft, month, at) {
   const days = Array.from({length: 28}, (_, k) => `${month}-${String(k + 1).padStart(2, '0')}`), duties = [], reservations = [];

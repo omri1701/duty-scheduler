@@ -229,7 +229,12 @@ intent retains its original `deferredClaim`; `normalizedDeferredClaims` separate
 explains the FIFO slices consumed by normalization. Original counterparts and
 transfer IDs remain available rather than being rewritten to the final worker.
 Ambiguous compound routes remain unbound and require explicit review before
-confirmation. `unfundedUnits` retains all target shortfalls, and unassigned burden
+confirmation. Permanent legs owe nothing (decision 2026-11-01): a reverse leg after
+only permanent legs is the debtor's own repayment (A gives C a point for good, C
+hands it to D who owes C: D repays C), and a route back to its own carrier drops
+the permanent legs out of it. Plan the month names any review code with its own
+note and keeps **Confirm & generate** disabled until the plan can be booked, so a
+plan never fails as a whole after Generate. `unfundedUnits` retains all target shortfalls, and unassigned burden
 creates no new claim.
 Partial compilation uses exactly the assigned units, funding ordinary work before
 oldest repayment and temporary burden. It does not optimize or fill missing work.

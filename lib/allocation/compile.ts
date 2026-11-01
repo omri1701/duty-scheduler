@@ -103,6 +103,7 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   const priority = (t: Token) => isRepayment(t) || reverseClaim(t) ? 1 : t.trail.length && t.origin !== t.carrier ? 2 : 0;
   const plan: CompiledPlan = {repayments: [], deferred: [], intents: [], funding: [], unfundedUnits: {}};
   const reserved: {claim: ClaimRef; units: number}[] = [];
+  let provenanceReview = false;
   for (const id of c.ids) {
     let capacity = capacityUnits[id] ?? 0;
     plan.unfundedUnits[id] = draft.targetsUnits[id] - capacity;
@@ -118,6 +119,17 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
       if (!isRepayment(paid) && paid.trail.length && paid.origin !== paid.carrier) route.push({fromId: paid.origin, toId: paid.carrier,
         units: funded, kind: 'temporary', transferIds: paid.trail,
         ...(paid.claim ? {deferredClaim: ref(paid.claim)} : {})});
+      // A route back to its own carrier (C gave a point permanently, then was handed
+      // one): permanent legs owe nothing, so those out of C are dropped (decision
+      // 2026-11-01). A debt of C's own that returns to C can't be funded by C's work.
+      while (route.length && route[0].fromId === id) {
+        if (route[0].kind !== 'permanent') {
+          provenanceReview = true;
+          diagnostics.push({code: 'review-circular-route', certainty: 'fact', engineer: id, units: funded});
+          route.length = 0; break;
+        }
+        route.shift();
+      }
       if (route.length) plan.funding.push({carrierId: id, units: funded, route});
     }
   }
@@ -127,11 +139,14 @@ function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, c
   // The same holds for a deferred repayment (decision 2026-10-31): when B's lowered
   // target hands B's repayment to C over to D, and D owes C too, the point is D's
   // own repayment to C. B's debt stays open, D's drops, nothing new is owed to D.
-  let provenanceReview = false;
+  // Permanent legs before it owe nothing (decision 2026-11-01): when A gives C a
+  // point permanently and C hands that point to D, it is still C's own work, so D
+  // repays C with it as if C had handed over its own share.
   for (const funding of plan.funding) {
     const reverse = funding.route.filter(t => t.kind === 'temporary' &&
       c.projection.projected.claims.some(c => c.debtorId === t.toId && c.creditorId === t.fromId));
-    if (reverse.length && (funding.route.length !== 1 || reverse[0].toId !== funding.carrierId)) {
+    if (reverse.length && (reverse.length !== 1 || reverse[0] !== funding.route.at(-1) || reverse[0].toId !== funding.carrierId ||
+      funding.route.slice(0, -1).some(t => t.kind !== 'permanent'))) {
       provenanceReview = true;
       diagnostics.push({code: 'review-compound-reverse-obligation', certainty: 'fact', units: funding.units});
       continue;
