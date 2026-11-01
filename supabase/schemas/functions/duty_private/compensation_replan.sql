@@ -7,7 +7,8 @@
 -- be re-planned again later. Refused when a repayment of another month already uses one
 -- of those lots, or would be held because a debt it repays nets differently afterwards
 -- (review-replan-later:<month>), when part of one was settled by hand
--- (review-replan-settled), or once the published month has started (review-replan-started).
+-- (review-replan-settled), or once the published month has started (review-replan-started), its
+-- last version counting when the only one was deleted: worked days keep their debts.
 -- `commit` appends the events for real, inside the publishing transaction.
 -- lib/compensation/replan.ts builds the same events.
 CREATE FUNCTION duty_private.compensation_replan(s jsonb, p_month text, instant bigint, commit boolean DEFAULT false) RETURNS jsonb
@@ -15,9 +16,11 @@ CREATE FUNCTION duty_private.compensation_replan(s jsonb, p_month text, instant 
 #variable_conflict use_column
 declare original jsonb:=s; pub jsonb:=s->'publications'->p_month; keys text[]; lots text[]; lot jsonb; c jsonb; other text; op jsonb; key text;
  actor text:=coalesce(auth.uid()::text,'system'); reason text:='Re-planned '||p_month;
+ last jsonb:=coalesce(s->'publications'->p_month,(select x->'operation'->'after' from jsonb_array_elements(s->'events') with ordinality e(x,i)
+  where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month and x->'operation'->'after'<>'null' order by i desc limit 1));
  prefix text:='replan/'||coalesce(s->'publications'->p_month->>'id','none')||'/'||coalesce((s->'events'->-1->>'sequence')::bigint,0)||'/';
 begin
- if pub is not null and exists(select 1 from jsonb_each(duty_private.compensation_atoms(pub)) a where (a.value->>'endInstantMs')::bigint<=instant) then raise exception 'review-replan-started'; end if;
+ if last is not null and exists(select 1 from jsonb_each(duty_private.compensation_atoms(last)) a where (a.value->>'endInstantMs')::bigint<=instant) then raise exception 'review-replan-started'; end if;
  select coalesce(array_agg(x->>'sourceKey'),'{}') into keys from jsonb_array_elements(s->'events') x
   where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month;
  select coalesce(array_agg(l.key order by l.key COLLATE "C"),'{}') into lots from jsonb_each(s->'lots') l

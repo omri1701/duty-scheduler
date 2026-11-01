@@ -102,6 +102,25 @@ const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,
  const old=replay(x).claims.find(k=>k.path[0].lotId==='x');
  x=publish(x,publication('dec-x',[duty('2026-12-02','a',2,'2026-12-03')],[{id:'december-x',capacity:{date:'2026-12-02',offset:0,units:2},claim:sliceClaim(old,2)}],[],'2026-12'));
  replanCase(x,'2026-11',400);
+ // A repayment from December's points settled by a November version deleted since: no month
+ // reserves it any more (review-replan-later:unknown, worded on its own in lib/messages.ts).
+ let u=publish(setup(),publication('dec-u',[duty('2026-12-02','b',2,'2026-12-03')],[],[intent('dec-u-intent','a','b','2026-12-02')],'2026-12'));
+ const lent=replay(u).claims.find(k=>k.debtorId==='a'&&k.creditorId==='b');
+ u=publish(u,publication('nov-u',[duty('2026-11-02','a')],[{id:'november-u',capacity:{date:'2026-11-02',offset:0,units:2},claim:sliceClaim(lent,2)}]));
+ u=send(reconcile(u,completion).events,{kind:'publication',month:'2026-11',beforeId:'nov-u',after:null,mode:'delete'},'delete-nov-u',completion+1);
+ replanCase(u,'2026-12',completion+2);
+}
+// The plan screen, Confirm, Save and Publish re-plan at the current instant and project to
+// opening afterwards (review of #62): a November repayment settling in between must not move
+// the keys of the lots the re-plan creates, or a plan repaying them is refused.
+const plans=[];
+{
+ let h=owe(owe(setup(),'b','c',4,'older'),'d','c',4,'november-debt');
+ h=publish(h,publication('dec-p',[duty('2026-12-02','b',2,'2026-12-03')],[],[{id:'dec-p-intent',kind:'temporary',fromId:'a',toId:'b',capacity:[{date:'2026-12-02',offset:0,units:2}]}],'2026-12'));
+ const owed=replay(h).claims.find(k=>k.debtorId==='d');
+ h=publish(h,publication('nov-p',[duty('2026-11-02','d')],[{id:'november-p',capacity:{date:'2026-11-02',offset:0,units:2},claim:sliceClaim(owed,2)}]));
+ const at=completion-1,opening=handover('2026-12-01')*60000,replanned=replanEvents(h,'2026-12',at);
+ plans.push({events:h,month:'2026-12',at,opening,expected:replay(reconcile(replanned,opening).events),sequence:reconcile(h,at).events.at(-1).sequence});
 }
 const sql=`begin;
 create function pg_temp.compensation_replan_case(events jsonb, month text, instant bigint) returns jsonb language plpgsql as $$
@@ -109,12 +128,18 @@ declare s jsonb:='{"events":[],"members":{},"lots":{},"claims":[],"contributions
 begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;
  return duty_private.compensation_view(duty_private.compensation_replan(duty_private.compensation_reconcile(s,instant,false),month,instant));
 exception when raise_exception then return jsonb_build_object('error',SQLERRM);end $$;
+create function pg_temp.compensation_plan_case(events jsonb, month text, instant bigint, opening bigint) returns jsonb language plpgsql as $$
+declare s jsonb:='{"events":[],"members":{},"lots":{},"claims":[],"contributions":{},"settlements":{},"publications":{},"intents":{},"normalizations":[]}';e jsonb;
+begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;
+ s:=duty_private.compensation_replan(duty_private.compensation_reconcile(s,instant,false),month,instant);
+ return duty_private.compensation_view(duty_private.compensation_reconcile(s,greatest(opening,coalesce((s->'events'->-1->>'at')::bigint,0)),false));end $$;
 create function pg_temp.compensation_replay(events jsonb) returns jsonb language plpgsql as $$
 declare s jsonb:='{"events":[],"members":{},"lots":{},"claims":[],"contributions":{},"settlements":{},"publications":{},"intents":{},"normalizations":[]}';e jsonb;
 begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;return duty_private.compensation_view(s);end $$;
 ${cases.map(v=>`select pg_temp.compensation_replay(${quote(v.events)});`).join('\n')}
 ${graphs.map(({edges})=>`select duty_private.compensation_normalize(${quote(edges)},'{"0":{"active":true},"1":{"active":true},"2":{"active":true},"3":{"active":true}}');`).join('\n')}
 ${replans.map(c=>`select pg_temp.compensation_replan_case(${quote(c.events)},'${c.month}',${c.at});`).join('\n')}
+${plans.map(c=>`select pg_temp.compensation_plan_case(${quote(c.events)},'${c.month}',${c.at},${c.opening});`).join('\n')}
 rollback;`;
 const r=spawnSync('docker',['exec','-i',container,'psql','-XqAt','-U','postgres','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8',maxBuffer:16*1024*1024});
 assert.equal(r.status,0,r.stderr);
@@ -123,10 +148,16 @@ function sorted(v) {v=structuredClone(v);for(const k of ['members','lots','contr
 for(let i=0;i<cases.length;i++)assert.deepEqual(sorted(rows[i]),sorted(cases[i]),'SQL/core replay case '+i);
 for(let i=0;i<graphs.length;i++)assert.deepEqual(rows[cases.length+i],graphs[i].expected,'SQL/core graph '+i);
 for(let i=0;i<replans.length;i++){const row=rows[cases.length+graphs.length+i];assert.deepEqual(row.error?row:sorted(row),replans[i].expected.error?replans[i].expected:sorted(replans[i].expected),'SQL/core re-plan '+i)}
-assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','review-replan-later:2026-12','review-replan-started','replanned','review-replan-later:2026-12']);
+for(let i=0;i<plans.length;i++){
+ const row=rows[cases.length+graphs.length+replans.length+i],{expected,sequence}=plans[i];
+ assert.deepEqual(sorted(row),sorted(expected),'SQL/core plan order '+i);
+ assert.ok(expected.contributions.some(c=>c.id==='november-p'&&c.status==='settled'),'November settles before opening');
+ assert.ok(expected.claims.some(c=>c.path[0].lotId.startsWith(`replan/dec-p/${sequence}/`)),'the re-plan lots keep the current ledger position');
+}
+assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','review-replan-later:2026-12','review-replan-started','replanned','review-replan-later:2026-12','review-replan-later:unknown']);
 // Projection uses the same pure core after the SQL event suffix is persisted.
 assert.equal(project(cases[7].events,100,completion).actual.events.length,cases[7].events.length);
-console.log(`PASS: ${cases.length} SQL/core histories, ${graphs.length} graph normalizations and ${replans.length} re-plans match exactly (claims, lots, provenance, holds, settlements, publications and events)`);
+console.log(`PASS: ${cases.length} SQL/core histories, ${graphs.length} graph normalizations and ${replans.length} re-plans (${plans.length} projected to opening) match exactly (claims, lots, provenance, holds, settlements, publications and events)`);
 // Validate histories produced by real RPCs/hooks too, including malformed-input
 // refusals and the mid-weekend completed-fact adapter, not only pure operations.
 for(const file of ['compensation.sql','compensation-settlement.sql']) {

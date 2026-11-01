@@ -193,6 +193,16 @@ it, deleting the version that re-planned it, or publishing a copy of it is refus
 with "<Month> was re-planned after this version, so its points can't come back.
 Reopen the month and change its plan instead." Re-planning reaches any plan.
 
+Review fixes (migration `20261101192755_replan_order_and_deleted_start`): the plan
+screen, `confirm_allocation`, `save_generation` and Publish all re-plan at the current
+instant and project the ledger to opening afterwards, so a repayment settling before
+opening never moves the re-plan keys a plan repays (`invalid-repayment-source` and a
+Refresh loop before). A month whose only version was deleted counts as started by its
+last version: once its first duty is worked a new plan is refused
+(`review-replan-started`), the worked days keep their debts, and Publish waits with the
+reason before the click. `review-replan-later:unknown` (a repayment from the month's
+points settled by a month no longer published) has its own message.
+
 Changing allocation transfer provenance over an existing publication otherwise requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the

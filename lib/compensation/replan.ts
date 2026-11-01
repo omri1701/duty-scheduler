@@ -12,11 +12,13 @@ import type {CompensationEvent} from './types.ts';
  * re-planned again later. Refused when a repayment of another month already uses one of
  * those lots (`review-replan-later:<month>`, the earliest), when part of one was settled by
  * hand (`review-replan-settled`), or once the published month has started
- * (`review-replan-started`). duty_private.compensation_replan builds the same events. */
+ * (`review-replan-started`), its last version counting when the only one was deleted: worked
+ * days keep their debts. duty_private.compensation_replan builds the same events. */
 export function replanEvents(events: readonly CompensationEvent[], month: string, at: number, actor = 'system'): readonly CompensationEvent[] {
   const s = reconcile(events, at), pub = s.publications.find(p => p.month === month);
   const prefix = `replan/${pub?.id ?? 'none'}/${s.events.at(-1)?.sequence ?? 0}/`;
-  if (pub?.duties.some(d => handover(d.endDate) * 60000 <= at)) fail('review-replan-started');
+  const last = pub ?? s.events.flatMap(e => e.operation.kind === 'publication' && e.operation.month === month && e.operation.after ? [e.operation.after] : []).at(-1);
+  if (last?.duties.some(d => handover(d.endDate) * 60000 <= at)) fail('review-replan-started');
   const keys = new Set(s.events.filter(e => e.operation.kind === 'publication' && e.operation.month === month).map(e => e.sourceKey));
   const lots = s.lots.filter(l => keys.has(l.sourceKey) && l.correctedUnits > 0).sort((a, b) => compareId(a.id, b.id)), ids = new Set(lots.map(l => l.id));
   let other: string | undefined;

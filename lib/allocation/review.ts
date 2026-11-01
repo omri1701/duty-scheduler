@@ -25,6 +25,14 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
   return draft;
 }
 
+/** A confirmed plan whose repayments today's ledger no longer offers (review of #62): a month
+ * published since repays the same debt. Publish waits with this before the click instead of
+ * failing after it; opening the plan proposes again. A copy keeps its provenance (the RPC decides). */
+export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
+  try {reviewAllocation(input, saved); return false;}
+  catch (e) {return /repayment-source/.test((e as Error).message);}
+}
+
 /** A published plan reopened to change it (decision 2026-11-01): reviewed against the
  * ledger without the month's own entries. Its repayments may name debts that net
  * differently there; then the plan is proposed again keeping its per-person changes

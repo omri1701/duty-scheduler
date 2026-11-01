@@ -22,9 +22,10 @@ begin
   -- The ledger may have moved since the plan was confirmed (another month published): the
   -- re-plan and the binding below re-check every source, so the plan publishes whenever it
   -- still books (decision 2026-11-01); only a plan that no longer books asks to refresh.
+  -- A month that can't be re-planned says why: refreshing would not change that.
   begin s:=duty_private.compensation_replan(s,month,instant,true);
   exception when others then
-   if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
+   if SQLERRM not like 'review-replan-%' and allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
    raise;
   end;
   before_pub:=null;

@@ -36,6 +36,7 @@ export function userMessage(raw: string, t: Translate): string {
     const name = (lang: string) => new Date(`${later}-15T00:00:00Z`).toLocaleString(lang, {month: 'long', year: 'numeric', timeZone: 'UTC'});
     return t(`${name('en')} is already planned from this month’s points, so change ${name('en')} first.`, `${name('he')} כבר תוכנן על סמך הנקודות של החודש הזה, ולכן יש לשנות קודם את ${name('he')}.`);
   }
+  if (/review-replan-later:unknown/.test(message)) return t('A month that is no longer published already repaid from this month’s points, so its plan can’t be replaced. Change single duties in the calendar instead.', 'חודש שכבר אינו מפורסם כבר החזיר מהנקודות של החודש הזה, ולכן לא ניתן להחליף את התוכנית שלו. אפשר לשנות תורנויות בודדות בלוח.');
   if (/review-replan-started/.test(message)) return t('This month has started, so its plan can’t be replaced. Change single duties in the calendar instead.', 'החודש הזה כבר התחיל, ולכן לא ניתן להחליף את התוכנית שלו. אפשר לשנות תורנויות בודדות בלוח.');
   if (/review-replan-settled/.test(message)) return t('A repayment from this month’s points was settled by hand, so its plan can’t be replaced.', 'החזר מהנקודות של החודש הזה נרשם ידנית, ולכן לא ניתן להחליף את התוכנית שלו.');
   if (/review-allocation-booking/.test(message)) return t('This plan can’t be booked as it is. Undo the last change, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. אפשר לבטל את השינוי האחרון ולנסות שוב.');

@@ -46,4 +46,6 @@ test('the plan\'s own notes pass through unchanged', () => {
   const note = 'December 2026 changed (balances: Avi −1), so the month was refreshed and your targets were kept. Check them, then confirm again.';
   assert.equal(userMessage(note, english), note);
   assert.equal(userMessage('review-replan-later:2027-01', english), 'January 2027 is already planned from this month’s points, so change January 2027 first.');
+  // No month reserves the repayment any more: named on its own, not the generic Refresh (review of #62).
+  assert.equal(userMessage('review-replan-later:unknown', english), 'A month that is no longer published already repaid from this month’s points, so its plan can’t be replaced. Change single duties in the calendar instead.');
 });

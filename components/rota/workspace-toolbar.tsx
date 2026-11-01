@@ -106,7 +106,7 @@ export function WorkspaceToolbar({
                 <Button
                   className="publish-month-action"
                   disabled={
-                    readOnly || allocationMismatch || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount
+                    readOnly || allocationMismatch || metrics.assigned !== blockCount || !!metrics.conflicts.length || !blockCount || !!publishBlocked
                   }
                   title={publishBlocked || undefined}
                   onClick={onPublish}

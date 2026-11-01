@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {canonicalDuties, handover} from '../../lib/scheduling/calendar.ts';
-import {replay} from '../../lib/compensation/index.ts';
+import {replay, sliceClaim} from '../../lib/compensation/index.ts';
 import {readGenerationContext} from '../../lib/supabase/generation.ts';
 import {deriveTransfers} from '../../lib/allocation/derive.ts';
 import {proposeAllocation, transferAllocation, editAllocation, planAllocation, persistedDraft, balanced} from '../../lib/allocation/index.ts';
-import {reviewAllocation} from '../../lib/allocation/review.ts';
+import {reviewAllocation, repaymentsTaken} from '../../lib/allocation/review.ts';
 const container=process.argv[2];assert.match(container??'',/^supabase_db_[\w-]+$/);
 const ids=Array.from({length:13},(_,i)=>`73000000-0000-0000-0000-${String(i+1).padStart(12,'0')}`);
 const manager=ids[0],month='2027-12',duties=canonicalDuties(month,{}),zero=()=>Object.fromEntries(ids.map(id=>[id,0]));
@@ -394,6 +394,107 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  assert.ok(Object.values(republished.net).every(n=>n===0),'republished: the fresh plan\'s debts only, never both');
  assert.deepEqual(ordered(republished),ordered(replay(republished.events)));
  console.log('PASS: deleting a month\'s only version and publishing a fresh plan counts its debts once');
+}
+
+// Confirm, Save and Publish build the re-plan the plan screen showed (review of #62): the
+// re-plan keys carry the ledger position, so it runs at the current instant and the ledger is
+// projected to opening afterwards everywhere. A debt the month's plan routed through an older
+// debt (Lior owes Tamar, who owes Noa) is reversed by the re-plan into a new lot; a November
+// repayment still pending before December opens used to move that lot's key between the screen
+// and Confirm (invalid-repayment-source, then a Refresh loop).
+{
+ const [lior,tamar,noa,dana,eli]=[ids[5],ids[6],ids[7],ids[8],ids[9]];
+ const pub=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
+ const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;set local request.jwt.claim.sub='${manager}';`;
+ const debts=setup+`select public.duty_compensation(${quote({kind:'claim',debtorId:tamar,creditorId:noa,units:4})},'older','Reviewed source',${rev});`+
+  `select public.duty_compensation(${quote({kind:'claim',debtorId:dana,creditorId:eli,units:4})},'november-debt','Reviewed source',${rev});`;
+ const owed=sql(debts+view+'rollback;').find(r=>r.view).view.claims.find(c=>c.debtorId===dana);
+ const november={kind:'publication',month:'2027-11',beforeId:null,after:{id:'73000000-0000-0000-0000-0000000011aa',month:'2027-11',
+  duties:[{startDate:'2027-11-02',endDate:'2027-11-03',primaryId:dana,units:2}],reservations:[{id:'november-repayment',capacity:{date:'2027-11-02',offset:0,units:2},claim:sliceClaim(owed,2)}],intents:[]}};
+ const ledger=debts+`reset role;select 1 from (select duty_private.compensation_append(duty_private.compensation_state(),${quote(november)},'november-fixture',1822478400000,'system')) x;set local role authenticated;set local request.jwt.claim.sub='${manager}';`+refresh;
+ const input=readGenerationContext(sql(ledger+'select v from context;rollback;').at(-1)).input;
+ const first=transferAllocation(input,proposeAllocation(input).draft,{id:'lior-to-tamar',fromId:lior,toId:tamar,units:2,kind:'temporary'}).draft;
+ const reopen=ledger+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+
+  `select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh;
+ const reopened=readGenerationContext(sql(reopen+`select jsonb_build_object('reopened',v) from context;rollback;`).find(r=>r.reopened).reopened);
+ const second=proposeAllocation(reopened.input).draft;
+ assert.equal(reopened.replanBlocked,null);
+ assert.ok(second.repayments.some(r=>r.claim.path[0].lotId.startsWith('replan/')),'the plan repays the debt the re-plan reversed');
+ assert.equal(planAllocation(reopened.input,second).confirmable,true);
+ // Each transaction publishes under new random ids: the plan names this one's.
+ const [,published,allocation]=/^replan\/([\w-]+)\/\d+\/publication\/[\w-]+\/\d+\/intent\/allocation\/([\w-]+)\//.exec(second.repayments.find(r=>r.claim.path[0].lotId.startsWith('replan/')).claim.path[0].lotId)??[];
+ const current=`(select current_publication_id::text from public.duty_months where month='${month}')`;
+ const plan=`replace(replace(${quote(persistedDraft(second))}::text,'${published}',${current}),'${allocation}',(select allocation_id::text from public.duty_allocations where publication_id::text=${current}))::jsonb`;
+ const [replanned]=sql(reopen+`update context set v=public.duty_confirm_allocation('${month}',${plan},'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');`+
+  save(arrangement(second.targetsUnits))+pub+view+'rollback;').filter(r=>r.view).map(r=>r.view);
+ assert.ok(replanned.contributions.some(c=>c.status==='pending'&&c.claim.path[0].lotId.startsWith('replan/')),'published: the reversed debt is repaid');
+ assert.deepEqual(ordered(replanned),ordered(replay(replanned.events)));
+ console.log('PASS: a re-plan repaying a debt it reversed confirms, saves and publishes while another month\'s repayment is pending before opening');
+}
+
+// A month whose only version was deleted after its first duty was worked can't be re-planned
+// (review of #62): the worked days keep their debts. The plan screen and Publish say so before
+// the click (review-replan-started); before, publishing the new plan reversed them all.
+{
+ const taker=ids[6],givers=[ids[5],ids[7]];
+ const pub=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
+ const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;set local request.jwt.claim.sub='${manager}';`;
+ const input=readGenerationContext(sql(setup+`select v from context;rollback;`).at(-1)).input;
+ let first=proposeAllocation(input).draft;
+ for(const g of givers)first=transferAllocation(input,first,{id:`to-${g}`,fromId:g,toId:taker,units:first.targetsUnits[g],kind:'temporary'}).draft;
+ const fresh=proposeAllocation(input).draft;
+ const worked=`reset role;create or replace function duty_private.compensation_now() returns bigint language sql volatile set search_path='' as $$select ${handover('2027-12-03')*60000+1}::bigint$$;set local role authenticated;set local request.jwt.claim.sub='${manager}';`;
+ const rows=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+
+  `select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+
+  confirm(persistedDraft(fresh))+save(arrangement(fresh.targetsUnits))+worked+
+  `select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+
+  `select jsonb_build_object('deleted',v) from context;`+failure(pub,'review-replan-started')+view+'rollback;');
+ assert.equal(rows.find(r=>r.deleted).deleted.replanBlocked,'review-replan-started','the plan screen says why before the click');
+ assert.equal(rows.find(r=>r.view).view.net[taker],first.targetsUnits[taker]-first.baselineUnits[taker],'the worked days keep their debts');
+ console.log('PASS: a month whose only version was deleted after its first duty was worked can\'t be re-planned; its debts stay');
+}
+
+// Two months confirmed against the same ledger, both repaying one claim (review of #62), published
+// in either order: the claim is reserved once. The second month's saved plan no longer books, so
+// Publish waits before the click (repaymentsTaken); opening the plan proposes again, and that books.
+{
+ const [tamar,noa]=[ids[6],ids[7]],next='2028-01',nextDuties=canonicalDuties(next,{});
+ const ctx=(m,table)=>`update ${table} set v=public.duty_generation_context('${m}',${rev});`;
+ const confirmIn=(m,table,d)=>`update ${table} set v=public.duty_confirm_allocation('${m}',${quote(persistedDraft(d))},'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');`;
+ const saveIn=(m,table,a)=>`update ${table} set v=public.duty_save_generation('${m}',${quote(a)},(v->>'revision')::bigint,v->>'fingerprint',123);`;
+ const publishIn=(m,deadline,from,to)=>`select public.duty_save_schedule(jsonb_build_object('team','[]'::jsonb,'months',jsonb_build_object('${m}',jsonb_build_object('status','draft','deadline','${deadline}','generated',true)),
+  'duties',(select jsonb_agg(to_jsonb(a)) from public.duty_assignments a where publication_id is null and day>='${from}' and day<'${to}')),${rev},'${m}');`;
+ const fill=(list,targets)=>{
+  const remaining={...targets},chosen={},seen=new Map(ids.map(id=>[id,new Set()]));
+  function place(i){if(i===list.length)return Object.values(remaining).every(n=>n===0);const d=list[i];
+   for(const id of [...ids].sort((a,b)=>remaining[b]-remaining[a]||a.localeCompare(b))){if(remaining[id]<d.units||i&&chosen[list[i-1].id]?.primary===id||d.weekendId&&seen.get(id).size&&!seen.get(id).has(d.weekendId))continue;
+    remaining[id]-=d.units;chosen[d.id]={primary:id};if(d.weekendId)seen.get(id).add(d.weekendId);if(place(i+1))return true;if(d.weekendId)seen.get(id).delete(d.weekendId);remaining[id]+=d.units;
+   }return false;
+  }assert.ok(place(0),'constructive allocation fixture');return chosen;
+ };
+ const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;set local request.jwt.claim.sub='${manager}';`;
+ const ledger=setup+`reset role;insert into public.duty_months(month,deadline) values('${next}','2027-12-24');set local role authenticated;create temp table january(v jsonb);insert into january values(null);`+
+  `select public.duty_compensation(${quote({kind:'claim',debtorId:tamar,creditorId:noa,units:4})},'shared','Reviewed source',${rev});`+refresh+ctx(next,'january');
+ const both=sql(ledger+`select jsonb_build_object('dec',(select v from context),'jan',(select v from january));rollback;`).find(r=>r.dec);
+ const inputs={dec:readGenerationContext(both.dec).input,jan:readGenerationContext(both.jan).input};
+ const plans={dec:proposeAllocation(inputs.dec).draft,jan:proposeAllocation(inputs.jan).draft};
+ for(const p of Object.values(plans))assert.ok(p.repayments.some(r=>r.claim.debtorId===tamar&&r.claim.creditorId===noa),'both months repay the shared claim');
+ const confirmed=ledger+confirm(plans.dec)+save(arrangement(plans.dec.targetsUnits))+ctx(next,'january')+confirmIn(next,'january',plans.jan)+saveIn(next,'january',fill(nextDuties,plans.jan.targetsUnits));
+ const months={dec:{m:month,table:'context',publish:publishIn(month,'2027-11-24','2027-12-01','2028-01-01'),duties},
+  jan:{m:next,table:'january',publish:publishIn(next,'2027-12-24','2028-01-01','2028-02-01'),duties:nextDuties}};
+ const shared=v=>v.contributions.filter(c=>c.status!=='cancelled'&&c.claim.debtorId===tamar&&c.claim.creditorId===noa).reduce((n,c)=>n+c.capacity.units,0);
+ for(const [first,second] of [['dec','jan'],['jan','dec']]) {
+  const a=months[first],b=months[second],published=confirmed+a.publish;
+  const rows=sql(published+ctx(b.m,b.table)+`select jsonb_build_object('second',v) from ${b.table};`+failure(b.publish,'Compensation changed')+view+'rollback;');
+  assert.equal(shared(rows.find(r=>r.view).view),4,`${first} first: the shared claim is reserved once`);
+  const after=readGenerationContext(rows.find(r=>r.second).second);
+  assert.equal(repaymentsTaken(after.input,after.allocation),true,`${second}: Publish waits before the click`);
+  const fresh=proposeAllocation(after.input).draft;
+  const [booked]=sql(published+ctx(b.m,b.table)+confirmIn(b.m,b.table,fresh)+saveIn(b.m,b.table,fill(b.duties,fresh.targetsUnits))+b.publish+view+'rollback;').filter(r=>r.view).map(r=>r.view);
+  assert.equal(shared(booked),4,`${second} proposed again publishes; the claim is still reserved once`);
+  assert.deepEqual(ordered(booked),ordered(replay(booked.events)));
+ }
+ console.log('PASS: two months confirmed against one ledger repaying the same claim publish in either order; the claim is reserved once and the second waits before the click, then books once proposed again');
 }
 
 // Client equals database: random plans over shared debts (several members owe one creditor,

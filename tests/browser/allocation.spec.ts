@@ -322,6 +322,19 @@ test('a published month that a later month already repays from says so and takes
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
 });
 
+test('a new plan for a published month that can no longer be replaced says why Publish waits before the click', async ({page, backend, openApp}) => {
+  // Review of #62: the month's only version was deleted after its first duty was worked, so
+  // publishing the new plan would erase the worked days' debts (review-replan-started).
+  fresh(backend); await openApp(); await openPlan(page);
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeEnabled();
+  backend.replanBlocked = 'review-replan-started';
+  await page.reload();
+  await expect(page.locator('.publish-blocked-note')).toContainText('This month has started, so its plan can’t be replaced.');
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
+});
+
 test('dragging one engineer onto another gives one exact temporary point, then Make permanent persists and Undo restores', async ({page, backend, openApp}, info) => {
   test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');
   fresh(backend); await openApp(); await openPlan(page);
