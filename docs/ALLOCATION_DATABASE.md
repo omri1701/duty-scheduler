@@ -180,6 +180,19 @@ history. It is refused while another month's repayment uses one of those lots
 (`review-replan-started`), or after a hand settlement of one (`review-replan-settled`).
 An unchanged copy keeps its published provenance and rebinds as before.
 
+Across history (migration `20261101124753_replan_history`): a month whose only version
+was deleted keeps its own debts live (its repayments are cancelled), and a new plan
+reverses them too, so they are never counted twice. Re-plan keys carry the ledger
+position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
+again. A re-plan is also refused, naming the month, when reversing the lots would
+change a debt another month's pending repayment is reserved on: a reversal nets
+against the oldest opposing debt, and that repayment would be held and never settle.
+Deleting that month's only version first unblocks it. A version from before a
+re-plan can't become current again (`duty_private.compensation_replanned`): restoring
+it, deleting the version that re-planned it, or publishing a copy of it is refused
+with "<Month> was re-planned after this version, so its points can't come back.
+Reopen the month and change its plan instead." Re-planning reaches any plan.
+
 Changing allocation transfer provenance over an existing publication otherwise requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the

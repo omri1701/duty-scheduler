@@ -351,7 +351,15 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  const view=`reset role;select jsonb_build_object('view',duty_private.compensation_view(duty_private.compensation_state()));set local role authenticated;`;
  const rows=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+view+
   `select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+
-  `select jsonb_build_object('reopened',v) from context;`+confirm(persistedDraft(lowered))+save(arrangement(lowered.targetsUnits))+pub+view+'rollback;');
+  `create temp table first_version as select current_publication_id id from public.duty_months where month='${month}';`+
+  `select jsonb_build_object('reopened',v) from context;create temp table stale as select v from context;`+confirm(persistedDraft(lowered))+save(arrangement(lowered.targetsUnits))+pub+view+
+  // A second tab still holding the context from before the re-plan can't confirm over it.
+  failure(`select public.duty_confirm_allocation('${month}',${quote(persistedDraft(lowered))},'[]','[]',(select (v->>'revision')::bigint from stale),(select v->>'fingerprint' from stale))`,'revision|changed|Refresh')+
+  // The version from before the re-plan can't come back: restoring it or deleting the
+  // re-plan version is refused and names the month (decision 2026-11-01).
+  failure(`select public.duty_restore_publication((select id from first_version),${rev})`,'December 2027 was re-planned after this version')+
+  failure(`select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev})`,'December 2027 was re-planned after this version')+
+  'rollback;');
  const [published,replaced]=rows.filter(r=>r.view).map(r=>r.view),reopened=readGenerationContext(rows.find(r=>r.reopened).reopened);
  assert.deepEqual([published.net[taker],...givers.map(g=>published.net[g])],[owed,...givers.map(g=>-first.baselineUnits[g])],'published: the givers owe the taker');
  assert.equal(reopened.replanBlocked,null);
@@ -359,11 +367,26 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  const copy=reviewAllocation(reopened.input,reopened.allocation);
  assert.deepEqual(copy.targetsUnits,first.targetsUnits,'the copy reviews as published');
  assert.deepEqual(editAllocation(reopened.input,copy,{engineer:taker,deltaUnits:-part,kind:'temporary'}).draft.targetsUnits,lowered.targetsUnits);
+ // One point at a time down to fair and back up, every step booking (December 2026, Local Admin 27 → 2).
+ let walk=copy;
+ while(walk.changes[taker].temporary>0){walk=editAllocation(reopened.input,walk,{engineer:taker,deltaUnits:-2,kind:'temporary'}).draft;assert.equal(planAllocation(reopened.input,walk).confirmable,true,'a step down books');}
+ assert.equal(walk.targetsUnits[taker],first.baselineUnits[taker],'back to the fair share');
+ for(let k=0;k<2;k++){walk=editAllocation(reopened.input,walk,{engineer:taker,deltaUnits:2,kind:'temporary'}).draft;assert.equal(planAllocation(reopened.input,walk).confirmable,true,'a step up books');}
  assert.equal(replaced.net[taker],owed-part,'republished: only the new plan\'s debts remain');
  const replans=replaced.events.filter(e=>e.sourceKey.startsWith('replan/'));
  assert.ok(replans.some(e=>e.operation.kind==='correct'&&e.reason===`Re-planned ${month}`)&&replans.at(-1).operation.mode==='delete','audited corrections, then the deletion');
  assert.deepEqual(ordered(replaced),ordered(replay(replaced.events)));
- console.log('PASS: a published month re-planned through the RPCs is planned without its own entries and republished with only the new plan\'s debts');
+ console.log('PASS: a published month re-planned through the RPCs is planned without its own entries and republished with only the new plan\'s debts; a stale tab and the pre-re-plan version are refused by name');
+ // Deleting the month's only version keeps its own debts live; a fresh plan published
+ // afterwards reverses them instead of counting them twice.
+ const fresh=proposeAllocation(input).draft;
+ const [deleted,republished]=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+
+  `select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+view+
+  confirm(persistedDraft(fresh))+save(arrangement(fresh.targetsUnits))+pub+view+'rollback;').filter(r=>r.view).map(r=>r.view);
+ assert.equal(deleted.net[taker],owed,'deleted: the only version\'s own debts stay until a new plan replaces them');
+ assert.ok(Object.values(republished.net).every(n=>n===0),'republished: the fresh plan\'s debts only, never both');
+ assert.deepEqual(ordered(republished),ordered(replay(republished.events)));
+ console.log('PASS: deleting a month\'s only version and publishing a fresh plan counts its debts once');
 }
 
 // Client equals database: random plans over shared debts (several members owe one creditor,

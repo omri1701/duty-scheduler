@@ -94,6 +94,14 @@ const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,
  const dec=publish(n,publication('dec',[duty('2026-12-02','b',2,'2026-12-03')],[{id:'december-repayment',capacity:{date:'2026-12-02',offset:0,units:2},claim:sliceClaim(lot,2)}],[],'2026-12'));
  replanCase(dec,'2026-11',300);
  replanCase(n,'2026-11',completion+1);
+ // The only version deleted: its repayments are cancelled, its own lots stay live until a new plan reverses them.
+ replanCase(send(n,{kind:'publication',month:'2026-11',beforeId:'nov',after:null,mode:'delete'},'delete-nov',150),'2026-11',160);
+ // A reversal nets against the oldest opposing debt: December's repayment on it would be held.
+ let x=owe(setup(),'a','b',4,'x');
+ x=publish(x,publication('nov-x',[duty('2026-11-04','b',2,'2026-11-05')],[],[intent('nov-x-intent','a','b','2026-11-04')]));
+ const old=replay(x).claims.find(k=>k.path[0].lotId==='x');
+ x=publish(x,publication('dec-x',[duty('2026-12-02','a',2,'2026-12-03')],[{id:'december-x',capacity:{date:'2026-12-02',offset:0,units:2},claim:sliceClaim(old,2)}],[],'2026-12'));
+ replanCase(x,'2026-11',400);
 }
 const sql=`begin;
 create function pg_temp.compensation_replan_case(events jsonb, month text, instant bigint) returns jsonb language plpgsql as $$
@@ -115,7 +123,7 @@ function sorted(v) {v=structuredClone(v);for(const k of ['members','lots','contr
 for(let i=0;i<cases.length;i++)assert.deepEqual(sorted(rows[i]),sorted(cases[i]),'SQL/core replay case '+i);
 for(let i=0;i<graphs.length;i++)assert.deepEqual(rows[cases.length+i],graphs[i].expected,'SQL/core graph '+i);
 for(let i=0;i<replans.length;i++){const row=rows[cases.length+graphs.length+i];assert.deepEqual(row.error?row:sorted(row),replans[i].expected.error?replans[i].expected:sorted(replans[i].expected),'SQL/core re-plan '+i)}
-assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','review-replan-later:2026-12','review-replan-started']);
+assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','review-replan-later:2026-12','review-replan-started','replanned','review-replan-later:2026-12']);
 // Projection uses the same pure core after the SQL event suffix is persisted.
 assert.equal(project(cases[7].events,100,completion).actual.events.length,cases[7].events.length);
 console.log(`PASS: ${cases.length} SQL/core histories, ${graphs.length} graph normalizations and ${replans.length} re-plans match exactly (claims, lots, provenance, holds, settlements, publications and events)`);

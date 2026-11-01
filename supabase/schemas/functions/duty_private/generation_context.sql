@@ -16,7 +16,7 @@ begin
  -- 2026-11-01): its booked lots reversed and its publication deleted, as publishing a new
  -- plan will do. `replanBlocked` names why that is impossible; the plan then shows the ledger.
  planned:=s;
- if s->'publications' ? p_month then
+ if exists(select 1 from jsonb_array_elements(s->'events') x where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month) then
   begin planned:=duty_private.compensation_replan(s,p_month,greatest(instant,coalesce((s->'events'->-1->>'at')::bigint,0)));
   exception when raise_exception then if SQLERRM not like 'review-replan-%' then raise; end if; blocked:=SQLERRM;
   end;
@@ -25,5 +25,5 @@ begin
  return jsonb_build_object('revision',(select revision from public.duty_workspace where id),'actualAtMs',instant,'coverageStartMs',opening,
   'generationAllowed',instant<opening,'facts',facts,'actual',duty_private.compensation_view(planned),'projected',duty_private.compensation_view(projected),
   'accountingFingerprint',md5((s->'events')::text),'fingerprint',md5(facts::text||(s->'events')::text))
-  ||case when s->'publications' ? p_month then jsonb_build_object('replanBlocked',blocked) else '{}'::jsonb end;
+  ||case when planned is distinct from s or blocked is not null then jsonb_build_object('replanBlocked',blocked) else '{}'::jsonb end;
 end $$;

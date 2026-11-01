@@ -16,8 +16,9 @@ begin
  -- transaction (decision 2026-11-01): audited corrections reverse every lot its
  -- publications booked and the publication is deleted, cancelling its pending
  -- repayments; the plan is then booked as a first publication. Refused while another
- -- month's repayment uses those lots (review-replan-later:<month>) or once it started.
- if not deleting and publication is not null and before_pub is not null and allocation.month is not null and allocation.source_publication_id is null then
+ -- month's repayment uses those lots (review-replan-later:<month>) or once it started. A month
+ -- whose only version was deleted keeps its lots live until then; they are reversed too.
+ if not deleting and publication is not null and allocation.month is not null and allocation.source_publication_id is null then
   if allocation.accounting_fingerprint<>ledger then raise exception 'Compensation changed. Refresh and review.' using errcode='40001'; end if;
   s:=duty_private.compensation_replan(s,month,instant,true); before_pub:=null;
  end if;
@@ -27,6 +28,7 @@ begin
   -- Pre-cutover history was never committed in this ledger. For an unknown
   -- version compare only this live transition; never replay its old origins.
   if known is not null then after_pub:=known; end if;
+  if known is not null and duty_private.compensation_replanned(s,month,publication) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
  end if;
  if after_pub is not null and known is null then
   atoms:=duty_private.compensation_atoms(after_pub); old_atoms:=duty_private.compensation_atoms(before_pub);
@@ -63,6 +65,7 @@ begin
     facts:=duty_private.generation_facts(month);
     metadata:=duty_private.allocation_bind(facts,allocation.allocation,s,allocation.allocation_id,after_pub,instant);
    elsif allocation.origin<>'swap' then
+    if allocation.source_publication_id::text is distinct from s->'publications'->month->>'id' and duty_private.compensation_replanned(s,month,allocation.source_publication_id) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
     metadata:=duty_private.allocation_rebind(s,after_pub,allocation.source_publication_id,allocation.allocation_id,instant);
    end if;
   end if;
