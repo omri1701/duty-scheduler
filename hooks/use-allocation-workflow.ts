@@ -119,6 +119,12 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   // (kept, never deleted; the plan warns about it).
   const noWeekends = useMemo(() => Object.fromEntries((captured?.input.schedule.members ?? []).filter(m => m.noWeekends)
     .map(m => [m.id, {lockedWeekend: locks.some(l => l.engineer === m.id && [5, 6].includes(dayOf(l.dutyId)))}])), [captured, locks]);
+  // How many participants still take weekends, when someone doesn't: with one or none,
+  // Generate can leave weekends empty, so the plan says so before Generate.
+  const weekendTakers = useMemo(() => {
+    const members = (captured?.input.schedule.members ?? []).filter(m => m.active && m.approved && m.eligible);
+    return members.some(m => m.noWeekends) ? members.filter(m => !m.noWeekends).length : null;
+  }, [captured]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
   // allowed, Generate is then partial; the plan says so before Generate.
   const divisible = useMemo(() => {
@@ -343,7 +349,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
-    locks, approvals, totals, uneven, noWeekends, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, noWeekends, weekendTakers, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

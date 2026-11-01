@@ -146,3 +146,34 @@ test('the default respects the month cap, availability and a counterpart; otherw
   const alone = allocationInput(1, ['e00']), single = proposeAllocation({...alone, seniority: ['e00']}).draft;
   assert.deepEqual(single.changes.e00, {temporary: 0, permanent: 0});
 });
+
+test('everyone but one, or everyone, non-weekend: the plan still balances and Generate is partial, never an error', () => {
+  for (const takers of [1, 0]) {
+    const ids = Array.from({length: 12}, (_, i) => `e${String(i).padStart(2, '0')}`).slice(takers);
+    const input = allocationInput(12, ids), {draft} = proposeAllocation(input);
+    const monthTotal = sum(canonicalDuties(input.schedule.month, input.schedule.calendar).map(d => d.units));
+    assert.ok(balanced(draft), `${takers}: balanced`);
+    assert.equal(sum(Object.values(draft.targetsUnits)), monthTotal, `${takers}: the total stays the month total`);
+    const members = input.schedule.members.map(m => ({...m, active: true, approved: true, eligible: true}));
+    assert.deepEqual(Object.keys(generationRotations([], members, input.schedule.month).weekendRotation), takers ? ['e00'] : []);
+    const schedule = {...input.schedule, targets: Object.fromEntries(Object.entries(draft.targetsUnits).map(([k, v]) => [k, v / 2]))};
+    const r = solveGeneration(solver, createGenerationRequest(schedule, {now: input.now, seed: 17, seconds: 4}));
+    for (const id of ids) assert.deepEqual(weekends(schedule, r.assignments, id), [], `${takers}: ${id} has no weekend`);
+    if (!takers) assert.equal(r.complete, false, 'no one can take the weekends: a partial draft');
+  }
+});
+
+test('turning the setting off later puts the member back in the weekend rotation, due first', () => {
+  // October: far was non-weekend and only took weekdays; a, b and c had weekends.
+  const history = [{month: '2026-10', duties: [{startDate: '2026-10-02', primary: 'a'}, {startDate: '2026-10-09', primary: 'b'},
+    {startDate: '2026-10-16', primary: 'c'}, {startDate: '2026-10-05', primary: 'far'}]}];
+  const members = flag => ['a', 'b', 'c', 'far'].map(id => ({id, active: true, approved: true, eligible: true, ...(id === 'far' && flag ? {noWeekends: true} : {})}));
+  assert.deepEqual(generationRotations(history, members(true), '2026-11').weekendRotation, {a: 0, b: 0, c: 0});
+  // Cleared: far rejoins with no turn yet, so far is due before everyone else.
+  const rejoined = generationRotations(history, members(false), '2026-11').weekendRotation;
+  assert.equal(rejoined.far, 0);
+  assert.ok(['a', 'b', 'c'].every(id => rejoined[id] > rejoined.far));
+  // Once far has a weekend, the cycle closes for everyone.
+  const after = [...history, {month: '2026-11', duties: [{startDate: '2026-11-06', primary: 'far'}]}];
+  assert.deepEqual(generationRotations(after, members(false), '2026-12').weekendRotation, {a: 0, b: 0, c: 0, far: 0});
+});

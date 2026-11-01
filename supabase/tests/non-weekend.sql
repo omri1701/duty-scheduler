@@ -59,4 +59,12 @@ select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',false,
 do $$begin
  if (select no_weekends from public.duty_members where id='75000000-0000-0000-0000-000000000002') then raise exception 'Setting not cleared'; end if;
 end$$;
+-- A temporary member takes the setting like anyone else, and generation facts carry it.
+create temp table temporary_member as select public.duty_add_temporary_member('Visitor',(select revision from public.duty_workspace)) id;
+select public.duty_set_no_weekends((select id from temporary_member),true,(select revision from public.duty_workspace));
+reset role;
+do $$declare f jsonb:=duty_private.generation_facts('2026-11');begin
+ if not (select no_weekends and is_temporary from public.duty_members where id=(select id from temporary_member)) then raise exception 'Temporary setting not stored'; end if;
+ if not f->'members' @> jsonb_build_array(jsonb_build_object('id',(select id from temporary_member),'noWeekends',true)) then raise exception 'Temporary generation facts: %',f->'members'; end if;
+end$$;
 rollback;

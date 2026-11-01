@@ -79,3 +79,17 @@ test('the +1 is editable that month, and Generate gives the member no weekend bu
  expect(weekends).toEqual(['2026-11-06']);
  expect(context.allocation!.changes[ids.e]).toEqual({temporary:0,permanent:2});
 });
+
+for(const lang of ['en','he'] as const)test(`Plan the month says before Generate when one or no members take weekends ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he',{dialog}=await openPlan(page,backend,openApp,lang);
+ await expect(dialog.getByRole('note').filter({hasText:he?'סופי שבוע ריקים':'weekends empty'})).toHaveCount(0);
+ const participants=backend.raw.members.filter(m=>m.active&&m.status==='approved');
+ for(const takers of [1,0]){
+  participants.forEach((m,i)=>{m.no_weekends=i>=takers;});
+  await page.reload();
+  if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
+  await expect(dialog.getByRole('note').filter({hasText:takers?(he?'רק חבר אחד כאן עושה סופי שבוע':'Only one member here takes weekends'):(he?'אף אחד כאן לא עושה סופי שבוע':'No one here takes weekends')})).toBeVisible();
+ }
+});

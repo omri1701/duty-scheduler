@@ -110,6 +110,17 @@ test+=`reset role;create or replace function duty_private.compensation_now() ret
 test+=failure(save(),'generation-window-closed');
 test+=`reset role;create or replace function duty_private.compensation_now() returns bigint language sql volatile set search_path='' as $$select 1822478400000::bigint$$;set local role authenticated;`;
 test+=publish;
+// Toggled while the member holds a published weekend, then the month is reopened: the
+// setting saves, the reopened facts carry it, and Generate's save refuses that unlocked
+// weekend but takes a partial draft without it (the published history is untouched).
+const withoutFar=structuredClone(assignments);withoutFar[farWeekend.id]={primary:null};
+test+=`savepoint non_weekend_reopen;select public.duty_set_no_weekends('${ids[1]}',true,${rev});
+select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh;
+test+=`do $$begin if not ${facts} @> '[{"id":"${ids[1]}","noWeekends":true}]' then raise exception 'reopened noWeekends facts';end if;end$$;`;
+test+=failure(save(),'non-weekend-primary')+save(withoutFar);
+test+=`do $$begin if (select primary_id from public.duty_assignments where publication_id is null and day='${farWeekend.id}') is not null then raise exception 'reopened weekend kept';end if;
+ if (select count(*) from public.duty_assignments a join public.duty_months m on m.current_publication_id=a.publication_id where a.day='${farWeekend.id}' and a.primary_id='${ids[1]}')<>1 then raise exception 'published weekend changed';end if;end$$;
+rollback to savepoint non_weekend_reopen;`;
 test+=`create temp table original as select to_jsonb(a) a from public.duty_allocations a where publication_id is not null;
 select public.duty_restore_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+save()+publish;
 test+=`do $$begin if (select count(*) from public.duty_allocations where publication_id is not null)<>2 then raise exception 'Missing snapshots';end if;
