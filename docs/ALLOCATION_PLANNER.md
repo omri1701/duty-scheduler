@@ -39,7 +39,10 @@ one of them has repaid one (2 below).
 1. **Ordinary baseline.** Equal shares in the month's smallest duty step (whole
    points, or half points when the month has half duties); remainders go to the
    newest members who are not repaying this month, and only then, newest first,
-   to repayers. Availability and locks never change the baseline. Who repays
+   to repayers. Availability and locks never change the baseline's shares. Only
+   when a lock makes that arrangement impossible to schedule (a locked 2.5-point
+   holiday day needs an odd share) do two members swap shares, nearest in that
+   order first (decision 2026-11-01). Who repays
    depends on the creditors' shares and the reverse, so the proposal settles both
    (a creditor's own remainder adds to its relief).
    The database accepts only an exact, minimum-squared-cost partition of the
@@ -93,6 +96,14 @@ one of them has repaid one (2 below).
    owing A two points each, with A's share at three points, repay one point each
    in November and again in December; with A's share at two, D and C repay in
    November and B goes first in December.
+   A turn never leaves the month unable to give every member exactly its points
+   (decision 2026-11-01, `partitionable`): each member keeps its locked duties and
+   every other duty must go to someone. Half a point changes which members need
+   a half duty (a split weekend half, or a holiday day worth x.5 points), and the
+   month has only so many, so a step that would break the split shrinks to half a
+   point or passes to the next debtor. A creditor relieved down to 0.5 in a month
+   with no half duty keeps 1 instead. Before, such proposals were partial at
+   Generate.
 3. **Locks are floors.** A member below their locked points takes temporary work
    from the member with most points, most senior on ties, as part of the
    automatic balance below.
@@ -229,7 +240,12 @@ intent retains its original `deferredClaim`; `normalizedDeferredClaims` separate
 explains the FIFO slices consumed by normalization. Original counterparts and
 transfer IDs remain available rather than being rewritten to the final worker.
 Ambiguous compound routes remain unbound and require explicit review before
-confirmation. `unfundedUnits` retains all target shortfalls, and unassigned burden
+confirmation. Permanent legs owe nothing (decision 2026-11-01): a reverse leg after
+only permanent legs is the debtor's own repayment (A gives C a point for good, C
+hands it to D who owes C: D repays C), and a route back to its own carrier drops
+the permanent legs out of it. Plan the month names any review code with its own
+note and keeps **Confirm & generate** disabled until the plan can be booked, so a
+plan never fails as a whole after Generate. `unfundedUnits` retains all target shortfalls, and unassigned burden
 creates no new claim.
 Partial compilation uses exactly the assigned units, funding ordinary work before
 oldest repayment and temporary burden. It does not optimize or fill missing work.

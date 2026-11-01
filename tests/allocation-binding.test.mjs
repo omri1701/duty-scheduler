@@ -11,10 +11,10 @@ const sum = xs => xs.reduce((a, b) => a + b, 0);
 const envelope = {publicationId: 'november-reviewed', sourceKey: 'publish/november-reviewed', actor: 'manager'};
 const send = (events, operation, sourceKey) => record(events, {operation, sourceKey,
   actor: 'manager', reason: 'Reviewed fixture', at: (events.at(-1)?.at ?? 0) + 1}).events;
-function scenario(kind = 'normal') {
+function scenario(kind = 'normal', bridges = ['bridge']) {
   const {input: schedule, witness: assignments, now} = monthScenario(kind);
   delete schedule.targets;
-  schedule.members.push({id: 'bridge', active: true, approved: true, eligible: true});
+  for (const id of bridges) schedule.members.push({id, active: true, approved: true, eligible: true});
   const input = {schedule, now, seniority: schedule.members.map(m => m.id), events: send([], {
     kind: 'members', members: schedule.members.map(m => ({id: m.id, active: true})),
   }, 'members')};
@@ -320,17 +320,30 @@ test('publication validation rejects disconnected or reclassified routes and sha
 });
 
 test('compound reverse routes and existing publication lineage require explicit review', async () => {
-  // A zero-share pass-through member chains the route: e00's share reaches e02 through bridge,
-  // whose temporary leg is work e02 already owes bridge.
+  // A permanent leg before a reverse leg owes nothing (decision 2026-11-01): e00's point given to
+  // the zero-share bridge for good and handed on to e02, who owes bridge, is e02's own repayment.
   const {input, assignments} = scenario();
   input.events = send(input.events, {kind: 'claim', debtorId: 'e02', creditorId: 'bridge', units: 2}, 'reverse');
   const draft = draftFor(input, assignments, [
     {id: 'first', fromId: 'e00', toId: 'bridge', kind: 'permanent', units: 2},
     {id: 'second', fromId: 'bridge', toId: 'e02', kind: 'temporary', units: 2},
   ]);
-  const ambiguous = await bindAllocation(input, draft, assignments, envelope);
-  assert.equal(ambiguous.bindable, false); assert.equal(ambiguous.publication, null);
-  assert.ok(ambiguous.diagnostics.some(d => d.code === 'review-compound-reverse-obligation'));
+  const repaid = await bindAllocation(input, draft, assignments, envelope);
+  assert.equal(repaid.bindable, true, repaid.diagnostics.at(-1)?.code);
+  assert.deepEqual(repaid.publication.intents, [], 'no new debt: the permanent leg owes nothing');
+  assert.deepEqual(repaid.publication.reservations.map(r => [r.claim.debtorId, r.claim.creditorId]), [['e02', 'bridge']]);
+  assert.equal(repaid.publication.reservations.reduce((n, r) => n + r.capacity.units, 0), 2);
+  // A temporary leg before it would chain someone else's debt through the route: e00's point
+  // carried by bridge, given to bridge2 for good and handed to e02, who owes bridge2. Bridge has
+  // no share of its own to give for good, so the plan is refused before it can be compiled; the
+  // compiler's review-compound-reverse-obligation stays as the guard behind it.
+  const chained = scenario('normal', ['bridge', 'bridge2']);
+  chained.input.events = send(chained.input.events, {kind: 'claim', debtorId: 'e02', creditorId: 'bridge2', units: 2}, 'reverse');
+  await assert.rejects(bindAllocation(chained.input, draftFor(chained.input, chained.assignments, [
+    {id: 'first', fromId: 'e00', toId: 'bridge', kind: 'temporary', units: 2},
+    {id: 'second', fromId: 'bridge', toId: 'bridge2', kind: 'permanent', units: 2},
+    {id: 'third', fromId: 'bridge2', toId: 'e02', kind: 'temporary', units: 2},
+  ]), chained.assignments, envelope), /permanent-below-fair-share/);
   const clean = mixed(), first = await bindAllocation(clean.input, clean.draft, clean.assignments, envelope);
   clean.input.events = first.preview.events; clean.draft.sourceKey = context(clean.input).key;
   const repeated = await bindAllocation(clean.input, clean.draft, clean.assignments, {...envelope, publicationId: 'copy'});

@@ -1,7 +1,7 @@
 import {sliceClaim} from '../compensation/index.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
-import {equalShares, fitPartition} from './fit.ts';
+import {equalShares, fitPartition, partitionable} from './fit.ts';
 import {ceilings, context, grain, type Context} from './model.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
 
@@ -34,12 +34,25 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   const c = context(input), g = grain(c), ceiling = ceilings(c), weights = c.prepared.duties.map(d => d.units);
   const shares = fitPartition(weights, c.ids.length);
   const newest = [...input.seniority].reverse();
-  // Larger shares newest first, members repaying this month last.
+  // A step never leaves the month unable to give everyone exactly its points (decision
+  // 2026-11-01): half a point moves which members need an odd duty, and only so many exist.
+  const exact = (units: Record<string, number>) => splitsExactly(c, input, units);
+  // Larger shares newest first, members repaying this month last. When a lock makes that
+  // impossible to schedule (a locked 2.5-point duty needs an odd share), two members swap
+  // shares, nearest in that order first; the shares themselves never change.
   const arrange = (repaying: ReadonlySet<string>) => {
     const order = [...newest.filter(id => !repaying.has(id)), ...newest.filter(id => repaying.has(id))];
     const descending = [...shares].sort((a, b) => b - a);
     const share = new Map(order.map((id, k) => [id, descending[k]]));
-    return Object.fromEntries(c.ids.map(id => [id, share.get(id)!]));
+    const arranged = Object.fromEntries(c.ids.map(id => [id, share.get(id)!]));
+    if (!input.schedule.locks?.length || exact(arranged)) return arranged;
+    for (let k = 1; k < order.length; k++) for (let a = 0; a + k < order.length; a++) {
+      const [x, y] = [order[a], order[a + k]];
+      if (arranged[x] === arranged[y]) continue;
+      const swapped = {...arranged, [x]: arranged[y], [y]: arranged[x]};
+      if (exact(swapped)) return swapped;
+    }
+    return arranged;
   };
   const kept = retained?.baselineUnits;
   const keep = !!kept && Object.keys(kept).length === c.ids.length && c.ids.every(id => Number.isSafeInteger(kept[id])) &&
@@ -67,6 +80,9 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
           .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
         if (!next || relief < g) break;
         let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
+        if (amount > 0 && exact(offered)) {
+          while (amount > 0 && !exact({...offered, [next]: offered[next] + amount, [creditorId]: offered[creditorId] - amount})) amount -= g;
+        }
         if (amount <= 0) {stuck.add(next); continue;}
         offered[next] += amount; offered[creditorId] -= amount; turns.set(next, turns.get(next)! + amount); repaying.add(next);
         for (const k of claims(next)) {
@@ -107,6 +123,17 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   }
   return {draft, projection: c.projection};
 }
+
+/** Whether the month's duties can give every member exactly these points, locked
+ * duties kept by their member (duty weights only; calendar rules are Generate's). */
+function splitsExactly(c: Context, input: AllocationInput, units: Readonly<Record<string, number>>) {
+  const lockOf = new Map((input.schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
+  return partitionable(c.prepared.duties.filter(d => !lockOf.has(d.id)).map(d => d.units),
+    c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]));
+}
+/** Plan the month's note: false when Generate can only be partial for these targets. */
+export const allocationDivisible = (input: AllocationInput, targetsUnits: Readonly<Record<string, number>>) =>
+  splitsExactly(context(input), input, targetsUnits);
 
 /** The per-person changes and ordinary baseline of a draft, for a later proposal. */
 export function retainedChanges(draft: AllocationDraft | null): Retained | undefined {

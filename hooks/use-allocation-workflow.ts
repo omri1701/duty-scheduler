@@ -5,7 +5,7 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings} from '@/lib/allocation/model';
 import {generatedNotes} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
@@ -26,6 +26,9 @@ type Phase = 'idle' | 'loading' | 'confirming' | 'generating' | 'saving';
 let pairSerial = 0;
 const pairId = () => `pair-${Date.now().toString(36)}-${(pairSerial++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 type Review = {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]};
+/** Why the ledger can't book a plan: the review code the dialog explains (allocationMessage). */
+const bookingProblem = (diagnostics: readonly {code: string}[]) =>
+  diagnostics.find(d => /^review-/.test(d.code))?.code ?? 'review-allocation-booking';
 /** Failures that only a fresh proposal resolves: an earlier saved format, an
  * ordinary baseline the duties cannot split into, or uneven-month credit. */
 const needsProposal = (message: string) => /invalid-ordinary-baseline|uneven-credit|invalid-allocation-(shape|changes|pair)|invalid-derived-transfers|invalid-hand-edits/.test(message);
@@ -112,6 +115,12 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
   const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
     [captured, approvals, generatedMonth]);
+  // A target the month's duties can't make exactly (half a point in a whole-point month):
+  // allowed, Generate is then partial; the plan says so before Generate.
+  const divisible = useMemo(() => {
+    if (!open || !captured || !draft?.changes) return true;
+    try {return allocationDivisible({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft.targetsUnits);} catch {return true;}
+  }, [open, captured, locks, approvals, draft]);
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
   // Above the spaced ceiling a target still fits availability but needs back-to-back days.
@@ -147,6 +156,9 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   // The plan as if every point were worked: what is really repaid now and later.
   let planned: ReturnType<typeof planAllocation> | null = null;
   if (draft?.changes && input && !structural) {try {planned = planAllocation(input, draft);} catch {planned = null;}}
+  // A plan the ledger can't book is explained here, before Generate, never after it.
+  // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
+  if (planned && !planned.confirmable && !captured?.sourcePublicationId) structural = bookingProblem(planned.diagnostics);
   /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
   function plan(make: () => AllocationDraft) {
     setError('');
@@ -274,10 +286,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       acceptGeneration(generated, generationInput, now());
       // Compile against the actual returned assignments, never the allocation witness.
       // Copied publication intent is independently revalidated by the checked RPC.
-      if (!confirmed.sourcePublicationId &&
-        !compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments).confirmable) {
-        throw Error(t('This plan can’t be booked as it is. Check the notes in the plan, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. כדאי לבדוק את ההערות בתוכנית ולנסות שוב.'));
-      }
+      const compiled = confirmed.sourcePublicationId ? null : compileAllocation(confirmed.input, reviewAllocation(confirmed.input, draft), generated.assignments);
+      if (compiled && !compiled.confirmable) throw Error(bookingProblem(compiled.diagnostics));
       if (id !== sequence.current) return;
       acceptGeneration(generated, generationInput, now());
       setPhase('saving'); rpc.current = true;
@@ -303,7 +313,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},

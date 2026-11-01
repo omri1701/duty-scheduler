@@ -1,6 +1,7 @@
 import {test, expect, ids, MONTH, type Backend} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
+import {record} from '../../lib/compensation';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -27,6 +28,7 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   await expect(first.locator('.plan-chip.temporary')).toHaveText('−1 temporary');
   await expect(page.getByRole('button', {name: '0.5', exact: true})).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+  await expect(page.getByRole('dialog').getByRole('note').filter({hasText: 'Generate will leave a gap'})).toHaveCount(0);
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(values.first()).toHaveText(String(original));
   await page.getByRole('button', {name: '0.5', exact: true}).click();
@@ -37,8 +39,10 @@ test('allocation controls preserve one-point and half-point intent, redistribute
   await expect(first.locator('.plan-chip.permanent')).toHaveText('+0.5 permanent');
   await expect(values.first()).toHaveText(String(original + .5));
   // A half point is placed with a counterpart at once; whole-point duties make it
-  // partial at Generate, which never blocks the plan.
+  // partial at Generate, which never blocks the plan. The plan says so first.
   await expect(page.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  const gap = page.getByRole('dialog').getByRole('note').filter({hasText: 'Generate will leave a gap'});
+  await expect(gap).toHaveText('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.');
   await page.locator('.plan-row').nth(1).getByRole('button', {name: 'Decrease Permanent · Alex Atlas', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await expect(page.getByRole('dialog')).toContainText('Permanent');
@@ -260,6 +264,24 @@ const member = (page: import('@playwright/test').Page, name: string) => {
   return {row, target: row.locator('output'), permanent: row.locator('.plan-chip.permanent')};
 };
 const targetOf = async (m: ReturnType<typeof member>) => Number(await m.target.textContent());
+
+test('a plan the ledger can’t book says why before Generate and keeps it disabled; Make permanent books it', async ({page, backend, openApp}, info) => {
+  test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');
+  // Alex owes Avery one point and the plan already repays it. One more point from Avery would
+  // hand Alex back more than Alex owes: named here, never a generic failure after Generate.
+  fresh(backend);
+  const members = Object.values(ids).filter(id => id !== ids.pending);
+  backend.events = record(record([], {operation: {kind: 'members', members: members.map(id => ({id, active: true}))}, sourceKey: 'members', at: 1, actor: ids.admin}).events,
+    {operation: {kind: 'claim', debtorId: ids.a, creditorId: ids.admin, units: 2}, sourceKey: 'owed', at: 2, actor: ids.admin, reason: 'Reviewed fixture'}).events;
+  await openApp(); await openPlan(page);
+  const avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas'), generate = page.getByRole('button', {name: 'Confirm & generate', exact: true});
+  await avery.row.getByRole('rowheader').dragTo(alex.row);
+  const note = page.getByRole('dialog').locator('.warning-note');
+  await expect(note).toHaveText('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.');
+  await expect(generate).toBeDisabled(); await expect(page.getByRole('button', {name: 'Save', exact: true})).toBeDisabled();
+  await page.locator('.allocation-toast').getByRole('button', {name: 'Make permanent', exact: true}).click();
+  await expect(note).toHaveCount(0); await expect(generate).toBeEnabled();
+});
 
 test('dragging one engineer onto another gives one exact temporary point, then Make permanent persists and Undo restores', async ({page, backend, openApp}, info) => {
   test.skip(info.project.name !== 'desktop', 'Mouse drag; touch uses long-press.');

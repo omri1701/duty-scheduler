@@ -303,6 +303,38 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  console.log('PASS: a deferred repayment handed to someone who owes the same creditor is their own repayment; no new debt, none forgiven');
 }
 
+// Permanent legs owe nothing (decision 2026-11-01), through the checked RPCs: confirm, save the
+// generation (allocation_compile) and publish. The reported January 2027 plan: the creditor's own
+// share is all relief, so the point the creditor hands to a debtor is the one it just received
+// permanently; it repays that debtor's debt (refused before as review-compound-reverse-obligation).
+// The same point handed back to its giver is a plain loan (published from the giver to the giver,
+// invalid-endpoints, before).
+{
+ const owed=ids[6],debtors=[ids[7],ids[8],ids[9]],giver=ids[11];
+ const debts=setup+debtors.map((id,k)=>`select public.duty_compensation(${quote({kind:'claim',debtorId:id,creditorId:owed,units:4})},'permanent-${k}','Reviewed source',${rev});`).join('')+refresh;
+ const input=readGenerationContext(sql(debts+`select v from context;rollback;`).at(-1)).input;
+ const give=(d,fromId,toId,kind)=>transferAllocation(input,d,{id:`${fromId}>${toId}/${d.pairs.length}`,fromId,toId,units:2,kind}).draft;
+ const proposed=proposeAllocation(input).draft,received=give(proposed,giver,owed,'permanent');
+ const plans={repayment:give(received,owed,debtors[0],'temporary'),loan:give(received,owed,giver,'temporary')};
+ const shape=d=>planAllocation(input,d).plan.funding.map(f=>[f.carrierId,f.units,f.route.map(l=>[l.fromId,l.toId,l.kind])]);
+ assert.equal(proposed.targetsUnits[owed],0,'the creditor\'s own share is all relief');
+ assert.deepEqual(shape(plans.repayment),[],'the handed point is the debtor\'s repayment, no new intent');
+ assert.deepEqual(shape(plans.loan),[[giver,2,[[owed,giver,'temporary']]]],'the permanent leg out of the giver is dropped');
+ const views=Object.fromEntries(Object.entries(plans).map(([label,d])=>{
+  assert.equal(planAllocation(input,d).confirmable,true,label);
+  const view=sql(debts+confirm(persistedDraft(d))+save(arrangement(d.targetsUnits))+publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'")+
+   `reset role;select duty_private.compensation_view(duty_private.compensation_state());rollback;`).at(-1);
+  assert.deepEqual(ordered(view),ordered(replay(view.events)),label);
+  return [label,view];
+ }));
+ const repaid=view=>Object.fromEntries(debtors.map(id=>[id,view.contributions.filter(c=>c.claim.debtorId===id&&c.claim.creditorId===owed).reduce((n,c)=>n+c.capacity.units,0)]));
+ assert.deepEqual(repaid(views.repayment),{[debtors[0]]:2,[debtors[1]]:2,[debtors[2]]:2},'every debtor repays one point, the first with the handed point');
+ assert.deepEqual([views.repayment.net[owed],views.repayment.net[giver]],[12,0],'nothing new owed, nothing forgiven');
+ assert.equal(views.loan.net[giver],2,'the creditor owes the giver one point');
+ assert.equal(Object.values(repaid(views.loan)).reduce((a,b)=>a+b,0),4,'the turns still repay two points');
+ console.log('PASS: a point received permanently repays the debtor it is handed to, and handed back to its giver is a plain loan');
+}
+
 // Client equals database: random plans over shared debts (several members owe one creditor,
 // one of them half a point) compile to the same repayments and the same remaining intents in
 // lib/allocation and duty_private.allocation_compile, deferrals to co-debtors included.
@@ -314,6 +346,8 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  const base=proposeAllocation(input).draft,payers=[...new Set(base.repayments.map(r=>r.claim.debtorId))],drafts=[];
  for(let k=0;k<40&&drafts.length<12;k++){
   let d=base;
+  // Some plans start with a point given to the creditor permanently: routes with permanent legs first.
+  if(next()<.4)try{d=transferAllocation(input,d,{id:`q${k}`,fromId:ids[11],toId:owed,units:2,kind:'permanent'}).draft;}catch{}
   for(let step=0;step<1+Math.floor(next()*3);step++){
    const fromId=payers[Math.floor(next()*payers.length)],pool=next()<.7?debtors:ids,toId=pool[Math.floor(next()*pool.length)];
    if(fromId===toId)continue;
