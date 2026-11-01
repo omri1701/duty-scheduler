@@ -168,3 +168,25 @@ assert.deepEqual(nets(r.republished),debt(a,b,2),'extra points keep the reopened
 r=run(edit(x.id,b)+restore+`select public.duty_cancel_draft('${month}',${rev});`+edit(x.id,a,{kind:'permanent'})+report('cancelled'));
 assert.equal(r.cancelled.status,'published');assert.deepEqual(nets(r.cancelled),{});
 console.log('PASS: a reopened edited month republishes unchanged without double counting; Cancel Draft restores editing');
+
+// Plan the month on a reopened edited month plans without the month's own entries: the edit's
+// debt is not an earlier debt. A new plan replaces the edit, and later edits follow the new plan.
+const planned=label=>`update context set v=public.duty_generation_context('${month}',${rev});reset role;
+select jsonb_build_object('label','${label}','view',duty_private.compensation_view(duty_private.compensation_state()),'context',(select v-'facts' from context));set local role authenticated;`;
+const replan=cover=>{const {draft,placed}=plan(cover);return `update context set v=public.duty_confirm_allocation('${month}',${quote(draft)},'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');
+update context set v=public.duty_save_generation('${month}',${quote(placed)},(v->>'revision')::bigint,v->>'fingerprint',123);`+publish(month)};
+const owed=view=>Object.fromEntries(Object.entries(view.net).filter(([,n])=>n));
+for(const [label,body,cover] of [['edited',edit(x.id,b),false],['permanent',edit(x.id,c,{kind:'permanent'}),false],['plan cover edited',edit(x.id,c),true]]){
+ r=run(body+restore+planned('reopened'),cover);
+ assert.deepEqual(owed(r.reopened.context.actual),{},`${label}: no earlier debt from the month itself`);
+ assert.deepEqual(owed(r.reopened.context.projected),{},`${label}: the projection starts from the other months only`);
+ // Planned without the month's own entries, and nothing blocks that.
+ assert.ok('replanBlocked' in r.reopened.context,label);assert.equal(r.reopened.context.replanBlocked,null,label);
+}
+r=run(edit(x.id,b)+restore+planned('reopened')+replan(false)+report('replanned')+edit(x.id,b)+report('edited again'));
+assert.deepEqual(nets(r.replanned),{},'the new plan replaces the edit and its debt');
+assert.deepEqual(nets(r['edited again']),debt(a,b,2));
+r=run(edit(x.id,c)+restore+planned('reopened')+replan(true)+report('replanned')+edit(cover,a,{kind:'permanent'})+report('owner'),true);
+assert.deepEqual(nets(r.replanned),debt(a,b,2),'only the new plan’s own Temporary change is owed');
+assert.deepEqual(nets(r.owner),{},'the new plan binds its Temporary change to the same date; Permanent back to its owner ends that debt');
+console.log('PASS: Plan the month on a reopened edited month leaves out its own debt; a new plan replaces the edit');

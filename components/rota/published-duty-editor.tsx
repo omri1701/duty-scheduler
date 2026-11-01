@@ -82,6 +82,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
     <label className="check-label"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Override availability as admin','חריגה מאילוץ כמנהל')}</label>
     {override&&<label className="field-label">{t('Required audit reason','נימוק חובה לתיעוד')}<textarea rows={2} maxLength={500} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
    </div>}
+   {unchanged&&validExtras&&!stale&&<p className="muted-copy" role="note">{t('Choose another engineer or change the extra points to review a change.','יש לבחור מהנדס אחר או לשנות את הנקודות הנוספות כדי לבדוק שינוי.')}</p>}
    <div className="editor-actions"><Button disabled={!ready||busy} onClick={()=>setStep('review')}>{t('Review change','בדיקת השינוי')}</Button></div>
    {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Request a swap instead','בקשת החלפה במקום')}</Button>}
   </>:<>

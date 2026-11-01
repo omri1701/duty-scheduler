@@ -11,9 +11,13 @@ test('admin edits a published duty: Temporary by default, copyable summary, new 
   await duty(page, '2026-11-03').click();
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await expect(dialog).toBeVisible();
+  // Disabled before any change, and says why.
   await expect(dialog.getByRole('button', {name: 'Review change'})).toBeDisabled();
+  const reason = dialog.getByRole('note').filter({hasText: 'Choose another engineer or change the extra points to review a change.'});
+  await expect(reason).toBeVisible();
   await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Casey Cedar', exact: true}).click();
+  await expect(reason).toHaveCount(0);
   await expect(dialog.getByRole('button', {name: 'Temporary', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await expect(dialog).toContainText('Blair Birch owes Casey Cedar 1 point, repaid in later months.');
   await dialog.getByLabel('Extra points').fill('0.25');
@@ -131,5 +135,5 @@ test('a pending swap that includes the duty is named before the edit', async ({p
     accepted_by: at('2026-11-05').primary_id!, accepted_at: '2026-11-01T08:00:00Z', created_at: '2026-11-01T07:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''}];
   await openApp();
   await duty(page, '2026-11-05').click();
-  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note')).toHaveText('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.');
+  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note').filter({hasText: 'pending swap'})).toHaveText('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.');
 });

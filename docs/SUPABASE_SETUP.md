@@ -627,7 +627,9 @@ reconciled by the existing pointer trigger (the requester's duty invalidates the
 request; the counterpart's asks the new engineer). New points invalidate a pending
 request that includes the duty, because consent was given at the earlier points. A
 later month that already repays a debt keeps its version. Editing the duty back holds that
-repayment (no double charge). Migration `20261101202325_published_edit_lifecycle.sql`
+repayment (no double charge). Plan the month on a reopened edited month plans without that
+month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
+plan replaces the edit with the plan. Migration `20261101202325_published_edit_lifecycle.sql`
 adds these lifecycle rules. Regressions: `supabase/tests/published-edit.sql` and
 `supabase/tests/published-edit-lifecycle.mjs` (empty disposable LOCAL, rolled back).
 
