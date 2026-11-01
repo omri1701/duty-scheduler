@@ -353,7 +353,9 @@
 .my-duties-toggle{border:1px solid #dce4df;border-radius:10px;padding:8px 10px;color:#526b5b;font-size:13px;background:#fff}
 .my-duties-toggle[aria-pressed=true]{background:#e4eedf;border-color:#9ab38d;color:#244c37}
 .calendar-top>button:last-child:not(.my-duties-toggle){margin-inline-start:auto}
-.calendar-draft-tools{display:flex;align-items:center;gap:inherit;margin-inline-start:auto}
+.calendar-draft-tools{display:flex;flex-wrap:nowrap;align-items:center;gap:inherit;margin-inline-start:auto;min-width:0;max-width:100%}
+.calendar-draft-tools[data-compact]>button{width:44px;min-width:44px;padding-inline:0}
+.calendar-draft-tools[data-compact] .draft-tool-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .calendar-grid .adjacent-duty{opacity:.6;cursor:default}
 .calendar-grid .day-cell{gap:5px}
 @container month-toolbar (min-width:960px){

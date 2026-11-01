@@ -1,7 +1,7 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment, CalendarFilters} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import {streakCells} from '@/lib/rota/streaks';
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { Plus, Info, LockKeyhole, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { addDays, dayOf, ink, ownerMonth, type State, type Duty } from '@/lib/rota/engine';
@@ -97,18 +97,11 @@ export function WorkspaceCalendar({
           </div>
           <button className="my-duties-toggle" aria-pressed={view === 'me'} onClick={() => setView(view === 'me' ? 'team' : 'me')}>{t('My duties', '\u05d4\u05ea\u05d5\u05e8\u05e0\u05d5\u05d9\u05d5\u05ea \u05e9\u05dc\u05d9')}</button>
         </> : (isManager || !!publication) && <CalendarFilters t={t} value={view} onChange={setView}/>}
-        {/* Draft tools wrap together. Clear board is a fresh start for the draft only; the published version is never cleared. */}
-        <div className="calendar-draft-tools" style={{ display: viewingDraft ? undefined : 'none' }}>
-          {viewingDraft && onClearBoard && <Button variant="ghost" disabled={readOnly || clearBusy || !clearCount} onClick={onClearBoard}
-            title={clearBusy ? t('Wait for Generate to finish.', 'יש להמתין לסיום השיבוץ.') : !clearCount ? t('No unlocked duties to clear.', 'אין תורנויות לא נעולות לניקוי.') : undefined}>
-            <Eraser />
-            {t('Clear board', 'ניקוי הלוח')}
-          </Button>}
-          <Button variant="ghost" onClick={onSpecial} disabled={readOnly}>
-            <Plus />
-            {t('Special block', 'מקטע מיוחד')}
-          </Button>
-        </div>
+        {/* Clear board is a fresh start for the draft only; the published version is never cleared. */}
+        <DraftTools hidden={!viewingDraft} lang={lang} t={t} readOnly={readOnly}
+          clear={viewingDraft && onClearBoard ? {onClick: onClearBoard, disabled: clearBusy || !clearCount,
+            reason: clearBusy ? t('Wait for Generate to finish.', 'יש להמתין לסיום השיבוץ.') : !clearCount ? t('No unlocked duties to clear.', 'אין תורנויות לא נעולות לניקוי.') : undefined} : undefined}
+          onSpecial={onSpecial}/>
       </>} beforeGrid={!isManager && monthDetails.status !== 'published' && (
         <div className="inline-note">
           {t('The manager has not published this month yet.', 'המנהל עדיין לא פרסם את החודש הזה.')}
@@ -267,4 +260,41 @@ export function WorkspaceCalendar({
         })}
       </CalendarSurface>
   );
+}
+
+// Clear board and Special block share one row. When their labels can't fit (narrow phones,
+// Safari text zoom), both become 44px icon buttons that keep the full text as name and tooltip.
+function DraftTools({hidden, lang, t, readOnly, clear, onSpecial}: {
+  hidden: boolean; lang: Language; t: Translate; readOnly: boolean;
+  clear?: {onClick: () => void; disabled: boolean; reason?: string}; onSpecial: () => void;
+}) {
+  const tools = useRef<HTMLDivElement>(null), [compact, setCompact] = useState(false), hasClear = !!clear;
+  useLayoutEffect(() => {
+    const node = tools.current, row = node?.parentElement;
+    if (!node || !row) return;
+    const fit = () => {
+      // Measure with full labels, then put the current look back until React re-renders.
+      const was = node.hasAttribute('data-compact');
+      node.removeAttribute('data-compact');
+      const overflows = node.scrollWidth > node.clientWidth + 1;
+      if (was) node.setAttribute('data-compact', '');
+      setCompact(overflows);
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(row);
+    fit();
+    return () => observer.disconnect();
+  }, [lang, hidden, hasClear]);
+  const clearLabel = t('Clear board', 'ניקוי הלוח'), specialLabel = t('Special block', 'מקטע מיוחד');
+  return <div ref={tools} className="calendar-draft-tools" data-compact={compact ? '' : undefined} style={{display: hidden ? 'none' : undefined}}>
+    {clear && <Button variant="ghost" disabled={readOnly || clear.disabled} onClick={clear.onClick} aria-label={clearLabel}
+      title={clear.reason ?? (compact ? clearLabel : undefined)}>
+      <Eraser />
+      <span className="draft-tool-label">{clearLabel}</span>
+    </Button>}
+    <Button variant="ghost" onClick={onSpecial} disabled={readOnly} aria-label={specialLabel} title={compact ? specialLabel : undefined}>
+      <Plus />
+      <span className="draft-tool-label">{specialLabel}</span>
+    </Button>
+  </div>;
 }
