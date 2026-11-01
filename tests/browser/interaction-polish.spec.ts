@@ -135,13 +135,14 @@ for(const lang of ['en','he'] as const)test(`edge drops, sideways tracking, auto
  const ghost=await start(0);await move(height-2);
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
  // Keep the finger still: insertion must advance as the list scrolls beneath it.
- await expect.poll(()=>rows.last().evaluate(el=>el.getBoundingClientRect().bottom),{timeout:15000}).toBeLessThan(height-2);
+ // Admin rows carry the No weekends toggle, so the phone list is longer to scroll.
+ await expect.poll(()=>rows.last().evaluate(el=>el.getBoundingClientRect().bottom),{timeout:30000}).toBeLessThan(height-2);
  const floated=(await page.locator('.mobile-drag-preview').boundingBox())!;expect(floated.x).toBeCloseTo(ghost.x,1);
  expect(calls()).toHaveLength(0);await end(height-2);
  await expect.poll(()=>order()).toEqual([...initial.slice(1),initial[0]]);expect(calls()).toHaveLength(1);
  const stopped=await page.evaluate(()=>scrollY);await page.waitForTimeout(120);expect(await page.evaluate(()=>scrollY)).toBe(stopped);
  await start(initial.length-1);await move(2);
- await expect.poll(()=>rows.first().evaluate(el=>el.getBoundingClientRect().top),{timeout:15000}).toBeGreaterThan(2);
+ await expect.poll(()=>rows.first().evaluate(el=>el.getBoundingClientRect().top),{timeout:30000}).toBeGreaterThan(2);
  await end(2);await expect.poll(()=>order()).toEqual(initial);expect(calls()).toHaveLength(2);
  // A real failed write restores the original order after the edge drop.
  backend.failNextSave=true;await start(1);await move(2);await end(2);
