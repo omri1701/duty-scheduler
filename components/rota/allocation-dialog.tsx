@@ -19,6 +19,12 @@ const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(u
 
 export function allocationMessage(message: string, t: Translate) {
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
+  // Plans the ledger can't book, explained before Generate (see bookingProblem).
+  if (/review-compound-reverse-obligation/.test(message)) return t('A point passes through someone who owes it back, so this plan can’t be booked. Undo the last change, or drag the point straight to who should do it.', 'נקודה עוברת דרך מי שחייב אותה בחזרה, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון, או לגרור את הנקודה ישירות למי שיבצע אותה.');
+  if (/review-unavailable-reverse-obligation/.test(message)) return t('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.', 'מישהו מקבל בחזרה יותר נקודות ממה שהוא עדיין חייב, ולכן לא ניתן לרשום את התוכנית. אפשר להפוך את הנקודה לקבועה, להעביר פחות נקודות, או לבטל את השינוי האחרון.');
+  if (/review-normalized-deferral-route/.test(message)) return t('A postponed repayment would pass through several people, so this plan can’t be booked. Undo the last change.', 'החזר שנדחה היה עובר דרך כמה אנשים, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
+  if (/review-circular-route/.test(message)) return t('A point someone lent comes back to them, so this plan can’t be booked. Undo the last change.', 'נקודה שמישהו העביר חוזרת אליו, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
+  if (/review-allocation-booking/.test(message)) return t('This plan can’t be booked as it is. Undo the last change, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. אפשר לבטל את השינוי האחרון ולנסות שוב.');
   if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way, so a new proposal replaced it. Check it, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש ולכן הוחלפה ההקצאה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
   if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needed a fresh proposal, so one replaced it. Check it, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דרש הצעה חדשה, והיא הוחלפה. כדאי לבדוק ולאשר שוב.');
   if (/allocation-fit-limit/.test(message)) return t('This month’s duty points are too irregular to split automatically. Simplify the special ranges, then try again.', 'נקודות התורנויות בחודש זה אינן סדירות מכדי לחלק אותן אוטומטית. יש לפשט את טווחי הימים המיוחדים ולנסות שוב.');
@@ -109,6 +115,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
       {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
       {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
+      {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       <p className="plan-sr" id="plan-no-counterpart">{t('No one else can take on less. Drag a point instead.', 'אין מי שיכול לקבל פחות. אפשר לגרור נקודה במקום.')}</p>
       <p className="plan-sr" id="plan-no-receiver">{t('No one else can take this point. Drag a point instead.', 'אין מי שיכול לקבל את הנקודה. אפשר לגרור נקודה במקום.')}</p>

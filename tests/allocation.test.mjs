@@ -4,10 +4,11 @@ import loadHighs from 'highs';
 import {createHighsAdapter, canonicalDuties, createGenerationRequest, solveGeneration} from '../lib/scheduling/index.ts';
 import {record, replay, sliceClaim, project, loneHalf} from '../lib/compensation/index.ts';
 import {reviewAllocation} from '../lib/allocation/review.ts';
-import {proposeAllocation, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
+import {proposeAllocation, allocationDivisible, allocationCeilings, editAllocation, compileAllocation, planAllocation, persistedDraft, transferAllocation, classifyTransfer,
   retainedChanges, editOptions, deriveTransfers, balanced, unplacedChanges, nettedCompensation, bindAllocation, fitPartition, equalShares, unevenBaseline, unevenTransfers} from '../lib/allocation/index.ts';
 import {balanceChanges} from '../lib/allocation/derive.ts';
 import {context} from '../lib/allocation/model.ts';
+import {partitionable} from '../lib/allocation/fit.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
 // Allocation is solver-free; only Generate's own solver supplies actual assignments.
@@ -228,15 +229,17 @@ test('uneven credit survives edits, protects the creditor’s carried work from 
   assert.throws(() => planAllocation(i, foreign), /invalid-uneven-credit/);
   const duplicate = structuredClone(r.draft); duplicate.uneven.push({...duplicate.uneven[0]});
   assert.throws(() => planAllocation(i, duplicate), /invalid-uneven-credit/);
-  // An old creditor with uneven credit keeps that half point: relief stops at 4.5 of its 5 points.
+  // An old creditor with uneven credit keeps that half point: relief stops below its 5 points. It
+  // stops at 4, not 4.5: no duty this month is half a point, so a 0.5 target could never be
+  // scheduled (decision 2026-11-01: a repayment step keeps the month exactly divisible).
   const owed = owe(holiday(), 'e00', 'e11', 20, 'old'), relief = proposal(owed);
   invariant(owed, relief);
-  assert.equal(total(relief.draft.repayments.map(p => p.units)), 9);
-  assert.equal(relief.draft.targetsUnits.e11, 1);
+  assert.equal(total(relief.draft.repayments.map(p => p.units)), 8);
+  assert.equal(relief.draft.targetsUnits.e11, 2);
   assert.equal(planAllocation(owed, relief.draft).confirmable, true);
   const greedy = structuredClone(relief.draft), [plan] = greedy.repayments;
   plan.units = 10; plan.claim.units = 10; plan.claim.path[0].units = 10;
-  greedy.offeredUnits.e00 += 1; greedy.offeredUnits.e11 -= 1; greedy.targetsUnits.e00 += 1; greedy.targetsUnits.e11 -= 1;
+  greedy.offeredUnits.e00 += 2; greedy.offeredUnits.e11 -= 2; greedy.targetsUnits.e00 += 2; greedy.targetsUnits.e11 -= 2;
   assert.throws(() => planAllocation(owed, greedy), /repayment-exceeds-creditor-relief/, 'relief cannot consume work carried for the debtor');
 });
 
@@ -304,7 +307,7 @@ test('repayment has no monthly cap beyond creditor relief and debtor availabilit
   assert.deepEqual(p.intents, []);
 });
 
-test('partial oldest repayment uses real half duties; a younger claim cannot take its capacity', () => {
+test('partial oldest repayment uses real half duties, and only as far as the month can be scheduled exactly', () => {
   const i = owe(owe(scenario(), 'e00', 'e11', 4, 'old'), 'e00', 'e10', 2, 'young');
   i.schedule.calendar.splitWeekends = ['2026-11-06'];
   const allowed = ['2026-11-01', '2026-11-04', '2026-11-06', '2026-11-09'];
@@ -312,7 +315,10 @@ test('partial oldest repayment uses real half duties; a younger claim cannot tak
     .flatMap(d => allowed.includes(d.id) ? [] : d.dates.map(date => [date, 'no'])));
   const r = proposal(i); invariant(i, r);
   assert.equal(allocationCeilings(i).e00, 7, 'three whole duties and one half duty');
-  assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['old', 3]]);
+  // The half duty takes e00's half point. Repaying all three units to the old creditor would leave
+  // three members on half points with only two half duties to give them, so the month could not be
+  // scheduled in full (decision 2026-11-01): the old creditor gets one point, the younger the half.
+  assert.deepEqual(r.draft.repayments.map(r => [r.claim.priority.lotId, r.units]), [['old', 2], ['young', 1]]);
   assert.equal(r.draft.targetsUnits.e00, 7);
 });
 
@@ -841,4 +847,35 @@ test('duplicate/unexplained accounting slices are rejected', () => {
   below.targetsUnits.e11 -= 2; below.targetsUnits.e00 += 2; below.transfers = deriveTransfers(i.seniority, below.changes, []);
   assert.throws(() => compiled(i, below, {}), /permanent-below-fair-share/);
   assert.equal(solver.activeModels, 0);
+});
+
+test('partitionable: exact points from the month’s duty weights, locked duties kept by their member', () => {
+  // Two half duties: at most two members on half points, and never one alone.
+  assert.equal(partitionable([1, 1, 2, 2, 2], [[], [], []], [3, 3, 2]), true);
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2], [[], [], []], [3, 3, 3]), false, 'sums differ');
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2], [[], [], []], [3, 3, 4]), true);
+  assert.equal(partitionable([1, 1, 2, 2, 2, 2, 2], [[], [], []], [5, 3, 4]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2], [[], [], []], [5, 5, 4]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2, 2], [[], [], []], [5, 5, 6]), true);
+  assert.equal(partitionable([3, 3, 2, 2, 2, 2], [[], [], [], []], [3, 3, 3, 5]), false, 'three odd points, two odd duties');
+  // 1.5 points can't come from 1, 2.5 and 4-point duties.
+  assert.equal(partitionable([2, 5, 8, 2, 2], [[], []], [3, 16]), false);
+  // A locked 2.5-point duty: 4 points would need another 1.5, which no duty makes.
+  assert.equal(partitionable([5, 2, 2, 2, 2], [[5], []], [8, 10]), false);
+  assert.equal(partitionable([5, 2, 2, 2, 2], [[5], []], [9, 9]), true);
+  assert.equal(partitionable([2, 2], [[2]], [6]), true, 'one member takes everything');
+});
+
+test('a lock that needs an odd share swaps two members’ shares, nearest in order; the shares stay the same', () => {
+  // e02 is locked on a 2.5-point holiday day. The ordered arrangement gave e02 4 points, leaving 1.5
+  // that no duty makes, so Generate was partial. Swapping with e01 (3.5 points) makes it exact.
+  const i = owe(owe(scenario('normal', 9), 'e00', 'e06', 2, 'a'), 'e08', 'e07', 3, 'b');
+  i.schedule.calendar = {specials: [{id: 'h', start: '2026-11-02', end: '2026-11-08', extra: 1.5}], splitWeekends: ['2026-11-06']};
+  i.schedule.locks = [{dutyId: '2026-11-03', engineer: 'e02'}];
+  const d = proposal(i).draft;
+  assert.deepEqual([d.baselineUnits.e01, d.baselineUnits.e02], [8, 7]);
+  assert.deepEqual(Object.values(d.baselineUnits).sort(), [7, 7, 7, 8, 8, 8, 8, 8, 9], 'the same shares');
+  assert.equal(allocationDivisible(i, d.targetsUnits), true);
+  assert.equal(solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(Object.entries(d.targetsUnits).map(([k, v]) => [k, v / 2]))},
+    {now: i.now, seed: 17, seconds: 20})).complete, true);
 });

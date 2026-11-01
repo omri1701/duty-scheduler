@@ -58,7 +58,7 @@ after merge into `develop`; this feature PR does not apply hosted migrations.
 
 ## Non-weekend members
 
-Migration `20261031230608_non_weekend_members.sql` adds `duty_members.no_weekends`
+Migration `20261101080207_non_weekend_members.sql` adds `duty_members.no_weekends`
 (default false, so existing members are unchanged) and the admin-only checked RPC
 `duty_set_no_weekends(p_member, p_no_weekends, p_revision)`: approved members only,
 revision-checked, no direct table writes. The column is readable like the rest of the

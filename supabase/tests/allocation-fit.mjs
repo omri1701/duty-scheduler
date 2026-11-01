@@ -101,20 +101,21 @@ try {
  await refuse({...r3,uneven:proposal.draft.uneven},context,'invalid-uneven-credit');
  context=await confirm(r3,context);
  assert.deepEqual(context.allocation.uneven,r3.uneven);
- // An old creditor keeps the half point carried for the debtor: relief stops at 4.5 of its 5 points,
- // and a hand-crafted repayment of the full 5 cannot consume the carried work.
+ // An old creditor keeps the half point carried for the debtor: relief stops below its 5 points (at 4,
+ // since no duty this month is half a point; decision 2026-11-01), and a hand-crafted repayment of the
+ // full 5 cannot consume the carried work.
  await sql(`select public.duty_compensation(${q({kind:'claim',debtorId:ids[0],creditorId:ids[11],units:20})},'relief-fixture','Reviewed fixture',${rev});`);
  context=await contextOf();
  const relieved=proposeAllocation(context.input);
- assert.deepEqual(relieved.draft.repayments.map(r=>r.units),[9]);assert.equal(relieved.draft.targetsUnits[ids[11]],1);
+ assert.deepEqual(relieved.draft.repayments.map(r=>r.units),[8]);assert.equal(relieved.draft.targetsUnits[ids[11]],2);
  const greedy=structuredClone(relieved.draft),[repayment]=greedy.repayments;
  repayment.units=10;repayment.claim.units=10;repayment.claim.path[0].units=10;
- greedy.offeredUnits[ids[0]]+=1;greedy.offeredUnits[ids[11]]-=1;greedy.targetsUnits[ids[0]]+=1;greedy.targetsUnits[ids[11]]-=1;
+ greedy.offeredUnits[ids[0]]+=2;greedy.offeredUnits[ids[11]]-=2;greedy.targetsUnits[ids[0]]+=2;greedy.targetsUnits[ids[11]]-=2;
  await refuse(greedy,context,'repayment-exceeds-creditor-relief');
  context=await confirm(relieved.draft,context);
  assert.deepEqual(context.allocation.baselineUnits,proposal.draft.baselineUnits);
  assert.deepEqual(context.allocation.uneven,proposal.draft.uneven);
- assert.deepEqual(context.allocation.repayments.map(r=>r.units),[9]);
+ assert.deepEqual(context.allocation.repayments.map(r=>r.units),[8]);
  console.log('PASS: the browser-fitted ordinary baseline for indivisible holiday duties is accepted by duty_confirm_allocation with exactly its uneven credit; the equal split and any altered credit are refused; a permanent reduction on a creditor removes its credit (audit R3)');
  await sql('rollback;');
 

@@ -144,7 +144,16 @@ Deferral retains the original source path and uses its available normalized suff
 for retained repayment. Reverse burdens reserve existing obligations instead of
 netting them away before completion; since `20261031213827_deferred_repayment_by_debtor`
 a deferred repayment handed to a member who owes the same creditor is one too, so it
-reserves that member's own debt instead of failing `review-normalized-deferral-route`. Secondary coverage contributes no capacity.
+reserves that member's own debt instead of failing `review-normalized-deferral-route`.
+Since `20261101060243_permanent_legs_owe_nothing` permanent legs owe nothing in a
+route. A point a member received permanently and hands on temporarily to someone who
+owes them is that person's repayment, instead of failing
+`review-compound-reverse-obligation`; a temporary leg before the reverse leg (someone
+else's debt) still needs review. A route back to its own carrier drops the permanent
+legs out of it instead of publishing an intent from a member to themselves; that
+member's own debt returning to them fails `review-circular-route`. The plan names
+any of these before Generate, which stays disabled until the plan can be booked.
+Secondary coverage contributes no capacity.
 
 Copied intent IDs never create another origin. Still-live unchanged reservations
 retain their IDs; restored or rearranged still-outstanding repayment can rebind
@@ -158,7 +167,8 @@ Changing allocation transfer provenance over an existing publication requires
 lineage review. The checked boundary deliberately refuses to create fresh baseline
 origins over already-published work; authoritative physical replacements and the
 existing audited manual accounting operations remain available. Compound reverse
-routes and ambiguous normalized deferrals likewise require review.
+routes (a temporary leg before the reverse leg), circular routes and ambiguous
+normalized deferrals likewise require review.
 
 Baseline validation is an exact decision over owned canonical weights,
 independent of the scheduling solver and its proofs. Those weights come from

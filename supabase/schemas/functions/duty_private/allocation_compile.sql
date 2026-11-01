@@ -158,6 +158,12 @@ begin
     if moved->'claim'<>'null' then leg:=leg||jsonb_build_object('deferredClaim',duty_private.compensation_slice(moved->'claim',take)); end if;
     route:=route||jsonb_build_array(leg);
    end if;
+   -- A route back to its own carrier: permanent legs out of it owe nothing and are
+   -- dropped (decision 2026-11-01); its own debt can't be funded by its own work.
+   while jsonb_array_length(route)>0 and route->0->>'fromId'=id loop
+    if route->0->>'kind'<>'permanent' then raise exception 'review-circular-route'; end if;
+    route:=route-0;
+   end loop;
    if jsonb_array_length(route)>0 then funding:=funding||jsonb_build_array(jsonb_build_object('carrierId',id,'units',take,'route',route)); end if;
   end loop;
  end loop;
@@ -165,10 +171,14 @@ begin
  -- it by immediately creating an opposing origin before any work completes.
  -- A deferred repayment counts too (decision 2026-10-31): B's repayment to C
  -- handed to D, who owes C, is D's own repayment to C; B's debt stays open.
+ -- Permanent legs before it owe nothing (decision 2026-11-01): a point C received
+ -- permanently and hands to D is C's own work, which D repays C with.
  for t,position in select value,ordinality::integer-1 from jsonb_array_elements(funding) with ordinality loop
-  for leg in select value from jsonb_array_elements(t->'route') where value->>'kind'='temporary' loop
+  for leg,idx in select value,ordinality::integer from jsonb_array_elements(t->'route') with ordinality where value->>'kind'='temporary' loop
    if not exists(select 1 from jsonb_array_elements(s->'claims') c where c->>'debtorId'=leg->>'toId' and c->>'creditorId'=leg->>'fromId') then continue; end if;
-   if jsonb_array_length(t->'route')<>1 or leg->>'toId'<>t->>'carrierId' then raise exception 'review-compound-reverse-obligation'; end if;
+   if idx<>jsonb_array_length(t->'route') or leg->>'toId'<>t->>'carrierId'
+    or exists(select 1 from jsonb_array_elements(t->'route') with ordinality x(v,i) where i<idx and v->>'kind'<>'permanent')
+   then raise exception 'review-compound-reverse-obligation'; end if;
    remaining:=(t->>'units')::bigint;
    for c in select value from jsonb_array_elements(candidates) where value->>'debtorId'=leg->>'toId' and value->>'creditorId'=leg->>'fromId' loop
     ranges:=int8multirange(int8range(0,(c->>'units')::bigint,'[)'));
