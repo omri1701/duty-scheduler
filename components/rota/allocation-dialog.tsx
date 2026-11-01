@@ -19,10 +19,15 @@ const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(u
 
 export function allocationMessage(message: string, t: Translate) {
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
+  // Already names what changed in the points ledger (useAllocationWorkflow's `changed`).
+  if (/\(balances: |\(מאזנים: |^\S.* changed, so the month was refreshed|השתנה, ולכן החודש רוענן/.test(message)) return message;
   // Plans the ledger can't book, explained before Generate (see bookingProblem).
   if (/review-compound-reverse-obligation/.test(message)) return t('A point passes through someone who owes it back, so this plan can’t be booked. Undo the last change, or drag the point straight to who should do it.', 'נקודה עוברת דרך מי שחייב אותה בחזרה, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון, או לגרור את הנקודה ישירות למי שיבצע אותה.');
   if (/review-unavailable-reverse-obligation/.test(message)) return t('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.', 'מישהו מקבל בחזרה יותר נקודות ממה שהוא עדיין חייב, ולכן לא ניתן לרשום את התוכנית. אפשר להפוך את הנקודה לקבועה, להעביר פחות נקודות, או לבטל את השינוי האחרון.');
   if (/review-normalized-deferral-route/.test(message)) return t('A postponed repayment would pass through several people, so this plan can’t be booked. Undo the last change.', 'החזר שנדחה היה עובר דרך כמה אנשים, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
+  // A database without the re-plan migrations still refuses to change a published plan.
+  if (/Review published transfer lineage/.test(message)) return t('This database can’t re-plan a published month yet: its migrations are out of date. Apply them (pnpm start:local or pnpm local:setup), then try again.', 'מסד הנתונים עדיין לא תומך בתכנון מחדש של חודש שפורסם: המיגרציות שלו אינן מעודכנות. יש להחיל אותן (pnpm start:local או pnpm local:setup) ולנסות שוב.');
+  if (/review-existing-reservation-normalization/.test(message)) return t('This plan would change a debt another month already repays, so it can’t be booked. Undo the last change, or change that month first.', 'התוכנית הייתה משנה חוב שחודש אחר כבר מחזיר, ולכן לא ניתן לרשום אותה. אפשר לבטל את השינוי האחרון, או לשנות קודם את החודש ההוא.');
   if (/review-circular-route/.test(message)) return t('A point someone lent comes back to them, so this plan can’t be booked. Undo the last change.', 'נקודה שמישהו העביר חוזרת אליו, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
   // A published month's plan is replaced from the ledger without its own entries, unless (decision 2026-11-01):
   const later = /review-replan-later:(\d{4}-\d{2})/.exec(message)?.[1];

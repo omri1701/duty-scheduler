@@ -3,11 +3,11 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
-import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
+import {allocationTotals, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings, context} from '@/lib/allocation/model';
-import {generatedNotes} from '@/lib/allocation/outcome';
+import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
@@ -142,7 +142,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const editable = useMemo(() => {
     if (!captured || !draft?.changes || replanBlocked) return null;
     const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
-    try {return draft.sourceKey === context(i).key ? draft : reviewAllocation(i, draft);} catch {return null;}
+    try {return draft.sourceKey === context(i).key ? draft : reopenAllocation(i, draft);} catch {return null;}
   }, [captured, locks, approvals, draft, replanBlocked]);
   // Which + / − the library accepts at the current step: the dialog disables the rest,
   // so a + that no one can absorb never adds points the month does not have.
@@ -317,8 +317,21 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     // Never retry the failed write: read the month again, review the retained
     // targets (or a new proposal when only that resolves it), then explain.
     if (failure) {
-      if (await refresh(errorMessage(failure, ''))) fail(failure);
+      const before = captured, message = errorMessage(failure, '');
+      if (await refresh(message)) fail(/Compensation changed/.test(message) && contextRef.current ? changed(before, contextRef.current) ?? failure : failure);
     }
+  }
+  /** Says what changed in the points ledger since the plan was read (decision 2026-11-01):
+   * which months changed and whose balance moved, never only that something changed. */
+  function changed(before: GenerationContext, after: GenerationContext) {
+    const {months, balances} = ledgerChange(month, {events: before.input.events, net: before.projected.net}, {events: after.input.events, net: after.projected.net});
+    if (!months.length && !balances.length) return null;
+    const team = latest.current.state?.team ?? [], name = (id: string) => team.find(p => p.id === id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
+    const label = (m: string, lang: string) => new Date(`${m}-15T00:00:00Z`).toLocaleString(lang, {month: 'long', year: 'numeric', timeZone: 'UTC'});
+    const moved = balances.map(([id, units]) => `${name(id)} ${units > 0 ? '+' : '−'}${Math.abs(units) / 2}`).join(', ');
+    const en = months.length ? `${months.map(m => label(m, 'en')).join(', ')} changed` : 'Points changed', he = months.length ? `${months.map(m => label(m, 'he')).join(', ')} השתנה` : 'הנקודות השתנו';
+    return Error(t(`${en}${moved ? ` (balances: ${moved})` : ''}, so the month was refreshed and your targets were kept. Check them, then confirm again.`,
+      `${he}${moved ? ` (מאזנים: ${moved})` : ''}, ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.`));
   }
   function cancel() {
     if (rpc.current) return;

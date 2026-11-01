@@ -387,3 +387,15 @@ test('a published month whose points a later month already repays can\'t be re-p
   // Once December has started, its plan is kept.
   assert.throws(() => replanEvents(events, '2026-12', Date.parse('2026-12-03T12:00:00Z')), /review-replan-started/);
 });
+
+test('after "Compensation changed" the plan names the months that changed and whose balance moved', async () => {
+  const {ledgerChange} = await import('../lib/allocation/outcome.ts');
+  const names = ['A', 'B', 'C'], i = team('2027-01', names, []);
+  const before = {events: i.events, net: {A: 0, B: 0, C: 0}};
+  const events = record(i.events, {operation: {kind: 'publication', month: '2026-12', beforeId: null, after: {id: 'dec', month: '2026-12', duties: [], intents: [], reservations: []}},
+    sourceKey: 'publish/dec', at: i.events.at(-1).at + 1, actor: 'm'}).events;
+  // The month's own re-plan events are how it is read, not a change.
+  const own = {...events.at(-1), sourceKey: 'replan/x/1/delete', operation: {kind: 'publication', month: '2027-01', beforeId: 'jan', after: null, mode: 'delete'}};
+  assert.deepEqual(ledgerChange('2027-01', before, {events: [...events, own], net: {A: 2, B: -2, C: 0}}), {months: ['2026-12'], balances: [['A', 2], ['B', -2]]});
+  assert.deepEqual(ledgerChange('2027-01', before, before), {months: [], balances: []});
+});
