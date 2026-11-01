@@ -4,8 +4,38 @@ import {pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {assertCssSources, currentCssHash} from './css-source.mjs';
 
+async function readBuildFile(directory, file, description) {
+  try {
+    return await readFile(path.join(directory, file), 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') throw Error(`${description} is missing: ${path.join(directory, file)}. Run next build before this check.`);
+    throw error;
+  }
+}
+const readManifest = async (directory, file) => JSON.parse(await readBuildFile(directory, file, 'Next build manifest'));
+
+// Next 16.4 writes prerendered pages to a hashed response cache when a build adapter
+// is configured (Vercel sets NEXT_ADAPTER_PATH), and to server/app otherwise.
+// Locate the root document from the build's own manifests, as Next does.
+export async function productionHtmlFile(directory = '.next') {
+  const {config} = await readManifest(directory, 'required-server-files.json');
+  const {routes} = await readManifest(directory, 'prerender-manifest.json');
+  assert(routes['/']?.dataRoute?.endsWith('.rsc'), 'Next did not prerender / as a static App Router page; cannot find its stylesheets');
+  if (!config.adapterPath || config.output === 'export') return 'server/app/index.html';
+  const appPaths = await readManifest(directory, 'app-path-routes-manifest.json');
+  const sourceRoute = Object.keys(appPaths).find(page => page.endsWith('/page') && appPaths[page] === routes['/'].srcRoute);
+  assert(sourceRoute, 'App path routes manifest has no page for /');
+  let getRouteCacheKey;
+  try {
+    ({getRouteCacheKey} = await import('next/dist/server/lib/route-cache-key.js'));
+  } catch (error) {
+    throw Error(`Next no longer exposes its route cache key (${error.message}); update scripts/verify-production-css.mjs`);
+  }
+  return `server${getRouteCacheKey('/', {kind: 'APP_PAGE', sourceRoute})}.html`;
+}
+
 export async function verifyProductionCss(directory = '.next') {
-  const html = await readFile(path.join(directory, 'server/app/index.html'), 'utf8');
+  const html = await readBuildFile(directory, await productionHtmlFile(directory), 'Production HTML for /');
   const links = [...html.matchAll(/<link\b[^>]*>/g)].map(match => match[0])
     .filter(link => /\brel="stylesheet"/.test(link))
     .map(link => link.match(/\bhref="([^"]+)"/)?.[1]);
@@ -13,7 +43,7 @@ export async function verifyProductionCss(directory = '.next') {
   const stylesheets = await Promise.all(links.map(async href => {
     const pathname = new URL(href, 'http://build.invalid').pathname;
     assert(pathname.startsWith('/_next/static/') && !pathname.includes('..'), 'Unexpected production CSS path');
-    const css = await readFile(path.join(directory, pathname.slice('/_next/'.length)), 'utf8');
+    const css = await readBuildFile(directory, pathname.slice('/_next/'.length), 'Production stylesheet');
     assert(css.length > 0, `Empty production stylesheet: ${pathname}`);
     return css;
   }));
