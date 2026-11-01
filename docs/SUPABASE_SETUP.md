@@ -585,10 +585,15 @@ Original dates and exclusive ends identify slots across publication copies. Ever
 live publication-pointer change (including ordinary publication or live-version
 deletion) reconciles pending requests under the existing workspace lock. If the
 counterpart duty changes from B to C, `other_id` becomes C, status returns to
-`awaiting_engineer` and `accepted_by`/`accepted_at` are cleared. C must explicitly
-accept. If the requester loses their original slot, a slot disappears/changes span,
-a date expires on revalidation, or no live publication remains, the request becomes
-`invalidated`. Unrelated slot changes preserve consent. Resolution revalidates
+`awaiting_engineer` and `accepted_by`/`accepted_at` (and an admin proposal's
+`requester_accepted_at`) are cleared: both members answer the new pairing. C must
+explicitly accept. If the requester loses their original slot, a slot disappears/changes
+span or points (compared with the immutable requested copy, migration
+`20261101114532_swap_consent_points.sql`), a date expires on revalidation, or no live
+publication remains, the request becomes `invalidated`. Unrelated slot changes preserve
+consent. Approval posts the swap's point difference to the ledger once as a `change`
+between the two members; swapping back nets it to zero, and a swapped duty that carried a
+repayment cancels that reservation with a counter-transfer, so nobody is charged twice. Resolution revalidates
 current owners and uses the current publication; global revision checks reject
 stale concurrent actions before any writes. Deleting the original source version
 sets its historical FKs to NULL but retains dates/members and does not destroy a
@@ -600,8 +605,10 @@ request while older duplicates become Invalidated.
 RLS allows engineers to read initiated requests and incoming requests currently
 requiring their consent; approved admins additionally see requests awaiting admin
 approval, and a proposing admin keeps seeing their proposals. A former counterpart
-immediately loses incoming visibility on reassignment; the requester's consent to an
-admin proposal stays with their unchanged slot.
+immediately loses incoming visibility on reassignment. The approval and consent dialogs
+always show the latest copy of a request; one that changed while open shows why and cannot
+be approved from the stale view. A party who becomes inactive blocks consent and approval
+with "An engineer is no longer active and approved"; an admin rejects it.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
@@ -696,7 +703,8 @@ engineer C in an isolated development project. Do not use real member data.
    admin's approval list. C explicitly accepts; only then can admin approve A's
    request. Verify X/Y current owners, a new version, unchanged secondary cover,
    points/spans/draft and all earlier versions. Unrelated publication changes must
-   keep consent; reassignment of A's source duty must show Invalidated.
+   keep consent; reassignment of A's source duty, or new points on either duty, must
+   show Invalidated.
 5. From two profiles act on the same revision concurrently: only one resolution
    commits, the other must refresh. Test approval before consent via RPC, another
    engineer's consent attempt, inactive/pending users, second weekends, duplicate

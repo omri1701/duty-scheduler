@@ -48,10 +48,16 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
   const publication=raw.months.find(m=>m.month===r.month)?.current_publication_id,find=(day:string,end:string)=>raw.assignments.find(d=>publication&&d.publication_id===publication&&d.day===day&&d.end_day===end);
   return {from:find(r.from_day,r.from_end_day),to:find(r.to_day,r.to_end_day)};
  };
- const reviewSlots=review?slots(review):null;
+ // Dialogs read the latest copy: a refresh (another tab, a republish) can reassign,
+ // invalidate or resolve the request while it is open.
+ const latest=(r:SwapRequest|undefined)=>r&&(raw.swapRequests??[]).find(x=>x.id===r.id);
+ const current=latest(review??undefined),reviewable=current?.status==='awaiting_admin';
+ const consenting=latest(consent?.request),answerable=!!consenting&&swapWaitingOn(consenting).includes(me);
+ const reviewSlots=current?slots(current):null;
  const reviewConflicts=useSwapConflicts(remote,reviewSlots?.from?.id,reviewSlots?.to?.id);
- const summary=review&&reviewSlots?.from&&reviewSlots.to?swapSummary({requester:name(review.requester_id),other:name(review.other_id),lang,
-  from:{label:span(review.from_day,review.from_end_day),points:reviewSlots.from.points},to:{label:span(review.to_day,review.to_end_day),points:reviewSlots.to.points}}):'';
+ const summary=current&&reviewSlots?.from&&reviewSlots.to?swapSummary({requester:name(current.requester_id),other:name(current.other_id),lang,
+  from:{label:span(current.from_day,current.from_end_day),points:reviewSlots.from.points},to:{label:span(current.to_day,current.to_end_day),points:reviewSlots.to.points}}):'';
+ const changedAlert=<p role="alert">{t('This request changed and no longer needs this answer. Close and check the list.','הבקשה השתנתה ואינה ממתינה עוד לתשובה זו. סגרו ובדקו את הרשימה.')}</p>;
  async function act(operation:()=>Promise<void>,success:string){try{await operation();toast.success(success);return true}catch(e){toast.error((e as Error).message);return false}}
  function close(){onSelection(null);setExplanation('')}
  function accept(r:SwapRequest){
@@ -102,17 +108,19 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
    <label className="field-label">{t('Explanation (optional)','הסבר (אופציונלי)')}<textarea rows={2} maxLength={1000} value={explanation} onChange={e=>setExplanation(e.target.value)}/></label>
    <div className="swap-request-actions"><Button disabled={remote.readOnly||!eligible||remote.saving||!requestConflicts||requestConflicts.length>0} onClick={async()=>{if(source&&target&&await act(()=>remote.requestSwap(source.id,target.id,explanation),proposing?t('Swap proposed to both engineers.','ההחלפה הוצעה לשני המהנדסים.'):t('Swap request submitted.','בקשת ההחלפה נשלחה.')))close()}}>{proposing?t('Send to both','שליחה לשניהם'):t('Confirm Request','אישור בקשה')}</Button><Button variant="outline" onClick={close}>{t('Cancel','ביטול')}</Button></div>
   </DialogContent></Dialog>
-  <Dialog open={!!consent} onOpenChange={v=>!v&&setConsent(null)}><DialogContent className="swap-request-dialog" dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Accept despite a conflict?','לאשר למרות התנגשות?')}</DialogTitle><DialogDescription>{consent&&`${name(consent.request.requester_id)} · ${span(consent.request.from_day,consent.request.from_end_day)} ↔ ${name(consent.request.other_id)} · ${span(consent.request.to_day,consent.request.to_end_day)}`}</DialogDescription></DialogHeader>
-   {consent&&conflictAlert(consent.conflicts,t('You can still accept. An admin must then approve an exception with a reason.','אפשר עדיין לאשר. לאחר מכן מנהל יצטרך לאשר חריגה עם נימוק.'))}
-   <div className="swap-request-actions"><Button disabled={remote.readOnly||remote.saving} onClick={async()=>{if(consent&&await accept(consent.request))setConsent(null)}}>{t('Accept anyway','אישור בכל זאת')}</Button><Button variant="outline" onClick={()=>setConsent(null)}>{t('Cancel','ביטול')}</Button></div>
+  <Dialog open={!!consent} onOpenChange={v=>!v&&setConsent(null)}><DialogContent className="swap-request-dialog" dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Accept despite a conflict?','לאשר למרות התנגשות?')}</DialogTitle><DialogDescription>{consenting&&`${name(consenting.requester_id)} · ${span(consenting.from_day,consenting.from_end_day)} ↔ ${name(consenting.other_id)} · ${span(consenting.to_day,consenting.to_end_day)}`}</DialogDescription></DialogHeader>
+   {consent&&!answerable&&changedAlert}
+   {consent&&answerable&&conflictAlert(consent.conflicts,t('You can still accept. An admin must then approve an exception with a reason.','אפשר עדיין לאשר. לאחר מכן מנהל יצטרך לאשר חריגה עם נימוק.'))}
+   <div className="swap-request-actions"><Button disabled={remote.readOnly||remote.saving||!answerable} onClick={async()=>{if(consenting&&await accept(consenting))setConsent(null)}}>{t('Accept anyway','אישור בכל זאת')}</Button><Button variant="outline" onClick={()=>setConsent(null)}>{t('Cancel','ביטול')}</Button></div>
   </DialogContent></Dialog>
   <Dialog open={!!review} onOpenChange={v=>!v&&setReview(null)}><DialogContent className="swap-request-dialog" dir={lang==='he'?'rtl':'ltr'}><DialogHeader><DialogTitle>{t('Approve published swap','אישור החלפה בלוח שפורסם')}</DialogTitle><DialogDescription>{t('Record this swap in the external system first, then approve. Approval creates a new published version from the current publication; availability and weekend limits are checked again.','יש לרשום את ההחלפה במערכת החיצונית ורק אז לאשר. האישור יוצר גרסה חדשה מהפרסום הנוכחי; אילוצים ומגבלת סופי שבוע נבדקים שוב.')}</DialogDescription></DialogHeader>
    {summary?<div className="swap-summary"><pre aria-label={t('Swap summary','סיכום ההחלפה')}>{summary}</pre><Button size="sm" variant="outline" onClick={copySummary}><Copy size={15}/>{t('Copy summary','העתקת סיכום')}</Button></div>
-    :review&&<p>{name(review.requester_id)} · {span(review.from_day,review.from_end_day)} ↔ {name(review.other_id)} · {span(review.to_day,review.to_end_day)}</p>}
+    :current&&<p>{name(current.requester_id)} · {span(current.from_day,current.from_end_day)} ↔ {name(current.other_id)} · {span(current.to_day,current.to_end_day)}</p>}
+   {review&&!reviewable&&changedAlert}
    {conflictAlert(reviewConflicts,t('Approving requires an explicit override with a reason.','האישור מחייב חריגה מפורשת עם נימוק.'))}
    <label className="check-label"><Checkbox checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Explicitly override availability conflicts','אישור חריגה מפורשת מאילוצי זמינות')}</label>
    {override&&<label className="field-label">{t('Required audit reason','נימוק חובה לתיעוד')}<textarea rows={3} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
-   <Button disabled={remote.readOnly||remote.saving||(override&&!reason.trim())||(!!reviewConflicts?.length&&!override)} onClick={async()=>{if(review&&await act(()=>remote.resolveSwap(review.id,'approve',override?reason:''),t('Swap approved and new version published.','ההחלפה אושרה ופורסמה גרסה חדשה.')))setReview(null)}}>{t('Approve & publish swap','אישור ופרסום ההחלפה')}</Button>
+   <Button disabled={remote.readOnly||remote.saving||!reviewable||(override&&!reason.trim())||(!!reviewConflicts?.length&&!override)} onClick={async()=>{if(current&&await act(()=>remote.resolveSwap(current.id,'approve',override?reason:''),t('Swap approved and new version published.','ההחלפה אושרה ופורסמה גרסה חדשה.')))setReview(null)}}>{t('Approve & publish swap','אישור ופרסום ההחלפה')}</Button>
   </DialogContent></Dialog>
  </>;
 }

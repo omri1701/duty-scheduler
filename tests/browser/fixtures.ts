@@ -212,6 +212,7 @@ export class Backend {
       }
     } else if (name === 'duty_resolve_swap') {
       const r = this.raw.swapRequests!.find(r => r.id === p.p_request)!, action = p.p_action as string;
+      if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
       if (this.invalidated) {r.status = 'invalidated'; this.invalidated = false; this.raw.revision!++; return 'invalidated';}
       const requesterSide = !!r.proposed_by && user === r.requester_id;
       if (['accept', 'decline'].includes(action)) {

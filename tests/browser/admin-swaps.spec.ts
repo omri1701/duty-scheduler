@@ -92,6 +92,29 @@ test('admin as a party: only the other member is asked, and the admin still appr
   } finally {await ac.close();}
 });
 
+for (const lang of ['en', 'he'] as const) test(`a stale approval dialog shows the latest request and cannot approve it ${lang}`, async ({page, openApp, backend}) => {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  await openApp('admin'); await published(page, lang);
+  await pick(page, '2026-11-02', '2026-11-03');
+  await page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  Object.assign(backend.raw.swapRequests![0], {requester_accepted_at: NOW, accepted_by: ids.b, accepted_at: NOW, status: 'awaiting_admin'});
+  backend.raw.revision!++;
+  await page.reload(); await language(page, lang);
+  await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
+  const dialog = page.getByRole('dialog', {name: t('Approve published swap', 'אישור החלפה בלוח שפורסם')});
+  await expect(dialog.getByLabel(t('Swap summary', 'סיכום ההחלפה'))).toContainText('Alex Atlas ⇄ Blair Birch');
+  // Another tab's republish handed 3 November to Casey, who has not answered yet.
+  Object.assign(backend.raw.swapRequests![0], {other_id: ids.c, accepted_by: null, accepted_at: null, requester_accepted_at: null, status: 'awaiting_engineer'});
+  backend.raw.assignments.find(d => d.day === '2026-11-03' && d.publication_id === backend.raw.months[0].current_publication_id)!.primary_id = ids.c;
+  backend.failNextSave = true;
+  await dialog.getByRole('button', {name: t('Approve & publish swap', 'אישור ופרסום ההחלפה')}).click();
+  await expect(dialog.getByRole('alert')).toContainText(t('This request changed and no longer needs this answer.', 'הבקשה השתנתה ואינה ממתינה עוד לתשובה זו.'));
+  await expect(dialog.getByLabel(t('Swap summary', 'סיכום ההחלפה'))).toContainText('Alex Atlas ⇄ Casey Cedar');
+  await expect(dialog.getByRole('button', {name: t('Approve & publish swap', 'אישור ופרסום ההחלפה')})).toBeDisabled();
+  expect(backend.raw.publications).toHaveLength(1);
+});
+
 for (const lang of ['en', 'he'] as const) test(`availability alert names whose constraint blocks a swap ${lang}`, async ({page, openApp, backend}) => {
   const t = (en: string, he: string) => lang === 'en' ? en : he;
   await openApp('a'); await language(page, lang);

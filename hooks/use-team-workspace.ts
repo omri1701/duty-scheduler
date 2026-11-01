@@ -79,7 +79,7 @@ export function useTeamWorkspace(){
   requestSwap:(from:string,to:string,explanation:string)=>workspace.mutate('duty_request_swap',{p_from:from,p_to:to,p_explanation:explanation}).then(()=>{}),
   async resolveSwap(id:string,action:'accept'|'decline'|'approve'|'reject'|'cancel',overrideReason=''){
    const result=await workspace.mutate('duty_resolve_swap',{p_request:id,p_action:action,p_override_reason:overrideReason});
-   if(result==='invalidated')throw Error('This request was invalidated because its published duties are no longer eligible.');
+   if(result==='invalidated')throw Error('This request was invalidated because its published duties changed or are no longer eligible.');
   },
   review:(person:string,status:'approved'|'rejected')=>workspace.mutate('duty_review_member',{p_member:person,p_status:status}).then(()=>{}),
   addTemporaryMember:(name:string)=>workspace.mutate('duty_add_temporary_member',{p_name:name}),

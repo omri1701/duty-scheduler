@@ -56,7 +56,7 @@ test('consent gates admin review; rejection, approval and invalidation update ea
     await duty(page, '2026-11-03').click(); await duty(page, '2026-11-02').click(); await confirmRequest(page);
     backend.invalidated = true;
     await b.reload(); await b.getByRole('button', {name: 'Accept', exact: true}).click();
-    await expect(b.getByText('This request was invalidated because its published duties are no longer eligible.', {exact: true})).toBeVisible();
+    await expect(b.getByText('This request was invalidated because its published duties changed or are no longer eligible.', {exact: true})).toBeVisible();
     await page.reload(); await expect(page.getByText('Invalidated', {exact: true})).toBeVisible();
   } finally {await bc.close(); await ac.close();}
 });
