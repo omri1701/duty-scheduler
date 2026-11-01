@@ -20,13 +20,13 @@ test('published drag and keyboard request cancellation do not edit duties', asyn
 });
 
 test('a swap the server would refuse is disabled with a note before the click', async ({page, openApp, backend}) => {
-  // Decision 2026-11-01: the requester's own availability and a second weekend are checked before Confirm Request.
+  // Decision 2026-11-01: availability (the server's alert) and a second weekend (a note) are checked before Confirm Request.
   backend.raw.constraints.push({member_id: ids.a, day: '2026-11-05', kind: 'no', note: ''});
   for (const d of backend.raw.assignments.filter(d => d.day === '2026-11-13')) d.primary_id = ids.a;
   await openApp('a');
   await duty(page, '2026-11-02').click(); await duty(page, '2026-11-05').click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('note')).toHaveText('You marked 5 Nov 2026 unavailable. Choose another duty.');
+  await expect(dialog.getByRole('alert')).toContainText('Alex Atlas is unavailable on 5 Nov 2026');
   await expect(page.getByRole('button', {name: 'Confirm Request'})).toBeDisabled();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await duty(page, '2026-11-02').click(); await duty(page, '2026-11-06').click();

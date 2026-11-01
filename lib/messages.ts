@@ -16,7 +16,8 @@ export function userMessage(raw: string, t: Translate): string {
   if (/ineligible-primary|An engineer is no longer active|An active engineer is required|Unknown approved team member/.test(message)) return t('A duty is assigned to someone who isn’t an active team member here. Choose someone else.', 'תורנות משובצת למישהו שאינו חבר צוות פעיל. יש לבחור מישהו אחר.');
   if (/overlapping-primary|Duty dates overlap|Published duty dates overlap|overlapping-published-duty/.test(message)) return t('Two duties overlap for the same person. Change one of them.', 'שתי תורנויות חופפות לאותו אדם. יש לשנות אחת מהן.');
   if (/A primary engineer cannot also be emergency cover|secondary-changed|invalid-secondary|Emergency engineer is inactive/.test(message)) return t('Emergency cover must be an active member other than the primary. Choose someone else for cover.', 'כיסוי החירום חייב להיות חבר פעיל שאינו התורן הראשי. יש לבחור מישהו אחר לכיסוי.');
-  if (/consecutive-primary|weekend-cap|This swap would create a second weekend/.test(message)) return t('Locked duties put someone on back-to-back days or a second weekend. Review those locks in the calendar.', 'תורנויות נעולות שמות מישהו בימים רצופים או בסוף שבוע שני. יש לבדוק את הנעילות האלה בלוח.');
+  if (/This swap would create a second weekend/.test(message)) return t('This swap would give someone a second weekend this month. Choose other duties, or decline or reject it.', 'ההחלפה הזו תיתן למישהו סוף שבוע שני החודש. יש לבחור תורנויות אחרות, או לסרב לה או לדחות אותה.');
+  if (/consecutive-primary|weekend-cap/.test(message)) return t('Locked duties put someone on back-to-back days or a second weekend. Review those locks in the calendar.', 'תורנויות נעולות שמות מישהו בימים רצופים או בסוף שבוע שני. יש לבדוק את הנעילות האלה בלוח.');
   if (/split-not-friday|duplicate-split|invalid-special|invalid-half-points|noncanonical-duty|invalid-published-duty/.test(message)) return t('A weekend split or special day doesn’t match the calendar. Refresh the month and set it again.', 'פיצול סוף שבוע או יום מיוחד אינו תואם ללוח. יש לרענן את החודש ולהגדיר אותו שוב.');
   if (/stale-generation|stale-request|stale-publication|stale-allocation|altered-generation-result/.test(message)) return t('The month changed in another tab, so this was refreshed. Check it, then try again.', 'החודש השתנה בכרטיסייה אחרת ולכן רוענן. כדאי לבדוק ולנסות שוב.');
   if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
@@ -58,14 +59,15 @@ export function userMessage(raw: string, t: Translate): string {
   if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
   if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
   if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
+  // The checked RPCs' own sentences, each in both languages, before the generic
+  // "changed" fallbacks below, which would otherwise swallow e.g. a swap's invalidation.
+  const said = SENTENCES.find(([pattern]) => pattern.test(message));
+  if (said) return t(said[1], said[2]);
   // Say what changed: the points ledger, or the team and calendar.
   if (/Compensation changed/.test(message)) return t('Points changed since this plan was made (another month was published or a repayment was recorded), so the month was refreshed and your targets were kept. Check them, then confirm again.', 'הנקודות השתנו מאז שהתוכנית נבנתה (חודש אחר פורסם או נרשם החזר), ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
   if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection, then try again in a current browser. Your saved draft is kept.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
   if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('Team or compensation changes needed a fresh review. The month was refreshed; check the targets, then confirm again.', 'שינויים בצוות או בפיצוי דרשו בדיקה מחדש. החודש רוענן; כדאי לבדוק את היעדים ולאשר שוב.');
-  // The checked RPCs' own sentences, each in both languages.
-  const said = SENTENCES.find(([pattern]) => pattern.test(message));
-  if (said) return t(said[1], said[2]);
   // Internal accounting and input checks a user can't reach directly: nothing was saved.
   if (/^[a-z][a-z0-9-]*(:.*)?$/.test(message) || /^(Invalid|Missing|Non-binary|Duplicate|Ineligible)\b/.test(message)) {
     return t('This change couldn’t be saved because it would break the schedule’s records. Nothing changed. Refresh the month and try again.', 'לא ניתן היה לשמור את השינוי כי הוא היה פוגע ברישומי הלוח. דבר לא השתנה. יש לרענן את החודש ולנסות שוב.');
@@ -81,7 +83,7 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/^Overlapping duties/, 'Two duties overlap for the same person. Change one of them.', 'שתי תורנויות חופפות לאותו אדם. יש לשנות אחת מהן.'],
   [/The duty lock was not saved as requested/, 'The lock wasn’t saved as requested. Refresh, check the duty, then try again.', 'הנעילה לא נשמרה כמבוקש. יש לרענן, לבדוק את התורנות ולנסות שוב.'],
   [/Please wait for the current save/, 'Wait for the current save to finish.', 'יש להמתין לסיום השמירה הנוכחית.'],
-  [/This request was invalidated because its published duties are no longer eligible/, 'This swap request no longer applies: its duties changed. Ask for a new swap.', 'בקשת ההחלפה כבר לא רלוונטית: התורנויות שלה השתנו. יש לבקש החלפה חדשה.'],
+  [/This request was invalidated because its published duties/, 'This swap request no longer applies: its duties changed. Ask for a new swap.', 'בקשת ההחלפה כבר לא רלוונטית: התורנויות שלה השתנו. יש לבקש החלפה חדשה.'],
   [/Sign in with an approved account first|Not connected/, 'Sign in with an approved account first.', 'יש להתחבר קודם עם חשבון מאושר.'],
   [/Could not check Google sign-in|Could not complete inspection login/, 'Google sign-in didn’t finish. Try signing in again.', 'ההתחברות עם Google לא הושלמה. יש לנסות להתחבר שוב.'],
   [/Google sign-in is not enabled yet/, 'Google sign-in isn’t set up yet. The manager needs to finish the Google setup in Supabase.', 'ההתחברות עם Google עדיין לא הוגדרה. המנהל צריך להשלים את הגדרת Google ב־Supabase.'],
@@ -104,7 +106,7 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/Compensation audit history is append-only/, 'Points history can’t be changed, only added to.', 'אי אפשר לשנות את היסטוריית הנקודות, רק להוסיף לה.'],
   [/Complete allocation required for publication|Confirmed allocation required/, 'Confirm the plan and generate the month before publishing.', 'יש לאשר את התוכנית ולשבץ את החודש לפני הפרסום.'],
   [/Constraints are closed for this month/, 'Availability for this month is closed.', 'הזמינות לחודש הזה נסגרה.'],
-  [/Engineer consent already recorded/, 'You already answered this request.', 'כבר ענית לבקשה הזו.'],
+  [/Engineer consent already recorded|Your answer is already recorded/, 'You already answered this request.', 'כבר ענית לבקשה הזו.'],
   [/The team data changed\. Refresh|stale revision/, 'The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', 'הלוח השתנה בכרטיסייה אחרת או על ידי מישהו אחר, ולכן רוענן. כדאי לבדוק ולנסות שוב.'],
   [/Generation inputs changed|Invalid team data/, 'Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.'],
   [/Repayment capacity changed|Repayment lineage changed/, 'A repayment changed since this was opened, so the month was refreshed. Check it, then try again.', 'החזר השתנה מאז שזה נפתח, ולכן החודש רוענן. כדאי לבדוק ולנסות שוב.'],
@@ -112,12 +114,12 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/Invalid compensation|Invalid review|Invalid swap action|Invalid schedule|Invalid constraints|Invalid date|Source key and reason required/, 'This change couldn’t be saved because it would break the schedule’s records. Nothing changed. Refresh the month and try again.', 'לא ניתן היה לשמור את השינוי כי הוא היה פוגע ברישומי הלוח. דבר לא השתנה. יש לרענן את החודש ולנסות שוב.'],
   [/Keep at least one active admin/, 'Keep at least one active admin.', 'יש להשאיר לפחות מנהל פעיל אחד.'],
   [/Only the current counterpart can respond/, 'Only the person asked can answer this request.', 'רק האדם שנשאל יכול לענות לבקשה הזו.'],
-  [/Only the requester can cancel/, 'Only the person who asked can cancel this request.', 'רק מי שביקש יכול לבטל את הבקשה הזו.'],
+  [/Only the requester can cancel|Only the person who started the request can cancel/, 'Only the person who started this request can cancel it.', 'רק מי שיזם את הבקשה הזו יכול לבטל אותה.'],
   [/Request not found|This request is no longer pending/, 'This request was already answered or cancelled.', 'הבקשה הזו כבר נענתה או בוטלה.'],
   [/Review missing allocation publication lineage/, 'This month’s plan wasn’t saved with its publication. Reopen the month and confirm its plan again.', 'התוכנית של החודש לא נשמרה עם הפרסום שלו. יש לפתוח מחדש את החודש ולאשר שוב את התוכנית.'],
   [/Temporary member required/, 'Choose a temporary member.', 'יש לבחור חבר זמני.'],
   [/The counterpart changed\. Refresh first|This publication changed\. Request a new swap/, 'The schedule changed since this request. Ask for a new swap.', 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.'],
-  [/The current engineer must accept before admin review/, 'The other engineer has to accept before an admin reviews it.', 'המהנדס השני צריך לאשר לפני שמנהל יבדוק.'],
+  [/The current engineer must accept before admin review|Both engineers must accept before admin review/, 'Both engineers have to accept before an admin reviews it.', 'שני המהנדסים צריכים לאשר לפני שמנהל יבדוק.'],
   [/Use Publish to publish a draft/, 'Use Publish to publish the draft.', 'יש להשתמש בכפתור הפרסום כדי לפרסם את הטיוטה.'],
   [/Use a name between 1 and 80 characters/, 'Use a name between 1 and 80 characters.', 'יש להשתמש בשם באורך 1 עד 80 תווים.'],
   [/Version no longer exists/, 'This version was already deleted. Refresh the list.', 'הגרסה הזו כבר נמחקה. יש לרענן את הרשימה.'],

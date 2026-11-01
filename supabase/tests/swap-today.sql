@@ -55,12 +55,15 @@ begin
   select jsonb_agg(to_jsonb(d) order by id) into original from public.duty_assignments d where publication_id=pub;
   perform set_config('request.jwt.claim.sub',who::text,true);set local role authenticated;
   select revision into rev from public.duty_workspace;
-  begin perform public.duty_request_swap(b,a,'Not mine',rev); raise exception 'Nonowner initiated'; exception when insufficient_privilege then null; end;
+  -- Admins may propose for others (swaps.sql); engineers offer only their own duty.
+  if who<>manager then
+   begin perform public.duty_request_swap(b,a,'Not mine',rev); raise exception 'Nonowner initiated'; exception when insufficient_privilege then null; end;
+  end if;
   perform public.duty_request_swap(a,b,'Today after 09:00',rev);
   select id into request from public.duty_swap_requests where requester_id=who and source_publication_id=pub;
   select revision into rev from public.duty_workspace;
   perform set_config('request.jwt.claim.sub',manager::text,true);
-  begin perform public.duty_resolve_swap(request,'approve',rev); raise exception 'Consent bypassed'; exception when raise_exception then if sqlerrm<>'The current engineer must accept before admin review' then raise; end if; end;
+  begin perform public.duty_resolve_swap(request,'approve',rev); raise exception 'Consent bypassed'; exception when raise_exception then if sqlerrm<>'Both engineers must accept before admin review' then raise; end if; end;
   perform set_config('request.jwt.claim.sub',counterpart::text,true);
   perform public.duty_resolve_swap(request,'accept',rev);
   select revision into rev from public.duty_workspace;

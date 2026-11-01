@@ -245,11 +245,10 @@ RPCs over four months, only where the UI allows them: plan and re-plan with extr
 edits, Confirm & generate, publish, reopen, cancel, restore or delete any version, edit,
 lock and unlock duties, swaps (request, accept, approve), availability and deadlines,
 in any order. Each step is skipped where the UI disables it, with the same checks
-(publish blockers, `duty_replanned_versions`, `swapProblem` with the availability that
-person may read). Every action must succeed, and after each the ledger must replay
-exactly, balance and have no live chain. A refusal the UI did not prevent is a finding;
-its message must not be the generic fallback. One refusal is counted, not failed: a
-swap request onto a date the counterpart marked unavailable, which is private.
+(publish blockers, `duty_replanned_versions`, `swapProblem`; the swap dialogs' availability
+alert names both parties' and cover's conflicts). Every action must succeed, and after each
+the ledger must replay exactly, balance and have no live chain. A refusal the UI did not
+prevent is a finding; its message must not be the generic fallback.
 
 The generation fixture rolls back every synthetic case. It covers authorization,
 malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,
