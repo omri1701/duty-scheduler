@@ -5,7 +5,7 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings} from '@/lib/allocation/model';
 import {generatedNotes} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
@@ -115,6 +115,12 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
   const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
     [captured, approvals, generatedMonth]);
+  // A target the month's duties can't make exactly (half a point in a whole-point month):
+  // allowed, Generate is then partial; the plan says so before Generate.
+  const divisible = useMemo(() => {
+    if (!open || !captured || !draft?.changes) return true;
+    try {return allocationDivisible({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft.targetsUnits);} catch {return true;}
+  }, [open, captured, locks, approvals, draft]);
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
   // Above the spaced ceiling a target still fits availability but needs back-to-back days.
@@ -307,7 +313,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     stop(); setPhase('idle'); setNotice(t('Cancelled. Your saved draft is unchanged.', 'הפעולה בוטלה. הטיוטה השמורה לא השתנתה.')); setError('');
   }
   useEffect(() => {draftRef.current = draft;});
-  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options,
+  return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible,
     locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
