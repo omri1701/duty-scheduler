@@ -9,6 +9,7 @@ import type { Balance } from '@/lib/supabase/balance';
 import type { State } from '@/lib/rota/engine';
 import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
 import type { Language, Translate, UpdateDraft } from './workspace-types';
+import {userMessage} from '@/lib/messages';
 export function WorkspaceTeam({
   remote,
   state,
@@ -60,7 +61,7 @@ export function WorkspaceTeam({
         name={id=>remote.snapshot?.members.find(m=>m.id===id)?.name??t('Former teammate','חבר צוות לשעבר')}
         onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
         roles={remote.snapshot?.roles ?? []}
-        onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(e.message))}
+        onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(userMessage(e.message, t)))}
         selfId={meId}
         readOnly={remote.readOnly||!isManager}
         saving={remote.saving}
@@ -98,7 +99,7 @@ export function WorkspaceTeam({
                       remote
                         .review(m.id, 'approved')
                         .then(() => toast.success(t('Member approved', 'החבר אושר')))
-                        .catch((e) => toast.error(e.message))
+                        .catch((e) => toast.error(userMessage(e.message, t)))
                     }
                   >
                     {t('Approve', 'אישור')}
@@ -107,7 +108,7 @@ export function WorkspaceTeam({
                     variant="outline"
                     disabled={remote.readOnly}
                     onClick={() =>
-                      remote.review(m.id, 'rejected').catch((e) => toast.error(e.message))
+                      remote.review(m.id, 'rejected').catch((e) => toast.error(userMessage(e.message, t)))
                     }
                   >
                     {t('Decline', 'דחייה')}

@@ -333,6 +333,9 @@ and provenance are unchanged.
 ```sh
 node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
 node --test tests/allocation-fuzz.test.mjs   # FUZZ_SEQ, FUZZ_LEN, FUZZ_SEED widen the bounded run
+node --test tests/allocation-months.test.mjs   # several months published in a row; MONTHS_SEQ, MONTHS_LEN
+node --test tests/allocation-lifecycle.test.mjs   # extremes, back to fair, re-plan, delete, later months; LIFE_SEQ, LIFE_LEN
+node --test tests/messages.test.mjs   # every error code and server sentence has an English and Hebrew message
 pnpm exec tsc --noEmit
 pnpm exec eslint lib/allocation lib/compensation/publication.ts lib/compensation/types.ts tests/allocation.test.mjs tests/allocation-binding.test.mjs
 ```

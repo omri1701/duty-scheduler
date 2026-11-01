@@ -111,7 +111,7 @@ test('duty editing, availability override, save failure and published draft sepa
   backend.failNextSave = true;
   await page.getByRole('button', {name: 'Save assignment'}).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByText('Synthetic stale revision. Refresh and try again.', {exact: true}).first()).toBeVisible();
+  await expect(page.getByText('The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', {exact: true}).first()).toBeVisible();
   await page.getByRole('button', {name: 'Save assignment'}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(duty(page, '2026-11-04')).toHaveAccessibleName(/Alex Atlas/);

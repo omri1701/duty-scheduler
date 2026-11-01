@@ -38,6 +38,7 @@ import { fromSnapshot } from '@/lib/supabase/snapshot';
 import { Toaster, toast } from 'sonner';
 import { addDays, monthNext, blocks } from '@/lib/rota/engine';
 import { calendarDates, workspaceMetrics, visibleCalendarBlocks } from '@/lib/rota/workspace-data';
+import {userMessage} from '@/lib/messages';
 export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace; lang: 'en' | 'he'; setLang: (lang: 'en' | 'he') => void }) {
   const mobile = useMobileLayout();
   useEffect(() => {
@@ -165,7 +166,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
       toast.success(t('Constraints saved.', 'האילוצים נשמרו.'));
       return true;
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(userMessage((e as Error).message, t));
       return false;
     }
   }
@@ -274,14 +275,14 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         <InspectionWarning environment={remote.environment} lang={lang}/>
         {remote?.error && (
           <div className="warning-note" role="alert">
-            {remote.error}
+            {userMessage(remote.error, t)}
             <Button
               variant="ghost"
               onClick={() =>
                 remote
                   .refresh()
                   .then(() => remote.clearError())
-                  .catch((e) => toast.error(e.message))
+                  .catch((e) => toast.error(userMessage(e.message, t)))
               }
             >
               {t('Refresh', 'רענון')}
@@ -320,7 +321,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               onCancelDraft={() => setCancelDraftMonth(month)}
               onReopen={async () => {
                 if (!publication) return;
-                try {await remote.restore(publication)} catch (e) {toast.error((e as Error).message)}
+                try {await remote.restore(publication)} catch (e) {toast.error(userMessage((e as Error).message, t))}
               }}
               onPublish={() => setPublishOpen(true)}
             />
@@ -468,7 +469,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           setCancelDraftMonth(null);
           setCalendarChoice({month, status: 'published', version: 'draft', mine: false});
           toast.success(t('Published schedule restored.', '\u05d4\u05dc\u05d5\u05d7 \u05e9\u05e4\u05d5\u05e8\u05e1\u05dd \u05e9\u05d5\u05d7\u05d6\u05e8.'));
-        } catch (e) {toast.error((e as Error).message)}
+        } catch (e) {toast.error(userMessage((e as Error).message, t))}
       }}/>
       <SpecialDutyDialog form={draft.special} month={month} lang={lang} t={t} fmt={fmt} />
       <MonthSettingsDialog

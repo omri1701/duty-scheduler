@@ -81,7 +81,7 @@ test('Hebrew temporary member dialog supports keyboard, validation and retry at 
  const input=dialog.getByLabel('שם',{exact:true});await expect(input).toBeFocused();
  await input.fill('   ');await expect(dialog.getByRole('button',{name:'הוספת חבר',exact:true})).toBeDisabled();
  await input.fill('מהנדס זמני');backend.failNextSave=true;await input.press('Enter');
- await expect(dialog.getByRole('alert')).toHaveText(/Synthetic stale/);
+ await expect(dialog.getByRole('alert')).toHaveText(/הלוח השתנה בכרטיסייה אחרת/);
  await expect(input).toHaveValue('מהנדס זמני');await input.press('Enter');await expect(dialog).toBeHidden();
  const row=page.locator('.team-row').last();await expect(row.getByText('זמני',{exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

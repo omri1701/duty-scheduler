@@ -13,56 +13,13 @@ import type {Language, Translate} from './workspace-types';
 import {nettedCompensation} from '@/lib/allocation/netting';
 import {loneHalf} from '@/lib/compensation';
 import {shortDate} from '@/lib/date-format';
+import {userMessage} from '@/lib/messages';
 
 const points = (units: number) => String(units / 2);
 const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(units))}`;
 
-export function allocationMessage(message: string, t: Translate) {
-  if (/This browser cannot|הדפדפן אינו/.test(message)) return message;
-  // Already names what changed in the points ledger (useAllocationWorkflow's `changed`).
-  if (/\(balances: |\(מאזנים: |^\S.* changed, so the month was refreshed|השתנה, ולכן החודש רוענן/.test(message)) return message;
-  // Plans the ledger can't book, explained before Generate (see bookingProblem).
-  if (/review-compound-reverse-obligation/.test(message)) return t('A point passes through someone who owes it back, so this plan can’t be booked. Undo the last change, or drag the point straight to who should do it.', 'נקודה עוברת דרך מי שחייב אותה בחזרה, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון, או לגרור את הנקודה ישירות למי שיבצע אותה.');
-  if (/review-unavailable-reverse-obligation/.test(message)) return t('Someone is handed back more points than they still owe, so this plan can’t be booked. Make that point permanent, hand over fewer points, or undo the last change.', 'מישהו מקבל בחזרה יותר נקודות ממה שהוא עדיין חייב, ולכן לא ניתן לרשום את התוכנית. אפשר להפוך את הנקודה לקבועה, להעביר פחות נקודות, או לבטל את השינוי האחרון.');
-  if (/review-normalized-deferral-route/.test(message)) return t('A postponed repayment would pass through several people, so this plan can’t be booked. Undo the last change.', 'החזר שנדחה היה עובר דרך כמה אנשים, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
-  // A database without the re-plan migrations still refuses to change a published plan.
-  if (/Review published transfer lineage/.test(message)) return t('This database can’t re-plan a published month yet: its migrations are out of date. Apply them (pnpm start:local or pnpm local:setup), then try again.', 'מסד הנתונים עדיין לא תומך בתכנון מחדש של חודש שפורסם: המיגרציות שלו אינן מעודכנות. יש להחיל אותן (pnpm start:local או pnpm local:setup) ולנסות שוב.');
-  if (/review-existing-reservation-normalization/.test(message)) return t('This plan would change a debt another month already repays, so it can’t be booked. Undo the last change, or change that month first.', 'התוכנית הייתה משנה חוב שחודש אחר כבר מחזיר, ולכן לא ניתן לרשום אותה. אפשר לבטל את השינוי האחרון, או לשנות קודם את החודש ההוא.');
-  if (/review-circular-route/.test(message)) return t('A point someone lent comes back to them, so this plan can’t be booked. Undo the last change.', 'נקודה שמישהו העביר חוזרת אליו, ולכן לא ניתן לרשום את התוכנית. אפשר לבטל את השינוי האחרון.');
-  // A published month's plan is replaced from the ledger without its own entries, unless (decision 2026-11-01):
-  const later = /review-replan-later:(\d{4}-\d{2})/.exec(message)?.[1];
-  if (later) {
-    const name = (lang: string) => new Date(`${later}-15T00:00:00Z`).toLocaleString(lang, {month: 'long', year: 'numeric', timeZone: 'UTC'});
-    return t(`${name('en')} is already planned from this month’s points, so change ${name('en')} first.`, `${name('he')} כבר תוכנן על סמך הנקודות של החודש הזה, ולכן יש לשנות קודם את ${name('he')}.`);
-  }
-  if (/review-replan-started/.test(message)) return t('This month has started, so its plan can’t be replaced. Change single duties in the calendar instead.', 'החודש הזה כבר התחיל, ולכן לא ניתן להחליף את התוכנית שלו. אפשר לשנות תורנויות בודדות בלוח.');
-  if (/review-replan-settled/.test(message)) return t('A repayment from this month’s points was settled by hand, so its plan can’t be replaced.', 'החזר מהנקודות של החודש הזה נרשם ידנית, ולכן לא ניתן להחליף את התוכנית שלו.');
-  if (/review-allocation-booking/.test(message)) return t('This plan can’t be booked as it is. Undo the last change, then try again.', 'לא ניתן לרשום את התוכנית כפי שהיא. אפשר לבטל את השינוי האחרון ולנסות שוב.');
-  if (/invalid-ordinary-baseline/.test(message)) return t('This month’s duties can’t split that way, so a new proposal replaced it. Check it, then confirm again.', 'לא ניתן לחלק כך את תורנויות החודש ולכן הוחלפה ההקצאה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
-  if (/uneven-credit/.test(message)) return t('This month’s uneven split credit needed a fresh proposal, so one replaced it. Check it, then confirm again.', 'הזיכוי על החלוקה הלא שווה החודש דרש הצעה חדשה, והיא הוחלפה. כדאי לבדוק ולאשר שוב.');
-  if (/allocation-fit-limit/.test(message)) return t('This month’s duty points are too irregular to split automatically. Simplify the special ranges, then try again.', 'נקודות התורנויות בחודש זה אינן סדירות מכדי לחלק אותן אוטומטית. יש לפשט את טווחי הימים המיוחדים ולנסות שוב.');
-  if (/statement timeout/.test(message)) return t('The server took too long to check this month’s split. Try again; if it repeats, simplify the special ranges.', 'בדיקת החלוקה החודשית בשרת ארכה זמן רב מדי. יש לנסות שוב; אם הבעיה חוזרת, יש לפשט את טווחי הימים המיוחדים.');
-  if (/Ordinary baseline/.test(message)) return t('Keep the confirmed allocation and adjust Temporary or Permanent. The month weights and participating team have not changed.', 'יש לשמור על ההקצאה המאושרת ולערוך את השינוי הזמני או הקבוע. משקלי החודש והצוות המשתתף לא השתנו.');
-  if (/permanent-below-fair-share/.test(message)) return t('A permanent change can’t take away more than the engineer’s own share: the fair share, or work already given as relief.', 'שינוי קבוע אינו יכול להוריד יותר מהחלק של המהנדס עצמו: החלק ההוגן, או עבודה שכבר ניתנה כהקלה.');
-  if (/permanent-above-month-total/.test(message)) return t('A fair share plus a permanent change can’t exceed this month’s total points.', 'החלק ההוגן בתוספת שינוי קבוע אינו יכול לעלות על סך הנקודות של החודש.');
-  if (/temporary-above-month-total/.test(message)) return t('No one can owe or be owed more than this month’s total points.', 'אף אחד לא יכול לחוב או שיחובו לו יותר מסך הנקודות של החודש.');
-  if (/unplaced-allocation-change/.test(message)) return t('No one else can take this change, so the plan would no longer match the month. Drag a point instead.', 'אין מי שיכול לקבל את השינוי, ולכן התוכנית לא הייתה תואמת את החודש. אפשר לגרור נקודה במקום.');
-  if (/allocation-above-month-total/.test(message)) return t('No one else can take on less, so this would add points the month doesn’t have. Lower someone first.', 'אין מי שיכול לקבל פחות, ולכן זה היה מוסיף נקודות שאין בחודש. יש להוריד קודם למישהו אחר.');
-  if (/unbalanced-allocation-changes/.test(message)) return t('Place the remaining points with the + and − controls.', 'יש לחלק את הנקודות שנותרו באמצעות לחצני + ו־−.');
-  if (/invalid-allocation-shape|invalid-allocation-changes|invalid-derived-transfers|invalid-allocation-pair|invalid-hand-edits/.test(message)) return t('The saved allocation used an earlier format, so a new proposal replaced it. Check it, then confirm again.', 'ההקצאה השמורה נשמרה בפורמט ישן ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר שוב.');
-  if (/lineage|compound|ambiguous/.test(message)) return t('This month carries a published adjustment that needs review. Keep its original plan before changing transfers.', 'בחודש זה קיים שינוי שפורסם ודורש בדיקה. יש לשמור על התוכנית המקורית לפני שינוי העברות.');
-  if (/target-total-mismatch|invalid-baseline-total/.test(message)) return t('Targets must add up to the required month total. Place the remaining points or undo.', 'סכום היעדים חייב להתאים לסך הנקודות לחודש. יש לחלק את הנקודות שנותרו או לבטל את השינוי.');
-  if (/locked-points|lock.*target|target.*lock/.test(message)) return t('A target is below its locked points. Increase it or explicitly unlock duties.', 'יעד נמוך מהנקודות הנעולות. יש להגדיל אותו או לבטל נעילות במפורש.');
-  if (/ineligible-lock|availability-approval/.test(message)) return t('A locked engineer is unavailable. Review the assignment in the calendar or unlock it.', 'המהנדס הנעול אינו זמין. יש לבדוק את השיבוץ בלוח או לבטל את הנעילה.');
-  if (/consecutive|weekend|boundary|approval|fixed-/.test(message)) return t('Fixed duties conflict. Review or unlock the conflicting assignments in the calendar.', 'קיים קונפליקט בין תורנויות קבועות. יש לבדוק את השיבוצים המתנגשים בלוח או לבטל את נעילתם.');
-  if (/generation-window-closed/.test(message)) return t('Coverage has started. Use manual assignments or swaps.', 'הכיסוי החודשי התחיל. יש לערוך שיבוצים ידנית או לבצע החלפות.');
-  // Say what changed: the points ledger, or the team and calendar.
-  if (/Compensation changed/.test(message)) return t('Points changed since this plan was made (another month was published or a repayment was recorded), so the month was refreshed and your targets were kept. Check them, then confirm again.', 'הנקודות השתנו מאז שהתוכנית נבנתה (חודש אחר פורסם או נרשם החזר), ולכן החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
-  if (/stale|changed|revision|fingerprint/i.test(message)) return t('Team data changed, so the month was refreshed and your targets were kept. Check them, then confirm again.', 'נתוני הצוות השתנו, החודש רוענן והיעדים נשמרו. כדאי לבדוק ולאשר שוב.');
-  if (/Worker|WASM|fetch|load failed/i.test(message)) return t('The planner could not start. Check your connection, then try again in a current browser. Your saved draft is kept.', 'לא ניתן להפעיל את המתכנן. יש לבדוק את החיבור ולנסות שוב בדפדפן עדכני. הטיוטה השמורה נשמרה.');
-  if (/repayment|source|allocation-members|target-members|offered|seniority/.test(message)) return t('Team or compensation changes needed a fresh review. The month was refreshed; check the targets, then confirm again.', 'שינויים בצוות או בפיצוי דרשו בדיקה מחדש. החודש רוענן; כדאי לבדוק את היעדים ולאשר שוב.');
-  return message;
-}
+/** Every error the plan shows names its reason (lib/messages.ts). */
+export const allocationMessage = userMessage;
 
 export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;

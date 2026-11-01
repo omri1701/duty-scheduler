@@ -5,6 +5,7 @@ import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {fromSnapshot} from '@/lib/supabase/snapshot';
 import {addDays,blocks,dates,dayOf,monthNext,ink} from '@/lib/rota/engine';
+import {userMessage} from '@/lib/messages';
 export function PublicationHistory({remote,month,open,onOpenChange,lang}:{remote:TeamWorkspace;month:string;open:boolean;onOpenChange:(open:boolean)=>void;lang:'en'|'he'}){
  const [selected,setSelected]=useState<string|null>(null),[action,setAction]=useState<{id:string;kind:'restore'|'delete'}|null>(null),[error,setError]=useState('');
  const t=(en:string,he:string)=>lang==='en'?en:he,raw=remote.snapshot!;
@@ -12,7 +13,7 @@ export function PublicationHistory({remote,month,open,onOpenChange,lang}:{remote
  const viewed=versions.find(p=>p.id===selected)??versions[0],preview=viewed?fromSnapshot(raw,remote.user!.id,viewed.id):null,bs=preview?blocks(month,preview.specials,preview.splitWeekends):[];
  const cells=dates(addDays(month+'-01',-dayOf(month+'-01')),addDays(monthNext(month)+'-01',(7-dayOf(monthNext(month)+'-01'))%7));
  const target=versions.find(p=>p.id===action?.id);
- async function confirm(){if(!action)return;try{if(action.kind==='restore')await remote.restore(action.id);else await remote.deleteVersion(action.id);setAction(null);setError('');if(action.kind==='restore')onOpenChange(false)}catch(e){setError((e as Error).message)}}
+ async function confirm(){if(!action)return;try{if(action.kind==='restore')await remote.restore(action.id);else await remote.deleteVersion(action.id);setAction(null);setError('');if(action.kind==='restore')onOpenChange(false)}catch(e){setError(userMessage((e as Error).message,t))}}
  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent onCloseAutoFocus={event=>{
   const trigger=document.querySelector<HTMLButtonElement>('[data-month-tool="versions"]');
   if(trigger?.getClientRects().length){event.preventDefault();trigger.focus();}

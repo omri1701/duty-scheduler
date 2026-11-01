@@ -9,6 +9,7 @@ import {todayIsrael} from '@/lib/supabase/snapshot';
 import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests} from '@/lib/supabase/swaps';
 import {addDays} from '@/lib/rota/engine';
 import {toast} from 'sonner';
+import {userMessage} from '@/lib/messages';
 
 export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:TeamWorkspace;month:string;lang:'en'|'he';selection:{from:string;to:string}|null;onSelection:(value:{from:string;to:string}|null)=>void}){
  const [explanation,setExplanation]=useState(''),[review,setReview]=useState<SwapRequest|null>(null),[override,setOverride]=useState(false),[reason,setReason]=useState('');
@@ -20,7 +21,7 @@ export function SwapRequests({remote,month,lang,selection,onSelection}:{remote:T
  const fmt=(day:string)=>new Date(day+'T12:00:00Z').toLocaleDateString(lang==='he'?'he-IL':'en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Jerusalem'});
  const span=(start:string,end:string)=>fmt(start)+(end!==addDays(start,1)?` – ${fmt(addDays(end,-1))}`:'');
  const status=(s:SwapRequest['status'])=>({awaiting_engineer:t('Awaiting Engineer','ממתינה למהנדס'),awaiting_admin:t('Awaiting Admin','ממתינה למנהל'),approved:t('Approved','אושרה'),declined:t('Declined','סורבה'),rejected:t('Rejected','נדחתה'),cancelled:t('Cancelled','בוטלה'),invalidated:t('Invalidated','אינה תקפה')}[s]);
- async function act(operation:()=>Promise<void>,success:string){try{await operation();toast.success(success);return true}catch(e){toast.error((e as Error).message);return false}}
+ async function act(operation:()=>Promise<void>,success:string){try{await operation();toast.success(success);return true}catch(e){toast.error(userMessage((e as Error).message,t));return false}}
  function close(){onSelection(null);setExplanation('')}
  return <>
   {requests.length>0&&<section className="calendar-panel swap-requests" aria-labelledby="swap-requests-heading">
