@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapAnswerFor,swapNeedsAction,readSwapConflicts,swapSummary} from '../lib/supabase/swaps.ts';
+import {publishedSwapDuties,eligibleSwapTarget,visibleSwapRequests,swapStarter,swapWaitingOn,swapAnswerFor,swapNeedsAction,readSwapConflicts,swapSummary,swapTargetBlock,swapBlockText} from '../lib/supabase/swaps.ts';
 import {todayIsrael} from '../lib/rota/calendar-dates.ts';
 
 test('Israeli midnight expires yesterday, including a continuing Friday weekend',()=>{
@@ -123,4 +123,38 @@ test('approval summary names both members, dates and points moved in English and
  assert.match(he[1],/מסירה: 2 Nov 2026 \(1 נק׳\) · קבלה: .*\(1.5 נק׳\) · שינוי: \+0.5 נק׳$/);
  assert.match(he[2],/שינוי: −0.5 נק׳$/);
  assert.match(swapSummary({...input,to:{label:'x',points:1},lang:'en'}),/change: 0 pts/);
+});
+
+test('swap target hints: the swap’s own person, then the other primary, cover and second weekends',()=>{
+ const members=['me','dana','avi','cover'].map(id=>({id,name:id[0].toUpperCase()+id.slice(1),active:true,status:'approved'}));
+ const source={id:'s',publication_id:'p',day:'2026-11-02',end_day:'2026-11-03',primary_id:'me',secondary_id:'cover'};
+ const target={id:'t',publication_id:'p',day:'2026-11-04',end_day:'2026-11-05',primary_id:'dana',secondary_id:null};
+ const raw={members,months:[{month:'2026-11',current_publication_id:'p'}],constraints:[],assignments:[source,target]};
+ const block=c=>swapTargetBlock(raw,'2026-11',source,target,c);
+ assert.equal(block([]),null);
+ assert.deepEqual(block([{member:'dana',day:'2026-11-02'},{member:'me',day:'2026-11-04'}]),{kind:'takes-target',person:'me',day:'2026-11-04'});
+ assert.deepEqual(block([{member:'dana',day:'2026-11-02'}]),{kind:'takes-source',person:'dana'});
+ assert.deepEqual(block([{member:null,day:'2026-11-02'}]),{kind:'cover',person:null,day:'2026-11-02'});
+ // Emergency cover who left the team blocks every pair, as validate_swap does.
+ assert.deepEqual(swapTargetBlock({...raw,members:members.map(m=>m.id==='cover'?{...m,active:false}:m)},'2026-11',source,target,[]),{kind:'inactive'});
+ // A second weekend is checked locally from the published rows.
+ const friday={id:'f',publication_id:'p',day:'2026-11-06',end_day:'2026-11-08',primary_id:'dana',secondary_id:null};
+ const mine={id:'w',publication_id:'p',day:'2026-11-13',end_day:'2026-11-15',primary_id:'me',secondary_id:null};
+ assert.deepEqual(swapTargetBlock({...raw,assignments:[source,friday,mine]},'2026-11',source,friday,[]),{kind:'weekend',person:'me'});
+});
+
+test('swap hint text says who and which day, never the note, for engineers and admins in both languages',()=>{
+ const names={me:'Me',dana:'Dana',avi:'Avi'},day=d=>d.slice(8);
+ const say=(block,me,sourceOwner,lang='en')=>swapBlockText(block,{me,sourceOwner,name:id=>names[id],day,lang});
+ assert.equal(say({kind:'takes-target',person:'me',day:'2026-11-04'},'me','me'),'You can’t take 04');
+ assert.equal(say({kind:'takes-source',person:'dana'},'me','me'),'Dana can’t take your day');
+ // An admin swapping two others reads names.
+ assert.equal(say({kind:'takes-target',person:'avi',day:'2026-11-04'},'admin','avi'),'Avi can’t take 04');
+ assert.equal(say({kind:'takes-source',person:'dana'},'admin','avi'),'Dana can’t take Avi’s day');
+ assert.equal(say({kind:'takes-source',person:'me'},'me','avi'),'You can’t take Avi’s day');
+ assert.equal(say({kind:'cover',person:null,day:'2026-11-02'},'me','me'),'Emergency cover can’t take 02');
+ assert.equal(say({kind:'weekend',person:'dana'},'admin','avi'),'This would give Dana a second weekend');
+ assert.equal(say({kind:'past'},'me','me'),'This day has passed');
+ assert.equal(say({kind:'takes-target',person:'me',day:'2026-11-04'},'me','me','he'),'אין לך אפשרות לקחת את 04');
+ assert.equal(say({kind:'takes-source',person:'dana'},'admin','avi','he'),'לDana אין אפשרות לקחת את התורנות של Avi');
 });
