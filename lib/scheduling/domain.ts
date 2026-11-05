@@ -1,10 +1,11 @@
 import {addDays, dayOf} from '../rota/calendar-dates.ts';
 import {canonicalDuties, halfUnits, handover, requireDate} from './calendar.ts';
 import {checkProblem, type Problem} from './solver/problem.ts';
+import {waveCost} from './rotation.ts';
 import {GenerationError, type Diagnostic, type GenerationInput} from './types.ts';
 
 export const CORE_VERSION = 'duty-generation-v1';
-export const MODEL_VERSION = 'highs-leximin-v7';
+export const MODEL_VERSION = 'highs-leximin-v8';
 /** Exact canonical serialization, not a lossy hash. Input arrays are sets of facts. */
 function canonicalKey(value: unknown, sets: boolean): string {
   if (Array.isArray(value)) {
@@ -58,6 +59,18 @@ export function prepareGeneration(source: GenerationInput) {
   for (const [id, counts] of Object.entries(input.weekdayRotation ?? {})) {
     if (!memberIds.has(id)) fail('unknown-rotation-member', {engineer: id});
     if (!Array.isArray(counts) || counts.length !== 5 || counts.some(n => !Number.isSafeInteger(n) || n < 0 || n > 1e6)) fail('invalid-weekday-rotation', {engineer: id});
+  }
+  const wave = input.weekendWave;
+  if (wave !== undefined) {
+    if (!wave || typeof wave !== 'object' || !wave.members || typeof wave.members !== 'object') fail('invalid-weekend-wave');
+    if (wave.previous !== undefined && !memberIds.has(wave.previous)) fail('unknown-rotation-member', {engineer: wave.previous});
+    const tick = (n: unknown) => n === undefined || (Number.isSafeInteger(n) && Math.abs(n as number) <= 1e6);
+    for (const [id, w] of Object.entries(wave.members)) {
+      if (!memberIds.has(id)) fail('unknown-rotation-member', {engineer: id});
+      if (!w || typeof w !== 'object' || !tick(w.from) || !tick(w.to) || (w.from === undefined) !== (w.to === undefined) ||
+        (w.from !== undefined && w.from > w.to!) || (w.hold !== undefined && typeof w.hold !== 'boolean') ||
+        (w.after !== undefined && (!memberIds.has(w.after) || w.after === id))) fail('invalid-weekend-wave', {engineer: id});
+    }
   }
   const unavailable = (id: string, dutyId: string) => duties[indices.get(dutyId)!].dates.filter(d => input.constraints?.[id]?.[d] === 'no');
   const approvals = input.approvals ?? [];
@@ -134,6 +147,24 @@ export function prepareGeneration(source: GenerationInput) {
         ...(d.weekendId ? {weekend: handover(d.weekendId)} : {weekday: dayOf(d.startDate)}),
         ...(locked ? {lock: engineers.get(locked)!} : {})};
     })};
+  // Weekend wave: each weekend duty is one tick, in order. A weekend outside a member's band
+  // costs its distance (rotation.ts waveCost); following the same member as last cycle counts once.
+  const weekendDuties = problem.duties.flatMap((d, i) => d.weekend === undefined ? [] : [i]);
+  if (wave) for (const [t, i] of weekendDuties.entries()) for (const e of problem.duties[i].eligible) {
+    const state = Object.hasOwn(wave.members, members[e].id) ? wave.members[members[e].id] : undefined, cost = waveCost(state, t);
+    if (cost) (problem.wave ??= []).push({engineer: e, duty: i, cost});
+    if (!state?.after) continue;
+    if (!t) {if (wave.previous === state.after) (problem.follows ??= []).push({engineer: e, duty: i}); continue;}
+    const a = engineers.get(state.after), j = weekendDuties[t - 1];
+    if (a !== undefined && problem.duties[j].eligible.includes(a)) (problem.follows ??= []).push({engineer: e, duty: i, after: {engineer: a, duty: j}});
+  }
+  // A member without a weekend this month takes one later at tick T or after: an overdue
+  // member pays that now, so a month never defers them for free.
+  if (wave) for (const [e, m] of members.entries()) {
+    const state = Object.hasOwn(wave.members, m.id) ? wave.members[m.id] : undefined;
+    const cost = state?.to !== undefined && state.to < weekendDuties.length ? waveCost(state, weekendDuties.length) : 0;
+    if (cost) (problem.waveAbsent ??= []).push({engineer: e, cost});
+  }
   try {checkProblem(problem);} catch (error) {fail('invalid-fixed-input', {reason: error instanceof Error ? error.message : String(error)});}
   // Cheap necessary conditions, explicitly separate from global feasibility.
   for (const [e, member] of members.entries()) {

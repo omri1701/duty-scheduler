@@ -1075,9 +1075,11 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 3b | Fewest back-to-back pairs | Minimize unapproved back-to-back pairs inside the month (section 10.1). |
 | 4 | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
 | 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend, counted once per weekend a member receives (an extra weekend costs the turns again). |
+| 5a | Weekend wave | Keep each member's place in the weekend order within two places of the last cycle (section 11.3a): a weekend outside the member's band costs 100 plus its distance from the band, an overdue member left without a weekend costs their first later place, and a weekend in a new or rejoining member's first month costs 1000. |
 | 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
 | 7 | Weekday rotation across months | Give each Sunday–Thursday duty to a member who has not covered that weekday in the current weekday cycle (section 11.4): minimize the sum, over assigned weekday duties, of the member's count for that weekday. |
 | 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |
+| 8a | New weekend predecessor | Minimize weekends taken right after the same member as the member's last weekend (section 11.3a). |
 | 9 | Seed | Seeded alternatives among schedules equal on every level above. |
 | 10 | Overall gap distribution | Tie-breaker only: improve the remaining smallest gaps in order (the full sorted-gap leximin) among schedules equal on every level above, including the seed. |
 
@@ -1199,6 +1201,53 @@ the database records `weekends_from`, the month after every month generated or p
 so far, and their duties in earlier months are ignored, so a weekday-only stretch never
 makes them due first. The state is a soft objective only: the checked
 database save does not revalidate it.
+
+### 11.3a Weekend wave
+
+*Decision 2026-11-06.* The turn counts alone let each cycle repeat the previous
+order, so members always followed the same person. The wave keeps each round
+similar to the last but lightly and randomly shuffled. A clock counts every
+weekend duty of the published months (a whole weekend or either half of a split
+one) as one **tick**; a month missing from the history still counts its
+weekends, and tick 0 is the generated month's first weekend duty. With N weekend
+members, a member whose last weekend was at tick L has the band
+`L + N − 2 … L + N + 2` (`weekendWave`, `WAVE_SPREAD = 2`): with 12 members, 10–14
+weekends apart. Inside the band the cost is zero and the seed chooses; outside it
+a weekend costs `100 + distance` (`waveCost`), so the fewest members leave their
+band and each by the fewest places: a blocked member takes the nearest free
+place and everyone else keeps theirs. Generate plans one month at a time, so a
+member whose band has already ended (blocked earlier) and who gets no weekend
+this month costs their first possible later place, tick T (the month's number of
+weekend duties): otherwise each month would defer them for free and the wave
+would drift. The level sits directly below the turn counts, which still decide
+who is due.
+
+A new member (no duty in a team with history) or one rejoining weekends
+(`weekendsFrom` is the generated month) waits out that month: any weekend costs
+1000. Afterwards they have no band and take a seeded place in the next cycle,
+never automatically first or last. A band more than a full cycle overdue (a long
+absence) is dropped the same way.
+
+Each member also records `after`, who held the tick right before their last
+weekend (and the wave records who held the last tick before the month). Taking
+the tick right after the same person again counts one at level 8a, below
+preferred dates, so it never costs spacing, weekday variety or a preferred date.
+Like the turn counts, the wave is a soft objective derived from published months
+with no new table; the checked database save does not revalidate it.
+
+*Measured trade-off (24 consecutive generated months, 12 and 8 members, a newcomer,
+split weekends, with and without availability blocks):* below the proved minimum
+gap the wave raises gaps within N ± 2 from 33–51% to 61–84% of turns (12 members:
+2–35 → 2–22 weekends apart). The minimum gap often fixes who can take which
+weekend, so the rest leaves the band, and the seed and the predecessor level
+rarely have room left: repeated predecessors stayed at 8–19% (6–15% before).
+Weekday variety pays for the stable weekend phase: the cross-month weekday
+rotation cost rose in all four runs (for example 453 → 668) and same-weekday
+repeats in three. Coverage, points, the minimum gap and speed were unchanged.
+Placing the wave above the minimum gap instead kept 86–95% in the band and
+weekday variety level, at 0.4–2 days less minimum gap per month; below weekday
+variety it reached 49–66%. The `quality` list in `lib/scheduling/solver/model.ts`
+and `compareQuality` in `problem.ts` fix the order.
 
 ### 11.4 Weekday rotation state
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {weekdayRotation, weekendRotation} from '../lib/scheduling/rotation.ts';
+import {generationRotations, weekdayRotation, weekendRotation, weekendWave} from '../lib/scheduling/rotation.ts';
 import {publishedHistory} from '../lib/supabase/snapshot.ts';
 
 const members = ['a', 'b', 'c', 'd'];
@@ -116,4 +116,64 @@ test('weekend duties never count as weekdays; absent members join the cycle leve
 test('weekday rotation rejects duplicate months or members', () => {
   assert.throws(() => weekdayRotation([weekdays('2026-10', ['a']), weekdays('2026-10', ['b'])], members, '2026-12'), /duplicate-history-month/);
   assert.throws(() => weekdayRotation([], ['a', 'a'], '2026-12'), /duplicate-member/);
+});
+
+/** A whole published month: its weekends go to the owners in order (null after them), with
+ * optional split Fridays as two halves; present members take Sunday–Thursday dates. */
+const fullMonth = (m, owners, present = members, splits = []) => {
+  const weekends = [];
+  for (let date = new Date(m + '-01T12:00:00Z'); date.toISOString().slice(0, 7) === m; date.setUTCDate(date.getUTCDate() + 1)) {
+    if (date.getUTCDay() !== 5) continue;
+    const friday = date.toISOString().slice(0, 10);
+    weekends.push(friday);
+    if (splits.includes(friday)) weekends.push(new Date(date.getTime() + 864e5).toISOString().slice(0, 10));
+  }
+  return {month: m, duties: [...weekends.map((startDate, i) => ({startDate, primary: owners[i] ?? null})),
+    ...present.map((id, i) => ({startDate: days(m, dow => dow <= 4)[i], primary: id}))]};
+};
+
+test('weekend wave: each member\'s next weekend falls N − 2 … N + 2 weekend duties after their last one', () => {
+  assert.deepEqual(weekendWave([], members, '2026-12'), {members: {a: {}, b: {}, c: {}, d: {}}});
+  // October 2026 has five weekends (ticks −5 … −1 before November): a, b, c, d, then a again.
+  const october = fullMonth('2026-10', ['a', 'b', 'c', 'd', 'a']);
+  assert.deepEqual(weekendWave([october], members, '2026-11'), {previous: 'a', members: {
+    a: {from: 1, to: 5, after: 'd'}, b: {from: -2, to: 2, after: 'a'}, c: {from: -1, to: 3, after: 'b'}, d: {from: 0, to: 4, after: 'c'}}});
+  // A month missing from the history still counts its weekends; later months are ignored.
+  const later = fullMonth('2027-02', ['d', 'c', 'b', 'a']);
+  assert.deepEqual(weekendWave([october, later], members, '2026-12').members.b, {from: -6, to: -2, after: 'a'});
+  // A band more than a full cycle overdue is dropped: the member rejoins like a newcomer.
+  // November and December add eight ticks: only b and c are that far behind.
+  assert.deepEqual(weekendWave([october], members, '2027-01').members, {a: {from: -7, to: -3, after: 'd'}, b: {}, c: {}, d: {from: -8, to: -4, after: 'c'}});
+  assert.throws(() => weekendWave([october, october], members, '2026-11'), /duplicate-history-month/);
+  assert.throws(() => weekendWave([], ['a', 'a'], '2026-11'), /duplicate-member/);
+});
+
+test('weekend wave: split halves are ticks, newcomers wait a month, rejoiners count from their month', () => {
+  // The second weekend is split: a holds Friday, b Saturday. Six ticks in October.
+  const october = fullMonth('2026-10', ['c', 'a', 'b', null, 'd', 'c'], members, ['2026-10-09']);
+  const wave = weekendWave([october], members, '2026-11');
+  assert.deepEqual(wave.members.a, {from: -3, to: 1, after: 'c'});
+  assert.deepEqual(wave.members.b, {from: -2, to: 2, after: 'a'});
+  // d followed an empty tick: no predecessor to avoid.
+  assert.deepEqual(wave.members.d, {from: 0, to: 4});
+  assert.deepEqual(wave.members.c, {from: 1, to: 5, after: 'd'});
+  // A member with no duty in a team with history waits out the month; a fresh team does not.
+  const team = [...members, 'e'];
+  assert.deepEqual(weekendWave([october], team, '2026-11').members.e, {hold: true});
+  assert.deepEqual(weekendWave([], team, '2026-11').members.e, {});
+  // After a published month of weekdays the newcomer has no band: a seeded place in the cycle.
+  const november = fullMonth('2026-11', ['b', 'd', 'a', 'c'], team);
+  assert.deepEqual(weekendWave([october, november], team, '2026-12').members.e, {});
+  // Rejoining weekends: held in the rejoin month, older weekends forgotten after it.
+  const rejoin = {c: '2026-11'};
+  assert.deepEqual(weekendWave([october], members, '2026-11', rejoin).members.c, {hold: true});
+  assert.deepEqual(weekendWave([october, fullMonth('2026-11', ['a', 'b', 'd', 'a'])], members, '2026-12', rejoin).members.c, {});
+  // Generate's wave leaves non-weekend members out and applies weekendsFrom.
+  const roster = [...members.map(id => ({id, active: true, approved: true, eligible: true})),
+    {id: 'nw', active: true, approved: true, eligible: true, noWeekends: true},
+    {id: 'e', active: true, approved: true, eligible: true, weekendsFrom: '2026-11'}];
+  const {weekendWave: state} = generationRotations([october], roster, '2026-11');
+  assert.deepEqual(Object.keys(state.members), ['a', 'b', 'c', 'd', 'e']);
+  assert.deepEqual(state.members.e, {hold: true});
+  assert.deepEqual(state.members.a, {from: -2, to: 2, after: 'c'});
 });
