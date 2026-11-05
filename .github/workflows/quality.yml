@@ -159,7 +159,7 @@ jobs:
           if-no-files-found: ignore
 
   browser:
-    name: browser ${{ matrix.shard }}/4
+    name: browser ${{ matrix.shard }}/8
     concurrency:
       group: quality-browser-${{ github.ref }}-${{ matrix.shard }}
       cancel-in-progress: true
@@ -168,7 +168,7 @@ jobs:
     strategy:
       fail-fast: false # Every shard reports, so the merged report is complete.
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -200,7 +200,7 @@ jobs:
           DUTY_E2E_BLOB: "1"
           SHARD: ${{ matrix.shard }}
         # The pinned image supplies Chromium and fonts; do not also run playwright install.
-        run: pnpm test:e2e:ci "--shard=$SHARD/4"
+        run: pnpm test:e2e:ci "--shard=$SHARD/8"
       - name: Retain shard report for merging
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
