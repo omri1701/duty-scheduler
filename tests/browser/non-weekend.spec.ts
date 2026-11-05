@@ -1,4 +1,4 @@
-import {test,expect,ids,MONTH} from './fixtures';
+import {test,expect,ids,MONTH,duty} from './fixtures';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {canonicalDuties} from '../../lib/scheduling/calendar';
 
@@ -147,4 +147,70 @@ for(const lang of ['en','he'] as const)test(`Reset in Plan the month returns to 
  // Undo brings the edit back.
  await dialog.getByRole('button',{name:he?'ביטול שינוי':'Undo',exact:true}).click();
  await expect(note).toHaveText(he?'ללא סופי שבוע':'No weekends');
+});
+
+// Clearing a weekend (reported 2026-11-05): Leave unassigned keeps one empty weekend, never two halves.
+for(const lang of ['en','he'] as const)test(`clearing a weekend in the editor keeps it one weekend ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he';
+ await openApp();
+ if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ await duty(page,'2026-11-06').click();
+ const dialog=page.getByRole('dialog');
+ await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
+ await page.getByRole('option',{name:he?'ללא שיבוץ':'Leave unassigned',exact:true}).click();
+ await expect(dialog.getByRole('combobox',{name:he?'מהנדס ביום שבת':'Saturday engineer',exact:true})).toHaveText(he?'ללא שיבוץ':'Leave unassigned');
+ await dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true}).click();
+ await expect(dialog).toBeHidden();
+ const save=backend.calls.filter(c=>c.name==='duty_save_schedule').at(-1)!.params.p_state as {duties:{day:string;end_day:string;primary_id:string|null}[]};
+ expect(save.duties.filter(d=>['2026-11-06','2026-11-07'].includes(d.day))).toEqual([expect.objectContaining({day:'2026-11-06',end_day:'2026-11-08',primary_id:null})]);
+ await expect(duty(page,'2026-11-07')).toHaveCount(0);
+});
+
+// No weekends (decision 2026-11-05): placing such a member on a weekend by hand warns and needs
+// the manager's approval, like an availability conflict.
+for(const lang of ['en','he'] as const)test(`placing a No weekends member on a weekend asks for approval ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he',who=name(backend,ids.e);
+ backend.raw.members.find(m=>m.id===ids.e)!.no_weekends=true;
+ // The weekend starts with someone else, so the member is newly placed.
+ backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
+ await openApp();
+ if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ await duty(page,'2026-11-06').click();
+ const dialog=page.getByRole('dialog'),save=dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true});
+ await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
+ const option=page.getByRole('option',{name:new RegExp(`^${who}`)});
+ await expect(option).toContainText(he?' · ללא סופי שבוע':' · no weekends');
+ await option.click();
+ // Saturday follows Friday: both days are named.
+ const warning=dialog.locator('.warning-note');
+ await expect(warning).toContainText(he?`${who} לא עושה סופי שבוע`:`${who} doesn’t take weekends`);
+ await expect(warning.locator('p').filter({hasText:he?'לא עושה סופי שבוע':'doesn’t take weekends'})).toHaveCount(2);
+ await expect(save).toBeDisabled();
+ await dialog.getByRole('checkbox',{name:he?'אישור החריגות כמנהל':'Approve these exceptions as manager'}).check();
+ await save.click();
+ await expect(dialog).toBeHidden();
+ const state=backend.calls.filter(c=>c.name==='duty_save_schedule').at(-1)!.params.p_state as {duties:{day:string;end_day:string;primary_id:string|null;manager_override:boolean}[]};
+ expect(state.duties.find(d=>d.day==='2026-11-06')).toMatchObject({end_day:'2026-11-08',primary_id:ids.e,manager_override:true});
+ // Reopening the same weekend asks nothing more: they are already there.
+ await duty(page,'2026-11-06').click();
+ await expect(dialog.locator('.warning-note')).toHaveCount(0);
+ await expect(save).toBeEnabled();
+});
+
+for(const lang of ['en','he'] as const)test(`a published weekend edit to a No weekends member needs approval ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he',who=name(backend,ids.e);
+ backend.raw.months[0].status='published';
+ backend.raw.members.find(m=>m.id===ids.e)!.no_weekends=true;
+ // The weekend starts with someone else, so the member is newly placed.
+ backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
+ await openApp();
+ if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ await duty(page,'2026-11-06').click();
+ const dialog=page.getByRole('dialog'),review=dialog.getByRole('button',{name:he?'בדיקת השינוי':'Review change',exact:true});
+ await dialog.getByRole('combobox',{name:he?'מהנדס':'Engineer',exact:true}).click();
+ await page.getByRole('option',{name:new RegExp(`^${who}`)}).click();
+ await expect(dialog.getByRole('alert')).toContainText(he?`${who} לא עושה סופי שבוע`:`${who} doesn’t take weekends`);
+ await expect(review).toBeDisabled();
+ await dialog.getByRole('checkbox',{name:he?'אישור החריגה כמנהל':'Approve this exception as manager'}).check();
+ await expect(review).toBeEnabled();
 });

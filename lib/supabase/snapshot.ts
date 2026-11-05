@@ -52,7 +52,7 @@ function applyRows(state:State,rows:DutyRow[]){
 }
 export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string,published=false):State{
  const admin=canManage(raw,userId);
- const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
+ const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role,...(m.no_weekends?{noWeekends:true}:{})})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
  for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication&&!published?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
  for(const c of raw.constraints){(state.constraints[c.member_id]??={})[c.day]=c.kind;if(c.note)(state.constraintNotes![c.member_id]??={})[c.day]=c.note}
  if(previewPublication)return applyRows(state,raw.assignments.filter(r=>r.publication_id===previewPublication));

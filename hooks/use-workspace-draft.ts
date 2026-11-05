@@ -167,6 +167,10 @@ export function useWorkspaceDraft({
         'ההחלפה מוסיפה סוף שבוע נוסף. נדרש אישור מנהל.',
       ),
       availability: t('This swap conflicts with availability.', 'ההחלפה מתנגשת עם אילוצים.'),
+      'no-weekends': t(
+        'This swap puts a No weekends member on a weekend. Manager approval is required.',
+        'ההחלפה משבצת בסוף שבוע חבר שמסומן „ללא סופי שבוע”. נדרש אישור מנהל.',
+      ),
     })[reason] ?? reason;
   async function confirmSwap() {
     if (!isManager || !swap || swapSaving) return;
