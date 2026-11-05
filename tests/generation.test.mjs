@@ -11,15 +11,15 @@ const run = (input, extra = {}) => solveGeneration(solver, createGenerationReque
   {now: coverageStart(input.month, input.calendar) - 1, seed: 17, seconds: 3, ...extra}));
 // The quality levels above the seeded tie. Below the seed the sorted-gap leximin only breaks
 // ties, so a seeded solve may legitimately return another gap vector than the oracle's.
-const key = m => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent, -(m.gaps[0] ?? Infinity), m.rotation, m.wave, m.repeats, m.weekdays, -m.preferred, m.follows];
+const key = m => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent, -(m.gaps[0] ?? Infinity), m.rotation, m.wave, m.repeats, m.patterns, m.weekdays, -m.preferred, m.follows];
 const dayOf = date => new Date(date + 'T12:00:00Z').getUTCDay();
 /** Extra weekends and back-to-back pairs directly above the proved minimum gap; below it the
  * fixed quality order, the seed, then only gap-count stages. */
 function assertStageOrder(order) {
   const gapIndex = order.indexOf('minimum-gap');
   assert.ok(gapIndex >= 2);
-  assert.deepEqual(order.slice(gapIndex - 2, gapIndex + 8), ['extra-weekends', 'adjacent', 'minimum-gap', 'rotation', 'wave', 'repeats', 'weekdays', 'preferred', 'follows', 'seed']);
-  assert.ok(order.slice(gapIndex + 8).every(n => n.startsWith('gap:')));
+  assert.deepEqual(order.slice(gapIndex - 2, gapIndex + 9), ['extra-weekends', 'adjacent', 'minimum-gap', 'rotation', 'wave', 'repeats', 'patterns', 'weekdays', 'preferred', 'follows', 'seed']);
+  assert.ok(order.slice(gapIndex + 9).every(n => n.startsWith('gap:')));
 }
 
 test('seeded ties with preserved emergency coverage retain exact integer objective verification', () => {
@@ -199,7 +199,7 @@ function exhaustive(input) {
       return;
     }
     const totals = Object.fromEntries(input.members.map(e => [e.id, 0])), gaps = [];
-    let coverage = 0, special = 0, preferred = 0, rotation = 0, repeats = 0, weekdays = 0, extraWeekends = 0, adjacent = 0;
+    let coverage = 0, special = 0, preferred = 0, rotation = 0, repeats = 0, weekdays = 0, extraWeekends = 0, adjacent = 0, patterns = 0;
     for (let i = 0; i < duties.length; i++) if (selected[i]) {
       totals[selected[i]] += duties[i].units; coverage += duties[i].dates.length; special += duties[i].specialDates.length;
       preferred += duties[i].dates.filter(date => input.constraints?.[selected[i]]?.[date] === 'prefer').length;
@@ -216,11 +216,15 @@ function exhaustive(input) {
         weekdays += input.weekdayRotation?.[e.id]?.[dayOf(d.startDate)] ?? 0;
       }
       repeats += Object.values(byWeekday).reduce((n, v) => n + Math.max(0, v - 1), 0);
+      const spans = [];
       for (let j = 1; j < own.length; j++) {
         const gap = own[j].start - own[j - 1].end;
         if (gap < 0) return;
-        if (gap === 0) adjacent++; else gaps.push(gap);
+        if (gap === 0) adjacent++; else {gaps.push(gap); spans.push(Math.round((own[j].start - own[j - 1].start) / 1440));}
       }
+      // Weekday staircases: a second step forward (8 or 15 days apart) or back (6 or 13).
+      patterns += Math.max(0, spans.filter(s => s === 8 || s === 15).length - 1) +
+        Math.max(0, spans.filter(s => s === 6 || s === 13).length - 1);
     }
     // Weekend wave: weekend duties are ticks 0, 1, … in calendar order; outside the band a
     // weekend costs 100 plus the distance, in a member's first month 1000.
@@ -238,7 +242,7 @@ function exhaustive(input) {
     for (const [id, w] of Object.entries(input.weekendWave?.members ?? {})) {
       if (w.to !== undefined && w.to < T && !weekendTicks.some(i => selected[i] === id)) wave += 100 + T - w.to;
     }
-    const metrics = {coverage, special, units: Object.values(totals).reduce((a, b) => a + b), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays, extraWeekends, adjacent, wave, follows};
+    const metrics = {coverage, special, units: Object.values(totals).reduce((a, b) => a + b), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays, extraWeekends, adjacent, wave, follows, patterns};
     if (!best || compare(key(metrics), key(best)) < 0) best = metrics;
   }
   visit(0, []); return best;
@@ -582,6 +586,38 @@ test('weekend wave: bands below the turn counts, the nearest free place for a bl
     assert.throws(() => prepareGeneration({...two, weekendWave: {members: {a: w}}}), /invalid-weekend-wave/);
   }
   assert.throws(() => prepareGeneration({...two, weekendWave: null}), /invalid-weekend-wave/);
+});
+
+test('weekday staircases: at most one step forward and one back per member, at the same minimum gap', () => {
+  // Sunday 1st, Monday 9th, Tuesday 17th steps forward twice (8 and 8 days); Thursday 19th keeps
+  // the same seven-day minimum gap and breaks the staircase, whatever the seed.
+  const stairs = limitedMonth({'2026-11-01': ['a'], '2026-11-09': ['a'], '2026-11-17': ['a'], '2026-11-19': ['a']}, [6, 0]);
+  for (const seed of [0, 1, 2, 3]) {
+    const r = run(stairs, {seed});
+    assert.deepEqual(['2026-11-01', '2026-11-09', '2026-11-17', '2026-11-19'].map(d => r.assignments[d].primary), ['a', 'a', null, 'a']);
+    assert.equal(r.metrics.patterns, 0);
+    assert.equal(r.metrics.gaps[0], 7 * 1440);
+    assert.deepEqual(key(r.metrics), key(exhaustive(stairs)));
+    assert.deepEqual(validateGeneration(stairs, r.assignments), r.metrics);
+  }
+  // Across the month boundary: a stepped forward in October (Tuesday 20th → Wednesday 28th), so
+  // Thursday 5th would continue the staircase; Tuesday 3rd steps back instead. b's two-day gap
+  // is the minimum gap either way.
+  const boundary = limitedMonth({'2026-11-03': ['a'], '2026-11-05': ['a'], '2026-11-10': ['b'], '2026-11-13': ['b']}, [2, 4]);
+  boundary.neighbors = [['2026-10-20', '2026-10-21'], ['2026-10-28', '2026-10-29']].map(([start, end], i) =>
+    ({id: `oct-${i}`, ownerMonth: '2026-10', start, end, engineer: 'a', source: 'published'}));
+  for (const seed of [0, 1, 2, 3]) {
+    const r = run(boundary, {seed});
+    assert.equal(r.assignments['2026-11-03'].primary, 'a');
+    assert.equal(r.metrics.patterns, 0);
+    assert.deepEqual(validateGeneration(boundary, r.assignments), r.metrics);
+  }
+  // Forced: with only Thursday 5th left, the staircase is counted, never refused.
+  const forced = structuredClone(boundary); forced.constraints.a['2026-11-03'] = 'no';
+  const f = run(forced);
+  assert.equal(f.assignments['2026-11-05'].primary, 'a');
+  assert.equal(f.metrics.patterns, 1);
+  assert.deepEqual(validateGeneration(forced, f.assignments), f.metrics);
 });
 
 test('same-weekday repeats are minimized below the minimum gap, above the gap distribution and preferences', () => {

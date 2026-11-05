@@ -1077,6 +1077,7 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend, counted once per weekend a member receives (an extra weekend costs the turns again). |
 | 5a | Weekend wave | Keep each member's place in the weekend order within two places of the last cycle (section 11.3a): a weekend outside the member's band costs 100 plus its distance from the band, an overdue member left without a weekend costs their first later place, and a weekend in a new or rejoining member's first month costs 1000. |
 | 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
+| 6a | No weekday staircase | Per member, every step beyond the first in one direction counts one: forward is two consecutive duties starting 8 or 15 days apart (Sunday → the next Monday), back is 6 or 13 days. The nearest neighbouring-month duty counts as a consecutive duty, and a neighbouring month's own step next to this month counts as the first one (section 11.3b). |
 | 7 | Weekday rotation across months | Give each Sunday–Thursday duty to a member who has not covered that weekday in the current weekday cycle (section 11.4): minimize the sum, over assigned weekday duties, of the member's count for that weekday. |
 | 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |
 | 8a | New weekend predecessor | Minimize weekends taken right after the same member as the member's last weekend (section 11.3a). |
@@ -1248,6 +1249,37 @@ Placing the wave above the minimum gap instead kept 86–95% in the band and
 weekday variety level, at 0.4–2 days less minimum gap per month; below weekday
 variety it reached 49–66%. The `quality` list in `lib/scheduling/solver/model.ts`
 and `compareQuality` in `problem.ts` fix the order.
+
+### 11.3b Weekday staircases
+
+*Decision 2026-11-06.* With the minimum gap maximized and no weekday twice, the
+weekday rotation favoured a new weekday each time, so steady gaps of 8 (or 15)
+days stepped each member one weekday forward per week (Sunday 31, Monday 8,
+Tuesday 16, Wednesday 24): the month looked planned. Level 6a, directly below
+same-weekday repeats and above the cross-month weekday rotation, allows each
+member at most one step forward and one back. Steps are measured start to start on
+the spacing gaps, which are exactly the arcs of the proved minimum-gap flow, so the
+level adds one counter column per member and direction and never touches the
+minimum gap: it is solved only after that gap is proved and fixed. The member's
+nearest duty in the previous and next month counts, and their own step between
+their two duties nearest the month counts as a first step, so a staircase across
+the month boundary is caught too. Remaining gap choices are left to the seed.
+
+*Measured (24 consecutive months; before → after):* staircase runs, meaning two
+consecutive steps in the same direction among a member's consecutive gaps, fell
+from 15.7% to 8.4% with 12 members (18.5% to 14.0% without availability blocks)
+and from 7.8% to 2.9% with 8 members (5.7% to 2.4%). The minimum gap of each month is
+unchanged by construction. The cost is speed: the gap-count tie-breakers after the
+seed get harder, so the slowest months rose from about 10 s to 20–24 s with 8
+members, and one of 96 simulated months reached the 30 s budget in those
+tie-breakers (a best-found label; everything through the seed was proved). A
+stricter rule, each gap length only once per member, took 27 s to prove for one
+six-member month and was dropped.
+
+Stages count as proved when the dual bound is at least `value − 1 + 1e-6` (all
+stage objectives are integral). The native relative gap is no longer required:
+HiGHS closes on objective integrality with a bound such as 15.17 for 16, and the
+continuous counter columns leave noise such as 1.999999995 for 2.
 
 ### 11.4 Weekday rotation state
 

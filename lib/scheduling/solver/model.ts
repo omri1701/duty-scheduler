@@ -1,5 +1,5 @@
 import {anchors, approvedPair, binaryValues, boundaryBlocked, boundaryTouches, checkProblem, compareGaps, compareQuality,
-  decodeAssignment, validateAssignment, weekendAllowance, type Metrics, type Problem} from './problem.ts';
+  carriedSteps, decodeAssignment, spanDays, step, validateAssignment, weekendAllowance, type Metrics, type Problem} from './problem.ts';
 import type {Column, Row, Settings, SolverAdapter, SolverResult, Term} from './highs-adapter.ts';
 import {defaultSettings} from './settings.ts';
 
@@ -12,13 +12,13 @@ const x = (e: number, i: number) => `x_${e}_${i}`;
 const minimum = (m: Metrics) => m.gaps[0] ?? Infinity;
 const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : name === 'special' ? -m.special :
   name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : name === 'rotation' ? m.rotation :
-  name === 'wave' ? m.wave : name === 'follows' ? m.follows :
+  name === 'wave' ? m.wave : name === 'follows' ? m.follows : name === 'patterns' ? m.patterns :
   name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : name === 'weekdays' ? m.weekdays :
   name === 'extra-weekends' ? m.extraWeekends : name === 'adjacent' ? m.adjacent :
   m.gaps.filter(g => g === Number(name.slice(4))).length;
-/** Counter stages minimize continuous columns bounded below by their counts (r, z, b, v and f columns). */
-const counters = new Set(['repeats', 'extra-weekends', 'adjacent', 'wave', 'follows']);
-const counter = (column: string) => /^[rzbvf]_/.test(column);
+/** Counter stages minimize continuous columns bounded below by their counts (r, z, b, v, p and f columns). */
+const counters = new Set(['repeats', 'extra-weekends', 'adjacent', 'wave', 'patterns', 'follows']);
+const counter = (column: string) => /^[rzbvpf]_/.test(column);
 /** Stages whose objective is a nonnegative sum of nonnegative columns: an incumbent at zero is optimal. */
 const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'weekdays' || counters.has(name);
 /** 32-bit hash mixer (splitmix-style); every output bit depends on the whole state. */
@@ -161,34 +161,53 @@ function buildSlack(p: Problem, ids: number[][]) {
   return [weekends, adjacent];
 }
 
-/** With binary x, acyclic unit flow through every selected node has a unique integral path. */
+/** With binary x, acyclic unit flow through every selected node has a unique integral path.
+ * The arcs with a spacing gap also carry the weekday staircases (patternCount): per engineer and
+ * direction, p >= (step arcs) - 1 + (a neighbouring month's own step in that direction). */
 function buildFlows(p: Problem, ids: number[][], gapFloor: number, slack: Slack) {
   const columns: Column[] = [], rows: Row[] = [], gaps = new Map<number, Term[]>();
+  const patterns = {columns: [] as Column[], rows: [] as Row[], terms: [] as Term[]};
   for (let e = 0; e < p.targets.length; e++) {
     if (!ids[e].length) continue;
     const locked = ids[e].filter(i => p.duties[i].lock === e);
     const lockedUnits = locked.reduce((n, i) => n + p.duties[i].units, 0);
     const incoming = new Map(ids[e].map(i => [i, [] as Term[]]));
     const outgoing = new Map(ids[e].map(i => [i, [] as Term[]]));
-    const source: Term[] = [], sink: Term[] = [];
+    const source: Term[] = [], sink: Term[] = [], groups = new Map<string, string[]>();
     // A back-to-back arc (gap 0) is no spacing gap: neither floored nor counted.
-    const arc = (name: string, from: Term[], to: Term[], gap?: number) => {
+    const arc = (name: string, from: Term[], to: Term[], gap?: number, span?: number) => {
       if (gap !== undefined && gap > 0 && gap < gapFloor) return;
       columns.push({name}); from.push([1, name]); to.push([1, name]);
       if (gap) gaps.set(gap, [...(gaps.get(gap) ?? []), [1, name]]);
+      const direction = gap && gap > 0 && span !== undefined ? step(span) : 0;
+      if (direction) groups.set(`${direction}`, [...(groups.get(`${direction}`) ?? []), name]);
     };
     if (!locked.length) arc(`empty_${e}`, source, sink); // No anchor-to-anchor score.
     const {before, after} = anchors(p, e);
     for (const [a, i] of ids[e].entries()) {
-      if (!locked.some(k => k < i)) arc(`first_${e}_${i}`, source, incoming.get(i)!, before ? p.duties[i].start - before.end : undefined);
-      if (!locked.some(k => k > i)) arc(`last_${e}_${i}`, outgoing.get(i)!, sink, after ? after.start - p.duties[i].end : undefined);
+      if (!locked.some(k => k < i)) arc(`first_${e}_${i}`, source, incoming.get(i)!, before ? p.duties[i].start - before.end : undefined,
+        before ? spanDays(before.start, p.duties[i].start) : undefined);
+      if (!locked.some(k => k > i)) arc(`last_${e}_${i}`, outgoing.get(i)!, sink, after ? after.start - p.duties[i].end : undefined,
+        after ? spanDays(p.duties[i].start, after.start) : undefined);
       for (const j of ids[e].slice(a + 1)) {
         const gap = p.duties[j].start - p.duties[i].end;
         const required = lockedUnits + (p.duties[i].lock === e ? 0 : p.duties[i].units) +
           (p.duties[j].lock === e ? 0 : p.duties[j].units);
         if ((gap === 0 && !slack.adjacent && !approvedPair(p, i, j)) || locked.some(k => i < k && k < j) || required > p.targets[e]) continue;
-        arc(`a_${e}_${i}_${j}`, outgoing.get(i)!, incoming.get(j)!, gap);
+        arc(`a_${e}_${i}_${j}`, outgoing.get(i)!, incoming.get(j)!, gap, spanDays(p.duties[i].start, p.duties[j].start));
       }
+    }
+    const carried = carriedSteps(p, e);
+    for (const [key, names] of groups) {
+      const first = Number(carried.includes(Number(key)));
+      if (names.length + first < 2) continue;
+      // p = max(0, steps - 1 + first). After a neighbouring month's step that is exactly the
+      // step count; otherwise p <= steps * (k - 1) / k for at most k steps on one path (one per
+      // duty, plus the boundary arc) keeps the relaxation tight once the level is fixed.
+      const name = `p_${e}_${key}`, k = Math.min(names.length, ids[e].length + 1), arcs = names.map(n => [-1, n] as Term);
+      patterns.columns.push({name, upper: names.length}); patterns.terms.push([1, name]);
+      patterns.rows.push(first ? {terms: [[1, name], ...arcs], lower: 0, upper: 0} :
+        {terms: [[1, name], ...arcs], lower: -1}, ...(first ? [] : [{terms: [[k, name] as Term, ...names.map(n => [-(k - 1), n] as Term)], upper: 0}]));
     }
     rows.push({terms: source, lower: 1, upper: 1}, {terms: sink, lower: 1, upper: 1});
     for (const i of ids[e]) {
@@ -197,7 +216,7 @@ function buildFlows(p: Problem, ids: number[][], gapFloor: number, slack: Slack)
     }
   }
   rows.push(...capacityRows(p, ids, gapFloor, slack));
-  return {columns, rows, stages: [...gaps].sort(([a], [b]) => a - b).map(([g, terms]) => ({name: `gap:${g}`, terms}))};
+  return {columns, rows, patterns, stages: [...gaps].sort(([a], [b]) => a - b).map(([g, terms]) => ({name: `gap:${g}`, terms}))};
 }
 
 /** Valid per-engineer capacity cuts. Integer point totals and weekend use are
@@ -291,6 +310,8 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   const started = performance.now(), base = buildModel(p), buildMs = performance.now() - started;
   const random = mixer(settings.seed);
   const rotationStage: Stage = {name: 'rotation', terms: base.rotation};
+  // Weekday staircases ride on the flow arcs: filled in once the proved minimum gap builds them.
+  const patterns = {columns: [] as Column[], rows: [] as Row[], stage: {name: 'patterns', terms: []} as Stage};
   const wave = buildWave(p, base.ids), follows = buildFollows(p), weekdayStage: Stage = {name: 'weekdays', terms: base.weekdays};
   const preference: Stage = {name: 'preferred', terms: (p.preferences ?? []).map(v => [-v.weight, x(v.engineer, v.duty)])};
   const repeats = buildRepeats(p, base.ids);
@@ -301,16 +322,17 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     return [random() % 1000, x(e, i)] as Term;
   })) : []};
   // Directly below the proved minimum gap: cross-month weekend fairness (turns, then each
-  // member's band in the weekend wave), in-month weekday variety, cross-month weekday rotation,
+  // member's band in the weekend wave), in-month weekday variety (no weekday twice, then no
+  // weekday staircase), cross-month weekday rotation,
   // explicit preferred dates, a new weekend predecessor (decision 2026-11-06), then the seeded tie.
   // The remaining sorted-gap leximin runs last, as a pure tie-breaker: above the seed it
   // pushed every pair towards the same two-week pattern month after month. This list is
   // the one place that fixes the order below the minimum gap.
-  const quality = [rotationStage, wave.stage, repeats.stage, weekdayStage, preference, follows.stage, seeded];
+  const quality = [rotationStage, wave.stage, repeats.stage, patterns.stage, weekdayStage, preference, follows.stage, seeded];
   let qualityDone = false;
   const runQuality = () => {
     for (const stage of quality) {
-      for (const level of [wave, repeats, follows]) if (stage === level.stage && stage.terms.length) {
+      for (const level of [wave, repeats, patterns, follows]) if (stage === level.stage && stage.terms.length) {
         session.addColumns(level.columns); session.addRows(level.rows);
         columns += level.columns.length; rows += level.rows.length;
       }
@@ -377,11 +399,12 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     if (!result) {termination = 'budget'; return false;}
     if (result.status === 'infeasible') throw Error('Optional-coverage model contradicts verified incumbent');
     const value = candidate(result, stage.terms, stage.name);
-    // Integer objective: a bound above value - 1 proves optimality; the native gap only
-    // guards against a bound reported far from the objective (it carries 1e-16 noise
-    // once fixed-level rows sit beside the continuous flows).
-    const proved = value !== null && result.status === 'optimal' && result.bound > value - 1 &&
-      result.bound <= value + 1e-7 && result.gap <= 1e-9;
+    // Integer objective: a dual bound clearly above value - 1 proves optimality. The margin
+    // absorbs numerical noise in the bound; the native relative gap is not required, since
+    // HiGHS closes on objective integrality (bound 15.17 for 16) and continuous counter
+    // columns leave noise in it (1.999999995 for 2).
+    const proved = value !== null && result.status === 'optimal' && result.bound >= value - 1 + 1e-6 &&
+      result.bound <= value + 1e-7;
     if (proved && objective(stage.name, metrics, assignment) !== value) throw Error('Optimum contradicts verified incumbent');
     const {values: discarded, ...metadata} = result; void discarded;
     stages.push({...metadata, name: stage.name, objective: value, proved});
@@ -461,6 +484,7 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           const flows = buildFlows(p, base.ids, floor, slack);
           session.addColumns(flows.columns); session.addRows(flows.rows);
           columns += flows.columns.length; rows += flows.rows.length;
+          patterns.columns = flows.patterns.columns; patterns.rows = flows.patterns.rows; patterns.stage.terms = flows.patterns.terms;
           qualityDone = true; finished = runQuality();
           if (finished) for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
         }
