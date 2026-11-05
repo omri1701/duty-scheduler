@@ -3,6 +3,7 @@ import {addDays, blocks, dayOf, specialAt} from '../../lib/rota/engine';
 import {canManage, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
 import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
+import {snapshotKey} from '../../lib/scheduling/domain';
 import type {AllocationDraft} from '../../lib/allocation/types';
 import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
@@ -133,6 +134,8 @@ export class Backend {
       expect(admin).toBe(true); return this.generationEnvelope(String(p.p_month));
     } else if (name === 'duty_confirm_allocation') {
       expect(admin).toBe(true); expect(p.p_fingerprint).toBe(`fixture-${this.raw.revision}`);
+      // As the checked RPC: a copy keeps its source publication only while saved unchanged.
+      if (snapshotKey(this.allocations.get(String(p.p_month))?.draft ?? null) !== snapshotKey(p.p_allocation)) this.sourcePublication = null;
       this.allocations.set(String(p.p_month), {draft: p.p_allocation as AllocationDraft, locks: p.p_locks as NonNullable<GenerationInput['locks']>, approvals: p.p_approvals as Approval[]});
       for (const d of this.raw.assignments.filter(d => d.publication_id === null && (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0, 7) === p.p_month)) d.locked = (p.p_locks as NonNullable<GenerationInput['locks']>).some(l => l.dutyId === d.day);
       this.raw.revision!++; return this.generationEnvelope(String(p.p_month));

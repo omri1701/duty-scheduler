@@ -1,4 +1,4 @@
-import {context} from './model.ts';
+import {context, validTargets} from './model.ts';
 import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
 import {proposeAllocation, retainedChanges, unevenTransfers} from './planner.ts';
 import {inferHand} from './derive.ts';
@@ -31,6 +31,23 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
 export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
   try {reviewAllocation(input, saved); return false;}
   catch (e) {return /repayment-source/.test((e as Error).message);}
+}
+
+/** Whether a plan copied from a publication (restored, or reopened to change it) still
+ * fits the month, so it keeps its stored provenance unreviewed (the checked RPC
+ * revalidates it): the current per-person format, the same members and the month's
+ * total, with every lock's points. A copy from an older team, calendar or format is
+ * replaced by a new proposal like any saved plan that no longer fits. */
+export function copyFits(input: AllocationInput, saved: AllocationDraft | null) {
+  if (!saved?.changes || typeof saved.changes !== 'object' || !Array.isArray(saved.pairs) || !Array.isArray(saved.transfers)) return false;
+  try {
+    const c = context(input);
+    const members = (t: unknown): t is Record<string, unknown> => !!t && typeof t === 'object' &&
+      Object.keys(t).length === c.ids.length && c.ids.every(id => Object.hasOwn(t, id));
+    const total = (t: unknown) => members(t) && c.ids.every(id => Number.isSafeInteger(t[id])) &&
+      c.ids.reduce((n, id) => n + (t[id] as number), 0) === c.total;
+    return total(saved.baselineUnits) && total(saved.offeredUnits) && validTargets(c, saved.targetsUnits) && members(saved.changes);
+  } catch {return false;}
 }
 
 /** A published plan reopened to change it (decision 2026-11-01): reviewed against the
