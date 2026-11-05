@@ -1,4 +1,4 @@
-import {test, expect, ids, duty} from './fixtures';
+import {test, expect, ids, duty, drag} from './fixtures';
 
 const net = (page: import('@playwright/test').Page, id: string) => page.locator(`[data-gesture-key="${id}"] .net-points button`);
 const call = (backend: import('./fixtures').Backend) => backend.calls.filter(c => c.name === 'duty_edit_published_duty');
@@ -135,5 +135,31 @@ test('a pending swap that includes the duty is named before the edit', async ({p
     accepted_by: at('2026-11-05').primary_id!, accepted_at: '2026-11-01T08:00:00Z', created_at: '2026-11-01T07:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''}];
   await openApp();
   await duty(page, '2026-11-05').click();
-  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note').filter({hasText: 'Pending swap'})).toHaveText('Pending swap with Blair Birch. Saving cancels it.');
+  const dialog = page.getByRole('dialog', {name: 'Edit duty'});
+  await expect(dialog.getByRole('note').filter({hasText: 'Pending swap'})).toHaveText('Pending swap with Blair Birch. Saving cancels it.');
+  // A new engineer: the warning stays through review, and saving cancels the swap without an error.
+  await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
+  await page.getByRole('option', {name: 'Alex Atlas', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Review change'}).click();
+  const review = page.getByRole('dialog', {name: 'Review and copy'});
+  await expect(review.getByRole('note').filter({hasText: 'Pending swap'})).toBeVisible();
+  await review.getByRole('button', {name: 'Publish change'}).click();
+  await expect(page.getByText(/^Published version \d+\.$/).first()).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(backend.raw.swapRequests![0].status).toBe('invalidated');
+});
+
+test('an admin swaps any two members from the editor, or by dragging one duty onto another', async ({page, openApp}, info) => {
+  await openApp();
+  // Neither duty is the admin's: the editor's button selects the first, the next tap picks the second.
+  await duty(page, '2026-11-03').click();
+  await page.getByRole('dialog', {name: 'Edit duty'}).getByRole('button', {name: 'Swap with another duty…', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(duty(page, '2026-11-03')).toHaveAttribute('aria-pressed', 'true');
+  await duty(page, '2026-11-05').click();
+  await expect(page.getByRole('dialog', {name: 'Propose swap'})).toBeVisible();
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await drag(page, info.project.name === 'mobile', '2026-11-03', '2026-11-05');
+  await expect(page.getByRole('dialog', {name: 'Propose swap'})).toBeVisible();
 });

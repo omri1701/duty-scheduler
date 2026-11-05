@@ -270,6 +270,8 @@ export class Backend {
         balance.lines.push({memberId: before.primary_id!, counterpartId: primary, units: -units, kind: 'change', date: null, month: m.month},
           {memberId: primary, counterpartId: before.primary_id!, units, kind: 'change', date: null, month: m.month});
       }
+      // Saving cancels a pending swap of the duty, as the database does.
+      for (const r of this.raw.swapRequests ?? []) if (['awaiting_engineer', 'awaiting_admin'].includes(r.status) && [r.from_day, r.to_day].includes(row.day)) Object.assign(r, {status: 'invalidated', accepted_by: null, accepted_at: null});
       const publication = this.publish(m.month, rows);
       this.raw.revision!++;
       return {publication, version: m.publication_sequence};

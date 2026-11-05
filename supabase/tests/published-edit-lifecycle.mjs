@@ -111,21 +111,38 @@ r=run(opened+edit(x.id,b)+failure(edit(y.id,c,{revision:'(select revision from t
 assert.equal(r.tabs.versions,3);assert.deepEqual(nets(r.tabs),{...debt(a,b,2),...debt(ay,c,2)});
 console.log('PASS: stale revisions and publications from another tab are refused with their reason');
 
-// Pending swaps: an engineer change follows the existing reconcile; new points ask again.
+// Pending swaps: saving an edit cancels a pending swap of that duty, for a new engineer or new
+// points (decision 2026-11-02); no consent is reused and other swaps are untouched.
 const at=day=>`(select id from public.duty_assignments where publication_id=${current(month)} and day='${day}')`;
 const swap=as(a)+`select public.duty_request_swap(${at(x.id)},${at(y.id)},'Swap please',${rev});`+as(ay)+
  `reset role;create temp table request as select id from public.duty_swap_requests;grant select on request to authenticated;set local role authenticated;select public.duty_resolve_swap((select id from request),'accept',${rev});`+as(manager);
 const approve=`select public.duty_resolve_swap((select id from request),'approve',${rev});`;
 r=run(swap+edit(x.id,b)+report('requester')+failure(approve,'no longer pending'));
 assert.equal(r.requester.swap,'invalidated');
-r=run(swap+edit(y.id,c)+report('counterpart'));
-assert.equal(r.counterpart.swap,'awaiting_engineer');assert.equal(r.counterpart.counterpart,c);
+r=run(swap+edit(y.id,c)+report('counterpart')+failure(approve,'no longer pending'));
+assert.equal(r.counterpart.swap,'invalidated','the new engineer is not asked: Edit duty said saving cancels it');
+// Still waiting for the counterpart, or proposed by the admin (#64): cancelled the same way.
+const capture=`reset role;create temp table request as select id from public.duty_swap_requests;grant select on request to authenticated;set local role authenticated;`;
+r=run(as(a)+`select public.duty_request_swap(${at(x.id)},${at(y.id)},'Swap please',${rev});`+capture+as(manager)+edit(y.id,c)+report('waiting'));
+assert.equal(r.waiting.swap,'invalidated');
+r=run(as(manager)+`select public.duty_request_swap(${at(x.id)},${at(y.id)},'',${rev});`+capture+edit(x.id,b)+report('proposed'));
+assert.equal(r.proposed.swap,'invalidated');
+// An edit of another duty leaves a swap waiting for the admin alone.
+const z=plain.find(d=>![x.id,y.id].includes(d.id)&&![b,c].includes(assignments[d.id].primary)).id,zOwner=assignments[z].primary;
+r=run(swap+edit(z,b)+report('elsewhere')+approve+report('approved'));
+assert.equal(r.elsewhere.swap,'awaiting_admin');assert.equal(r.approved.swap,'approved');assert.deepEqual(nets(r.approved),debt(zOwner,b,2));
+// Edit after an approved swap: the debt follows who now holds the duty.
+r=run(swap+approve+report('swapped')+edit(x.id,b)+report('edited'));
+assert.deepEqual(nets(r.swapped),{});assert.deepEqual(nets(r.edited),debt(ay,b,2));
+// Swap after an edit: the new holder swaps; the edit's debt stays with its engineers.
+r=run(edit(x.id,b)+as(b)+`select public.duty_request_swap(${at(x.id)},${at(y.id)},'Swap please',${rev});`+capture+as(ay)+`select public.duty_resolve_swap((select id from request),'accept',${rev});`+as(manager)+approve+report('swapped'));
+assert.equal(r.swapped.swap,'approved');assert.deepEqual(nets(r.swapped),debt(a,b,2));
 for(const day of [x.id,y.id]) {
  const owner=day===x.id?a:ay;
  r=run(swap+edit(day,owner,{extra:2})+report('extra')+failure(approve,'no longer pending')+report('after'));
  assert.equal(r.extra.swap,'invalidated','consent was given at the earlier points');assert.deepEqual(nets(r.after),{});
 }
-console.log('PASS: a pending swap is invalidated, re-asked or invalidated for new points; no consent is reused');
+console.log('PASS: saving an edit cancels a pending swap of the duty; other swaps, and swaps before or after an edit, keep exact balances');
 
 // The next month: planned or published, it keeps its version; its plan sees the debt.
 function nextMonth(repay) {

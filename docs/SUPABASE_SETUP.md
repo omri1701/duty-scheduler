@@ -655,10 +655,9 @@ reason; `duty_balance` never returns it.
 
 The copied allocation's targets follow the edit (and, for new points, its calendar
 fingerprint), so a reopened copy of an edited version republishes unchanged without
-double counting. Pending swap requests on the changed duty: an engineer change is
-reconciled by the existing pointer trigger (the requester's duty invalidates the
-request; the counterpart's asks the new engineer). New points invalidate a pending
-request that includes the duty, because consent was given at the earlier points. A
+double counting. Edit duty names a pending swap request of the duty before saving ("Pending swap
+with Dana. Saving cancels it."), and saving invalidates it, for a new engineer as well as new points:
+consent was given for the earlier engineer and points. A
 later month that already repays a debt keeps its version. Editing the duty back holds that
 repayment (no double charge). Plan the month on a reopened edited month plans without that
 month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
