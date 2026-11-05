@@ -50,7 +50,7 @@ export function ClearBoardDialog({open,onOpenChange,saving,lang,t,monthLabel,cou
       </DialogHeader>
       <div className="editor-actions">
         <Button id="keep-board" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t('Cancel', 'ביטול')}</Button>
-        <Button variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button>
+        <Button className="danger-action" variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button>
       </div>
     </DialogContent>
   </Dialog>;

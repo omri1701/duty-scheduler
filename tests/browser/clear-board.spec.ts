@@ -119,11 +119,12 @@ test('Clear board waits for Generate, and Undo leaves with the month instead of 
   expect(errors).toEqual([]);
 });
 
-test('Clear board and Special block share one row on iPhones, as icons when the labels cannot fit', async ({page, openApp}, info) => {
+test('Clear board and Special block join the filters’ row on phones, as icons when their labels would wrap', async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone widths');
   await openApp();
   const tools = page.locator('.calendar-draft-tools'), buttons = tools.locator('button');
-  const row = async () => {
+  const filters = page.locator('.calendar-top > :first-child');
+  const pair = async () => {
     const [a, b] = await buttons.evaluateAll(list => list.map(x => x.getBoundingClientRect().toJSON()));
     expect(Math.abs(a.y - b.y)).toBeLessThan(1);
     return [a, b];
@@ -131,21 +132,22 @@ test('Clear board and Special block share one row on iPhones, as icons when the 
   for (const lang of ['en', 'he'] as const) {
     const [clear, special] = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
     if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
-    for (const width of [375, 390]) {
-      await page.setViewportSize({width, height: 844});
-      await expect(tools).not.toHaveAttribute('data-compact');
-      await expect(buttons.nth(0)).toHaveText(clear);
-      await row();
-    }
-    // Narrower than both labels on any platform's fonts (Safari text zoom does the same): icons, still one row.
-    await page.setViewportSize({width: 180, height: 844});
-    await expect(tools).toHaveAttribute('data-compact', '');
-    for (const [i, name] of [clear, special].entries()) {
-      await expect(buttons.nth(i)).toHaveAccessibleName(name);
-      await expect(buttons.nth(i)).toHaveAttribute('title', name);
-    }
-    for (const box of await row()) expect([Math.round(box.width), Math.round(box.height)]).toEqual([44, 44]);
-    await page.setViewportSize({width: 390, height: 844});
+    // Room for the labels beside the filters: full text.
+    await page.setViewportSize({width: 700, height: 844});
     await expect(tools).not.toHaveAttribute('data-compact');
+    await expect(buttons.nth(0)).toHaveText(clear);
+    for (const width of [375, 390, 180]) {
+      await page.setViewportSize({width, height: 844});
+      await expect(tools).toHaveAttribute('data-compact', '');
+      for (const [i, name] of [clear, special].entries()) {
+        await expect(buttons.nth(i)).toHaveAccessibleName(name);
+        await expect(buttons.nth(i)).toHaveAttribute('title', name);
+      }
+      const [a] = await pair();
+      for (const box of await pair()) expect([Math.round(box.width), Math.round(box.height)]).toEqual([44, 44]);
+      // iPhone widths keep one row; 180px is narrower than filters plus icons, so the pair wraps together.
+      const row = (await filters.boundingBox())!;
+      if (width > 180) expect(a.y).toBeLessThan(row.y + row.height);
+    }
   }
 });

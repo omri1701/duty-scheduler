@@ -49,7 +49,7 @@ export const SPEC_MAP = {
   'components/rota/team-list.tsx': team,
   'components/rota/temporary-member-dialog.tsx': team,
   'components/rota/workspace-availability.tsx': editors,
-  'components/rota/workspace-calendar.tsx': calendar,
+  'components/rota/workspace-calendar.tsx': [...calendar, 'clear-board', 'iphone-draft-tools'],
   'components/rota/workspace-summary.tsx': ['calendar-controls', 'calendar-final-polish'],
   'components/rota/workspace-team.tsx': team,
   'components/rota/workspace-toolbar.tsx': ['toolbar-runtime', 'toolbar-zoom', 'calendar-final-polish', 'month-navigation'],

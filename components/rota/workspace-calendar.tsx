@@ -267,8 +267,9 @@ export function WorkspaceCalendar({
   );
 }
 
-// Clear board and Special block share one row. When their labels can't fit (narrow phones,
-// Safari text zoom), both become 44px icon buttons that keep the full text as name and tooltip.
+// Clear board and Special block sit on the filters' row. When their labels would push them onto
+// a row of their own (iPhones, Safari zoom), both become 44px icon buttons that keep the full
+// text as name and tooltip.
 function DraftTools({hidden, lang, t, readOnly, clear, onSpecial}: {
   hidden: boolean; lang: Language; t: Translate; readOnly: boolean;
   clear?: {onClick: () => void; disabled: boolean; reason?: string}; onSpecial: () => void;
@@ -281,7 +282,9 @@ function DraftTools({hidden, lang, t, readOnly, clear, onSpecial}: {
       // Measure with full labels, then put the current look back until React re-renders.
       const was = node.hasAttribute('data-compact');
       node.removeAttribute('data-compact');
-      const overflows = node.scrollWidth > node.clientWidth + 1;
+      const wrapped = [...row.children].some(other => other !== node && (other as HTMLElement).offsetParent !== null
+        && (other as HTMLElement).offsetTop + (other as HTMLElement).offsetHeight <= node.offsetTop);
+      const overflows = wrapped || node.scrollWidth > node.clientWidth + 1;
       if (was) node.setAttribute('data-compact', '');
       setCompact(overflows);
     };
