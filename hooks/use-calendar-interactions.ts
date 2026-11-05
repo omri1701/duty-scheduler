@@ -54,7 +54,7 @@ export function useCalendarInteractions({
   const draftTarget = (from: string, to: string) => {
     const result = swapDraft(state, month, from, to);
     // Policy exceptions open manager review; structural failures remain invalid.
-    return result.ok || result.reason === 'availability' || result.reason === 'weekend-limit';
+    return result.ok || result.reason === 'availability' || result.reason === 'weekend-limit' || result.reason === 'no-weekends';
   };
   function finishCalendarSwap(from: string, to: string) {
     if (requesting) {

@@ -75,6 +75,9 @@ A wall-clock-limited unfinished search does not promise identical incumbents;
 use the recorded seed, node budget, package/runtime/environment and sufficient
 time for deterministic completed replay.
 
+Model `highs-leximin-v7` adds the optional `noWeekends` member input: a
+non-weekend member is no candidate for any weekend duty unless locked there
+(hard eligibility, no new level). Ordinary inputs give exactly the v6 schedules.
 Model `highs-leximin-v6` turns the one-weekend cap and the ban on back-to-back
 duties into last resorts. Two counter levels sit directly below the member targets
 and above every spacing level: extra weekends (`extraWeekends`), then unapproved

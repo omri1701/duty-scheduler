@@ -1,6 +1,6 @@
 import {addDays,dayOf,blocks,ownerMonth,specialAt,type State,type Special} from '../rota/engine.ts';
 import type {PublishedMonth} from '../scheduling/rotation.ts';
-export type Member={id:string;email:string|null;is_temporary?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
+export type Member={id:string;email:string|null;is_temporary?:boolean;/** Absent before the non-weekend migration. */no_weekends?:boolean;name:string;role:string;status:string;active:boolean;seniority:number;color:string};
 export type Lookup={code:string;label:string};
 export type Role=Lookup&{can_manage:boolean};
 export type DutyRow={id:string;publication_id:string|null;day:string;end_day:string;primary_id:string|null;secondary_id:string|null;locked?:boolean;manager_override:boolean;title:string;extra_points:number;/** Combined weekends only: the Saturday date's own extra; absent in rows saved before it existed. */saturday_extra_points?:number;points:number};
@@ -19,7 +19,7 @@ const rows = (shape: Record<string, Check>): Check => value => Array.isArray(val
 const lookup = {code: text, label: text};
 const snapshotChecks = {
  revision,
- members: rows({id:text,email:nullableText,is_temporary:value=>value===undefined||boolean(value),name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
+ members: rows({id:text,email:nullableText,is_temporary:value=>value===undefined||boolean(value),no_weekends:value=>value===undefined||boolean(value),name:text,role:text,status:text,active:boolean,seniority:number,color:text}),
  months: rows({month:text,deadline:text,status:oneOf('draft','published'),generated:boolean,current_publication_id:nullableText,publication_sequence:number}),
  constraints: rows({member_id:text,day:text,kind:oneOf('no','prefer'),note:text}),
  assignments: rows({id:text,publication_id:nullableText,day:text,end_day:text,primary_id:nullableText,secondary_id:nullableText,locked:value=>value===undefined||boolean(value),manager_override:boolean,title:text,extra_points:number,saturday_extra_points:value=>value===undefined||number(value),points:number}),
@@ -52,7 +52,7 @@ function applyRows(state:State,rows:DutyRow[]){
 }
 export function fromSnapshot(raw:Snapshot,userId:string,previewPublication?:string,published=false):State{
  const admin=canManage(raw,userId);
- const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
+ const state:State={version:3,team:raw.members.filter(m=>m.status==='approved').map(m=>({id:m.id,name:m.name,color:m.color,active:m.active,role:m.role,...(m.no_weekends?{noWeekends:true}:{})})),constraints:{},constraintNotes:{},assignments:{},specials:[],splitWeekends:[],months:{}};
  for(const m of raw.months)state.months[m.month]={deadline:m.deadline,status:admin&&!previewPublication&&!published?m.status:m.current_publication_id?'published':'draft',generated:m.generated};
  for(const c of raw.constraints){(state.constraints[c.member_id]??={})[c.day]=c.kind;if(c.note)(state.constraintNotes![c.member_id]??={})[c.day]=c.note}
  if(previewPublication)return applyRows(state,raw.assignments.filter(r=>r.publication_id===previewPublication));

@@ -31,11 +31,11 @@ test('admin creates 12 temporary engineers, edits constraints/order/status and s
  expect(backend.raw.members.find(m=>m.id===first.id)!.seniority).toBeLessThan(7);
  for(const id of [ids.a,ids.b,ids.c,ids.d,ids.e]){
   const row=page.locator(`[data-gesture-key="${id}"]`);
-  await row.getByRole('checkbox').click();await expect(row.getByRole('checkbox')).not.toBeChecked();
+  await row.locator('.active-checkbox').getByRole('checkbox').click();await expect(row.locator('.active-checkbox').getByRole('checkbox')).not.toBeChecked();
  }
  // Deactivate/reactivate a temporary member without replacing its identity.
- await firstRow.getByRole('checkbox').click();await expect(firstRow).toHaveClass(/inactive/);
- await firstRow.getByRole('checkbox').click();await expect(firstRow).not.toHaveClass(/inactive/);
+ await firstRow.locator('.active-checkbox').getByRole('checkbox').click();await expect(firstRow).toHaveClass(/inactive/);
+ await firstRow.locator('.active-checkbox').getByRole('checkbox').click();await expect(firstRow).not.toHaveClass(/inactive/);
  await page.getByRole('tab',{name:'Availability',exact:true}).click();
  await page.getByRole('combobox',{name:'Engineer',exact:true}).click();
  await page.getByRole('option',{name:'Renamed Engineer',exact:true}).click();

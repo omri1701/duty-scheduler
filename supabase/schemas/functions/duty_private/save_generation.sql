@@ -16,6 +16,12 @@ begin
  f:=ctx->'facts';
  if meta.calendar_fingerprint<>md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(f->'duties') d)) then raise exception 'Calendar changed. Confirm allocation again.' using errcode='40001'; end if;
  checked:=duty_private.generation_validate(f,meta.allocation->'targetsUnits',p_assignments);
+ -- Generate never places a non-weekend member on a weekend duty (either half of a split
+ -- weekend included). A weekend the manager locked to them is kept, never deleted; manual
+ -- calendar edits stay the manager's call, so publication does not apply this rule.
+ if exists(select 1 from jsonb_array_elements(f->'duties') d join jsonb_array_elements(f->'members') m on m->>'id'=p_assignments->(d->>'id')->>'primary'
+  where d->>'weekendId' is not null and m->'noWeekends'='true'
+   and not (f->'locks') @> jsonb_build_array(jsonb_build_object('dutyId',d->'id','engineer',m->'id'))) then raise exception 'non-weekend-primary'; end if;
  if meta.source_publication_id is null then
   -- Re-planned now and projected after, as generation_context and Confirm do.
   s:=duty_private.compensation_state();

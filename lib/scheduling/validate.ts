@@ -86,6 +86,18 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
   return {coverage, special, units: totals.reduce((sum, v) => sum + v, 0), deficits, gaps: gaps.sort((a, b) => a - b),
     rotation, preferred, repeats, weekdays: weekdayCost, extraWeekends, adjacent};
 }
+/** Generate's own output only: a non-weekend member on a weekend duty the manager did not
+ * lock to them. Manual calendar edits stay the manager's call, so validatePrepared (which
+ * also checks saved and published months) does not apply this rule. duty_private.save_generation
+ * applies the same rule. */
+export function requireWeekendEligibility(prepared: PreparedGeneration, assignments: PrimaryAssignments) {
+  for (const d of prepared.duties) {
+    const id = assignments[d.id]?.primary;
+    if (d.weekendId && id && prepared.locks.get(d.id) !== id && prepared.input.members.some(m => m.id === id && m.noWeekends)) {
+      throw new GenerationError('non-weekend-primary', {dutyId: d.id, engineer: id});
+    }
+  }
+}
 export function validateGeneration(input: GenerationInput, assignments: PrimaryAssignments) {
   return validatePrepared(prepareGeneration(input), assignments);
 }

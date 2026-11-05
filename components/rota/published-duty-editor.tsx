@@ -9,6 +9,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import {EditorDialog} from '@/components/rota/editor-dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
 import {addDays} from '@/lib/rota/engine';
+import {dayOf} from '@/lib/rota/calendar-dates';
 import {combinedWeekend,dutyPoints,editConflicts,editStale,editSummary,owedUnits,swapPartners,validExtra,type EditKind,type PublishedEdit} from '@/lib/supabase/published-edit';
 import type {DutyRow} from '@/lib/supabase/snapshot';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
@@ -22,16 +23,20 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const points=(n:number)=>lang==='en'?`${n} ${n===1?'point':'points'}`:`${n} ${n===1?'נקודה':'נקודות'}`;
  const name=(id:string)=>raw.members.find(m=>m.id===id)?.name??t('Former member','חבר צוות קודם');
  const [primary,setPrimary]=useState(row.primary_id!),[extra,setExtra]=useState(String(row.extra_points)),[saturday,setSaturday]=useState(String(row.saturday_extra_points??0));
+ const [approveWeekend,setApproveWeekend]=useState(false);
  const [kind,setKind]=useState<EditKind>('temporary'),[override,setOverride]=useState(false),[reason,setReason]=useState(''),[step,setStep]=useState<'edit'|'review'>('edit');
  const lock=useRef(false),[pending,setPending]=useState(false),busy=remote.saving||pending;
  const extraValue=Number(extra),saturdayValue=weekend?Number(saturday):0;
  const validExtras=extra.trim()!==''&&validExtra(extraValue)&&(!weekend||(saturday.trim()!==''&&validExtra(saturdayValue)));
  const changed=primary!==row.primary_id,conflicts=changed?editConflicts(raw,primary,row):[];
+ // A No weekends member placed on a weekend needs the manager's approval, like unavailability.
+ const weekendRow=[5,6].includes(dayOf(row.day)),skips=(id:string)=>weekendRow&&!!raw.members.find(m=>m.id===id)?.no_weekends;
+ const skipped=changed&&skips(primary);
  const unchanged=!changed&&extraValue===row.extra_points&&saturdayValue===(row.saturday_extra_points??0);
  const edit:PublishedEdit={primary,extra:extraValue,saturdayExtra:saturdayValue,kind,overrideReason:conflicts.length?reason:''};
  // A newer version or a reopened draft (another tab or admin) makes this copy stale; reopening the duty starts from the live one.
  const stale=editStale(raw,row),partners=swapPartners(raw,row).map(name).join(', ');
- const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()));
+ const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()))&&(!skipped||approveWeekend);
  const fmt=(day:string)=>shortDate(day,lang),last=addDays(row.end_day,-1);
  const members=raw.members.filter(m=>m.status==='approved'&&(m.active||m.id===row.primary_id)&&m.id!==row.secondary_id);
  const summary=ready?editSummary(row,edit,name,lang):'';
@@ -63,9 +68,9 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
   {/* Named before saving: saving cancels it (for a new engineer or new points). */}
   {!stale&&!!partners&&<p className="warning-note" role="note">{t(`Pending swap with ${partners}. Saving cancels it.`,`החלפה ממתינה עם ${partners}. השמירה תבטל אותה.`)}</p>}
   {step==='edit'?<>
-   <label className="field-label">{t('Engineer','מהנדס')}<Select disabled={busy} value={primary} onValueChange={v=>{setPrimary(v);setOverride(false);setReason('')}}>
+   <label className="field-label">{t('Engineer','מהנדס')}<Select disabled={busy} value={primary} onValueChange={v=>{setPrimary(v);setOverride(false);setReason('');setApproveWeekend(false)}}>
     <SelectTrigger className="picker" aria-label={t('Engineer','מהנדס')}><SelectValue/></SelectTrigger>
-    <SelectContent>{members.map(m=><SelectItem key={m.id} value={m.id}>{m.name}{m.id!==row.primary_id&&editConflicts(raw,m.id,row).length?t(' · unavailable',' · לא זמין'):''}</SelectItem>)}</SelectContent>
+    <SelectContent>{members.map(m=><SelectItem key={m.id} value={m.id}>{m.name}{m.id!==row.primary_id&&editConflicts(raw,m.id,row).length?t(' · unavailable',' · לא זמין'):''}{m.id!==row.primary_id&&skips(m.id)?t(' · no weekends',' · ללא סופי שבוע'):''}</SelectItem>)}</SelectContent>
    </Select></label>
    {weekend?<div className="form-pair">{extraField(t('Friday extra points','תוספת ביום שישי'),extra,setExtra)}{extraField(t('Saturday extra points','תוספת ביום שבת'),saturday,setSaturday)}</div>
     :extraField(t('Extra points','נקודות נוספות'),extra,setExtra)}
@@ -82,6 +87,10 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
     {conflicts.map(c=><p key={c.day}>{t(`${name(primary)} is unavailable on ${fmt(c.day)}`,`${name(primary)} לא זמין/ה ב־${fmt(c.day)}`)}{c.note?` · ${c.note}`:''}</p>)}
     <label className="check-label"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Override availability as admin','חריגה מאילוץ כמנהל')}</label>
     {override&&<label className="field-label">{t('Required audit reason','נימוק חובה לתיעוד')}<textarea rows={2} maxLength={500} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
+   </div>}
+   {skipped&&<div className="warning-note" role="alert">
+    <p>{t(`${name(primary)} doesn’t take weekends · ${fmt(row.day)}`,`${name(primary)} לא עושה סופי שבוע · ${fmt(row.day)}`)}</p>
+    <label className="check-label"><Checkbox disabled={busy} checked={approveWeekend} onCheckedChange={v=>setApproveWeekend(!!v)}/>{t('Approve this exception as manager','אישור החריגה כמנהל')}</label>
    </div>}
    {unchanged&&validExtras&&!stale&&<p className="muted-copy" role="note">{t('Choose another engineer or change the extra points to review a change.','יש לבחור מהנדס אחר או לשנות את הנקודות הנוספות כדי לבדוק שינוי.')}</p>}
    <div className="editor-actions"><Button disabled={!ready||busy} onClick={()=>setStep('review')}>{t('Review change','בדיקת השינוי')}</Button></div>

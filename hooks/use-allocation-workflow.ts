@@ -5,16 +5,17 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, copyFits, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, NON_WEEKEND_UNITS, nonWeekendLeftOut, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {handOf} from '@/lib/allocation/derive';
 import {availableCeilings, context} from '@/lib/allocation/model';
 import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
 import {inputKey, prepareGeneration, snapshotKey} from '@/lib/scheduling/domain';
-import {weekdayRotation, weekendRotation} from '@/lib/scheduling/rotation';
+import {generationRotations} from '@/lib/scheduling/rotation';
 import {publishedHistory} from '@/lib/supabase/snapshot';
-import {addDays} from '@/lib/rota/calendar-dates';
+import {addDays, dayOf} from '@/lib/rota/calendar-dates';
 import {acceptGeneration, type GenerationResult} from '@/lib/scheduling/generate';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {GenerationContext} from '@/lib/supabase/generation';
@@ -115,6 +116,26 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   const generatedMonth = !!remote.snapshot?.months.find(m => m.month === month)?.generated;
   const outcome = useMemo(() => captured && generatedMonth ? generatedNotes({...captured.input, schedule: {...captured.input.schedule, approvals}}, captured.assignments) : null,
     [captured, approvals, generatedMonth]);
+  // Non-weekend members, and whether one still holds a weekend the manager locked
+  // (kept, never deleted; the plan warns about it).
+  const noWeekends = useMemo(() => Object.fromEntries((captured?.input.schedule.members ?? []).filter(m => m.noWeekends)
+    .map(m => [m.id, {lockedWeekend: locks.some(l => l.engineer === m.id && [5, 6].includes(dayOf(l.dutyId)))}])), [captured, locks]);
+  // How many participants still take weekends, when someone doesn't: with one or none,
+  // Generate can leave weekends empty, so the plan says so before Generate.
+  const weekendTakers = useMemo(() => {
+    const members = (captured?.input.schedule.members ?? []).filter(m => m.active && m.approved && m.eligible);
+    return members.some(m => m.noWeekends) ? members.filter(m => !m.noWeekends).length : null;
+  }, [captured]);
+  // Non-weekend members left without the default +1 because only the weekend members
+  // fund it and they can't give up more points (decision 2026-11-05); the plan says why.
+  const weekendShort = useMemo(() => {
+    if (!open || !captured || !draft?.changes || weekendTakers === null) return null;
+    const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
+    try {
+      const leftOut = nonWeekendLeftOut(i, draft).length;
+      return leftOut ? {leftOut, takers: i.seniority.filter(id => !i.schedule.members.some(m => m.id === id && m.noWeekends))} : null;
+    } catch {return null;}
+  }, [open, captured, locks, approvals, draft, weekendTakers]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
   // allowed, Generate is then partial; the plan says so before Generate.
   const divisible = useMemo(() => {
@@ -150,6 +171,27 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!captured || !editable) return null;
     try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, editable, step);} catch {return null;}
   }, [captured, locks, approvals, editable, step]);
+  // Reset: the plan a first opening makes (proposeAllocation with nothing retained), so the
+  // automatic No weekends +1s follow the current settings. Re-plan itself keeps hand edits.
+  const fresh = useMemo(() => {
+    if (!open || !captured?.generationAllowed || !editable) return null;
+    try {return proposeAllocation({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}).draft;} catch {return null;}
+  }, [open, captured, locks, approvals, editable]);
+  const resetState = useMemo(() => {
+    if (!open || !draft) return {reason: '', discards: false};
+    if (replanBlocked) return {reason: replanBlocked, discards: false};
+    if (!captured?.generationAllowed) return {reason: t('Generation has closed, so the plan can’t be reset.', 'השיבוץ האוטומטי נסגר, ולכן אי אפשר לאפס את התוכנית.'), discards: false};
+    if (!editable || !fresh) return {reason: t('This plan can’t be edited right now, so it can’t be reset.', 'אי אפשר לערוך את התוכנית כרגע, ולכן אי אפשר לאפס אותה.'), discards: false};
+    const ids = captured.input.seniority, ownHand = handOf(editable), freshHand = handOf(fresh);
+    const key = (d: AllocationDraft, hand: Record<string, unknown>) => JSON.stringify([ids.map(id => [d.baselineUnits[id], d.offeredUnits[id], d.targetsUnits[id], d.changes[id]?.temporary ?? 0, d.changes[id]?.permanent ?? 0, !!hand[id]]), d.pairs, d.repayments]);
+    if (key(editable, ownHand) === key(fresh, freshHand)) return {reason: t('This is already the starting plan.', 'זו כבר התוכנית ההתחלתית.'), discards: false};
+    // A drag, or a hand change the fresh plan doesn't make itself (an automatic No weekends +1 is not one).
+    const nonWeekend = (id: string) => captured.input.schedule.members.some(m => m.id === id && m.noWeekends);
+    const discards = editable.pairs.length > 0 || Object.entries(ownHand).some(([id, ch]) =>
+      !(nonWeekend(id) && !ch.temporary && ch.permanent === NON_WEEKEND_UNITS) &&
+      !(freshHand[id] && freshHand[id].temporary === ch.temporary && freshHand[id].permanent === ch.permanent));
+    return {reason: '', discards};
+  }, [open, draft, replanBlocked, captured, editable, fresh, t]);
   let structural = '';
   // The shown plan is the stored copy of a publication, kept with its provenance.
   const copy = !!captured?.sourcePublicationId && !!draft && snapshotKey(persistedDraft(draft)) === snapshotKey(captured.allocation);
@@ -227,6 +269,14 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       setHistory(h => [...h, previous]); setNotice(t('Points updated. Counterpart changes are shown below.', 'הנקודות עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
     }
   }
+  /** Replaces the plan with the first-opening proposal; Undo brings the previous one back. */
+  function reset() {
+    if (!input || !draft || phase !== 'idle' || resetState.reason || !fresh) return;
+    const previous = {draft, locks, approvals};
+    if (plan(() => proposeAllocation(input).draft)) {
+      setHistory(h => [...h, previous]); setNotice(t('Plan reset to the starting proposal. Undo brings your changes back.', 'התוכנית אופסה להצעה ההתחלתית. ביטול שינוי מחזיר את השינויים שלך.'));
+    }
+  }
   /** Exact manual transfer of one point; temporary until made permanent. */
   function transfer(fromId: string, toId: string) {
     if (!input || !draft || phase !== 'idle' || fromId === toId) return;
@@ -281,10 +331,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       setPhase('generating');
       // Weekend and weekday rotation state comes from the published months the workspace
       // already holds; both are soft objectives, so the checked save does not revalidate them.
-      const eligible = confirmed.generationInput.members.filter(m => m.active && m.approved && m.eligible).map(m => m.id);
+      // Non-weekend members are left out of the weekend rotation (see generationRotations).
       const history = latest.current.snapshot ? publishedHistory(latest.current.snapshot, month) : [];
       const generationInput: GenerationInput = {...confirmed.generationInput,
-        weekendRotation: weekendRotation(history, eligible, month), weekdayRotation: weekdayRotation(history, eligible, month)};
+        ...generationRotations(history, confirmed.generationInput.members, month)};
       const active = createGenerationWorker(now); worker.current = active;
       let generated: GenerationResult;
       try {
@@ -344,8 +394,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
-    locks, approvals, totals, uneven, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
-    history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
+    locks, approvals, totals, uneven, noWeekends, weekendTakers, weekendShort, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    history, undo, reset, resetReason: resetState.reason, resetDiscards: resetState.discards, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle', saved: !!draft && draft === savedDraft,

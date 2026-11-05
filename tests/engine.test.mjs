@@ -169,3 +169,35 @@ test('one approval reports both engineers when split weekend swaps increase both
 test('weekend editor expands a combined assignment and saves two distinct owners atomically',()=>{const s=demo();s.assignments['2026-10-02']={primary:'e0',secondary:'e2'};const [fri,sat]=weekendAssignments(s,'2026-10-02');assert.deepEqual(fri,sat);assert.notEqual(fri,sat);const next=setWeekendAssignments(s,'2026-10-02',{...fri,primary:'e1'},sat);assert.deepEqual(weekendAssignments(next,'2026-10-02'),[{primary:'e1',secondary:'e2'},{primary:'e0',secondary:'e2'}]);assert.equal(blocks('2026-10',[],next.splitWeekends).filter(b=>b.weekendId==='2026-10-02').length,2);assert.equal(s.assignments['2026-10-02'].primary,'e0');});
 test('weekend editor swaps half owners without merging the intermediate state, then can reunite them',()=>{let s=demo();s=setWeekendAssignments(s,'2026-07-31',{primary:'e0'},{primary:'e1'});s=setWeekendAssignments(s,'2026-07-31',{primary:'e1'},{primary:'e0'});assert.deepEqual(weekendAssignments(s,'2026-07-31').map(a=>a.primary),['e1','e0']);assert.equal(s.assignments['2026-08-01'].primary,'e0');s=setWeekendAssignments(s,'2026-07-31',{primary:'e1'},{primary:'e1'});assert.equal(s.splitWeekends.length,0);assert.equal(s.assignments['2026-08-01'],undefined);assert.deepEqual(weekendAssignments(s,'2026-07-31').map(a=>a.primary),['e1','e1']);});
 test('palette migration preserves version-two assignments, seniority, and publication status',()=>{const s=demo();s.version=2;s.months['2026-10'].status='published';s.assignments['2026-10-02']={primary:'e0'};s.team.reverse();const n=migrate(s);assert.equal(n.version,3);assert.deepEqual(n.assignments,s.assignments);assert.deepEqual(n.months,s.months);assert.deepEqual(n.team.map(p=>p.id),s.team.map(p=>p.id));assert.equal(new Set(n.team.map(p=>p.color)).size,12);assert.deepEqual(n.team.map(p=>p.color),COLORS.slice(0,12));assert.equal(COLORS.length,15);assert.equal(new Set(COLORS).size,15);});
+
+// Clearing a weekend (reported 2026-11-05): emptying both days keeps one empty weekend, not two halves.
+test('clearing a combined or split weekend on both days leaves one empty weekend',()=>{
+ const s=demo(),friday='2026-10-02',saturday='2026-10-03';s.assignments[friday]={primary:'e0',secondary:'e2'};
+ for(const start of [s,setWeekendAssignments(s,friday,{primary:'e0'},{primary:'e1'})]){
+  const cleared=setWeekendAssignments(start,friday,{primary:''},{primary:''});
+  assert.ok(!cleared.splitWeekends.includes(friday),'not split');
+  assert.equal(cleared.assignments[saturday],undefined);
+  assert.equal(cleared.assignments[friday].primary,'');
+  const weekend=blocks('2026-10',cleared.specials,cleared.splitWeekends).filter(b=>b.weekendId===friday);
+  assert.equal(weekend.length,1);assert.equal(weekend[0].end,'2026-10-04');assert.equal(weekend[0].points,1);
+ }
+ // Emptying only one day still splits: the other day keeps its engineer.
+ const half=setWeekendAssignments(s,friday,{primary:''},{primary:'e0'});
+ assert.ok(half.splitWeekends.includes(friday));assert.equal(half.assignments[saturday].primary,'e0');
+ // Emergency cover alone keeps the split, as before.
+ assert.ok(setWeekendAssignments(s,friday,{primary:'',secondary:'e2'},{primary:''}).splitWeekends.includes(friday));
+});
+
+// No weekends (decision 2026-11-05): a manual placement on a weekend needs manager approval, like availability.
+test('swapping a No weekends member onto a weekend asks for approval; already there or a weekday does not',()=>{
+ const s=swapFixture();s.team=s.team.map(p=>p.id==='e0'?{...p,noWeekends:true}:p);
+ const r=swapDraft(s,'2026-10','2026-10-01','2026-10-02');
+ assert.equal(r.ok,false);assert.equal(r.reason,'no-weekends');assert.deepEqual(r.noWeekendConflicts,[{person:'e0',date:'2026-10-02'}]);
+ const approved=swapDraft(s,'2026-10','2026-10-01','2026-10-02',true);
+ assert.ok(approved.ok);assert.equal(approved.assignments['2026-10-02'].primary,'e0');assert.equal(approved.assignments['2026-10-02'].override,true);
+ assert.equal(approved.assignments['2026-10-01'].override,undefined);
+ // The weekend member moving to the weekday needs nothing.
+ const other=swapFixture();other.team=other.team.map(p=>p.id==='e1'?{...p,noWeekends:true}:p);
+ const free=swapDraft(other,'2026-10','2026-10-01','2026-10-02');
+ assert.ok(free.ok);assert.deepEqual(free.noWeekendConflicts,[]);
+});

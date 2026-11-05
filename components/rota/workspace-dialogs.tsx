@@ -118,10 +118,10 @@ export function DraftSwapDialog({
                 );
               })}
             </div>
-            {swapPreview && !swapPreview.ok && !swapPreview.conflicts?.length && !swapPreview.weekendConflicts?.length && (
+            {swapPreview && !swapPreview.ok && !swapPreview.conflicts?.length && !swapPreview.weekendConflicts?.length && !swapPreview.noWeekendConflicts?.length && (
               <div className="warning-note">{swapReason(swapPreview.reason)}</div>
             )}
-            {!!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length) && (
+            {!!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length || swapPreview?.noWeekendConflicts?.length) && (
               <div className="warning-note">
                 {!!swapPreview?.conflicts?.length && <p>
                   {t('Availability conflicts: ', 'התנגשות עם אילוצים: ')}
@@ -139,6 +139,10 @@ export function DraftSwapDialog({
                     `ההחלפה נותנת ל${personName(c.person)} ${c.count} סופי שבוע בחודש ${monthLabel}. לאשר חריגה?`,
                   )}</p>;
                 })}
+                {swapPreview?.noWeekendConflicts?.map(c => <p key={`${c.person}${c.date}`}>{t(
+                  `${personName(c.person)} doesn’t take weekends · ${fmt(c.date)}`,
+                  `${personName(c.person)} לא עושה סופי שבוע · ${fmt(c.date)}`,
+                )}</p>)}
                 <label className="check-label manager-override">
                   <Checkbox disabled={saving} checked={swapOverride} onCheckedChange={(v) => setSwapOverride(!!v)} />
                   {t('Approve these exceptions as manager', 'אישור החריגות כמנהל')}

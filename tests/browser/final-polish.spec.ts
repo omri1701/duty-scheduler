@@ -27,8 +27,10 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
    points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
    avatar:el.querySelector('.avatar')!.getAttribute('style'),
    rank:el.querySelector('.team-grip span')!.textContent,
-   active:el.querySelector('[role=checkbox]')!.getAttribute('data-state'),
+   active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
   }));
+  // Admin rows carry the No weekends toggle: on a phone the last row can start below the fold.
+  await handle.scrollIntoViewIfNeeded();
   const a=(await handle.boundingBox())!,x=a.x+a.width/2,y=a.y+a.height/2,mobile=info.project.name==='mobile';
   if(mobile){await touchEvent(page,'touchstart',x,y);await page.waitForTimeout(400)}
   else{await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y+7)}
@@ -51,7 +53,7 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
     points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
     avatar:el.querySelector('.avatar')!.getAttribute('style'),
     rank:el.querySelector('.team-grip span')!.textContent,
-    active:el.querySelector('[role=checkbox]')!.getAttribute('data-state'),
+    active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
    }));
    expect(actual).toEqual(expected);
   }

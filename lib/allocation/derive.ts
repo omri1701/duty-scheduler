@@ -1,4 +1,4 @@
-import {grain, type Context} from './model.ts';
+import {grain, sum, type Context} from './model.ts';
 import type {Change, Kind, Pair, Transfer} from './types.ts';
 
 /** Permanent transfers precede temporary ones, so a member's permanent share
@@ -69,8 +69,20 @@ export function balanceChanges(c: Context, seniority: readonly string[], baselin
   const free = c.ids.filter(id => !hand[id]), g = grain(c), rank = (id: string) => seniority.indexOf(id);
   const full = (id: string) => offered[id] + changes[id].temporary + changes[id].permanent;
   const other = (id: string, kind: Kind) => changes[id][kind === 'temporary' ? 'permanent' : 'temporary'] ? 1 : 0;
-  const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id])
-    .sort((a, b) => other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
+  // With non-weekend members (decision 2026-11-05), the weekend members keep enough points
+  // above their locks for the month's free weekends, one each as far as they go (heaviest
+  // first, as Generate spreads them), and a non-weekend member gives a permanent point only
+  // when no weekend member can. Without a non-weekend member, nothing changes.
+  const nonWeekend = (id: string) => c.nonWeekend.has(id) ? 1 : 0, room = (id: string) => Math.max(0, full(id) - c.locked[id]);
+  const takers = c.ids.filter(id => !nonWeekend(id));
+  const spread = (rooms: number[]) => rooms.sort((a, b) => b - a).filter((r, k) => k < c.weekendDuties.length && r >= c.weekendDuties[k]).length;
+  const keepsWeekends = (id: string, units: number) => {
+    if (!c.nonWeekend.size || nonWeekend(id)) return true;
+    const rooms = takers.map(t => room(t)), after = takers.map(t => t === id ? Math.max(0, room(t) - units) : room(t));
+    return sum(after) >= c.weekendFree && spread(after) >= spread(rooms);
+  };
+  const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id] && keepsWeekends(id, units))
+    .sort((a, b) => (kind === 'permanent' ? nonWeekend(a) - nonWeekend(b) : 0) || other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
   // A permanent receiver's fair share plus punishment never exceeds the month's total points.
   const received: Record<string, number> = {};
   const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total)

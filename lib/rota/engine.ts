@@ -1,6 +1,6 @@
 import {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
 export {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
-export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string };
+export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string; /** Skips weekends (an admin setting): placing them on one needs manager approval. */ noWeekends?: boolean };
 export type Special = { id: string; title: string; start: string; end: string; extra: number };
 export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string; /** Dates of this duty covered by a special range (a combined weekend may have one or both). */ specialDates?: string[] };
 export type Assignment = { primary: string; secondary?: string; locked?: boolean; override?: boolean };
@@ -44,6 +44,9 @@ export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
   const a=assignments[f],b=assignments[addDays(f,1)];
   // Only an explicit edit of this weekend can change a locked duty's shape.
   if((a?.locked||b?.locked)&&f!==reviewedWeekend)return true;
+  // A weekend emptied on both days is one empty weekend again, never two empty halves.
+  const empty=(x?:Assignment)=>!x?.primary&&!x?.secondary&&!x?.locked;
+  if(empty(a)&&empty(b)){if(a)assignments[f]={...a,override:undefined};delete assignments[addDays(f,1)];return false;}
   if(!a?.primary||a.primary!==b?.primary||a.secondary!==b.secondary||!!a.locked!==!!b.locked)return true;
   assignments[f]={...a,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
  });
@@ -155,7 +158,14 @@ export function applyConstraints(s:State,person:string,selected:string[],kind:'n
  for(const d of selected){if(kind==='clear'){delete c[d];delete notes[d];}else{c[d]=kind;if(note.trim())notes[d]=note.trim().slice(0,300);else delete notes[d];}}
  return {...s,constraints:{...s.constraints,[person]:c},constraintNotes:{...s.constraintNotes,[person]:notes}};
 }
-type SwapConflicts = {conflicts:{person:string;date:string}[];weekendConflicts:{person:string;count:number;month:string}[]};
+/** No-weekends members newly placed on a weekend duty (a half counts), primary or cover: like an
+ * availability conflict, a manual placement needs manager approval. Generate never does it. */
+export function noWeekendPlacements(s:State,changed:{duty:Duty;assignment:Assignment;before?:Assignment}[]){
+ const skips=new Set(s.team.filter(p=>p.noWeekends).map(p=>p.id));
+ return changed.flatMap(({duty,assignment,before})=>duty.weekendId?[assignment.primary,assignment.secondary]
+  .filter((id):id is string=>!!id&&skips.has(id)&&id!==before?.primary&&id!==before?.secondary).map(person=>({person,date:duty.start})):[]);
+}
+type SwapConflicts = {conflicts:{person:string;date:string}[];weekendConflicts:{person:string;count:number;month:string}[];noWeekendConflicts:{person:string;date:string}[]};
 export type SwapResult = ({ok:true;assignments:State['assignments']} & SwapConflicts)|({ok:false;reason:string} & Partial<SwapConflicts>);
 export function swapDraft(s:State,month:string,from:string,to:string,allowOverride=false):SwapResult{
  if(s.months[month]?.status==='published')return{ok:false,reason:'published'};
@@ -173,11 +183,13 @@ export function swapDraft(s:State,month:string,from:string,to:string,allowOverri
  const assignments={...s.assignments};for(const {duty,assignment} of changed)assignments[duty.id]=assignment;
  const counts=weekendCounts({...s,assignments},month),before=weekendCounts(s,month);
  const weekendConflicts=Object.keys(counts).filter(id=>counts[id]>1&&counts[id]>before[id]).map(person=>({person,count:counts[person],month}));
- if(!allowOverride&&(conflicts.length||weekendConflicts.length))return{ok:false,reason:conflicts.length?'availability':'weekend-limit',conflicts,weekendConflicts};
+ const noWeekendConflicts=noWeekendPlacements(s,[{duty:a,assignment:changed[0].assignment,before:x},{duty:b,assignment:changed[1].assignment,before:y}]);
+ if(!allowOverride&&(conflicts.length||weekendConflicts.length||noWeekendConflicts.length))return{ok:false,reason:conflicts.length?'availability':weekendConflicts.length?'weekend-limit':'no-weekends',conflicts,weekendConflicts,noWeekendConflicts};
  for(const {duty,assignment} of changed){
   const availability=conflicts.some(c=>duty.start<=c.date&&c.date<duty.end);
   const weekend=duty.weekendId&&weekendConflicts.some(c=>c.person===assignment.primary||c.person===assignment.secondary);
-  assignments[duty.id]={...assignment,override:assignment.override||availability||weekend?true:undefined};
+  const skipped=noWeekendConflicts.some(c=>c.date===duty.start);
+  assignments[duty.id]={...assignment,override:assignment.override||availability||weekend||skipped?true:undefined};
  }
- return{ok:true,assignments,conflicts,weekendConflicts};
+ return{ok:true,assignments,conflicts,weekendConflicts,noWeekendConflicts};
 }

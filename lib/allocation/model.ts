@@ -23,7 +23,12 @@ export function context(input: AllocationInput) {
   // Manual allocation/lock review remains available after opening. Do not project
   // actual accounting backwards; Generate enforces its separate time window.
   const projection = project(input.events, input.now, Math.max(input.now, coverageStart(schedule.month, schedule.calendar)));
-  return {prepared, ids, total, locked, projection, seniority: [...input.seniority],
+  // Non-weekend members, and the weekend points only the others can take (decision 2026-11-05).
+  const nonWeekend = new Set(prepared.members.filter(m => m.noWeekends).map(m => m.id));
+  const lockOf = new Map((schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
+  const weekendDuties = duties.filter(d => d.weekendId && !lockOf.has(d.id)).map(d => d.units).sort((a, b) => b - a);
+  const weekendFree = sum(weekendDuties);
+  return {prepared, ids, total, locked, nonWeekend, weekendFree, weekendDuties, projection, seniority: [...input.seniority],
     candidates: projection.projected.candidates.filter(c => ids.includes(c.debtorId) && ids.includes(c.creditorId)),
     key: inputKey({schedule, seniority: snapshotKey(input.seniority), ledger: projection.sourceFingerprint, cutoff: projection.cutoffMs})};
 }

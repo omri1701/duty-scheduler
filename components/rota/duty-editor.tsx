@@ -6,7 +6,7 @@ import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
 import {EditorDialog} from '@/components/rota/editor-dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
-import {addDays,ownerMonth,unavailable,weekendAssignments,setWeekendAssignments,weekendCounts,type State,type Duty,type Assignment} from '@/lib/rota/engine';
+import {addDays,noWeekendPlacements,ownerMonth,unavailable,weekendAssignments,setWeekendAssignments,weekendCounts,type State,type Duty,type Assignment} from '@/lib/rota/engine';
 export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemoveSpecial,saving=false}:{state:State;duty:Duty;month:string;lang:'en'|'he';onClose:()=>void;onMonth:(month:string)=>void;onSave:(change:(s:State)=>State,reviewedLocks?:string[])=>void|Promise<void>;onRemoveSpecial:()=>void|Promise<void>;saving?:boolean}){
  const t=(en:string,he:string)=>lang==='en'?en:he;
  const lock=useRef(false),[pending,setPending]=useState(false),busy=saving||pending;
@@ -22,12 +22,15 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  const name=(id:string)=>state.team.find(p=>p.id===id)?.name??id;
  const fmt=(d:string)=>shortDate(d,lang);
  const conflicts=edits.flatMap(({block,assignment})=>[assignment.primary,assignment.secondary].filter((id):id is string=>!!id).flatMap(id=>unavailable(block,id,state.constraints).map(date=>`${name(id)} · ${fmt(date)}${state.constraintNotes?.[id]?.[date]?' · '+state.constraintNotes[id][date]:''}`)));
+ // A No weekends member newly placed on either day needs approval, like unavailability.
+ const skipped=weekend?noWeekendPlacements(state,[{duty:day(friday),assignment:fri,before:initialFri},{duty:day(addDays(friday,1)),assignment:sat,before:initialSat}]).map(c=>t(`${name(c.person)} doesn’t take weekends · ${fmt(c.date)}`,`${name(c.person)} לא עושה סופי שבוע · ${fmt(c.date)}`)):[];
+ const skips=(id:string)=>weekend&&!!state.team.find(p=>p.id===id)?.noWeekends;
  const duplicate=edits.some(({assignment:a})=>a.primary&&a.primary===a.secondary);
  const locked=!!fri.locked||(weekend&&!!sat.locked);
  function change(s:State,approved=false){const clean=(a:Assignment,initial:Assignment):Assignment=>({primary:a.primary,secondary:a.secondary,locked:a.primary?a.locked:undefined,override:approved||(a.primary===initial.primary&&a.secondary===initial.secondary&&initial.override)||undefined});return weekend?setWeekendAssignments(s,friday,clean(fri,initialFri),clean(sat,initialSat)):{...s,assignments:{...s.assignments,[duty.id]:clean(fri,initialFri)}}}
  const before=weekendCounts(state,month),after=weekendCounts(change(state),month);
  const extraWeekends=Object.keys(after).filter(id=>after[id]>1&&after[id]>(before[id]??0));
- const needsOverride=!!(conflicts.length||extraWeekends.length);
+ const needsOverride=!!(conflicts.length||extraWeekends.length||skipped.length);
  function setPrimary(value:string,which:'fri'|'sat'){
   setOverride(false);const primary=value==='none'?'':value;
   if(which==='sat'){setSat(a=>({...a,primary}));setFollowFriday(primary===fri.primary)}
@@ -35,7 +38,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  }
  function picker(label:string,a:Assignment,which:'fri'|'sat',emergency=false){
   const current=emergency?a.secondary:a.primary,block=weekend?day(which==='fri'?friday:addDays(friday,1)):duty;
-  return <label className="field-label">{label}<Select disabled={busy} value={current||'none'} onValueChange={v=>{if(!emergency)setPrimary(v,which);else{setOverride(false);const secondary=v==='none'?undefined:v;(which==='fri'?setFri:setSat)(x=>({...x,secondary}))}}}><SelectTrigger className="picker" aria-label={label}><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">{emergency?t('Not needed','לא נדרש'):t('Leave unassigned','ללא שיבוץ')}</SelectItem>{state.team.filter(p=>p.active||p.id===current).map(p=><SelectItem key={p.id} value={p.id}>{p.name}{unavailable(block,p.id,state.constraints).length?t(' · unavailable',' · לא זמין'):''}</SelectItem>)}</SelectContent></Select></label>
+  return <label className="field-label">{label}<Select disabled={busy} value={current||'none'} onValueChange={v=>{if(!emergency)setPrimary(v,which);else{setOverride(false);const secondary=v==='none'?undefined:v;(which==='fri'?setFri:setSat)(x=>({...x,secondary}))}}}><SelectTrigger className="picker" aria-label={label}><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">{emergency?t('Not needed','לא נדרש'):t('Leave unassigned','ללא שיבוץ')}</SelectItem>{state.team.filter(p=>p.active||p.id===current).map(p=><SelectItem key={p.id} value={p.id}>{p.name}{unavailable(block,p.id,state.constraints).length?t(' · unavailable',' · לא זמין'):''}{skips(p.id)?t(' · no weekends',' · ללא סופי שבוע'):''}</SelectItem>)}</SelectContent></Select></label>
  }
  return <EditorDialog onClose={close} saving={busy} lang={lang} className="duty-dialog" title={weekend?t('Edit weekend','עריכת סוף שבוע'):duty.title||t('Edit duty','עריכת תורנות')} description={weekend?`${fmt(friday)} – ${fmt(addDays(friday,1))} · ${t('Friday–Saturday','שישי–שבת')}`:`${fmt(duty.start)} · ${duty.points} ${t('points','נקודות')}`} onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${duty.id}"]`)?.focus()}}>
  {!carry&&<Button className="duty-lock-toggle" variant="ghost" size="icon" disabled={busy||!fri.primary||(weekend&&!sat.primary)} aria-pressed={locked} aria-label={locked?t('Unlock duty','ביטול נעילת תורנות'):t('Lock duty','נעילת תורנות')} title={locked?t('Unlock duty','ביטול נעילת תורנות'):t('Lock duty','נעילת תורנות')} onClick={()=>{setFri(a=>({...a,locked:!locked}));if(weekend)setSat(a=>({...a,locked:!locked}))}}>{locked?<LockKeyhole size={16}/>:<LockKeyholeOpen size={16}/>}</Button>}
@@ -44,7 +47,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  {weekend&&<>{picker(t('Saturday engineer','מהנדס ביום שבת'),sat,'sat')}<p className="muted-copy">{t('Saturday follows Friday until you choose someone else.','שבת תואמת לשישי עד שתבחרו מהנדס אחר.')}</p></>}
  <details className="emergency-editor" open={!!(fri.secondary||sat.secondary)}><summary>{t('Emergency cover (optional)','כיסוי חירום (לא חובה)')}</summary><div>{picker(weekend?t('Friday second engineer','מהנדס נוסף ביום שישי'):t('Second engineer','מהנדס נוסף'),fri,'fri',true)}{weekend&&picker(t('Saturday second engineer','מהנדס נוסף ביום שבת'),sat,'sat',true)}</div></details>
  {duplicate&&<div className="warning-note">{t('Primary and emergency engineers must be different on each day.','המהנדס הראשי ומהנדס החירום חייבים להיות שונים בכל יום.')}</div>}
- {needsOverride&&<div className="warning-note">{!!conflicts.length&&<p>{conflicts.join(' / ')}</p>}{!!extraWeekends.length&&<p>{extraWeekends.map(name).join(', ')} · {t('This adds another weekend this month.','השיבוץ מוסיף סוף שבוע נוסף בחודש.')}</p>}<label className="check-label duty-override manager-override"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Approve these exceptions as manager','אישור החריגות כמנהל')}</label></div>}
+ {needsOverride&&<div className="warning-note">{!!conflicts.length&&<p>{conflicts.join(' / ')}</p>}{!!extraWeekends.length&&<p>{extraWeekends.map(name).join(', ')} · {t('This adds another weekend this month.','השיבוץ מוסיף סוף שבוע נוסף בחודש.')}</p>}{skipped.map(text=><p key={text}>{text}</p>)}<label className="check-label duty-override manager-override"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Approve these exceptions as manager','אישור החריגות כמנהל')}</label></div>}
  <div className="editor-actions"><Button disabled={duplicate||(needsOverride&&!override)||busy} onClick={()=>submit(()=>onSave(s=>change(s,needsOverride&&override),weekend?[friday,addDays(friday,1)]:[duty.id]))}>{t('Save assignment','שמירת השיבוץ')}</Button></div>
  {duty.kind==='special'&&<Button variant="ghost" disabled={busy} onClick={()=>submit(onRemoveSpecial)}><Trash2/>{t('Remove extra points from this duty','הסרת הנקודות הנוספות מתורנות זו')}</Button>}
  </>}
