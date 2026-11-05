@@ -92,7 +92,7 @@ export class Backend {
       raw.assignments = raw.assignments.filter(d => live.has(d.publication_id));
       raw.publications = raw.publications.filter(p => live.has(p.id));
     }
-    raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
+    raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || r.proposed_by === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
     return raw;
   }
   rpc(name: string, p: Record<string, unknown>, user: string) {
@@ -116,6 +116,15 @@ export class Backend {
       const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
       // Mirrors the database scope: members receive only their own row and relationships.
       return canManage(this.raw, user) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+    }
+    if (name === 'duty_swap_availability') {
+      // Mirrors duty_private.swap_availability: parties or admins, who and when, never the note.
+      const a = this.raw.assignments.find(d => d.id === p.p_from)!, b = this.raw.assignments.find(d => d.id === p.p_to)!;
+      const manager = canManage(this.raw, user);
+      expect(manager || [a.primary_id, b.primary_id].includes(user)).toBe(true);
+      const inside = (d: DutyRow, day: string) => day >= d.day && day < d.end_day;
+      return this.raw.constraints.filter(c => c.kind === 'no' && (([b.primary_id, a.secondary_id].includes(c.member_id) && inside(a, c.day)) ||
+        ([a.primary_id, b.secondary_id].includes(c.member_id) && inside(b, c.day)))).map(c => ({member: manager || [a.primary_id, b.primary_id].includes(c.member_id) ? c.member_id : null, day: c.day}));
     }
     expect(p.p_revision).toBe(this.raw.revision);
     const admin = canManage(this.raw, user);
@@ -199,9 +208,11 @@ export class Backend {
       this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
       m.status = 'published'; m.generated = true;
     } else if (name === 'duty_request_swap') {
-      const from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
-      expect(from.primary_id).toBe(user); expect(to.primary_id).not.toBe(user);
-      this.raw.swapRequests!.unshift({id: `request-${this.raw.revision}`, month: MONTH, source_publication_id: from.publication_id, requester_id: user, other_id: to.primary_id!, from_day: from.day, from_end_day: from.end_day, to_day: to.day, to_end_day: to.end_day, explanation: p.p_explanation as string, status: 'awaiting_engineer', accepted_by: null, accepted_at: null, created_at: NOW, resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''});
+      let from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
+      // Admins may propose for others; an admin party becomes the requester.
+      if (from.primary_id !== user) {expect(admin).toBe(true); if (to.primary_id === user) [from, to] = [to, from];}
+      expect(to.primary_id).not.toBe(from.primary_id);
+      this.raw.swapRequests!.unshift({id: `request-${this.raw.revision}`, month: MONTH, source_publication_id: from.publication_id, requester_id: from.primary_id!, other_id: to.primary_id!, from_day: from.day, from_end_day: from.end_day, to_day: to.day, to_end_day: to.end_day, explanation: p.p_explanation as string, status: 'awaiting_engineer', accepted_by: null, accepted_at: null, created_at: NOW, resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: '', proposed_by: from.primary_id === user ? null : user, requester_accepted_at: null});
     } else if (name === 'duty_delete_publication') {
       expect(admin).toBe(true);
       const publication = this.raw.publications.find(v => v.id === p.p_publication)!;
@@ -214,12 +225,22 @@ export class Backend {
       }
     } else if (name === 'duty_resolve_swap') {
       const r = this.raw.swapRequests!.find(r => r.id === p.p_request)!, action = p.p_action as string;
+      if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
       if (this.invalidated) {r.status = 'invalidated'; this.invalidated = false; this.raw.revision!++; return 'invalidated';}
-      if (['accept', 'decline'].includes(action)) {expect(user).toBe(r.other_id); expect(r.status).toBe('awaiting_engineer');}
-      if (['approve', 'reject'].includes(action)) {expect(admin).toBe(true); expect(r.status).toBe('awaiting_admin');}
-      if (action === 'cancel') expect(user).toBe(r.requester_id);
+      // Mirrors resolve_swap: the caller's own open side, then an admin answers a temporary member's.
+      const temporary = (id: string) => !!this.raw.members.find(m => m.id === id)?.is_temporary;
+      const open = {requester: !!r.proposed_by && !r.requester_accepted_at, other: !r.accepted_by};
+      const side = user === r.other_id && open.other ? 'other' : user === r.requester_id && open.requester ? 'requester'
+        : admin && open.requester && temporary(r.requester_id) ? 'requester' : admin && open.other && temporary(r.other_id) ? 'other' : null;
+      if (['accept', 'decline'].includes(action)) {expect(r.status).toBe('awaiting_engineer'); expect(side).not.toBeNull();}
+      if (action === 'approve') {expect(admin).toBe(true); expect(r.status).toBe('awaiting_admin');}
+      if (action === 'reject') expect(admin).toBe(true);
+      if (action === 'cancel') expect(user).toBe(r.proposed_by ?? r.requester_id);
       r.status = ({accept: 'awaiting_admin', decline: 'declined', approve: 'approved', reject: 'rejected', cancel: 'cancelled'} as Record<string, SwapRequest['status']>)[action];
-      if (action === 'accept') {r.accepted_by = user; r.accepted_at = NOW;}
+      if (action === 'accept') {
+        if (side === 'requester') r.requester_accepted_at = NOW; else {r.accepted_by = r.other_id; r.accepted_at = NOW;}
+        if (!r.accepted_by || (r.proposed_by && !r.requester_accepted_at)) r.status = 'awaiting_engineer';
+      }
       if (action === 'approve') {
         const current = this.raw.months[0].current_publication_id;
         const rows = this.raw.assignments.filter(d => d.publication_id === current).map(d => ({...d}));

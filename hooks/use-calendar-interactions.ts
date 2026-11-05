@@ -41,12 +41,13 @@ export function useCalendarInteractions({
     [dragOver, setDragOver] = useState<string | null>(null);
   const dragSource = useRef<string | null>(null);
   const publishedDuties = publishedSwapDuties(remote.snapshot!, month, today);
-  const ownPublishedDays = new Set(
-    publishedDuties.filter((d) => d.primary_id === meId).map((d) => d.day),
+  // Engineers offer their own duty; admins may also propose a swap between any two members.
+  const swapSourceDays = new Set(
+    publishedDuties.filter((d) => remote.isAdmin || d.primary_id === meId).map((d) => d.day),
   );
   const publishedDuty = (day: string) => publishedDuties.find((d) => d.day === day);
   const requestTarget = (from: string, to: string) =>
-    ownPublishedDays.has(from) && eligibleSwapTarget(publishedDuty(from), publishedDuty(to));
+    swapSourceDays.has(from) && eligibleSwapTarget(publishedDuty(from), publishedDuty(to));
   const draftTarget = (from: string, to: string) => {
     const result = swapDraft(state, month, from, to);
     // Policy exceptions open manager review; structural failures remain invalid.
@@ -70,7 +71,7 @@ export function useCalendarInteractions({
       finishCalendarSwap(keyboardSource, b.id);
       return;
     }
-    if (ownPublishedDays.has(b.id)) setKeyboardSource(keyboardSource === b.id ? null : b.id);
+    if (swapSourceDays.has(b.id)) setKeyboardSource(keyboardSource === b.id ? null : b.id);
   }
   const { bindContainer: dragContainer, ignoreClick: ignoreDragClick } = useHoldDrag({
     enabled:
@@ -81,7 +82,7 @@ export function useCalendarInteractions({
       const b = duties.find((b) => b.id === key);
       if (
         requesting
-          ? !ownPublishedDays.has(key)
+          ? !swapSourceDays.has(key)
           : !b || ownerMonth(b) !== month || !state.assignments[key]?.primary
       ) {
         dragSource.current = null;
@@ -128,7 +129,7 @@ export function useCalendarInteractions({
     setKeyboardSource,
     dragFrom,
     dragOver,
-    ownPublishedDays,
+    swapSourceDays,
     publishedDuty,
     requestTarget,
     dragContainer,

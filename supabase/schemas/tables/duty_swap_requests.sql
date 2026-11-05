@@ -19,18 +19,23 @@ CREATE TABLE public.duty_swap_requests (
     override_reason text DEFAULT ''::text NOT NULL,
     accepted_by uuid,
     accepted_at timestamp with time zone,
+    proposed_by uuid,
+    requester_accepted_at timestamp with time zone,
     CONSTRAINT duty_swap_requests_check CHECK ((requester_id <> other_id)),
     CONSTRAINT duty_swap_requests_check1 CHECK ((from_day <> to_day)),
     CONSTRAINT duty_swap_requests_explanation_check CHECK ((length(explanation) <= 1000)),
     CONSTRAINT duty_swap_requests_override_reason_check CHECK ((length(override_reason) <= 1000)),
     CONSTRAINT duty_swap_requests_status_check CHECK ((status = ANY (ARRAY['awaiting_engineer'::text, 'awaiting_admin'::text, 'approved'::text, 'declined'::text, 'rejected'::text, 'cancelled'::text, 'invalidated'::text]))),
-    CONSTRAINT duty_swaps_consent_check CHECK ((((status <> 'awaiting_admin'::text) OR ((accepted_by IS NOT NULL) AND (accepted_by = other_id) AND (accepted_at IS NOT NULL))) AND ((status <> 'awaiting_engineer'::text) OR ((accepted_by IS NULL) AND (accepted_at IS NULL)))))
+    CONSTRAINT duty_swaps_consent_check CHECK ((((status <> 'awaiting_admin'::text) OR ((accepted_by IS NOT NULL) AND (accepted_by = other_id) AND (accepted_at IS NOT NULL) AND ((proposed_by IS NULL) OR (requester_accepted_at IS NOT NULL)))) AND ((status <> 'awaiting_engineer'::text) OR (((accepted_by IS NULL) = (accepted_at IS NULL)) AND ((accepted_by IS NULL) OR ((accepted_by = other_id) AND (proposed_by IS NOT NULL) AND (requester_accepted_at IS NULL))))))),
+    CONSTRAINT duty_swaps_proposer_check CHECK ((((proposed_by IS NULL) OR (proposed_by <> requester_id)) AND ((requester_accepted_at IS NULL) OR (proposed_by IS NOT NULL))))
 );
 
 ALTER TABLE ONLY public.duty_swap_requests
     ADD CONSTRAINT duty_swap_requests_pkey PRIMARY KEY (id);
 
 CREATE INDEX duty_swaps_acceptor ON public.duty_swap_requests USING btree (accepted_by);
+
+CREATE INDEX duty_swaps_proposer ON public.duty_swap_requests USING btree (proposed_by);
 
 CREATE INDEX duty_swaps_from ON public.duty_swap_requests USING btree (from_duty_id);
 
@@ -60,6 +65,9 @@ ALTER TABLE ONLY public.duty_swap_requests
 
 ALTER TABLE ONLY public.duty_swap_requests
     ADD CONSTRAINT duty_swap_requests_month_fkey FOREIGN KEY (month) REFERENCES public.duty_months(month);
+
+ALTER TABLE ONLY public.duty_swap_requests
+    ADD CONSTRAINT duty_swap_requests_proposed_by_fkey FOREIGN KEY (proposed_by) REFERENCES public.duty_members(id);
 
 ALTER TABLE ONLY public.duty_swap_requests
     ADD CONSTRAINT duty_swap_requests_other_id_fkey FOREIGN KEY (other_id) REFERENCES public.duty_members(id);

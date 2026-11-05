@@ -9,14 +9,22 @@ begin
   and status in ('awaiting_engineer','awaiting_admin') order by id for update loop
   select * into a from public.duty_assignments where publication_id=publication and day=r.from_day and end_day=r.from_end_day;
   select * into b from public.duty_assignments where publication_id=publication and day=r.to_day and end_day=r.to_end_day;
+  -- Consent covers the points each side gives and takes: a republished duty
+  -- worth different points is a different swap (the requested copy is immutable).
   if a.id is null or b.id is null or a.primary_id is distinct from r.requester_id
    or b.primary_id is null or b.primary_id=r.requester_id
-   or a.day<(now() at time zone 'Asia/Jerusalem')::date or b.day<(now() at time zone 'Asia/Jerusalem')::date then
+   or a.day<(now() at time zone 'Asia/Jerusalem')::date or b.day<(now() at time zone 'Asia/Jerusalem')::date
+   or a.points<>coalesce((select points from public.duty_assignments where id=r.from_duty_id),a.points)
+   or b.points<>coalesce((select points from public.duty_assignments where id=r.to_duty_id),b.points)
+   -- Nobody waits on a member who can no longer sign in or take duties.
+   or not exists(select 1 from public.duty_members where id=a.primary_id and active and status='approved')
+   or not exists(select 1 from public.duty_members where id=b.primary_id and active and status='approved') then
    update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,
     resolved_at=now(),resolved_by=null where id=r.id;
   elsif b.primary_id is distinct from r.other_id then
+   -- A new counterpart is a new deal: both members answer again.
    update public.duty_swap_requests set other_id=b.primary_id,status='awaiting_engineer',
-    accepted_by=null,accepted_at=null where id=r.id;
+    accepted_by=null,accepted_at=null,requester_accepted_at=null where id=r.id;
   end if;
  end loop;
 end $$;

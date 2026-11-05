@@ -30,12 +30,13 @@ export type Functions = {
   duty_cancel_draft: Operation<Revision & {p_month: string}>;
   duty_delete_publication: Operation<Revision & {p_publication: string}>;
   duty_request_swap: Operation<Revision & {p_from: string; p_to: string; p_explanation: string}>;
+  duty_swap_availability: Operation<{p_from: string; p_to: string}, unknown>;
   duty_resolve_swap: Operation<Revision & {p_request: string; p_action: 'accept' | 'decline' | 'approve' | 'reject' | 'cancel'; p_override_reason: string}, string>;
   duty_review_member: Operation<Revision & {p_member: string; p_status: 'approved' | 'rejected'}>;
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;
-export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
+export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_swap_availability' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
 export type MutationArgs<N extends MutationName> = Omit<Functions[N]['Args'], 'p_revision'>;
 
 export function errorMessage(error: unknown, fallback: string): string {
