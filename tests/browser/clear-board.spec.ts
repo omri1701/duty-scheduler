@@ -151,3 +151,26 @@ test('Clear board and Special block join the filters’ row on phones, as icons 
     }
   }
 });
+
+for (const scheme of ['light', 'dark'] as const)
+test(`Clear board confirm rests full red, hover only deepens it, disabled stays distinct, ${scheme} system theme`, async ({page, openApp}, info) => {
+  test.skip(info.project.name !== 'desktop', 'Pointer hover');
+  await page.emulateMedia({colorScheme: scheme});
+  await openApp();
+  await clearButton(page).click();
+  const confirm = page.getByRole('dialog').getByRole('button', {name: 'Clear board', exact: true});
+  const look = () => confirm.evaluate(x => [getComputedStyle(x).backgroundColor, getComputedStyle(x).opacity]);
+  // --destructive (#b83e34) at rest: never the faded dark-theme shade that reads as disabled.
+  await expect.poll(look).toEqual(['rgb(184, 62, 52)', '1']);
+  await confirm.hover();
+  await expect.poll(look).toEqual(['rgb(159, 52, 44)', '1']);
+  // While saving it is disabled: the shared half opacity, without the hover shade.
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => {release = resolve;});
+  await page.route('**/rest/v1/rpc/duty_save_schedule', async route => {await pending; await route.fallback();});
+  await confirm.click();
+  await expect(confirm).toBeDisabled();
+  await expect.poll(look).toEqual(['rgb(184, 62, 52)', '0.5']);
+  release();
+  await expect(page.getByRole('dialog')).toBeHidden();
+});

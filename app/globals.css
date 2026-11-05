@@ -356,8 +356,10 @@
 .calendar-draft-tools{display:flex;flex-wrap:nowrap;align-items:center;gap:inherit;margin-inline-start:auto;min-width:0;max-width:100%}
 .calendar-draft-tools[data-compact]>button{width:44px;min-width:44px;padding-inline:0}
 .calendar-draft-tools[data-compact] .draft-tool-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-/* Touch screens cannot hover: show danger at full strength, also under a dark system theme. */
-@media (hover:none),(pointer:coarse){.danger-action{background-color:var(--destructive);color:#fff}}
+/* Danger rests at full strength on every device and system theme, never pale like a disabled
+   control; desktop hover only deepens it slightly. Disabled keeps the shared half opacity. */
+.danger-action{background-color:var(--destructive);color:#fff}
+@media (hover:hover){.danger-action:hover:not(:disabled){background-color:#9f342c}}
 .calendar-grid .adjacent-duty{opacity:.6;cursor:default}
 .calendar-grid .day-cell{gap:5px}
 @container month-toolbar (min-width:960px){

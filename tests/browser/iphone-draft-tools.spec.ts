@@ -45,7 +45,7 @@ test(`calendar tools stay on one row on iPhones, ${lang}, ${reopened ? 'reopened
 });
 
 for (const scheme of ['light', 'dark'] as const)
-test(`Clear board confirm is full-strength red on touch, before and after a tap, ${scheme} system theme`, async ({page, openApp}) => {
+test(`Clear board confirm rests full red on touch, with no sticky hover after a tap, ${scheme} system theme`, async ({page, openApp}) => {
   await page.emulateMedia({colorScheme: scheme});
   await openApp();
   expect(await page.evaluate(() => matchMedia('(hover: none), (pointer: coarse)').matches)).toBe(true);
