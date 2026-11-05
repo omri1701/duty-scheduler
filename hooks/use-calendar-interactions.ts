@@ -60,8 +60,9 @@ export function useCalendarInteractions({
   const source = requesting ? keyboardSource ?? dragFrom : null;
   const conflicts = useTargetConflicts(remote, source ? publishedDuty(source)?.id : undefined,
     source ? publishedDuties.filter((d) => eligible(source, d.day)).map((d) => d.id) : []);
-  /** Why `to` can't be picked from `from`; null when it can, undefined when it isn't a candidate. */
-  function swapBlock(from: string, to: string): SwapBlock | null | undefined {
+  /** Why `to` can't be picked from `from`: null when it can, 'pending' until its availability
+   * is known (neither green nor selectable), undefined when it isn't a candidate. */
+  function swapBlock(from: string, to: string): SwapBlock | 'pending' | null | undefined {
     const a = publishedDuty(from), b = publishedDuty(to);
     if (!requesting || !swapSourceDays.has(from)) return undefined;
     // A past day of this publication: its duty can no longer be swapped.
@@ -70,9 +71,8 @@ export function useCalendarInteractions({
       return row && to < today && to !== from ? { kind: 'past' } : undefined;
     }
     if (!eligible(from, to)) return undefined;
-    // Unchecked yet (or the check failed): the dialog checks again and the server rechecks.
-    const found = conflicts.get(b.id);
-    return swapTargetBlock(remote.snapshot!, month, a!, b, found ?? []);
+    const found = from === source ? conflicts(b.id) : undefined;
+    return found ? swapTargetBlock(remote.snapshot!, month, a!, b, found) : 'pending';
   }
   const requestTarget = (from: string, to: string) => eligible(from, to) && swapBlock(from, to) === null;
   const draftTarget = (from: string, to: string) => {
@@ -89,11 +89,13 @@ export function useCalendarInteractions({
   /** The reason a target is greyed, for its tooltip and accessible name. */
   const swapHint = (from: string, to: string) => {
     const block = swapBlock(from, to);
-    return block ? blockText(block, from) : null;
+    return block && block !== 'pending' ? blockText(block, from) : null;
   };
   /** Announces why a target is greyed; true when it was. */
   function explainBlock(from: string, to: string) {
     const block = swapBlock(from, to);
+    // Still checking: nothing happens yet, so nothing is picked before it is known.
+    if (block === 'pending') return true;
     if (!block) return false;
     toast.info(blockText(block, from), { id: 'swap-block' });
     return true;
@@ -200,26 +202,30 @@ export function useCalendarInteractions({
     cancelKeyboard,
   };
 }
-// Conflicts per target duty id for one source; empty while unread. The revision changes with
-// every constraint or schedule edit, so it is the refresh trigger.
+// Conflicts per target duty id for one source; undefined while a target is unknown. All
+// targets of one read resolve together, and a refetch (the revision changes with every
+// constraint or schedule edit) keeps showing the previous answer until the new one arrives,
+// so a greyed day is greyed once and never flashes green.
 function useTargetConflicts(remote: TeamWorkspace, from: string | undefined, targets: string[]) {
-  const key = from ? `${from}|${remote.snapshot?.revision}|${targets.join(',')}` : '';
-  const [result, setResult] = useState<{ key: string; conflicts: Map<string, SwapConflict[]> } | null>(null);
+  const revision = remote.snapshot?.revision;
+  const key = from ? `${from}|${revision}|${targets.join(',')}` : '';
+  const cache = useRef(new Map<string, { revision: number | null | undefined; conflicts: SwapConflict[] }>());
+  const [, setVersion] = useState(0);
   const check = remote.swapAvailability;
   useEffect(() => {
-    if (!from || !targets.length) return;
+    if (!from) return;
+    const missing = targets.filter((to) => cache.current.get(`${from}|${to}`)?.revision !== revision);
+    if (!missing.length) return;
     let alive = true;
-    const conflicts = new Map<string, SwapConflict[]>();
-    // One read per target; a failed read leaves that target to the dialog's own check.
-    for (const to of targets)
-      check(from, to).then((found) => {
-        if (!alive) return;
-        conflicts.set(to, found);
-        setResult({ key, conflicts: new Map(conflicts) });
-      }, () => {});
+    // A failed read counts as no conflict: the dialog checks again and the server rechecks.
+    Promise.all(missing.map((to) => check(from, to).catch(() => [] as SwapConflict[]))).then((found) => {
+      if (!alive) return;
+      missing.forEach((to, i) => cache.current.set(`${from}|${to}`, { revision, conflicts: found[i] }));
+      setVersion((v) => v + 1);
+    });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- check is recreated each render; key is the trigger.
   }, [key]);
-  return key && result?.key === key ? result.conflicts : new Map<string, SwapConflict[]>();
+  return (to: string) => (from ? cache.current.get(`${from}|${to}`)?.conflicts : undefined);
 }
 export type CalendarInteractions = ReturnType<typeof useCalendarInteractions>;

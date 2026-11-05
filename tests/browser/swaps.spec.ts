@@ -1,5 +1,5 @@
 // Scenarios promoted from the former optional tests/browser/swaps.mjs script.
-import {test, expect, ids, duty, drag, keyboardRequest, confirmRequest, touchEvent} from './fixtures';
+import {test, expect, ids, duty, drag, keyboardRequest, confirmRequest, touchEvent, targetReady} from './fixtures';
 
 test('published drag and keyboard request cancellation do not edit duties', async ({page, openApp, backend}, info) => {
   await openApp('a');
@@ -67,7 +67,7 @@ test('consent gates admin review; rejection, approval and invalidation update ea
     expect(backend.raw.assignments.filter(d => d.publication_id === null)).toEqual(draft);
     expect(backend.raw.publications.map(p => p.version)).toEqual([1, 2]);
     // A response signalling stale ownership must produce the existing UI error.
-    await duty(page, '2026-11-03').click(); await duty(page, '2026-11-02').click(); await confirmRequest(page);
+    await duty(page, '2026-11-03').click(); await targetReady(page, '2026-11-02'); await duty(page, '2026-11-02').click(); await confirmRequest(page);
     backend.invalidated = true;
     await b.reload(); await b.getByRole('button', {name: 'Accept', exact: true}).click();
     await expect(b.getByText('This swap request no longer applies: its duties changed. Ask for a new swap.', {exact: true})).toBeVisible();

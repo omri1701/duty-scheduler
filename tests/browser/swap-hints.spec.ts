@@ -1,7 +1,7 @@
 // Swap-target hints (decision 2026-11-05): while a swap is chosen, a day the server would refuse
 // is greyed with a short reason (who and which day, never the note); the usable days stay green.
 import type {Page} from '@playwright/test';
-import {test, expect, ids, duty, touchEvent} from './fixtures';
+import {test, expect, ids, duty, dragTo, targetReady, NOW} from './fixtures';
 
 type Lang = 'en' | 'he';
 const say = (lang: Lang) => (en: string, he: string) => lang === 'en' ? en : he;
@@ -31,13 +31,7 @@ async function expectTapHint(page: Page, day: string, reason: string) {
 }
 async function hold(page: Page, from: string, to: string, touch: boolean) {
   const a = (await duty(page, from).boundingBox())!, b = (await duty(page, to).boundingBox())!;
-  const [x, y, tx, ty] = [a.x + a.width / 2, a.y + a.height / 2, b.x + b.width / 2, b.y + b.height / 2];
-  if (touch) {
-    await touchEvent(page, 'touchstart', x, y); await page.waitForTimeout(400);
-    await touchEvent(page, 'touchmove', tx, ty); await touchEvent(page, 'touchend', tx, ty);
-  } else {
-    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(tx, ty, {steps: 8}); await page.mouse.up();
-  }
+  await dragTo(page, a.x + a.width / 2, a.y + a.height / 2, b.x + b.width / 2, b.y + b.height / 2, touch, to);
 }
 
 for (const lang of ['en', 'he'] as const) {
@@ -48,6 +42,7 @@ for (const lang of ['en', 'he'] as const) {
       {member_id: ids.b, day: '2026-11-02', kind: 'no', note: 'Blair private note'});
     await openApp('a'); await language(page, lang);
     await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+    await targetReady(page, '2026-11-05');
     await expectBlocked(page, '2026-11-05', t('You can’t take 5 Nov', 'אין לך אפשרות לקחת את 5 בנוב׳'));
     await expectBlocked(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את התורנות שלך'));
     await expectGreen(page, '2026-11-12');
@@ -107,3 +102,47 @@ for (const lang of ['en', 'he'] as const) {
     expect(backend.calls.filter(c => c.name === 'duty_swap_availability' && c.params.p_to === backend.raw.assignments.find(d => d.day === '2026-11-03' && d.publication_id)!.id)).toHaveLength(0);
   });
 }
+
+test('a greyed day is grey once: nothing is green or selectable while checking, and a refetch keeps it grey', async ({page, openApp, backend}) => {
+  backend.raw.constraints.push({member_id: ids.a, day: '2026-11-05', kind: 'no', note: ''});
+  let release!: () => void;
+  backend.availabilityGate = new Promise(r => {release = r;});
+  // Controlled timers drive the 30-second team refresh that rechecks the targets.
+  await page.clock.install({time: new Date(NOW)});
+  await openApp('a');
+  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  await expect(duty(page, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
+  // Still checking: neither green nor grey, and a tap neither opens a request nor explains.
+  for (const day of ['2026-11-05', '2026-11-12']) {
+    await expect(duty(page, day)).toHaveAttribute('data-swap-state', 'pending');
+    await expect(duty(page, day)).not.toHaveClass(/drag-target|swap-blocked/);
+  }
+  await duty(page, '2026-11-05').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(duty(page, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
+  // Record every class the greyed day takes from here on.
+  await duty(page, '2026-11-05').evaluate(cell => {
+    const seen: string[] = [];
+    (window as unknown as {seen: string[]}).seen = seen;
+    new MutationObserver(() => seen.push(cell.className)).observe(cell, {attributes: true, attributeFilter: ['class']});
+  });
+  release();
+  await expect(duty(page, '2026-11-05')).toHaveClass(/swap-blocked/);
+  await expect(duty(page, '2026-11-12')).toHaveClass(/drag-target/);
+  // A refresh with a new revision rechecks every target without flashing the old answer away.
+  const before = backend.calls.filter(c => c.name === 'duty_swap_availability').length;
+  backend.availabilityGate = new Promise(r => {release = r;});
+  backend.raw.revision!++;
+  const loads = backend.calls.filter(c => c.name === 'duty_load').length;
+  await page.clock.runFor(30_000);
+  await expect.poll(() => backend.calls.filter(c => c.name === 'duty_load').length, 'team refresh').toBeGreaterThan(loads);
+  // The recheck is held: the old answer stays on screen meanwhile.
+  await expect(duty(page, '2026-11-05')).toHaveClass(/swap-blocked/);
+  await expect(duty(page, '2026-11-05')).toHaveAttribute('data-swap-state', 'blocked');
+  release();
+  await expect.poll(() => backend.calls.filter(c => c.name === 'duty_swap_availability').length).toBeGreaterThan(before);
+  await expect(duty(page, '2026-11-05')).toHaveClass(/swap-blocked/);
+  const seen = await page.evaluate(() => (window as unknown as {seen: string[]}).seen);
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen.filter(c => !/swap-blocked/.test(c) || /drag-target/.test(c)), 'blocked day flashed').toEqual([]);
+});

@@ -79,6 +79,7 @@ export function WorkspaceCalendar({
     publishedDuty,
     requestTarget,
     swapHint,
+    swapBlock,
     dragContainer,
     ignoreDragClick,
     selectCalendarDuty,
@@ -178,12 +179,15 @@ export function WorkspaceCalendar({
             cell = b ? streaks[b.id] : undefined;
           // While a swap is chosen, a day the server would refuse is greyed with its reason.
           const swapFrom = requesting ? keyboardSource ?? dragFrom : null,
-            blocked = swapFrom && b && interactive && b.id !== swapFrom ? swapHint(swapFrom, b.id) : null;
+            blocked = swapFrom && b && interactive && b.id !== swapFrom ? swapHint(swapFrom, b.id) : null,
+            // Pending until its availability is known: neither green nor grey, and not selectable.
+            swapState = swapFrom && b && interactive && b.id !== swapFrom ? swapBlock(swapFrom, b.id) : undefined;
           return (
             <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
               disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id) && !blocked)}
               aria-disabled={blocked ? true : undefined}
               title={blocked ?? undefined}
+              data-swap-state={swapState === undefined ? undefined : swapState === 'pending' ? 'pending' : swapState ? 'blocked' : 'ok'}
               key={d}
               data-gesture-key={interactive ? b?.id : undefined}
               onClick={() => {

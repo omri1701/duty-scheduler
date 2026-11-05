@@ -1,10 +1,10 @@
 // Admin-proposed swaps: both members accept, then an explicit admin approval.
 import type {Browser, Page} from '@playwright/test';
-import {test, expect, ids, duty, NOW} from './fixtures';
+import {test, expect, ids, duty, NOW, targetReady} from './fixtures';
 
 async function pick(page: Page, from: string, to: string) {
   await duty(page, from).focus(); await page.keyboard.press('Enter');
-  await duty(page, to).focus(); await page.keyboard.press('Space');
+  await targetReady(page, to); await duty(page, to).focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 async function language(page: Page, lang: 'en' | 'he') {
@@ -120,6 +120,7 @@ for (const lang of ['en', 'he'] as const) test(`availability alert names whose c
   await openApp('a'); await language(page, lang);
   // Alex would receive 4 November, which Alex marked unavailable: greyed before the pick, no note.
   await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
+  await targetReady(page, '2026-11-04');
   await expect(duty(page, '2026-11-04')).toHaveAttribute('title', t('You can’t take 4 Nov', 'אין לך אפשרות לקחת את 4 בנוב׳'));
   await duty(page, '2026-11-04').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toHaveCount(0);

@@ -47,6 +47,8 @@ export class Backend {
   authGate?: Promise<void>;
   configGate?: Promise<void>;
   loadGate?: Promise<void>;
+  /** Holds duty_swap_availability responses, to observe the still-checking state. */
+  availabilityGate?: Promise<void>;
   authFailure = false;
   invalidated = false;
   failNextSave = false;
@@ -348,6 +350,7 @@ export const test = base.extend<Fixtures>({
           if (url.pathname === '/auth/v1/logout') return route.fulfill({status: 204});
           if (url.pathname.startsWith('/rest/v1/rpc/')) {
             if (url.pathname.endsWith('/duty_load')) await backend.loadGate;
+            if (url.pathname.endsWith('/duty_swap_availability')) await backend.availabilityGate;
             try {return await route.fulfill({json: backend.rpc(url.pathname.split('/').at(-1)!, route.request().postDataJSON() ?? {}, user.id)});}
             catch (error) {
               const message = (error as Error).message;
@@ -374,8 +377,13 @@ export const test = base.extend<Fixtures>({
 });
 export {expect};
 export const duty = (page: Page, day: string) => page.locator(`button[data-date="${day}"]`).filter({has: page.locator('.date-line')});
+/** A published swap target is neither green nor greyed until its availability is known. */
+export async function targetReady(page: Page, day: string) {
+  await expect(duty(page, day)).toHaveAttribute('data-swap-state', /^(ok|blocked)$/);
+}
 export async function keyboardRequest(page: Page) {
   await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  await targetReady(page, '2026-11-03');
   await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toBeVisible();
 }
@@ -388,13 +396,21 @@ export async function drag(page: Page, touch = false, fromDay = '2026-11-02', to
   await from.scrollIntoViewIfNeeded();
   const a = (await from.boundingBox())!, b = (await to.boundingBox())!;
   const x = a.x + a.width / 2, y = a.y + a.height / 2, tx = b.x + b.width / 2, ty = b.y + b.height / 2;
+  await dragTo(page, x, y, tx, ty, touch, toDay);
+  await expect(page.getByRole('dialog')).toBeVisible();
+}
+/** Holds, waits until the target's availability is known (published swaps), then drops. */
+export async function dragTo(page: Page, x: number, y: number, tx: number, ty: number, touch: boolean, toDay: string) {
+  const published = async () => (await duty(page, toDay).getAttribute('aria-describedby')) === 'published-swap-help';
   if (touch) {
     await touchEvent(page, 'touchstart', x, y); await page.waitForTimeout(400);
+    if (await published()) await targetReady(page, toDay);
     await touchEvent(page, 'touchmove', tx, ty); await touchEvent(page, 'touchend', tx, ty);
   } else {
-    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(tx, ty, {steps: 8}); await page.mouse.up();
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 8, y, {steps: 2});
+    if (await published()) await targetReady(page, toDay);
+    await page.mouse.move(tx, ty, {steps: 8}); await page.mouse.up();
   }
-  await expect(page.getByRole('dialog')).toBeVisible();
 }
 export async function touchEvent(page: Page, type: string, x: number, y: number) {
   await page.evaluate(({type, x, y}) => {
