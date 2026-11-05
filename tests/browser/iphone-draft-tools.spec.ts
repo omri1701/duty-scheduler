@@ -43,21 +43,25 @@ test(`calendar tools stay on one row on iPhones, ${lang}, ${reopened ? 'reopened
   const names = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
   for (const width of WIDTHS) {
     await resize(page, width);
-    // Zoomed past the smallest iPhone, Draft · Published · My duties fill the row: the icons wrap as a pair.
-    if (reopened && width < 375) await expect(tools).toHaveAttribute('data-compact', '');
-    else await expect.poll(() => rows(page), {message: `${width}px`}).toBe(1);
-    const compact = await tools.getAttribute('data-compact') !== null;
-    for (const [i, name] of names.entries()) {
-      const button = buttons.nth(i), box = (await button.boundingBox())!;
-      await expect(button).toHaveAccessibleName(name);
-      expect(box.height).toBeGreaterThanOrEqual(44);
-      if (compact) {
-        expect(box.width).toBeGreaterThanOrEqual(44);
-        await expect(button).toHaveAttribute('title', name);
-      } else await expect(button).toContainText(name);
-    }
-    const [a, b] = [(await buttons.nth(0).boundingBox())!, (await buttons.nth(1).boundingBox())!];
-    expect(Math.abs(a.y - b.y), `${width}px pair`).toBeLessThan(1);
+    // The re-measure lands after the resize: retry the whole reading until it is consistent.
+    await expect(async () => {
+      // Zoomed past the smallest iPhone, Draft · Published · My duties fill the row: the icons wrap as a pair.
+      if (reopened && width < 375) expect(await tools.getAttribute('data-compact')).toBe('');
+      else expect(await rows(page), `${width}px`).toBe(1);
+      const compact = await tools.getAttribute('data-compact') !== null;
+      const boxes = [];
+      for (const [i, name] of names.entries()) {
+        const button = buttons.nth(i), box = (await button.boundingBox())!;
+        boxes.push(box);
+        expect(await button.getAttribute('aria-label')).toBe(name);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        if (compact) {
+          expect(box.width).toBeGreaterThanOrEqual(44);
+          expect(await button.getAttribute('title')).toBe(name);
+        } else expect(await button.textContent()).toContain(name);
+      }
+      expect(Math.abs(boxes[0].y - boxes[1].y), `${width}px pair`).toBeLessThan(1);
+    }).toPass({timeout: 8_000});
   }
   await resize(page, 390);
   await expect.poll(() => rows(page)).toBe(1);
