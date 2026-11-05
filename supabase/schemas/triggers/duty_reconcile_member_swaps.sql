@@ -1,0 +1,1 @@
+CREATE TRIGGER duty_reconcile_member_swaps AFTER UPDATE OF active, status ON public.duty_members FOR EACH ROW WHEN ((old.active AND (old.status = 'approved'::text) AND NOT (new.active AND (new.status = 'approved'::text)))) EXECUTE FUNCTION duty_private.reconcile_member_swaps();
