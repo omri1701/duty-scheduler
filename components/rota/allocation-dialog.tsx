@@ -90,6 +90,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {f.replanBlocked && <p className="allocation-attention" role="note">{allocationMessage(f.replanBlocked, t)}</p>}
       {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {f.weekendTakers !== null && f.weekendTakers <= 1 && <p className="allocation-attention" role="note">{f.weekendTakers ? t('Only one member here takes weekends, so Generate may leave some weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'רק חבר אחד כאן עושה סופי שבוע, ולכן השיבוץ עלול להשאיר סופי שבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.') : t('No one here takes weekends, so Generate will leave the weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'אף אחד כאן לא עושה סופי שבוע, ולכן השיבוץ ישאיר את סופי השבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.')}</p>}
+      {f.weekendShort && <p className="allocation-attention" role="note">{weekendShortNote(f.weekendShort, list, t)}</p>}
       {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       <p className="plan-sr" id="plan-no-counterpart">{t('No one else can take on less. Drag a point instead.', 'אין מי שיכול לקבל פחות. אפשר לגרור נקודה במקום.')}</p>
       <p className="plan-sr" id="plan-no-receiver">{t('No one else can take this point. Drag a point instead.', 'אין מי שיכול לקבל את הנקודה. אפשר לגרור נקודה במקום.')}</p>
@@ -178,4 +179,15 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
         <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
       </>}</div></div>
   </EditorDialog>;
+}
+
+/** Why some non-weekend members have no +1 this month: only the weekend members fund it. */
+function weekendShortNote({leftOut, takers}: {leftOut: number; takers: string[]}, list: (ids: string[]) => string, t: Translate) {
+  const who = leftOut === 1 ? t('1 member', 'לחבר אחד') : t(`${leftOut} members`, `ל־${leftOut} חברים`);
+  if (!takers.length) return t(`With no weekend members, the No weekends +1 is left out for ${who} this month.`,
+    `בלי חברים שעושים סופי שבוע, התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`);
+  const named = takers.length <= 3 ? list(takers) : t(`${takers.length} members`, `${takers.length} חברים`);
+  return takers.length === 1
+    ? t(`Only ${named} takes weekends, so the No weekends +1 is left out for ${who} this month.`, `רק ${named} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`)
+    : t(`Only ${named} take weekends, so the No weekends +1 is left out for ${who} this month.`, `רק ${named} עושים סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`);
 }

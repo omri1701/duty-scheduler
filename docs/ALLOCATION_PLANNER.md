@@ -122,6 +122,31 @@ one of them has repaid one (2 below).
    weekend locked to them is kept. The checked confirmation needs nothing new: the
    change is an ordinary per-person Permanent change.
 
+   *Few weekend members (decision 2026-11-05).* With 10 of 12 members non-weekend the
+   +1s used to drain the two weekend members (and the non-weekend members tried last)
+   to zero while they still had to cover every weekend. Now, whenever someone is
+   non-weekend (`lib/allocation/derive.ts`, `balanceChanges`):
+   - a weekend member gives a point (either kind) only while the weekend members
+     keep, above their locks, the month's free weekend points in total and one free
+     weekend each as far as they go, heaviest first (Generate's one-weekend spread);
+   - a non-weekend member gives a Permanent point only when no weekend member can,
+     and the default +1 is left out whenever its counterpart would come from one
+     (a manager's own edit may still take it from them);
+   - the exact-points check (`splitsExactly`, `partitionableWeekends`) gives weekends
+     to weekend members only; where the month can't do that it keeps the plain
+     weights check as before, so no step makes the plan less schedulable;
+   - the defaults are tried in seniority order starting one member further each
+     month (`nonWeekendOrder`), so when only some fit each member is left out
+     equally often; `nonWeekendLeftOut` lists who is left out for Plan the month's
+     note (EN/HE);
+   - a re-plan whose kept +1s would need a non-weekend member's point drops just
+     those defaults (the loop adds back what fits) and keeps other hand changes.
+   Without a non-weekend member every rule above is inactive and plans are
+   unchanged. Alternatives considered: +0.5 (not a duty step in whole-point
+   months), unpaid +1 as Temporary debt (never repayable while takers stay few),
+   a fixed cap from the weekend count (not tied to what the takers can give) and
+   seniority order (always leaves out the same newest members).
+
 Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
 

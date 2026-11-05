@@ -42,6 +42,41 @@ export function partitionable(free: readonly number[], locked: readonly (readonl
   return fits(0, values.map(v => free.filter(w => w === v).length));
 }
 
+/** `partitionable`, with weekends only for weekend members (non-weekend members,
+ * `restricted`, take weekday weights only). Without a restricted member or a free
+ * weekend this is exactly `partitionable`. */
+export function partitionableWeekends(weekdays: readonly number[], weekends: readonly number[], locked: readonly (readonly number[])[],
+  targets: readonly number[], restricted: readonly boolean[], limit = 20_000) {
+  if (!weekends.length || !restricted.some(Boolean)) return partitionable([...weekdays, ...weekends], locked, targets, limit);
+  const rest = targets.map((t, e) => t - locked[e].reduce((a, b) => a + b, 0));
+  const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
+  if (rest.some(r => r < 0) || sum(rest) !== sum(weekdays) + sum(weekends)) return false;
+  // Weekend members take what is left; with none, a free weekend can't be placed.
+  const order = rest.map((_, e) => e).sort((a, b) => Number(restricted[b]) - Number(restricted[a]));
+  if (restricted[order.at(-1)!]) return false;
+  const types = [...new Set(weekdays)].map(v => ({v, weekend: false})).concat([...new Set(weekends)].map(v => ({v, weekend: true})))
+    .sort((a, b) => b.v - a.v);
+  const memo = new Map<string, boolean>();
+  let steps = 0;
+  const fits = (k: number, counts: number[]): boolean => {
+    if (k === order.length - 1) return true;
+    const e = order[k], key = k + ':' + counts.join();
+    if (memo.has(key)) return memo.get(key)!;
+    const take = (t: number, left: number): boolean => {
+      if (++steps > limit) return true;
+      if (t === types.length) return left === 0 && fits(k + 1, counts);
+      const most = restricted[e] && types[t].weekend ? 0 : Math.min(counts[t], Math.floor(left / types[t].v));
+      for (let n = most; n >= 0; n--) {
+        counts[t] -= n; const ok = take(t + 1, left - n * types[t].v); counts[t] += n;
+        if (ok) return true;
+      }
+      return false;
+    };
+    const ok = take(0, rest[e]); memo.set(key, ok); return ok;
+  };
+  return fits(0, types.map(({v, weekend}) => (weekend ? weekends : weekdays).filter(w => w === v).length));
+}
+
 /** The ordinary baseline is an exact, minimum-squared-cost partition of the
  * indivisible canonical duty weights (duty_private.allocation_baseline). Return
  * that partition's shares, ascending. The equal split is used whenever it is a

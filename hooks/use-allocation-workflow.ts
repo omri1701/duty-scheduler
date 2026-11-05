@@ -5,7 +5,7 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, nonWeekendLeftOut, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings, context} from '@/lib/allocation/model';
 import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
@@ -125,6 +125,16 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     const members = (captured?.input.schedule.members ?? []).filter(m => m.active && m.approved && m.eligible);
     return members.some(m => m.noWeekends) ? members.filter(m => !m.noWeekends).length : null;
   }, [captured]);
+  // Non-weekend members left without the default +1 because only the weekend members
+  // fund it and they can't give up more points (decision 2026-11-05); the plan says why.
+  const weekendShort = useMemo(() => {
+    if (!open || !captured || !draft?.changes || weekendTakers === null) return null;
+    const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
+    try {
+      const leftOut = nonWeekendLeftOut(i, draft).length;
+      return leftOut ? {leftOut, takers: i.seniority.filter(id => !i.schedule.members.some(m => m.id === id && m.noWeekends))} : null;
+    } catch {return null;}
+  }, [open, captured, locks, approvals, draft, weekendTakers]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
   // allowed, Generate is then partial; the plan says so before Generate.
   const divisible = useMemo(() => {
@@ -349,7 +359,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
-    locks, approvals, totals, uneven, noWeekends, weekendTakers, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, noWeekends, weekendTakers, weekendShort, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

@@ -1,7 +1,7 @@
 import {sliceClaim} from '../compensation/index.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
-import {equalShares, fitPartition, partitionable} from './fit.ts';
+import {equalShares, fitPartition, partitionableWeekends} from './fit.ts';
 import {availability, ceilings, context, grain, type Context} from './model.ts';
 import {validateDraft} from './edits.ts';
 import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
@@ -46,7 +46,10 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   const newest = [...input.seniority].reverse();
   // A step never leaves the month unable to give everyone exactly its points (decision
   // 2026-11-01): half a point moves which members need an odd duty, and only so many exist.
+  // With non-weekend members (decision 2026-11-05) that means weekends on weekend members
+  // only; where the month can't do that, weights alone, as before. Without one, the two agree.
   const exact = (units: Record<string, number>) => splitsExactly(c, input, units);
+  const level = (units: Record<string, number>) => exact(units) ? 2 : c.nonWeekend.size && splitsExactly(c, input, units, false) ? 1 : 0;
   // Larger shares newest first, members repaying this month last. When a lock makes that
   // impossible to schedule (a locked 2.5-point duty needs an odd share), two members swap
   // shares, nearest in that order first; the shares themselves never change.
@@ -55,12 +58,15 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     const descending = [...shares].sort((a, b) => b - a);
     const share = new Map(order.map((id, k) => [id, descending[k]]));
     const arranged = Object.fromEntries(c.ids.map(id => [id, share.get(id)!]));
-    if (!input.schedule.locks?.length || exact(arranged)) return arranged;
-    for (let k = 1; k < order.length; k++) for (let a = 0; a + k < order.length; a++) {
-      const [x, y] = [order[a], order[a + k]];
-      if (arranged[x] === arranged[y]) continue;
-      const swapped = {...arranged, [x]: arranged[y], [y]: arranged[x]};
-      if (exact(swapped)) return swapped;
+    if ((!input.schedule.locks?.length && !c.nonWeekend.size) || exact(arranged)) return arranged;
+    for (const wanted of [2, 1]) {
+      if (level(arranged) >= wanted) return arranged;
+      for (let k = 1; k < order.length; k++) for (let a = 0; a + k < order.length; a++) {
+        const [x, y] = [order[a], order[a + k]];
+        if (arranged[x] === arranged[y]) continue;
+        const swapped = {...arranged, [x]: arranged[y], [y]: arranged[x]};
+        if (level(swapped) >= wanted) return swapped;
+      }
     }
     return arranged;
   };
@@ -90,8 +96,9 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
           .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
         if (!next || relief < g) break;
         let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
-        if (amount > 0 && exact(offered)) {
-          while (amount > 0 && !exact({...offered, [next]: offered[next] + amount, [creditorId]: offered[creditorId] - amount})) amount -= g;
+        const before = amount > 0 ? level(offered) : 0;
+        if (before) {
+          while (amount > 0 && level({...offered, [next]: offered[next] + amount, [creditorId]: offered[creditorId] - amount}) < before) amount -= g;
         }
         if (amount <= 0) {stuck.add(next); continue;}
         offered[next] += amount; offered[creditorId] -= amount; turns.set(next, turns.get(next)! + amount); repaying.add(next);
@@ -129,37 +136,71 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   if (retained) {
     const keptHand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
     const keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
-    if (fits(keptHand) && Object.keys(keptHand).length) {
+    // A kept default +1 is never funded by a non-weekend member: when the retained changes
+    // would be, the defaults are dropped (the loop below adds back what fits) and the other
+    // hand changes kept; if those still need one, they stand as the manager left them.
+    const isDefault = (id: string) => c.nonWeekend.has(id) && !keptHand[id].temporary && keptHand[id].permanent === NON_WEEKEND_UNITS;
+    const stripped = Object.fromEntries(Object.entries(keptHand).filter(([id]) => !isDefault(id)));
+    const funded = (h: Hand, d: AllocationDraft) => c.ids.some(o => c.nonWeekend.has(o) && !h[o] && d.changes[o].permanent < 0);
+    const tries: [Hand, boolean][] = [[keptHand, true], ...(Object.keys(stripped).length < Object.keys(keptHand).length ? [[stripped, true], [keptHand, false]] as [Hand, boolean][] : [])];
+    for (const [h, strict] of Object.keys(keptHand).length ? tries : []) {
+      if (!Object.keys(h).length) break; // the plain proposal, defaults added below
+      if (!fits(h)) continue;
       // The automatic balance around the retained changes must fit too (a permanent
       // point never below anyone's floor); otherwise the plain proposal stands.
-      const kept = build(keptHand, keptPairs);
-      try {validateDraft(c, input.seniority, kept); hand = keptHand; pairs = keptPairs; draft = kept;} catch {/* the plain proposal */}
+      const kept = build(h, keptPairs);
+      try {validateDraft(c, input.seniority, kept);} catch {continue;}
+      if (strict && funded(h, kept)) continue;
+      hand = h; pairs = keptPairs; draft = kept; break;
     }
   }
   // A manager's edit of a non-weekend member (even back to zero) keeps them in the hand
-  // state, so the default is only added where no one has decided otherwise.
-  const noWeekends = new Set(input.schedule.members.filter(m => m.noWeekends).map(m => m.id)), available = availability(c);
-  for (const id of input.seniority) {
-    if (!noWeekends.has(id) || hand[id]) continue;
+  // state, so the default is only added where no one has decided otherwise. Only the weekend
+  // members fund it (decision 2026-11-05): when they can't, the rest get none this month, and
+  // whoever goes first rotates by month so each is left out equally often.
+  const available = availability(c), added = new Set<string>();
+  for (const id of nonWeekendOrder(input)) {
+    if (hand[id]) continue;
     const next = {...hand, [id]: {temporary: 0, permanent: NON_WEEKEND_UNITS}};
     if (!fits(next) || offered[id] + NON_WEEKEND_UNITS > available[id]) continue;
     const {unplaced} = balanceChanges(c, input.seniority, baseline, offered, next);
     if (unplaced.temporary || unplaced.permanent) continue;
     // Like a repayment step, the default never leaves an exact month only partly schedulable.
     const proposed = build(next, pairs);
-    if (exact(draft.targetsUnits) && !exact(proposed.targetsUnits)) continue;
+    if (level(proposed.targetsUnits) < level(draft.targetsUnits)) continue;
+    if (c.ids.some(o => c.nonWeekend.has(o) && !next[o] && proposed.changes[o].permanent < draft.changes[o].permanent)) continue;
     try {validateDraft(c, input.seniority, proposed);} catch {continue;}
-    hand = next; draft = proposed;
+    hand = next; draft = proposed; added.add(id);
   }
+  // The hand list keeps its usual order: retained changes first, then defaults by seniority.
+  if (draft.hand) draft.hand = [...draft.hand.filter(id => !added.has(id)), ...input.seniority.filter(id => added.has(id))];
   return {draft, projection: c.projection};
 }
 
 /** Whether the month's duties can give every member exactly these points, locked
  * duties kept by their member (duty weights only; calendar rules are Generate's). */
-function splitsExactly(c: Context, input: AllocationInput, units: Readonly<Record<string, number>>) {
+function splitsExactly(c: Context, input: AllocationInput, units: Readonly<Record<string, number>>, weekends = true) {
   const lockOf = new Map((input.schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
-  return partitionable(c.prepared.duties.filter(d => !lockOf.has(d.id)).map(d => d.units),
-    c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]));
+  const free = c.prepared.duties.filter(d => !lockOf.has(d.id));
+  // Weekends go to weekend members only, as in Generate (decision 2026-11-05).
+  return partitionableWeekends(free.filter(d => !d.weekendId).map(d => d.units), free.filter(d => d.weekendId).map(d => d.units),
+    c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]),
+    c.ids.map(id => weekends && c.nonWeekend.has(id)));
+}
+/** Non-weekend members in the order the default +1 is tried: by seniority, starting one
+ * further each month, so when only some fit each is left out equally often. */
+export function nonWeekendOrder(input: AllocationInput) {
+  const ids = input.seniority.filter(id => input.schedule.members.some(m => m.id === id && m.noWeekends));
+  const [year, month] = input.schedule.month.split('-').map(Number), start = ids.length ? (year * 12 + month - 1) % ids.length : 0;
+  return [...ids.slice(start), ...ids.slice(0, start)];
+}
+/** Non-weekend members left without the default +1 this month because the weekend members
+ * can't give up more points (not edited by hand, and the +1 would fit their own availability
+ * and the month cap). Plan the month explains them. */
+export function nonWeekendLeftOut(input: AllocationInput, draft: AllocationDraft) {
+  const c = context(input), available = availability(c), hand = new Set(Object.keys(handOf(draft)));
+  return input.seniority.filter(id => c.nonWeekend.has(id) && !hand.has(id) && draft.changes[id]?.permanent === 0 &&
+    draft.offeredUnits[id] + NON_WEEKEND_UNITS <= available[id] && draft.baselineUnits[id] + NON_WEEKEND_UNITS <= c.total);
 }
 /** Plan the month's note: false when Generate can only be partial for these targets. */
 export const allocationDivisible = (input: AllocationInput, targetsUnits: Readonly<Record<string, number>>) =>

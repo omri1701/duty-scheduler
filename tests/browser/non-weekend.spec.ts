@@ -93,3 +93,20 @@ for(const lang of ['en','he'] as const)test(`Plan the month says before Generate
   await expect(dialog.getByRole('note').filter({hasText:takers?(he?'רק חבר אחד כאן עושה סופי שבוע':'Only one member here takes weekends'):(he?'אף אחד כאן לא עושה סופי שבוע':'No one here takes weekends')})).toBeVisible();
  }
 });
+
+for(const lang of ['en','he'] as const)test(`Plan the month says when the weekend members cannot fund every +1 ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he',{dialog}=await openPlan(page,backend,openApp,lang);
+ await expect(dialog.getByRole('note').filter({hasText:he?'לא ניתנת':'is left out'})).toHaveCount(0);
+ const participants=backend.raw.members.filter(m=>m.active&&m.status==='approved');
+ participants.forEach((m,i)=>{m.no_weekends=i>=1;});
+ await page.reload();
+ if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
+ await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
+ const taker=participants[0].name,left=await dialog.locator('.allocation-row-note').filter({hasText:new RegExp(`^${he?'ללא סופי שבוע':'No weekends'}$`)}).count();
+ expect(left).toBeGreaterThan(1);
+ await expect(dialog.getByRole('note').filter({hasText:he?`רק ${taker} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ל־${left} חברים החודש.`:
+  `Only ${taker} takes weekends, so the No weekends +1 is left out for ${left} members this month.`})).toBeVisible();
+ // No one is cut to fund it: every non-weekend row stays without a minus.
+ await expect(dialog.locator('.allocation-row-note').filter({hasText:/−|-\d/})).toHaveCount(0);
+});

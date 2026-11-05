@@ -5,8 +5,9 @@ import {createHighsAdapter, canonicalDuties, coverageStart, createGenerationRequ
   prepareGeneration, generationRotations, weekendRotation} from '../lib/scheduling/index.ts';
 import {requireWeekendEligibility} from '../lib/scheduling/validate.ts';
 import {record} from '../lib/compensation/index.ts';
-import {proposeAllocation, editAllocation, compileAllocation, retainedChanges, balanced, editOptions} from '../lib/allocation/index.ts';
-import {NON_WEEKEND_UNITS} from '../lib/allocation/planner.ts';
+import {proposeAllocation, editAllocation, compileAllocation, retainedChanges, balanced, editOptions, allocationDivisible} from '../lib/allocation/index.ts';
+import {NON_WEEKEND_UNITS, nonWeekendLeftOut, nonWeekendOrder} from '../lib/allocation/planner.ts';
+import {partitionableWeekends} from '../lib/allocation/fit.ts';
 import {permanentCeiling} from '../lib/allocation/edits.ts';
 import {monthScenario} from './fixtures/generation.mjs';
 
@@ -82,8 +83,8 @@ test('non-weekend members are left out of the weekend rotation and never hold a 
   assert.ok(Object.hasOwn(weekdays, 'far'), 'the weekday rotation still includes everyone');
 });
 
-function allocationInput(count = 12, noWeekends = ['e01']) {
-  const {input, now} = monthScenario('normal', count), schedule = structuredClone(input); delete schedule.targets;
+function allocationInput(count = 12, noWeekends = ['e01'], kind = 'normal') {
+  const {input, now} = monthScenario(kind, count), schedule = structuredClone(input); delete schedule.targets;
   schedule.members = schedule.members.map(m => noWeekends.includes(m.id) ? {...m, noWeekends: true} : m);
   return {schedule, now, seniority: schedule.members.map(m => m.id), events: record([], {
     operation: {kind: 'members', members: schedule.members.map(m => ({id: m.id, active: true}))},
@@ -189,4 +190,95 @@ test('turning the setting off rejoins the weekend rotation level, like a new mem
   const earlier = [{month: '2026-08', duties: [{startDate: '2026-08-07', primary: 'far'}]}, ...mid];
   assert.deepEqual(rotation(earlier, false, '2026-11'), {a: 1, b: 1, c: 0, far: 1});
   assert.throws(() => prepareGeneration({...generationInput(), members: generationInput().members.map((m, i) => i ? m : {...m, weekendsFrom: '2026-13'})}), /invalid-member/);
+});
+
+// Few weekend members (decision 2026-11-05): only the weekend members fund the +1, never below
+// the month's weekends; the rest get none this month, in an order that rotates by month.
+const ids12 = Array.from({length: 12}, (_, i) => `e${String(i).padStart(2, '0')}`);
+const fewTakers = (k, month = '2026-11', kind = 'normal', count = 12) => {
+  const input = allocationInput(count, ids12.slice(count - k, count), kind);
+  if (month !== input.schedule.month) {input.schedule.month = month; input.schedule.constraints = {};}
+  return input;
+};
+const weekendUnits = input => canonicalDuties(input.schedule.month, input.schedule.calendar).filter(d => d.weekendId).map(d => d.units);
+function assertWeekendsFunded(input, draft, label) {
+  const nw = new Set(input.schedule.members.filter(m => m.noWeekends).map(m => m.id)), takers = input.seniority.filter(id => !nw.has(id));
+  const free = weekendUnits(input).sort((a, b) => b - a);
+  for (const id of nw) assert.ok(draft.changes[id].permanent >= 0, `${label}: ${id} never funds a +1`);
+  assert.ok(sum(takers.map(id => draft.targetsUnits[id])) >= sum(free), `${label}: the weekend members can still take every weekend`);
+  const rooms = takers.map(id => draft.targetsUnits[id]).sort((a, b) => b - a);
+  free.slice(0, takers.length).forEach((w, k) => assert.ok(rooms[k] >= w, `${label}: one weekend each, heaviest first`));
+  assert.ok(balanced(draft), `${label}: balanced`);
+  assert.equal(allocationDivisible(input, draft.targetsUnits), true, `${label}: Generate can book every point`);
+}
+
+test('12 members, 10 non-weekend: the two weekend members keep their weekends and no one is cut to fund the +1', () => {
+  const input = fewTakers(10), {draft} = proposeAllocation(input), plain = proposeAllocation(allocationInput(12, [])).draft;
+  assertWeekendsFunded(input, draft, '10 of 12');
+  // The two weekend members already carry exactly the four weekends: nothing is left to give.
+  assert.deepEqual(draft.targetsUnits, plain.targetsUnits);
+  assert.deepEqual(nonWeekendLeftOut(input, draft), ids12.slice(2));
+  // Generate books every planned point: no "2 scheduled, plan says 3".
+  const schedule = {...input.schedule, targets: Object.fromEntries(Object.entries(draft.targetsUnits).map(([k, v]) => [k, v / 2]))};
+  const r = solveGeneration(solver, createGenerationRequest(schedule, {now: input.now, seed: 17, seconds: 4}));
+  assert.equal(r.complete, true);
+  for (const id of ids12.slice(2)) assert.deepEqual(weekends(schedule, r.assignments, id), []);
+  assert.equal(compileAllocation(input, draft, r.assignments).confirmable, true);
+  // A manager can still give a non-weekend member +1 by hand; the weekend members are not cut for it.
+  const edited = editAllocation(input, draft, {engineer: 'e05', deltaUnits: 2, kind: 'permanent'}).draft;
+  assert.deepEqual(['e00', 'e01'].map(id => edited.targetsUnits[id]), ['e00', 'e01'].map(id => draft.targetsUnits[id]));
+});
+
+test('when only some fit, +1 goes to as many as the weekend members can fund, starting one further each month', () => {
+  const got = Object.fromEntries(ids12.slice(4).map(id => [id, 0])), sets = [];
+  const months = ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06'];
+  for (const month of months) {
+    const input = fewTakers(8, month), {draft} = proposeAllocation(input);
+    assertWeekendsFunded(input, draft, month);
+    const plus = ids12.slice(4).filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
+    assert.ok(plus.length > 0 && plus.length < 8, `${month}: some, not all`);
+    assert.deepEqual(nonWeekendLeftOut(input, draft), ids12.slice(4).filter(id => !plus.includes(id)), `${month}: the rest are explained`);
+    plus.forEach(id => got[id]++); sets.push(plus.join());
+  }
+  assert.ok(new Set(sets).size > 4, 'a different group most months');
+  assert.ok(Math.max(...Object.values(got)) - Math.min(...Object.values(got)) <= 2, `spread evenly: ${JSON.stringify(got)}`);
+  assert.deepEqual(nonWeekendOrder(fewTakers(8, '2026-11')), [...ids12.slice(6), 'e04', 'e05']);
+});
+
+test('ordinary teams keep the +1, and a holiday weekend never strands it on the only member who can hold it', () => {
+  for (const k of [1, 2, 3]) {
+    const input = fewTakers(k), {draft} = proposeAllocation(input);
+    for (const id of ids12.slice(12 - k)) assert.equal(draft.changes[id].permanent, NON_WEEKEND_UNITS, `${k}: ${id} keeps +1`);
+    assert.deepEqual(draft.hand, ids12.slice(12 - k), `${k}: hand in seniority order`);
+    assertWeekendsFunded(input, draft, `${k} non-weekend`);
+  }
+  // December 2027 has a 5-point holiday weekend: only one weekend member can hold it.
+  const input = fewTakers(1, '2027-12', 'weighted', 8), {draft} = proposeAllocation(input);
+  assert.equal(draft.changes.e07.permanent, NON_WEEKEND_UNITS);
+  assertWeekendsFunded(input, draft, 'holiday weekend');
+});
+
+test('the weekend-aware split: weekends only for weekend members, and plain weights when no one skips them', () => {
+  assert.equal(partitionableWeekends([2, 2], [2, 2], [[], []], [4, 4], [false, false]), true);
+  assert.equal(partitionableWeekends([2, 2], [2, 2], [[], []], [6, 2], [true, false]), false, 'the non-weekend member needs a weekend');
+  assert.equal(partitionableWeekends([2, 2], [2, 2], [[], []], [4, 4], [true, false]), true);
+  assert.equal(partitionableWeekends([2, 2], [2], [[], []], [4, 2], [true, true]), false, 'no one to take the weekend');
+  assert.equal(partitionableWeekends([2, 2], [], [[], []], [2, 2], [true, true]), true);
+  assert.equal(partitionableWeekends([2], [1, 1], [[2], []], [4, 2], [true, false]), true, 'a locked weekend stays with its member');
+});
+
+test('re-planning after the setting changes keeps the weekend members funded', () => {
+  const nov = fewTakers(8), first = proposeAllocation(nov).draft;
+  assert.deepEqual(proposeAllocation(nov, retainedChanges(first)).draft, first, 'the same month re-plans the same');
+  // A member with the +1 takes weekends again; a weekend member stops.
+  for (const flags of [ids12.slice(4).filter(id => id !== 'e06'), [...ids12.slice(4), 'e00']]) {
+    const input = allocationInput(12, flags), draft = proposeAllocation(input, retainedChanges(first)).draft;
+    const nw = new Set(flags);
+    for (const id of nw) assert.ok(draft.changes[id].permanent >= 0);
+    assert.ok(sum(input.seniority.filter(id => !nw.has(id)).map(id => draft.targetsUnits[id])) >= sum(weekendUnits(input)));
+    assert.equal(allocationDivisible(input, draft.targetsUnits), true);
+  }
+  // The next month starts fresh from its own rotation, and going back gives November's plan again.
+  assertWeekendsFunded(fewTakers(8, '2026-12'), proposeAllocation(fewTakers(8, '2026-12')).draft, 'December');
+  assert.deepEqual(proposeAllocation(fewTakers(8)).draft, first);
 });
