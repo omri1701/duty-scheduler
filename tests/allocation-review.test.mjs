@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {monthScenario} from './fixtures/generation.mjs';
-import {allocationTotals, approvalScopeKey, lockExceptions, reviewAllocation} from '../lib/allocation/review.ts';
+import {allocationTotals, approvalScopeKey, copyFits, lockExceptions, reviewAllocation} from '../lib/allocation/review.ts';
+import {proposeAllocation, retainedChanges} from '../lib/allocation/planner.ts';
+import {editAllocation, persistedDraft} from '../lib/allocation/edits.ts';
 import {prepareGeneration} from '../lib/scheduling/domain.ts';
 import {canonicalDuties, coverageStart} from '../lib/scheduling/calendar.ts';
 import {demo, blocks, totals, weekendCounts} from '../lib/rota/engine.ts';
@@ -88,4 +90,59 @@ test('emergency coverage contributes no primary points, weekends or consecutive 
   assert.equal(totals(s, bs).e0, 1); assert.equal(weekendCounts(s, '2026-11').e0, 0);
   assert.deepEqual(metrics.gaps.filter(g => g.p.id === 'e0'), []);
   assert.equal(s.assignments['2026-11-06'].secondary, 'e0');
+});
+
+/** What opening Plan the month does with a stored copy of a publication (adopt): a copy
+ * that still fits keeps its provenance; any other is replaced by a fresh proposal. */
+const opened = (input, copy) => {
+  if (copyFits(input, copy)) return {draft: copy, kept: true};
+  try {return {draft: reviewAllocation(input, copy), kept: false};}
+  catch {return {draft: proposeAllocation(input, retainedChanges(copy)).draft, kept: false};}
+};
+const targets = (draft) => Object.fromEntries(Object.entries(draft.targetsUnits).map(([id, u]) => [id, u / 2]));
+const sum = (t) => Object.values(t).reduce((a, b) => a + b, 0);
+
+test('a copied plan that still fits keeps its stored provenance exactly', () => {
+  const {input} = fixture();
+  const copy = {...persistedDraft(proposeAllocation(input).draft), sourceKey: 'published-ledger'}, original = structuredClone(copy);
+  assert.equal(copyFits(input, copy), true);
+  const {draft, kept} = opened(input, copy);
+  assert.equal(kept, true); assert.equal(draft, copy); assert.deepEqual(draft, original, 'provenance and numbers untouched');
+});
+
+test('a restored copy from an old team, with a deleted source and an earlier format, is replaced by a working proposal', () => {
+  // The hosted December: 4 members of an old team (one still active), old keys only.
+  const {input} = fixture(), [still] = input.seniority, total = sum(proposeAllocation(input).draft.targetsUnits);
+  const old = {[still]: 12, 'gone-1': 0, 'gone-2': 0, 'gone-3': 0};
+  const copy = {pending: [], sourceKey: 'deleted-publication-ledger', transfers: [], repayments: [], offeredUnits: {...old}, targetsUnits: {...old}, baselineUnits: {...old}};
+  assert.equal(copyFits(input, copy), false);
+  const {draft, kept} = opened(input, copy);
+  assert.equal(kept, false);
+  assert.deepEqual(Object.keys(draft.targetsUnits).sort(), [...input.seniority].sort());
+  assert.equal(sum(draft.targetsUnits), total);
+  prepareGeneration({...input.schedule, targets: targets(draft)});
+  // + / − work on the replacement, and it reviews as Save would store it.
+  const next = editAllocation(input, draft, {engineer: still, deltaUnits: 2, kind: 'temporary'}).draft;
+  assert.equal(next.targetsUnits[still], draft.targetsUnits[still] + 2);
+  reviewAllocation(input, persistedDraft(next));
+});
+
+test('a current-format copy from an old team or another month total is replaced, keeping changes that still fit', () => {
+  const {input} = fixture(), [a, b] = input.seniority;
+  const fitting = editAllocation(input, proposeAllocation(input).draft, {engineer: a, deltaUnits: 2, kind: 'permanent'}).draft;
+  // A member left: the copy names someone no longer on the team.
+  const smaller = structuredClone(input); smaller.schedule.members = smaller.schedule.members.filter(m => m.id !== b); smaller.seniority = smaller.seniority.filter(id => id !== b);
+  const copy = {...persistedDraft(fitting), sourceKey: 'published-ledger'};
+  assert.equal(copyFits(smaller, copy), false);
+  const replaced = opened(smaller, copy);
+  assert.equal(replaced.kept, false); assert.equal(replaced.draft.changes[a].permanent, 2, 'the hand change still fits and is kept');
+  prepareGeneration({...smaller.schedule, targets: targets(replaced.draft)});
+  // Same members, but the month's total no longer matches the copy.
+  const short = {...copy, targetsUnits: {...copy.targetsUnits, [a]: copy.targetsUnits[a] - 2}};
+  assert.equal(copyFits(input, short), false);
+  assert.equal(opened(input, short).kept, false);
+  // An earlier format with the same members: the confirmed baseline is kept (immutable in the RPC).
+  const earlier = {...copy}; delete earlier.changes; delete earlier.pairs;
+  assert.equal(copyFits(input, earlier), false);
+  assert.deepEqual(opened(input, earlier).draft.baselineUnits, copy.baselineUnits);
 });

@@ -33,7 +33,8 @@ for(const identity of ['admin','a'] as const) test(`month navigation survives em
     await expect(page.locator('.app-shell')).toHaveAttribute('dir',language==='he'?'rtl':'ltr');
     for(let tab=0;tab<3;tab++) {
       await page.locator('[data-slot=tabs-trigger]').nth(tab).click();
-      await traverseMonths(page);
+      // One deep round trip; the other tab/language passes cover the seeded months, New Year and an empty month.
+      await traverseMonths(page,language==='en'&&tab===0?24:4);
     }
   }
   await page.reload();
@@ -57,7 +58,7 @@ test('month navigation remains usable after actual browser zoom with visible com
         const toggle=page.getByRole('button',{name:language==='he'?'Switch to Hebrew':'Switch to English',exact:true});
         if(await toggle.count())await toggle.click();
         await expect(page.locator('.app-shell')).toHaveAttribute('dir',language==='he'?'rtl':'ltr');
-        await traverseMonths(page);
+        await traverseMonths(page,zoom===2&&language==='en'?24:4);
       }
     }
   } finally {await context.close();}

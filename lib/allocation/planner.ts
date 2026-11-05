@@ -206,11 +206,13 @@ export function nonWeekendLeftOut(input: AllocationInput, draft: AllocationDraft
 export const allocationDivisible = (input: AllocationInput, targetsUnits: Readonly<Record<string, number>>) =>
   splitsExactly(context(input), input, targetsUnits);
 
-/** The per-person changes and ordinary baseline of a draft, for a later proposal. */
+/** The per-person changes and ordinary baseline of a draft, for a later proposal.
+ * An earlier format has no per-person changes; only its baseline is kept, as the
+ * checked RPC keeps it immutable while duties and participants stand. */
 export function retainedChanges(draft: AllocationDraft | null): Retained | undefined {
-  if (!draft?.changes || !Array.isArray(draft.pairs)) return undefined;
-  return {hand: handOf(draft), pairs: structuredClone(draft.pairs),
-    ...(draft.baselineUnits && typeof draft.baselineUnits === 'object' ? {baselineUnits: {...draft.baselineUnits}} : {})};
+  const baseline = draft?.baselineUnits && typeof draft.baselineUnits === 'object' ? {baselineUnits: {...draft.baselineUnits}} : {};
+  if (!draft?.changes || !Array.isArray(draft.pairs)) return 'baselineUnits' in baseline ? {hand: {}, pairs: [], ...baseline} : undefined;
+  return {hand: handOf(draft), pairs: structuredClone(draft.pairs), ...baseline};
 }
 
 /** System credit for an indivisible month (decision 2026-10-30): the fitted
