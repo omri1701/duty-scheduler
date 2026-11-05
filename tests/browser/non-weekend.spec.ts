@@ -104,18 +104,9 @@ for(const lang of ['en','he'] as const)test(`Plan the month says when the weeken
  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  const taker=participants[0].name,left=await dialog.locator('.allocation-row-note').filter({hasText:new RegExp(`^${he?'ללא סופי שבוע':'No weekends'}$`)}).count();
- const given=await dialog.locator('.allocation-row-note').filter({hasText:he?'ללא סופי שבוע · +1':'No weekends · +1'}).count();
  expect(left).toBeGreaterThan(1);
- // When some get it, the newest go first (decision 2026-11-05), and the note says so.
- const first=given?(he?' ניתנת קודם לחברים החדשים ביותר, ולא ניתנת':' goes to the newest members first and is left out'):(he?' לא ניתנת':' is left out');
- await expect(dialog.getByRole('note').filter({hasText:he?`רק ${taker} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע”${first} ל־${left} חברים החודש.`:
-  `Only ${taker} takes weekends, so the No weekends +1${first} for ${left} members this month.`})).toBeVisible();
- if(given){
-  // Every member who got it is newer than every member left out.
-  const notes=await dialog.locator('.plan-row').evaluateAll(rows=>rows.map(r=>r.querySelector('.allocation-row-note')?.textContent??''));
-  const plus=notes.flatMap((n,i)=>n.includes('+1')?[i]:[]),out=notes.flatMap((n,i)=>/^(No weekends|ללא סופי שבוע)$/.test(n)?[i]:[]);
-  expect(Math.min(...plus)).toBeGreaterThan(Math.max(...out));
- }
+ await expect(dialog.getByRole('note').filter({hasText:he?`רק ${taker} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ל־${left} חברים החודש.`:
+  `Only ${taker} takes weekends, so the No weekends +1 is left out for ${left} members this month.`})).toBeVisible();
  // No one is cut to fund it: every non-weekend row stays without a minus.
  await expect(dialog.locator('.allocation-row-note').filter({hasText:/−|-\d/})).toHaveCount(0);
 });

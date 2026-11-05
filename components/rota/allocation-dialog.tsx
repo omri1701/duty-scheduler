@@ -205,11 +205,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
 }
 
 /** Why some non-weekend members have no +1 this month: only the weekend members fund it. */
-function weekendShortNote({leftOut, given, takers}: {leftOut: number; given: boolean; takers: string[]}, list: (ids: string[]) => string, t: Translate) {
+function weekendShortNote({leftOut, takers}: {leftOut: number; takers: string[]}, list: (ids: string[]) => string, t: Translate) {
   const who = leftOut === 1 ? t('1 member', 'לחבר אחד') : t(`${leftOut} members`, `ל־${leftOut} חברים`);
-  // When only some get it, the newest go first (decision 2026-11-05).
-  const rest = given ? t(` goes to the newest members first and is left out for ${who} this month.`, ` ניתנת קודם לחברים החדשים ביותר, ולא ניתנת ${who} החודש.`)
-    : t(` is left out for ${who} this month.`, ` לא ניתנת ${who} החודש.`);
+  const rest = t(` is left out for ${who} this month.`, ` לא ניתנת ${who} החודש.`);
   if (!takers.length) return t(`With no weekend members, the No weekends +1 is left out for ${who} this month.`,
     `בלי חברים שעושים סופי שבוע, התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`);
   const named = takers.length <= 3 ? list(takers) : t(`${takers.length} members`, `${takers.length} חברים`);

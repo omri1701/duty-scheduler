@@ -193,7 +193,7 @@ test('turning the setting off rejoins the weekend rotation level, like a new mem
 });
 
 // Few weekend members (decision 2026-11-05): only the weekend members fund the +1, never below
-// the month's weekends; the newest non-weekend members get it first, the rest none this month.
+// the month's weekends; the rest get none this month, in an order that rotates by month.
 const ids12 = Array.from({length: 12}, (_, i) => `e${String(i).padStart(2, '0')}`);
 const fewTakers = (k, month = '2026-11', kind = 'normal', count = 12) => {
   const input = allocationInput(count, ids12.slice(count - k, count), kind);
@@ -229,23 +229,20 @@ test('12 members, 10 non-weekend: the two weekend members keep their weekends an
   assert.deepEqual(['e00', 'e01'].map(id => edited.targetsUnits[id]), ['e00', 'e01'].map(id => draft.targetsUnits[id]));
 });
 
-test('when only some fit, +1 goes to as many as the weekend members can fund, newest non-weekend members first', () => {
-  const nw = ids12.slice(4);
-  for (const month of ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']) {
+test('when only some fit, +1 goes to as many as the weekend members can fund, starting one further each month', () => {
+  const got = Object.fromEntries(ids12.slice(4).map(id => [id, 0])), sets = [];
+  const months = ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06'];
+  for (const month of months) {
     const input = fewTakers(8, month), {draft} = proposeAllocation(input);
     assertWeekendsFunded(input, draft, month);
-    const plus = nw.filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
+    const plus = ids12.slice(4).filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
     assert.ok(plus.length > 0 && plus.length < 8, `${month}: some, not all`);
-    // The newest get it: whoever has it is newer than everyone left out.
-    assert.deepEqual(plus, nw.slice(nw.length - plus.length), `${month}: newest first`);
-    assert.deepEqual(nonWeekendLeftOut(input, draft), nw.filter(id => !plus.includes(id)), `${month}: the rest are explained`);
+    assert.deepEqual(nonWeekendLeftOut(input, draft), ids12.slice(4).filter(id => !plus.includes(id)), `${month}: the rest are explained`);
+    plus.forEach(id => got[id]++); sets.push(plus.join());
   }
-  assert.deepEqual(nonWeekendOrder(fewTakers(8, '2026-11')), [...nw].reverse());
-  // The user's case, by name: Tamar joined after Maya, so Tamar gets the +1 before Maya.
-  const input = fewTakers(8), {draft} = proposeAllocation(input), plus = nw.filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
-  const maya = nw[nw.length - plus.length - 1], tamar = nw[nw.length - plus.length];
-  assert.equal(draft.changes[tamar].permanent, NON_WEEKEND_UNITS);
-  assert.equal(draft.changes[maya].permanent, 0);
+  assert.ok(new Set(sets).size > 4, 'a different group most months');
+  assert.ok(Math.max(...Object.values(got)) - Math.min(...Object.values(got)) <= 2, `spread evenly: ${JSON.stringify(got)}`);
+  assert.deepEqual(nonWeekendOrder(fewTakers(8, '2026-11')), [...ids12.slice(6), 'e04', 'e05']);
 });
 
 test('Reset is the first-opening plan: it drops kept +1s and hand edits that re-plan keeps', () => {

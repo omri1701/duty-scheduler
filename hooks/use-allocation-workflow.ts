@@ -132,10 +132,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!open || !captured || !draft?.changes || weekendTakers === null) return null;
     const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
     try {
-      const left = nonWeekendLeftOut(i, draft), nonWeekend = (id: string) => i.schedule.members.some(m => m.id === id && m.noWeekends);
-      // Some got it: the newest go first (decision 2026-11-05), so the note says so.
-      const given = i.seniority.some(id => nonWeekend(id) && !left.includes(id) && (draft.changes[id]?.permanent ?? 0) > 0);
-      return left.length ? {leftOut: left.length, given, takers: i.seniority.filter(id => !nonWeekend(id))} : null;
+      const leftOut = nonWeekendLeftOut(i, draft).length;
+      return leftOut ? {leftOut, takers: i.seniority.filter(id => !i.schedule.members.some(m => m.id === id && m.noWeekends))} : null;
     } catch {return null;}
   }, [open, captured, locks, approvals, draft, weekendTakers]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
