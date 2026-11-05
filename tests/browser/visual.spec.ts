@@ -65,11 +65,46 @@ test('access states', async ({page, openApp}) => {
   await snapshot(page, 'signed-out-he');
 });
 test('published swap confirmation and outgoing request', async ({page, openApp}) => {
-  await openApp('a'); await keyboardRequest(page); await snapshot(page, 'swap-confirmation-en');
+  await openApp('a'); await keyboardRequest(page);
+  // The availability check finishes before the request can be sent.
+  await expect(page.getByRole('button', {name: 'Confirm Request', exact: true})).toBeEnabled();
+  await snapshot(page, 'swap-confirmation-en');
   await confirmRequest(page); await page.getByText('Awaiting Engineer', {exact: true}).waitFor();
   // Wait for the transient success toast without altering application styles.
   await expect(page.getByText('Swap request submitted.', {exact: true})).toBeHidden({timeout: 10_000});
   await snapshot(page, 'swap-request-en');
+});
+for (const lang of ['en', 'he'] as const) test(`swap availability alert ${lang}`, async ({page, openApp}) => {
+  await openApp('a');
+  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
+  await duty(page, '2026-11-04').focus(); await page.keyboard.press('Space');
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await snapshot(page, `swap-availability-alert-${lang}`);
+});
+for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval summary ${lang}`, async ({page, openApp, backend}) => {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  await openApp('admin');
+  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('button', {name: t('Published', 'פורסם'), exact: true}).click();
+  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
+  await expect(page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true})).toBeEnabled();
+  await snapshot(page, `admin-swap-proposal-${lang}`);
+  await page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByText(t('Swap proposed to both engineers.', 'ההחלפה הוצעה לשני המהנדסים.'), {exact: true})).toBeHidden({timeout: 10_000});
+  await snapshot(page, `admin-swap-proposed-${lang}`);
+  // Both accepted; Blair later marked 2 November unavailable.
+  Object.assign(backend.raw.swapRequests![0], {status: 'awaiting_admin', accepted_by: ids.b, accepted_at: '2026-10-09T10:00:00Z', requester_accepted_at: '2026-10-09T10:00:00Z'});
+  backend.raw.constraints.push({member_id: ids.b, day: '2026-11-02', kind: 'no', note: 'Synthetic late note'});
+  backend.raw.revision!++;
+  await page.reload();
+  const toggle = page.getByRole('button', {name: /^Switch to (Hebrew|English)$/});
+  if (lang === 'he' && await toggle.getAttribute('aria-label') === 'Switch to Hebrew') await toggle.click();
+  await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await snapshot(page, `admin-swap-approval-${lang}`);
 });
 test('pending approval', async ({page, openApp}) => {
   await openApp('pending'); await snapshot(page, 'pending-approval');

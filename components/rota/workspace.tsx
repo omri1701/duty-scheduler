@@ -473,7 +473,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
           row={publishedEditRow}
           lang={lang}
           onClose={() => setPublishedEdit(null)}
-          onSwap={interactions.ownPublishedDays.has(publishedEditRow.day) ? () => {
+          onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {
             setPublishedEdit(null);
             interactions.setKeyboardSource(publishedEditRow.day);
           } : undefined}

@@ -9,7 +9,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import {EditorDialog} from '@/components/rota/editor-dialog';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
 import {addDays} from '@/lib/rota/engine';
-import {combinedWeekend,dutyPoints,editConflicts,editStale,editSummary,owedUnits,pendingSwaps,validExtra,type EditKind,type PublishedEdit} from '@/lib/supabase/published-edit';
+import {combinedWeekend,dutyPoints,editConflicts,editStale,editSummary,owedUnits,swapPartners,validExtra,type EditKind,type PublishedEdit} from '@/lib/supabase/published-edit';
 import type {DutyRow} from '@/lib/supabase/snapshot';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 
@@ -30,7 +30,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const unchanged=!changed&&extraValue===row.extra_points&&saturdayValue===(row.saturday_extra_points??0);
  const edit:PublishedEdit={primary,extra:extraValue,saturdayExtra:saturdayValue,kind,overrideReason:conflicts.length?reason:''};
  // A newer version or a reopened draft (another tab or admin) makes this copy stale; reopening the duty starts from the live one.
- const stale=editStale(raw,row),swaps=pendingSwaps(raw,row).length;
+ const stale=editStale(raw,row),partners=swapPartners(raw,row).map(name).join(', ');
  const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()));
  const fmt=(day:string)=>shortDate(day,lang),last=addDays(row.end_day,-1);
  const members=raw.members.filter(m=>m.status==='approved'&&(m.active||m.id===row.primary_id)&&m.id!==row.secondary_id);
@@ -60,7 +60,8 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
   description={`${fmt(row.day)}${last!==row.day?` – ${fmt(last)}`:''} · ${t('Published','פורסם')} · ${points(dutyPoints(row,row.extra_points,row.saturday_extra_points??0))}`}
   onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${row.day}"]`)?.focus()}}>
   {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את התורנות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את התורנות מחדש.')}</p>}
-  {!stale&&!!swaps&&<p className="muted-copy" role="note">{t('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.','בקשת החלפה ממתינה כוללת את התורנות. הפרסום יבטל אותה, או יבקש מהמהנדס החדש לאשר שוב.')}</p>}
+  {/* Named before saving: saving cancels it (for a new engineer or new points). */}
+  {!stale&&!!partners&&<p className="warning-note" role="note">{t(`Pending swap with ${partners}. Saving cancels it.`,`החלפה ממתינה עם ${partners}. השמירה תבטל אותה.`)}</p>}
   {step==='edit'?<>
    <label className="field-label">{t('Engineer','מהנדס')}<Select disabled={busy} value={primary} onValueChange={v=>{setPrimary(v);setOverride(false);setReason('')}}>
     <SelectTrigger className="picker" aria-label={t('Engineer','מהנדס')}><SelectValue/></SelectTrigger>
@@ -84,7 +85,8 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
    </div>}
    {unchanged&&validExtras&&!stale&&<p className="muted-copy" role="note">{t('Choose another engineer or change the extra points to review a change.','יש לבחור מהנדס אחר או לשנות את הנקודות הנוספות כדי לבדוק שינוי.')}</p>}
    <div className="editor-actions"><Button disabled={!ready||busy} onClick={()=>setStep('review')}>{t('Review change','בדיקת השינוי')}</Button></div>
-   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Request a swap instead','בקשת החלפה במקום')}</Button>}
+   {/* Any member's duty: the next press on the calendar picks the second duty. */}
+   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם תורנות אחרת…')}</Button>}
   </>:<>
    <p className="muted-copy">{t('Record this change in your external system first, then publish. Publishing creates a new version of the month.','רשמו את השינוי במערכת החיצונית תחילה, ואז פרסמו. הפרסום יוצר גרסה חדשה של החודש.')}</p>
    <label className="field-label">{t('Summary','סיכום')}<textarea className="published-edit-summary" readOnly value={summary} dir={lang==='he'?'rtl':'ltr'} style={{height:`calc(${summary.split('\n').length} * 1.55em + 24px)`}}/></label>

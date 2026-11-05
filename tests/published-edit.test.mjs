@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {dutyPoints,editConflicts,editStale,editSummary,editablePublishedDuty,owedUnits,pendingSwaps,validExtra} from '../lib/supabase/published-edit.ts';
+import {dutyPoints,editConflicts,editStale,editSummary,editablePublishedDuty,owedUnits,pendingSwaps,swapPartners,validExtra} from '../lib/supabase/published-edit.ts';
 
 const row=(day,end_day,extra_points=0,saturday_extra_points=0,primary_id='a')=>({id:day,publication_id:'p',day,end_day,primary_id,secondary_id:null,manager_override:false,title:'',extra_points,saturday_extra_points,points:0});
 const names={a:'Alex Atlas',b:'Blair Birch'},name=id=>names[id];
@@ -53,6 +53,9 @@ test('pending swap requests that include the duty are named; resolved ones are n
   request('approved','2026-11-03','2026-11-09'),request('invalidated','2026-11-03','2026-11-10'),request('awaiting_admin','2026-11-04','2026-11-05')]};
  assert.equal(pendingSwaps(raw,row('2026-11-03','2026-11-04')).length,2);
  assert.equal(pendingSwaps({},row('2026-11-03','2026-11-04')).length,0);
+ // The other member of each pending swap, named once: the counterpart of the requester's duty, else the requester.
+ const partner=(requester_id,other_id,from_day,to_day)=>({status:'awaiting_admin',requester_id,other_id,from_day,to_day});
+ assert.deepEqual(swapPartners({swapRequests:[partner('a','b','2026-11-03','2026-11-05'),partner('c','a','2026-11-02','2026-11-03'),partner('a','b','2026-11-03','2026-11-09')]},row('2026-11-03','2026-11-04')),['b','c']);
 });
 
 test('availability conflicts name each unavailable date of the duty',()=>{

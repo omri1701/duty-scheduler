@@ -54,3 +54,11 @@ test('a published duty edit names its own refusal, not the generic refresh', () 
   assert.equal(userMessage('This publication changed. Refresh first.', english), 'A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.');
   assert.equal(userMessage('Nothing changed', english), 'Nothing changed. Choose another engineer or other extra points.');
 });
+
+test('swap refusals keep their own message, not the generic team-data refresh', () => {
+  // Regression: the invalidation sentence says "changed", which the generic fallback caught first.
+  assert.equal(userMessage('This request was invalidated because its published duties changed or are no longer eligible.', english), 'This swap request no longer applies: its duties changed. Ask for a new swap.');
+  assert.equal(userMessage('The counterpart changed. Refresh first.', english), 'The schedule changed since this request. Ask for a new swap.');
+  assert.equal(userMessage('This publication changed. Request a new swap.', hebrew), 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.');
+  assert.equal(userMessage('This swap would create a second weekend', english), 'This swap would give someone a second weekend this month. Choose other duties, or decline or reject it.');
+});

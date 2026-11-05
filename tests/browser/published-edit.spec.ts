@@ -135,5 +135,5 @@ test('a pending swap that includes the duty is named before the edit', async ({p
     accepted_by: at('2026-11-05').primary_id!, accepted_at: '2026-11-01T08:00:00Z', created_at: '2026-11-01T07:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''}];
   await openApp();
   await duty(page, '2026-11-05').click();
-  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note').filter({hasText: 'pending swap'})).toHaveText('A pending swap request includes this duty. Publishing cancels it, or asks the new engineer to accept again.');
+  await expect(page.getByRole('dialog', {name: 'Edit duty'}).getByRole('note').filter({hasText: 'Pending swap'})).toHaveText('Pending swap with Blair Birch. Saving cancels it.');
 });

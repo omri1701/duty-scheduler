@@ -20,9 +20,12 @@ export function editStale(raw:Snapshot,row:DutyRow){
  return !m||m.status!=='published'||m.current_publication_id!==row.publication_id;
 }
 
-/** Pending swap requests that include this duty: publishing an edit invalidates them or asks the new engineer again. */
+/** Pending swap requests the admin can see that include this duty: saving an edit cancels them. */
 export const pendingSwaps=(raw:Snapshot,row:DutyRow)=>(raw.swapRequests??[]).filter(r=>
  (r.status==='awaiting_engineer'||r.status==='awaiting_admin')&&(r.from_day===row.day||r.to_day===row.day));
+
+/** The other member in each pending swap of this duty, once each. */
+export const swapPartners=(raw:Snapshot,row:DutyRow)=>[...new Set(pendingSwaps(raw,row).map(r=>r.from_day===row.day?r.other_id:r.requester_id))];
 
 /** Half points only, 0 to 20: the database's own bounds. */
 export const validExtra=(value:number)=>Number.isFinite(value)&&value>=0&&value<=20&&Number.isInteger(value*2);

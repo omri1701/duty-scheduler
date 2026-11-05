@@ -155,18 +155,16 @@ for (let step = 0; step < STEPS; step++) {
   } else if (action === 'swap') {
     // An engineer asks to swap a published duty with someone else's, as Swaps offers it; the
     // other engineer accepts and the admin approves. Each step is skipped where Swaps prevents
-    // it (swapProblem, with the availability that person may read).
+    // it (swapProblem; the request dialog's availability alert covers both parties and cover).
     if (m.status !== 'published') {count('skip: not published'); continue;}
     const rows = asPostgres(`select coalesce(jsonb_agg(to_jsonb(a)||jsonb_build_object('owner',duty_private.duty_owner(day)) order by day),'[]') from public.duty_assignments a where publication_id='${m.publication}';`)[0];
     const raw = {assignments: rows, constraints: asPostgres(`select coalesce(jsonb_agg(to_jsonb(c)),'[]') from public.duty_constraints c;`)[0]};
     const duties = rows.filter(a => a.primary_id && a.owner === month);
     const source = pick(duties), targets = duties.filter(t => eligibleSwapTarget(source, t));
     if (!source || !targets.length) {count('skip: no swap target'); continue;}
-    const target = pick(targets), own = {...raw, constraints: raw.constraints.filter(c => c.member_id === source.primary_id)};
-    if (swapProblem(own, month, source, target)) {count('prevented: swap request'); continue;}
+    const target = pick(targets);
+    if (swapProblem(raw, month, source, target)) {count('prevented: swap request'); continue;}
     const requested = run(`select public.duty_request_swap('${source.id}','${target.id}','Monkey',${rev});`, source.primary_id);
-    // Known gap: the counterpart's availability is private, so Swaps can't check it before the click.
-    if (requested.error && /Availability conflict/.test(requested.error) && swapProblem(raw, month, source, target)?.kind === 'availability') {count('refused swap request: counterpart unavailable (private)'); checkLedger(where); continue;}
     if (requested.error) {findings.push({action: 'swap-request', month, error: requested.error, message: userMessage(requested.error, en => en)}); checkLedger(where); continue;}
     count('swap-request');
     if (swapProblem(raw, month, source, target, false)) {count('prevented: swap accept'); continue;}

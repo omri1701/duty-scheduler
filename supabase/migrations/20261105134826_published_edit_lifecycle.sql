@@ -8,8 +8,9 @@
 -- 2. The copied allocation's targets (and, for new points, its calendar
 --    fingerprint) follow the edit, so a reopened copy of an edited version
 --    republishes unchanged instead of failing target-exceeded.
--- 3. New points on a duty invalidate a pending swap that includes it: consent was
---    given at the earlier points. Engineer changes keep the pointer hook's rules.
+-- 3. Saving cancels a pending swap that includes the duty, for a new engineer or new
+--    points (decision 2026-11-02): consent was given for the earlier duty. Edit duty
+--    names the swap before saving. Stamped after #64's swap migrations.
 -- Owner, SECURITY DEFINER, search_path and grants are unchanged.
 -- An admin changes one published duty's engineer and/or extra points without a
 -- swap, publishing a new version. Accounting stays canonical: the ordinary
@@ -134,13 +135,12 @@ begin
   update public.duty_allocations set calendar_fingerprint=md5((select jsonb_agg(x-array['primary','secondary'] order by x->>'id')::text
    from jsonb_array_elements(duty_private.generation_facts(m.month)->'duties') x)) where publication_id=publication;
  end if;
- -- Consent was given at the earlier points. The pointer hook already handles an
- -- engineer change; new points invalidate a pending swap of this duty.
- if not changed then
-  update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,resolved_at=now(),resolved_by=null
-  where duty_swap_requests.month=m.month and duty_swap_requests.status in ('awaiting_engineer','awaiting_admin')
-   and ((from_day=d.day and from_end_day=d.end_day) or (to_day=d.day and to_end_day=d.end_day));
- end if;
+ -- Saving cancels a pending swap of this duty (decision 2026-11-02; Edit duty names it
+ -- before saving): consent was given for the earlier engineer and points, so the
+ -- pointer hook's re-ask of a new counterpart is not kept either.
+ update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,resolved_at=now(),resolved_by=null
+ where duty_swap_requests.month=m.month and duty_swap_requests.status in ('awaiting_engineer','awaiting_admin')
+  and ((from_day=d.day and from_end_day=d.end_day) or (to_day=d.day and to_end_day=d.end_day));
  update public.duty_workspace set revision=revision+1 where id;
  return jsonb_build_object('publication',publication,'version',next_version);
 end $$;
