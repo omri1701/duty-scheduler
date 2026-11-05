@@ -104,10 +104,14 @@ for(const role of ['admin','a'] as const)for(const method of ['tap','drag']) {
     await expect(page.locator('[aria-current="date"]')).toHaveText('2');
     await expect(duty(page,'2026-11-01')).toBeDisabled();
     await duty(page,'2026-11-03').click();
-    // Engineers start from their own duty; admins may also select another member's to propose a swap.
-    await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed',role==='admin'?'true':'false');
-    if(role==='admin') {await duty(page,'2026-11-03').click();await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');}
-    if(method==='tap') {await duty(page,'2026-11-02').click();await duty(page,'2026-11-03').click();}
+    // An admin's tap opens Edit duty; "Swap with another duty" there selects the duty for the next tap.
+    await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');
+    if(role==='admin'){await expect(page.getByRole('dialog',{name:'Edit duty'})).toBeVisible();await page.keyboard.press('Escape');}
+    if(method==='tap') {
+      await duty(page,'2026-11-02').click();
+      if(role==='admin')await page.getByRole('button',{name:'Swap with another duty…',exact:true}).click();
+      await duty(page,'2026-11-03').click();
+    }
     else await drag(page,info.project.name==='mobile');
     await page.getByRole('button',{name:'Confirm Request',exact:true}).click();
     expect(backend.raw.swapRequests![0]).toMatchObject({requester_id:ids[role],from_day:'2026-11-02',to_day:'2026-11-03',status:'awaiting_engineer',accepted_by:null});

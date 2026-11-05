@@ -58,7 +58,7 @@ after merge into `develop`; this feature PR does not apply hosted migrations.
 
 ## Non-weekend members
 
-Migration `20261105134501_non_weekend_members.sql` adds `duty_members.no_weekends`
+Migration `20261105154400_non_weekend_members.sql` adds `duty_members.no_weekends`
 (default false, so existing members are unchanged) and the admin-only checked RPC
 `duty_set_no_weekends(p_member, p_no_weekends, p_revision)`: approved members only,
 revision-checked, no direct table writes. The column is readable like the rest of the
@@ -66,7 +66,7 @@ member row. Manager-only generation facts carry `noWeekends: true` for flagged
 members only, so other members' facts and fingerprints are unchanged, and
 `duty_private.save_generation` refuses Generate output that places such a member on
 a weekend not locked to them (`non-weekend-primary`). Publication and manual edits
-are unchanged. Migration `20261105134502_non_weekend_rejoin_level.sql` adds
+are unchanged. Migration `20261105154401_non_weekend_rejoin_level.sql` adds
 `duty_members.weekends_from` (YYYY-MM, null for everyone existing): clearing the setting
 records the month after every month generated or published so far, and generation facts
 carry it as `weekendsFrom`, so the weekend rotation lets the member rejoin level, like a new
@@ -641,6 +641,51 @@ active and approved"; an admin rejects it.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
+
+## Published duty edit
+
+Migration `20261105134825_published_duty_edit.sql` adds the admin-only checked RPC
+`duty_edit_published_duty(p_publication uuid,p_day date,p_primary uuid,p_extra_points numeric,
+p_saturday_extra_points numeric,p_kind text,p_revision bigint,p_override_reason text)`.
+It requires an active approved admin and the last accepted revision, and refuses a
+publication that is no longer the month's current one, or a month with an open
+(reopened) draft: that draft was copied from the earlier version, so publishing it
+would silently undo the edit. Publish or cancel the draft first. The duty must belong to that
+month, start today or later in Asia/Jerusalem and have a primary; the new primary
+must be an active approved member who is not that duty's emergency cover. Extra
+points are 0–20 in half points (Saturday's only on a combined weekend). Availability
+is re-checked for the new primary: a conflict needs a reason that is not blank,
+including Unicode spaces (≤500 characters), and marks the row as an override. An unchanged edit is refused.
+
+The edit copies the current publication into a new version with only that row
+changed, carrying an existing allocation snapshot like an approved swap (locks follow
+the new engineer; approvals for the changed dates or the two engineers' weekends are
+dropped). Accounting is recorded in the same transaction before the pointer moves.
+**Temporary** keeps the ordinary publication transition: the old engineer owes the
+new one each date's shared units (a published repayment on that duty routes through
+its creditor as for any replacement). **Permanent** gives the duty for good from its
+owner: the server walks the month's recorded publications back past Temporary moves
+(edits, swaps, a plan's temporary intent on that date) to the last permanent holder.
+When the holder is the owner, the permanent intent `edit/<publication>` covers exactly
+the shared units, so no debt. Returning the duty to its owner is the ordinary
+transition, which cancels the earlier Temporary debt. Giving it to a third engineer
+routes the holder's return (Temporary) and the owner's permanent gift in that one
+intent, so no debt stays behind for work nobody does. `compensation_publication`
+gained an optional server-built `edit` argument for this; existing callers are
+unchanged. The ledger event's manager-only reason records the kind and any override
+reason; `duty_balance` never returns it.
+
+The copied allocation's targets follow the edit (and, for new points, its calendar
+fingerprint), so a reopened copy of an edited version republishes unchanged without
+double counting. Edit duty names a pending swap request of the duty before saving ("Pending swap
+with Dana. Saving cancels it."), and saving invalidates it, for a new engineer as well as new points:
+consent was given for the earlier engineer and points. A
+later month that already repays a debt keeps its version. Editing the duty back holds that
+repayment (no double charge). Plan the month on a reopened edited month plans without that
+month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
+plan replaces the edit with the plan. Migration `20261105134826_published_edit_lifecycle.sql`
+adds these lifecycle rules. Regressions: `supabase/tests/published-edit.sql` and
+`supabase/tests/published-edit-lifecycle.mjs` (empty disposable LOCAL, rolled back).
 
 ### Empty local Supabase database (PowerShell)
 

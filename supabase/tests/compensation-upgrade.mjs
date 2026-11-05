@@ -14,7 +14,11 @@ if to_regclass('public.duty_compensation_events') is not null then
  execute 'drop trigger duty_compensation_member_insert on public.duty_members';
  execute 'drop trigger duty_compensation_member_update on public.duty_members';
  execute 'drop table public.duty_compensation_events';
-end if;end$$;
+end if;
+-- The replayed migration defines the original four-argument signature; a later
+-- optional argument would otherwise make its calls ambiguous.
+drop function if exists duty_private.compensation_publication(text,uuid,jsonb,boolean,jsonb);
+end$$;
 ${previous}
 -- The earlier trigger implementation has no compensation hook.
 create or replace function duty_private.reconcile_publication_swaps() returns trigger language plpgsql security definer set search_path='' as $$begin perform 1 from public.duty_workspace where id for update;perform duty_private.reconcile_swaps(new.month);return new;end$$;
