@@ -104,7 +104,9 @@ for(const role of ['admin','a'] as const)for(const method of ['tap','drag']) {
     await expect(page.locator('[aria-current="date"]')).toHaveText('2');
     await expect(duty(page,'2026-11-01')).toBeDisabled();
     await duty(page,'2026-11-03').click();
-    await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');
+    // Engineers start from their own duty; admins may also select another member's to propose a swap.
+    await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed',role==='admin'?'true':'false');
+    if(role==='admin') {await duty(page,'2026-11-03').click();await expect(duty(page,'2026-11-03')).toHaveAttribute('aria-pressed','false');}
     if(method==='tap') {await duty(page,'2026-11-02').click();await duty(page,'2026-11-03').click();}
     else await drag(page,info.project.name==='mobile');
     await page.getByRole('button',{name:'Confirm Request',exact:true}).click();

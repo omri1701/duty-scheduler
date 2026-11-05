@@ -49,3 +49,11 @@ test('the plan\'s own notes pass through unchanged', () => {
   // No month reserves the repayment any more: named on its own, not the generic Refresh (review of #62).
   assert.equal(userMessage('review-replan-later:unknown', english), 'A month that is no longer published already repaid from this month’s points, so its plan can’t be replaced. Change single duties in the calendar instead.');
 });
+
+test('swap refusals keep their own message, not the generic team-data refresh', () => {
+  // Regression: the invalidation sentence says "changed", which the generic fallback caught first.
+  assert.equal(userMessage('This request was invalidated because its published duties changed or are no longer eligible.', english), 'This swap request no longer applies: its duties changed. Ask for a new swap.');
+  assert.equal(userMessage('The counterpart changed. Refresh first.', english), 'The schedule changed since this request. Ask for a new swap.');
+  assert.equal(userMessage('This publication changed. Request a new swap.', hebrew), 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.');
+  assert.equal(userMessage('This swap would create a second weekend', english), 'This swap would give someone a second weekend this month. Choose other duties, or decline or reject it.');
+});

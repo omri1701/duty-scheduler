@@ -126,7 +126,7 @@ do $$declare v jsonb;meta jsonb;rev bigint;pub uuid;events bigint;source_count b
  perform public.duty_request_swap(from_id,to_id,'Reviewed weighted swap',rev);rev:=rev+1;
  reset role;select id into request_id from public.duty_swap_requests where from_duty_id=from_id;
  set local role authenticated;
- perform pg_temp.denied(format('select public.duty_resolve_swap(%L,''approve'',%s)',request_id,rev),'current engineer must accept');
+ perform pg_temp.denied(format('select public.duty_resolve_swap(%L,''approve'',%s)',request_id,rev),'Both engineers must accept');
  perform set_config('request.jwt.claim.sub','60000000-0000-0000-0000-000000000002',true);
  perform public.duty_resolve_swap(request_id,'accept',rev);rev:=rev+1;
  reset role;if (select count(*) from public.duty_compensation_events)<>events then raise exception 'Swap request/consent posted a commitment';end if;

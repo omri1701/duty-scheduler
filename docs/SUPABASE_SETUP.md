@@ -58,7 +58,7 @@ after merge into `develop`; this feature PR does not apply hosted migrations.
 
 ## Non-weekend members
 
-Migration `20261101202233_non_weekend_members.sql` adds `duty_members.no_weekends`
+Migration `20261105134501_non_weekend_members.sql` adds `duty_members.no_weekends`
 (default false, so existing members are unchanged) and the admin-only checked RPC
 `duty_set_no_weekends(p_member, p_no_weekends, p_revision)`: approved members only,
 revision-checked, no direct table writes. The column is readable like the rest of the
@@ -66,7 +66,7 @@ member row. Manager-only generation facts carry `noWeekends: true` for flagged
 members only, so other members' facts and fingerprints are unchanged, and
 `duty_private.save_generation` refuses Generate output that places such a member on
 a weekend not locked to them (`non-weekend-primary`). Publication and manual edits
-are unchanged. Migration `20261105132246_non_weekend_rejoin_level.sql` adds
+are unchanged. Migration `20261105134502_non_weekend_rejoin_level.sql` adds
 `duty_members.weekends_from` (YYYY-MM, null for everyone existing): clearing the setting
 records the month after every month generated or published so far, and generation facts
 carry it as `weekendsFrom`, so the weekend rotation lets the member rejoin level, like a new
@@ -188,7 +188,7 @@ distinct callbacks and separate clients; keep localhost confined to Development.
 | `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
 | `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
 | `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
-| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent, resolution and override audit reason. |
+| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent (and the requester's own consent when an admin proposed the swap), proposing admin, resolution and override audit reason. |
 | `duty_compensation_events` | Append-only manager-visible accounting events; exact half-point units, immutable source snapshots and participation history. No stored balances or historical debt import. |
 | `duty_roles` | Engineer/admin definitions and the admin capability. |
 | `duty_member_statuses` | Pending, approved and declined definitions. |
@@ -576,8 +576,25 @@ Admins retain draft editing and can switch their calendar to Published to reques
 swaps using the authoritative publication instead of draft rows.
 
 Workflow: `awaiting_engineer` -> counterpart Accept -> `awaiting_admin` -> admin
-Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject yields
-`rejected`; requester Cancel in either pending state yields `cancelled`. Only final
+Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject (at any
+pending stage) yields `rejected`; requester Cancel in either pending state yields
+`cancelled`.
+
+Admin proposals (migration `20261101202610_admin_proposed_swaps.sql`): an admin may
+pass any two members' duties to `duty_request_swap`; engineers still offer only their
+own primary duty. The request records `proposed_by` and stays `awaiting_engineer`
+until both members accepted their own side (`requester_accepted_at` for the
+requester, `accepted_by`/`accepted_at` for the counterpart); each answers once and
+either may decline. Only the proposing admin cancels. When the admin is one of the
+two, their side is normalized to the requester (`proposed_by` NULL), so their consent
+is implicit and only the other member is asked. Both consents then reach
+`awaiting_admin`: every swap, including one an admin proposed or takes part in, ends
+with an explicit admin approval, because admins first record each swap in an external
+system. Existing rows keep NULL in both new columns and their original meaning. RLS
+adds proposer visibility. Read-only `duty_swap_availability(p_from,p_to)` returns the
+same conflicts `validate_swap` refuses as `[{member,day}]`, never notes, and only to
+an approved admin or one of the two primaries. Members get emergency cover's conflicts
+with `member` NULL and only for a pair starting today or later. Only final
 approval copies the current publication into a new immutable version. Availability
 conflicts added after creation can be acknowledged at consent but require an
 explicit admin override reason at approval. Published swap requests retain their
@@ -590,10 +607,15 @@ Original dates and exclusive ends identify slots across publication copies. Ever
 live publication-pointer change (including ordinary publication or live-version
 deletion) reconciles pending requests under the existing workspace lock. If the
 counterpart duty changes from B to C, `other_id` becomes C, status returns to
-`awaiting_engineer` and `accepted_by`/`accepted_at` are cleared. C must explicitly
-accept. If the requester loses their original slot, a slot disappears/changes span,
-a date expires on revalidation, or no live publication remains, the request becomes
-`invalidated`. Unrelated slot changes preserve consent. Resolution revalidates
+`awaiting_engineer` and `accepted_by`/`accepted_at` (and an admin proposal's
+`requester_accepted_at`) are cleared: both members answer the new pairing. C must
+explicitly accept. If the requester loses their original slot, a slot disappears/changes
+span or points (compared with the immutable requested copy, migration
+`20261101202611_swap_consent_points.sql`), a date expires on revalidation, or no live
+publication remains, the request becomes `invalidated`. Unrelated slot changes preserve
+consent. Approval posts the swap's point difference to the ledger once as a `change`
+between the two members; swapping back nets it to zero, and a swapped duty that carried a
+repayment cancels that reservation with a counter-transfer, so nobody is charged twice. Resolution revalidates
 current owners and uses the current publication; global revision checks reject
 stale concurrent actions before any writes. Deleting the original source version
 sets its historical FKs to NULL but retains dates/members and does not destroy a
@@ -604,7 +626,18 @@ request while older duplicates become Invalidated.
 
 RLS allows engineers to read initiated requests and incoming requests currently
 requiring their consent; approved admins additionally see requests awaiting admin
-approval. A former counterpart immediately loses incoming visibility on reassignment.
+approval, and a proposing admin keeps seeing their proposals. Temporary members have
+no account, so admins see and answer (accept or decline) a temporary member's open side,
+and only that side (migration `20261101215234_temporary_swap_answers.sql`); the
+requester's side is answered before the other's when both are temporary, and the explicit
+final approval stays a separate step. A former counterpart
+immediately loses incoming visibility on reassignment. The approval and consent dialogs
+always show the latest copy of a request; one that changed while open shows why and cannot
+be approved from the stale view. Nobody waits on a member who can no longer sign in:
+deactivating a party, or withdrawing their approval, invalidates their pending swaps
+(trigger `duty_reconcile_member_swaps`; the migration does the same for existing ones).
+Inactive emergency cover still blocks consent and approval with "An engineer is no longer
+active and approved"; an admin rejects it.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
@@ -699,7 +732,8 @@ engineer C in an isolated development project. Do not use real member data.
    admin's approval list. C explicitly accepts; only then can admin approve A's
    request. Verify X/Y current owners, a new version, unchanged secondary cover,
    points/spans/draft and all earlier versions. Unrelated publication changes must
-   keep consent; reassignment of A's source duty must show Invalidated.
+   keep consent; reassignment of A's source duty, or new points on either duty, must
+   show Invalidated.
 5. From two profiles act on the same revision concurrently: only one resolution
    commits, the other must refresh. Test approval before consent via RPC, another
    engineer's consent attempt, inactive/pending users, second weekends, duplicate
