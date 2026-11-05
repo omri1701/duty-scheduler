@@ -126,6 +126,19 @@ for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({
   await button('Cancel draft','ביטול טיוטה').click();
   await snapshot(page,`manager-cancel-draft-${lang}`);
 });
+for(const lang of ['en','he'])test(`manager clear board ${lang}`,async({page,openApp,backend})=>{
+  for(const r of backend.raw.assignments)if(!r.publication_id&&['2026-11-02','2026-11-20'].includes(r.day))r.locked=true;
+  await openApp();
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  const label=lang==='en'?'Clear board':'ניקוי הלוח';
+  await snapshot(page,`manager-clear-board-button-${lang}`);
+  await page.locator('.calendar-top').getByRole('button',{name:label,exact:true}).click();
+  await snapshot(page,`manager-clear-board-${lang}`);
+  await page.getByRole('dialog').getByRole('button',{name:label,exact:true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByRole('button',{name:lang==='en'?'Undo':'שחזור',exact:true})).toBeVisible();
+  await snapshot(page,`manager-cleared-board-${lang}`);
+});
 for(const lang of ['en','he'])test(`published duty edit and summary ${lang}`,async({page,openApp,backend})=>{
   backend.raw.months[0].status='published';
   await openApp();

@@ -1,4 +1,4 @@
-import {defineConfig} from '@playwright/test';
+import {defineConfig, devices} from '@playwright/test';
 
 const external = process.env.DUTY_E2E_URL;
 export default defineConfig({
@@ -21,8 +21,10 @@ export default defineConfig({
     trace: 'retain-on-failure', screenshot: 'only-on-failure',
   },
   projects: [
-    {name: 'desktop', use: {browserName: 'chromium', viewport: {width: 1440, height: 1000}}},
-    {name: 'mobile', use: {browserName: 'chromium', viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, deviceScaleFactor: 1}},
+    {name: 'desktop', testIgnore: '**/iphone-*.spec.ts', use: {browserName: 'chromium', viewport: {width: 1440, height: 1000}}},
+    {name: 'mobile', testIgnore: '**/iphone-*.spec.ts', use: {browserName: 'chromium', viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, deviceScaleFactor: 1}},
+    // Safari's engine on iPhone sizes, for layout that Chromium emulation does not catch.
+    {name: 'iphone', testMatch: '**/iphone-*.spec.ts', use: {...devices['iPhone 13'], browserName: 'webkit', deviceScaleFactor: 1}},
   ],
   webServer: external ? undefined : {
     env: {DUTY_SOLVER_SPIKE: '1'},
