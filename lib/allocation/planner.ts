@@ -156,8 +156,8 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   }
   // A manager's edit of a non-weekend member (even back to zero) keeps them in the hand
   // state, so the default is only added where no one has decided otherwise. Only the weekend
-  // members fund it (decision 2026-11-05): when they can't, the rest get none this month, and
-  // whoever goes first rotates by month so each is left out equally often.
+  // members fund it (decision 2026-11-05): when they can't, the newest non-weekend members get
+  // it first and the rest get none this month.
   const available = availability(c), added = new Set<string>();
   for (const id of nonWeekendOrder(input)) {
     if (hand[id]) continue;
@@ -187,12 +187,10 @@ function splitsExactly(c: Context, input: AllocationInput, units: Readonly<Recor
     c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]),
     c.ids.map(id => weekends && c.nonWeekend.has(id)));
 }
-/** Non-weekend members in the order the default +1 is tried: by seniority, starting one
- * further each month, so when only some fit each is left out equally often. */
+/** Non-weekend members in the order the default +1 is tried: newest first, so when only
+ * some fit, the newest get it (decision 2026-11-05, revised the same day from a monthly rotation). */
 export function nonWeekendOrder(input: AllocationInput) {
-  const ids = input.seniority.filter(id => input.schedule.members.some(m => m.id === id && m.noWeekends));
-  const [year, month] = input.schedule.month.split('-').map(Number), start = ids.length ? (year * 12 + month - 1) % ids.length : 0;
-  return [...ids.slice(start), ...ids.slice(0, start)];
+  return [...input.seniority].reverse().filter(id => input.schedule.members.some(m => m.id === id && m.noWeekends));
 }
 /** Non-weekend members left without the default +1 this month because the weekend members
  * can't give up more points (not edited by hand, and the +1 would fit their own availability

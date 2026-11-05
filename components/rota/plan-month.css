@@ -37,6 +37,14 @@
 .plan-kind button:last-child[aria-pressed=true]{background:var(--plan-permanent-soft);color:var(--plan-permanent)}
 .plan-tools{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .allocation-dialog .plan-tools .allocation-step button{min-width:40px;border-radius:9px}
+.plan-tool-buttons{display:flex;align-items:center;gap:2px}
+.plan-reset[aria-disabled=true]{opacity:.5;cursor:default}
+.plan-reset-note{margin:0}
+.plan-reset-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;padding:10px 14px;border-radius:10px;background:#23392e;color:#fff;font-size:13px;line-height:1.5}
+.plan-reset-actions{display:flex;gap:4px;margin-inline-start:auto}
+.plan-reset-ask button{min-height:36px;padding:0 8px;font-weight:650;color:#cde6b5;white-space:nowrap;border-radius:8px}
+.plan-reset-ask button:focus-visible{outline:2px solid #cde6b5;outline-offset:1px}
+.plan-reset-ask button:disabled{opacity:.5}
 
 .plan-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
 .plan-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

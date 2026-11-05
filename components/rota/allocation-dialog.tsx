@@ -1,6 +1,6 @@
 'use client';
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {Check, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
+import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
@@ -34,6 +34,16 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   // keyboard action on the member opens the same choice as a list.
   const [dragging, setDragging] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
   const [giving, setGiving] = useState<string | null>(null);
+  // Reset asks first only when it would discard hand edits or drags; a reset that can't run
+  // says why. Both belong to the plan they were shown for and go away once it changes.
+  const [resetAsk, setResetAsk] = useState<object | null>(null), [resetWhy, setResetWhy] = useState<object | null>(null);
+  const resetBlocked = f.busy || !!f.resetReason;
+  const pressReset = () => {
+    if (f.busy) return;
+    if (f.resetReason) {setResetWhy(f.draft); return;}
+    if (f.resetDiscards) {setResetAsk(f.draft); return;}
+    f.reset();
+  };
   const press = useRef<{timer: ReturnType<typeof setTimeout>; x: number; y: number} | null>(null), toastRef = useRef<HTMLDivElement>(null);
   const endPress = () => {if (press.current) clearTimeout(press.current.timer); press.current = null;};
   // Touch screens long-press instead; a native touch drag would swallow the hold.
@@ -80,8 +90,21 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           </div>
           <div className="plan-tools">
             <div className="allocation-step" role="group" aria-label={t('Point step', 'גודל צעד בנקודות')}><span>{t('Step', 'צעד')}</span>{[2, 1].map(step => <button key={step} type="button" aria-pressed={f.step === step} onClick={() => f.setStep(step)}>{points(step)}</button>)}</div>
-            <Button variant="ghost" size="sm" disabled={!f.history.length || f.saving} onClick={f.undo}><RotateCcw/>{t('Undo', 'ביטול שינוי')}</Button>
+            <div className="plan-tool-buttons">
+              <Button variant="ghost" size="sm" disabled={!f.history.length || f.saving} onClick={f.undo}><RotateCcw/>{t('Undo', 'ביטול שינוי')}</Button>
+              <Button variant="ghost" size="sm" className="plan-reset" aria-disabled={resetBlocked} aria-describedby={f.resetReason ? 'plan-reset-why' : undefined}
+                title={f.resetReason ? allocationMessage(f.resetReason, t) : t('Start again from the automatic plan', 'להתחיל מחדש מהתוכנית האוטומטית')} onClick={pressReset}><ListRestart/>{t('Reset', 'איפוס')}</Button>
+            </div>
           </div>
+          {f.resetReason && <p className="plan-sr" id="plan-reset-why">{allocationMessage(f.resetReason, t)}</p>}
+          {f.resetReason && resetWhy === f.draft && <p className="allocation-caption plan-reset-note" role="status">{allocationMessage(f.resetReason, t)}</p>}
+          {!f.resetReason && f.resetDiscards && resetAsk === f.draft && <div className="plan-reset-ask" role="group" aria-label={t('Reset the plan', 'איפוס התוכנית')}>
+            <span>{t('Reset discards your hand edits and drags and starts from the automatic plan.', 'האיפוס מבטל את השינויים הידניים והגרירות ומתחיל מהתוכנית האוטומטית.')}</span>
+            <span className="plan-reset-actions">
+              <button type="button" disabled={f.busy} onClick={() => {setResetAsk(null); f.reset();}}>{t('Reset', 'איפוס')}</button>
+              <button type="button" onClick={() => setResetAsk(null)}>{t('Keep changes', 'להשאיר את השינויים')}</button>
+            </span>
+          </div>}
         </div>
       </section>
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
@@ -182,12 +205,15 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
 }
 
 /** Why some non-weekend members have no +1 this month: only the weekend members fund it. */
-function weekendShortNote({leftOut, takers}: {leftOut: number; takers: string[]}, list: (ids: string[]) => string, t: Translate) {
+function weekendShortNote({leftOut, given, takers}: {leftOut: number; given: boolean; takers: string[]}, list: (ids: string[]) => string, t: Translate) {
   const who = leftOut === 1 ? t('1 member', 'לחבר אחד') : t(`${leftOut} members`, `ל־${leftOut} חברים`);
+  // When only some get it, the newest go first (decision 2026-11-05).
+  const rest = given ? t(` goes to the newest members first and is left out for ${who} this month.`, ` ניתנת קודם לחברים החדשים ביותר, ולא ניתנת ${who} החודש.`)
+    : t(` is left out for ${who} this month.`, ` לא ניתנת ${who} החודש.`);
   if (!takers.length) return t(`With no weekend members, the No weekends +1 is left out for ${who} this month.`,
     `בלי חברים שעושים סופי שבוע, התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`);
   const named = takers.length <= 3 ? list(takers) : t(`${takers.length} members`, `${takers.length} חברים`);
   return takers.length === 1
-    ? t(`Only ${named} takes weekends, so the No weekends +1 is left out for ${who} this month.`, `רק ${named} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`)
-    : t(`Only ${named} take weekends, so the No weekends +1 is left out for ${who} this month.`, `רק ${named} עושים סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ${who} החודש.`);
+    ? t(`Only ${named} takes weekends, so the No weekends +1`, `רק ${named} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע”`) + rest
+    : t(`Only ${named} take weekends, so the No weekends +1`, `רק ${named} עושים סופי שבוע, ולכן התוספת של „ללא סופי שבוע”`) + rest;
 }

@@ -5,7 +5,8 @@ import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
 import {allocationTotals, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
-import {allocationCeilings, allocationDivisible, nonWeekendLeftOut, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {allocationCeilings, allocationDivisible, NON_WEEKEND_UNITS, nonWeekendLeftOut, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
+import {handOf} from '@/lib/allocation/derive';
 import {availableCeilings, context} from '@/lib/allocation/model';
 import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
@@ -131,8 +132,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!open || !captured || !draft?.changes || weekendTakers === null) return null;
     const i = {...captured.input, schedule: {...captured.input.schedule, locks, approvals}};
     try {
-      const leftOut = nonWeekendLeftOut(i, draft).length;
-      return leftOut ? {leftOut, takers: i.seniority.filter(id => !i.schedule.members.some(m => m.id === id && m.noWeekends))} : null;
+      const left = nonWeekendLeftOut(i, draft), nonWeekend = (id: string) => i.schedule.members.some(m => m.id === id && m.noWeekends);
+      // Some got it: the newest go first (decision 2026-11-05), so the note says so.
+      const given = i.seniority.some(id => nonWeekend(id) && !left.includes(id) && (draft.changes[id]?.permanent ?? 0) > 0);
+      return left.length ? {leftOut: left.length, given, takers: i.seniority.filter(id => !nonWeekend(id))} : null;
     } catch {return null;}
   }, [open, captured, locks, approvals, draft, weekendTakers]);
   // A target the month's duties can't make exactly (half a point in a whole-point month):
@@ -170,6 +173,27 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!captured || !editable) return null;
     try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, editable, step);} catch {return null;}
   }, [captured, locks, approvals, editable, step]);
+  // Reset: the plan a first opening makes (proposeAllocation with nothing retained), so the
+  // automatic No weekends +1s follow the current settings. Re-plan itself keeps hand edits.
+  const fresh = useMemo(() => {
+    if (!open || !captured?.generationAllowed || !editable) return null;
+    try {return proposeAllocation({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}).draft;} catch {return null;}
+  }, [open, captured, locks, approvals, editable]);
+  const resetState = useMemo(() => {
+    if (!open || !draft) return {reason: '', discards: false};
+    if (replanBlocked) return {reason: replanBlocked, discards: false};
+    if (!captured?.generationAllowed) return {reason: t('Generation has closed, so the plan can’t be reset.', 'השיבוץ האוטומטי נסגר, ולכן אי אפשר לאפס את התוכנית.'), discards: false};
+    if (!editable || !fresh) return {reason: t('This plan can’t be edited right now, so it can’t be reset.', 'אי אפשר לערוך את התוכנית כרגע, ולכן אי אפשר לאפס אותה.'), discards: false};
+    const ids = captured.input.seniority, ownHand = handOf(editable), freshHand = handOf(fresh);
+    const key = (d: AllocationDraft, hand: Record<string, unknown>) => JSON.stringify([ids.map(id => [d.baselineUnits[id], d.offeredUnits[id], d.targetsUnits[id], d.changes[id]?.temporary ?? 0, d.changes[id]?.permanent ?? 0, !!hand[id]]), d.pairs, d.repayments]);
+    if (key(editable, ownHand) === key(fresh, freshHand)) return {reason: t('This is already the starting plan.', 'זו כבר התוכנית ההתחלתית.'), discards: false};
+    // A drag, or a hand change the fresh plan doesn't make itself (an automatic No weekends +1 is not one).
+    const nonWeekend = (id: string) => captured.input.schedule.members.some(m => m.id === id && m.noWeekends);
+    const discards = editable.pairs.length > 0 || Object.entries(ownHand).some(([id, ch]) =>
+      !(nonWeekend(id) && !ch.temporary && ch.permanent === NON_WEEKEND_UNITS) &&
+      !(freshHand[id] && freshHand[id].temporary === ch.temporary && freshHand[id].permanent === ch.permanent));
+    return {reason: '', discards};
+  }, [open, draft, replanBlocked, captured, editable, fresh, t]);
   let structural = '';
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
@@ -240,6 +264,14 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     const previous = {draft, locks, approvals};
     if (plan(() => editAllocation(input, editable, {engineer, deltaUnits, kind}).draft)) {
       setHistory(h => [...h, previous]); setNotice(t('Points updated. Counterpart changes are shown below.', 'הנקודות עודכנו. השינויים אצל המהנדסים האחרים מוצגים בהמשך.'));
+    }
+  }
+  /** Replaces the plan with the first-opening proposal; Undo brings the previous one back. */
+  function reset() {
+    if (!input || !draft || phase !== 'idle' || resetState.reason || !fresh) return;
+    const previous = {draft, locks, approvals};
+    if (plan(() => proposeAllocation(input).draft)) {
+      setHistory(h => [...h, previous]); setNotice(t('Plan reset to the starting proposal. Undo brings your changes back.', 'התוכנית אופסה להצעה ההתחלתית. ביטול שינוי מחזיר את השינויים שלך.'));
     }
   }
   /** Exact manual transfer of one point; temporary until made permanent. */
@@ -360,7 +392,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
     locks, approvals, totals, uneven, noWeekends, weekendTakers, weekendShort, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
-    history, undo, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
+    history, undo, reset, resetReason: resetState.reason, resetDiscards: resetState.discards, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',
     canConfirm: !!draft && reviewed && !structural && phase === 'idle', saved: !!draft && draft === savedDraft,

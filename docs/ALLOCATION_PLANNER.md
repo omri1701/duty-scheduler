@@ -135,17 +135,18 @@ one of them has repaid one (2 below).
    - the exact-points check (`splitsExactly`, `partitionableWeekends`) gives weekends
      to weekend members only; where the month can't do that it keeps the plain
      weights check as before, so no step makes the plan less schedulable;
-   - the defaults are tried in seniority order starting one member further each
-     month (`nonWeekendOrder`), so when only some fit each member is left out
-     equally often; `nonWeekendLeftOut` lists who is left out for Plan the month's
-     note (EN/HE);
+   - the defaults are tried newest non-weekend member first (`nonWeekendOrder`),
+     so when only some fit the newest get it (revised the same day from a monthly
+     rotation, at the user's request); `nonWeekendLeftOut` lists who is left out
+     for Plan the month's note (EN/HE), which says the newest go first when some
+     got it;
    - a re-plan whose kept +1s would need a non-weekend member's point drops just
      those defaults (the loop adds back what fits) and keeps other hand changes.
    Without a non-weekend member every rule above is inactive and plans are
    unchanged. Alternatives considered: +0.5 (not a duty step in whole-point
    months), unpaid +1 as Temporary debt (never repayable while takers stay few),
    a fixed cap from the weekend count (not tied to what the takers can give) and
-   seniority order (always leaves out the same newest members).
+   a monthly rotation (replaced by newest first, the user's choice).
 
 Unavailable members keep their fair baseline; the manager moves their work
 (the row warns) and Generate keeps a partial result when targets cannot be met.
@@ -244,6 +245,12 @@ of the rest still reproduces the saved changes. Before, a reopened plan froze ev
 changed member, so in a two-member team a − had no one to give the point to. A new
 proposal reapplies the retained hand changes and pairs of members still present
 when they fit the floors and the ceiling (`retainedChanges`); otherwise the plain proposal stands.
+**Reset** in Plan the month is `proposeAllocation` with nothing retained, the plan a
+first opening makes, so it drops hand edits, drags and a kept baseline and the
+automatic No weekends +1s follow the current settings (decision 2026-11-05). It asks
+first only when it would drop a hand change or drag (an automatic +1 is not one),
+pushes the previous plan onto Undo, and is unavailable with a reason when nothing
+would change, the plan can't be edited or generation has closed.
 It also keeps the confirmed ordinary baseline when that is still the same
 partition of the month's duties, so a seniority reorder after confirmation never
 forces a different baseline onto the next proposal (the database keeps a confirmed
@@ -371,7 +378,7 @@ and provenance are unchanged.
 
 ```sh
 node --test tests/allocation-binding.test.mjs tests/allocation.test.mjs tests/allocation-netting.test.mjs tests/compensation.test.mjs
-node --test tests/non-weekend.test.mjs   # non-weekend default, caps, Generate eligibility and rotation
+node --test tests/non-weekend.test.mjs   # non-weekend default, caps, Generate eligibility, newest first and Reset
 node --test tests/allocation-fuzz.test.mjs   # FUZZ_SEQ, FUZZ_LEN, FUZZ_SEED widen the bounded run
 node --test tests/allocation-months.test.mjs   # several months published in a row; MONTHS_SEQ, MONTHS_LEN
 node --test tests/allocation-lifecycle.test.mjs   # extremes, back to fair, re-plan, delete, later months; LIFE_SEQ, LIFE_LEN

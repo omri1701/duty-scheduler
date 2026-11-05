@@ -104,9 +104,56 @@ for(const lang of ['en','he'] as const)test(`Plan the month says when the weeken
  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  const taker=participants[0].name,left=await dialog.locator('.allocation-row-note').filter({hasText:new RegExp(`^${he?'ללא סופי שבוע':'No weekends'}$`)}).count();
+ const given=await dialog.locator('.allocation-row-note').filter({hasText:he?'ללא סופי שבוע · +1':'No weekends · +1'}).count();
  expect(left).toBeGreaterThan(1);
- await expect(dialog.getByRole('note').filter({hasText:he?`רק ${taker} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע” לא ניתנת ל־${left} חברים החודש.`:
-  `Only ${taker} takes weekends, so the No weekends +1 is left out for ${left} members this month.`})).toBeVisible();
+ // When some get it, the newest go first (decision 2026-11-05), and the note says so.
+ const first=given?(he?' ניתנת קודם לחברים החדשים ביותר, ולא ניתנת':' goes to the newest members first and is left out'):(he?' לא ניתנת':' is left out');
+ await expect(dialog.getByRole('note').filter({hasText:he?`רק ${taker} עושה סופי שבוע, ולכן התוספת של „ללא סופי שבוע”${first} ל־${left} חברים החודש.`:
+  `Only ${taker} takes weekends, so the No weekends +1${first} for ${left} members this month.`})).toBeVisible();
+ if(given){
+  // Every member who got it is newer than every member left out.
+  const notes=await dialog.locator('.plan-row').evaluateAll(rows=>rows.map(r=>r.querySelector('.allocation-row-note')?.textContent??''));
+  const plus=notes.flatMap((n,i)=>n.includes('+1')?[i]:[]),out=notes.flatMap((n,i)=>/^(No weekends|ללא סופי שבוע)$/.test(n)?[i]:[]);
+  expect(Math.min(...plus)).toBeGreaterThan(Math.max(...out));
+ }
  // No one is cut to fund it: every non-weekend row stays without a minus.
  await expect(dialog.locator('.allocation-row-note').filter({hasText:/−|-\d/})).toHaveCount(0);
+});
+
+// Reset (decision 2026-11-05): the plan a first opening makes, so the automatic +1s follow the
+// current settings; re-plan still keeps hand edits. It asks only when it would discard them.
+for(const lang of ['en','he'] as const)test(`Reset in Plan the month returns to the starting plan ${lang}`,async({page,openApp,backend})=>{
+ const he=lang==='he',{dialog,row}=await openPlan(page,backend,openApp,lang),who=name(backend,ids.e);
+ const reset=dialog.getByRole('button',{name:he?'איפוס':'Reset',exact:true}),note=row.locator('.allocation-row-note');
+ const status=dialog.locator('.plan-reset-note'),ask=dialog.getByRole('group',{name:he?'איפוס התוכנית':'Reset the plan'});
+ await expect(note).toHaveText(he?'ללא סופי שבוע · +1':'No weekends · +1');
+ // Nothing to reset yet: disabled, and pressing it says why.
+ await expect(reset).toHaveAttribute('aria-disabled','true');
+ await expect(reset).toHaveAccessibleDescription(he?'זו כבר התוכנית ההתחלתית.':'This is already the starting plan.');
+ // Still pressable (aria-disabled), so a phone can show the reason too.
+ await reset.click({force:true});
+ await expect(status).toHaveText(he?'זו כבר התוכנית ההתחלתית.':'This is already the starting plan.');
+ // Fits beside Undo on a phone as on a desktop.
+ const box=(await reset.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+ // A hand edit: the +1 taken back.
+ await dialog.getByRole('button',{name:he?/^קבוע/:/^Permanent/}).click();
+ await row.getByRole('button',{name:`${he?'הפחתת קבוע':'Decrease Permanent'} · ${who}`,exact:true}).click();
+ await expect(note).toHaveText(he?'ללא סופי שבוע':'No weekends');
+ await expect(status).toHaveCount(0);
+ await expect(reset).toHaveAttribute('aria-disabled','false');
+ // It would discard the edit, so it asks; keeping the changes leaves the plan as it is.
+ await reset.click();
+ await expect(ask).toContainText(he?'האיפוס מבטל את השינויים הידניים והגרירות ומתחיל מהתוכנית האוטומטית.':'Reset discards your hand edits and drags and starts from the automatic plan.');
+ await ask.getByRole('button',{name:he?'להשאיר את השינויים':'Keep changes',exact:true}).click();
+ await expect(ask).toHaveCount(0);
+ await expect(note).toHaveText(he?'ללא סופי שבוע':'No weekends');
+ await reset.click();
+ await ask.getByRole('button',{name:he?'איפוס':'Reset',exact:true}).click();
+ await expect(note).toHaveText(he?'ללא סופי שבוע · +1':'No weekends · +1');
+ await expect(dialog.getByRole('status').filter({hasText:he?'התוכנית אופסה להצעה ההתחלתית.':'Plan reset to the starting proposal.'})).toBeVisible();
+ await expect(reset).toHaveAttribute('aria-disabled','true');
+ await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled();
+ // Undo brings the edit back.
+ await dialog.getByRole('button',{name:he?'ביטול שינוי':'Undo',exact:true}).click();
+ await expect(note).toHaveText(he?'ללא סופי שבוע':'No weekends');
 });

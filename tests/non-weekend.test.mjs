@@ -193,7 +193,7 @@ test('turning the setting off rejoins the weekend rotation level, like a new mem
 });
 
 // Few weekend members (decision 2026-11-05): only the weekend members fund the +1, never below
-// the month's weekends; the rest get none this month, in an order that rotates by month.
+// the month's weekends; the newest non-weekend members get it first, the rest none this month.
 const ids12 = Array.from({length: 12}, (_, i) => `e${String(i).padStart(2, '0')}`);
 const fewTakers = (k, month = '2026-11', kind = 'normal', count = 12) => {
   const input = allocationInput(count, ids12.slice(count - k, count), kind);
@@ -229,20 +229,40 @@ test('12 members, 10 non-weekend: the two weekend members keep their weekends an
   assert.deepEqual(['e00', 'e01'].map(id => edited.targetsUnits[id]), ['e00', 'e01'].map(id => draft.targetsUnits[id]));
 });
 
-test('when only some fit, +1 goes to as many as the weekend members can fund, starting one further each month', () => {
-  const got = Object.fromEntries(ids12.slice(4).map(id => [id, 0])), sets = [];
-  const months = ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06'];
-  for (const month of months) {
+test('when only some fit, +1 goes to as many as the weekend members can fund, newest non-weekend members first', () => {
+  const nw = ids12.slice(4);
+  for (const month of ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']) {
     const input = fewTakers(8, month), {draft} = proposeAllocation(input);
     assertWeekendsFunded(input, draft, month);
-    const plus = ids12.slice(4).filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
+    const plus = nw.filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
     assert.ok(plus.length > 0 && plus.length < 8, `${month}: some, not all`);
-    assert.deepEqual(nonWeekendLeftOut(input, draft), ids12.slice(4).filter(id => !plus.includes(id)), `${month}: the rest are explained`);
-    plus.forEach(id => got[id]++); sets.push(plus.join());
+    // The newest get it: whoever has it is newer than everyone left out.
+    assert.deepEqual(plus, nw.slice(nw.length - plus.length), `${month}: newest first`);
+    assert.deepEqual(nonWeekendLeftOut(input, draft), nw.filter(id => !plus.includes(id)), `${month}: the rest are explained`);
   }
-  assert.ok(new Set(sets).size > 4, 'a different group most months');
-  assert.ok(Math.max(...Object.values(got)) - Math.min(...Object.values(got)) <= 2, `spread evenly: ${JSON.stringify(got)}`);
-  assert.deepEqual(nonWeekendOrder(fewTakers(8, '2026-11')), [...ids12.slice(6), 'e04', 'e05']);
+  assert.deepEqual(nonWeekendOrder(fewTakers(8, '2026-11')), [...nw].reverse());
+  // The user's case, by name: Tamar joined after Maya, so Tamar gets the +1 before Maya.
+  const input = fewTakers(8), {draft} = proposeAllocation(input), plus = nw.filter(id => draft.changes[id].permanent === NON_WEEKEND_UNITS);
+  const maya = nw[nw.length - plus.length - 1], tamar = nw[nw.length - plus.length];
+  assert.equal(draft.changes[tamar].permanent, NON_WEEKEND_UNITS);
+  assert.equal(draft.changes[maya].permanent, 0);
+});
+
+test('Reset is the first-opening plan: it drops kept +1s and hand edits that re-plan keeps', () => {
+  // Saved with e06..e11 on +1 and a hand edit on e00; then e11 takes weekends again.
+  const nov = fewTakers(6), saved = editAllocation(nov, proposeAllocation(nov).draft, {engineer: 'e00', deltaUnits: -2, kind: 'temporary'}).draft;
+  const now = allocationInput(12, ids12.slice(6, 11)), replanned = proposeAllocation(now, retainedChanges(saved)).draft;
+  assert.equal(replanned.changes.e11.permanent, NON_WEEKEND_UNITS, 're-plan keeps the old +1 as a hand change');
+  assert.equal(replanned.changes.e00.temporary, -2, 're-plan keeps the hand edit');
+  const reset = proposeAllocation(now).draft;
+  // e11 is a weekend member again: no +1, and like the others it may fund the +1s.
+  assert.ok(reset.changes.e11.permanent <= 0, 'reset recomputes the +1 for the current settings');
+  assert.ok(!reset.hand.includes('e11') && !reset.hand.includes('e00'), 'no hand edits survive');
+  assert.deepEqual(reset.pairs, []);
+  assert.deepEqual(reset.hand, ids12.slice(6, 11).filter(id => reset.changes[id].permanent === NON_WEEKEND_UNITS));
+  // The same as opening the month for the first time, and stable when pressed again.
+  assert.deepEqual(reset, proposeAllocation(structuredClone(now)).draft);
+  assertWeekendsFunded(now, reset, 'reset');
 });
 
 test('ordinary teams keep the +1, and a holiday weekend never strands it on the only member who can hold it', () => {
