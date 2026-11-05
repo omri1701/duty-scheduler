@@ -1,8 +1,28 @@
 import {test, expect} from './fixtures';
 import type {Page} from '@playwright/test';
+import {existsSync} from 'node:fs';
 
 // Real iPhone CSS widths, plus 300 for Safari page zoom on the smallest one.
 const WIDTHS = [300, 375, 390, 393, 402, 430, 440];
+
+// Resizing re-measures in a ResizeObserver and then re-renders; read the result only after both.
+async function resize(page: Page, width: number) {
+  await page.setViewportSize({width, height: 844});
+  for (let i = 0; i < 2; i++) await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 50))));
+}
+
+/** The calendar header as a reviewable reference; a missing one is attached for the gallery, as in visual.spec. */
+async function region(page: Page, name: string) {
+  test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: name + '.png', viewport: page.viewportSize(), language: await page.locator('html').getAttribute('lang')})});
+  await page.evaluate(() => document.fonts.ready);
+  const clip = (await page.locator('.calendar-top').boundingBox())!;
+  if (!existsSync(test.info().snapshotPath(name + '.png'))) {
+    const path = test.info().outputPath(name + '-actual.png');
+    await page.screenshot({path, clip, animations: 'disabled', caret: 'hide'});
+    await test.info().attach(name + '-actual.png', {path, contentType: 'image/png'});
+  }
+  await expect.soft(page).toHaveScreenshot(name + '.png', {clip});
+}
 
 async function rows(page: Page) {
   return page.locator('.calendar-top').evaluate(top => {
@@ -22,7 +42,7 @@ test(`calendar tools stay on one row on iPhones, ${lang}, ${reopened ? 'reopened
   const tools = page.locator('.calendar-draft-tools'), buttons = tools.locator('button');
   const names = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
   for (const width of WIDTHS) {
-    await page.setViewportSize({width, height: 844});
+    await resize(page, width);
     // Zoomed past the smallest iPhone, Draft · Published · My duties fill the row: the icons wrap as a pair.
     if (reopened && width < 375) await expect(tools).toHaveAttribute('data-compact', '');
     else await expect.poll(() => rows(page), {message: `${width}px`}).toBe(1);
@@ -39,9 +59,9 @@ test(`calendar tools stay on one row on iPhones, ${lang}, ${reopened ? 'reopened
     const [a, b] = [(await buttons.nth(0).boundingBox())!, (await buttons.nth(1).boundingBox())!];
     expect(Math.abs(a.y - b.y), `${width}px pair`).toBeLessThan(1);
   }
-  await page.setViewportSize({width: 390, height: 844});
+  await resize(page, 390);
   await expect.poll(() => rows(page)).toBe(1);
-  await expect(page.locator('.calendar-top')).toHaveScreenshot(`iphone-calendar-tools-${reopened ? 'reopened' : 'draft'}-${lang}.png`);
+  await region(page, `iphone-calendar-tools-${reopened ? 'reopened' : 'draft'}-${lang}`);
 });
 
 for (const scheme of ['light', 'dark'] as const)
