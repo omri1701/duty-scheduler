@@ -4,6 +4,7 @@ import {validateGeneration} from '../../lib/scheduling/validate';
 import {record} from '../../lib/compensation';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {proposeAllocation, transferAllocation, persistedDraft} from '../../lib/allocation';
+import type {AllocationDraft} from '../../lib/allocation/types';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -310,6 +311,29 @@ test('a reopened published month is changed from the ledger without its own entr
   await expect(avery.target).toHaveText(String(draft.targetsUnits[ids.admin] / 2 - 1));
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
+});
+
+test('a restored copy of a deleted publication from an old team is replaced by a proposal that edits, saves and generates', async ({page, backend, openApp}) => {
+  // The hosted December (2026-11-05): an earlier format naming three former members showed
+  // "6 / 27 points", its + / − did nothing and Generate could not run.
+  fresh(backend);
+  const old = {[ids.admin]: 12, 'gone-1': 0, 'gone-2': 0, 'gone-3': 0};
+  backend.allocations.set(MONTH, {draft: {pending: [], sourceKey: 'deleted-ledger', transfers: [], repayments: [], offeredUnits: {...old}, targetsUnits: {...old}, baselineUnits: {...old}} as unknown as AllocationDraft, locks: [], approvals: []});
+  backend.sourcePublication = 'deleted-publication'; backend.replanBlocked = null;
+  await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'}), alex = member(page, 'Alex Atlas');
+  await expect(dialog).toContainText('The saved allocation no longer fits this month, so a new proposal replaced it.');
+  await expect(dialog.locator('.allocation-footer strong')).toHaveText('26 / 26 pts');
+  const before = Number(await alex.target.textContent());
+  await alex.row.getByRole('button', {name: 'Increase Temporary · Alex Atlas', exact: true}).click();
+  await expect(alex.target).toHaveText(String(before + 1));
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeVisible();
+  expect(Object.keys(backend.allocations.get(MONTH)!.draft.targetsUnits)).not.toContain('gone-1');
+  await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  expect(backend.calls.filter(c => c.name === 'duty_save_generation')).toHaveLength(1);
+  expect(backend.raw.months[0].generated).toBe(true);
 });
 
 test('a published month that a later month already repays from says so and takes no edits', async ({page, backend, openApp}) => {

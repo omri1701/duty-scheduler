@@ -3,7 +3,7 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import {toast} from 'sonner';
 import type {TeamWorkspace} from './use-team-workspace';
 import {generationNow, schedulingSupported} from '@/lib/allocation/client';
-import {allocationTotals, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
+import {allocationTotals, copyFits, reopenAllocation, reviewAllocation} from '@/lib/allocation/review';
 import {balanced, classifyTransfer, editAllocation, editOptions, persistedDraft, transferAllocation, unplacedChanges} from '@/lib/allocation/edits';
 import {allocationCeilings, allocationDivisible, proposeAllocation, retainedChanges, unevenBaseline} from '@/lib/allocation/planner';
 import {availableCeilings, context} from '@/lib/allocation/model';
@@ -11,7 +11,7 @@ import {generatedNotes, ledgerChange} from '@/lib/allocation/outcome';
 import {compileAllocation, planAllocation} from '@/lib/allocation/compile';
 import type {AllocationDraft, AllocationInput, Kind} from '@/lib/allocation/types';
 import {createGenerationWorker} from '@/lib/scheduling/client';
-import {inputKey, prepareGeneration} from '@/lib/scheduling/domain';
+import {inputKey, prepareGeneration, snapshotKey} from '@/lib/scheduling/domain';
 import {weekdayRotation, weekendRotation} from '@/lib/scheduling/rotation';
 import {publishedHistory} from '@/lib/supabase/snapshot';
 import {addDays} from '@/lib/rota/calendar-dates';
@@ -151,6 +151,8 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     try {return editOptions({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, editable, step);} catch {return null;}
   }, [captured, locks, approvals, editable, step]);
   let structural = '';
+  // The shown plan is the stored copy of a publication, kept with its provenance.
+  const copy = !!captured?.sourcePublicationId && !!draft && snapshotKey(persistedDraft(draft)) === snapshotKey(captured.allocation);
   // Every change kind must have found its counterpart: the hand total of each
   // kind is zero once the automatic balance has placed it.
   const unplaced = draft?.changes ? unplacedChanges(draft) : {temporary: 0, permanent: 0};
@@ -159,7 +161,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
       prepareGeneration({...input.schedule, targets: Object.fromEntries(Object.entries(draft.targetsUnits).map(([id, u]) => [id, u / 2]))});
       // An unchanged copy of an earlier publication keeps its stored provenance;
       // the checked RPC revalidates it. Anything else needs the per-person shape.
-      if (!draft.changes) {if (!captured?.sourcePublicationId) structural = t('This saved allocation uses an earlier format. Generation has closed, so it can’t be replaced with a new proposal.', 'ההקצאה השמורה נשמרה בפורמט ישן. השיבוץ האוטומטי נסגר ולכן לא ניתן להחליף אותה בהצעה חדשה.');}
+      if (!draft.changes) {if (!copy) structural = t('This saved allocation uses an earlier format. Generation has closed, so it can’t be replaced with a new proposal.', 'ההקצאה השמורה נשמרה בפורמט ישן. השיבוץ האוטומטי נסגר ולכן לא ניתן להחליף אותה בהצעה חדשה.');}
       else if (!balanced(draft)) structural = t('Place the remaining points with the Temporary or Permanent controls.', 'יש לחלק את הנקודות שנותרו באמצעות בקרי השינוי הזמני או הקבוע.');
     } catch (e) {structural = errorMessage(e, 'Review allocation');}
   }
@@ -168,16 +170,17 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   if (draft?.changes && input && !structural) {try {planned = planAllocation(input, draft);} catch {planned = null;}}
   // A plan the ledger can't book is explained here, before Generate, never after it.
   // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
-  if (planned && !planned.confirmable && !captured?.sourcePublicationId) structural = bookingProblem(planned.diagnostics);
+  if (planned && !planned.confirmable && !copy) structural = bookingProblem(planned.diagnostics);
   /** Proposal, review and edits are synchronous arithmetic; only Generate solves. */
   function plan(make: () => AllocationDraft) {
     setError('');
     try {const next = make(); setDraft(next); setReviewed(true); setMoved(null); return next;}
     catch (e) {fail(e); return null;}
   }
-  // Copied publication intent keeps its stored provenance; the checked RPC revalidates it.
+  // Copied publication intent that still fits the month keeps its stored provenance;
+  // the checked RPC revalidates it. A copy that no longer fits is reviewed like any plan.
   const review = (i: AllocationInput, saved: AllocationDraft, copied: boolean) =>
-    copied ? saved : reviewAllocation(i, saved);
+    copied && copyFits(i, saved) ? saved : reviewAllocation(i, saved);
   /** Reviews a saved or retained allocation. One that no longer fits (an earlier
    * format, a changed team, or a failure that needs fresh credit) is replaced by a
    * new proposal keeping the per-person changes that still fit, while generation
@@ -185,8 +188,10 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   function adopt(c: GenerationContext, saved: AllocationDraft | null, copied: boolean, reason = '') {
     if (saved && !needsProposal(reason)) {
       try {
-        const next = review(c.input, saved, copied);
-        if (next.changes || copied || !c.generationAllowed) return plan(() => next);
+        // Once generation has closed no proposal can replace a copy, so it is shown as stored.
+        const keep = copied && (!c.generationAllowed || copyFits(c.input, saved));
+        const next = keep ? saved : reviewAllocation(c.input, saved);
+        if (next.changes || keep || !c.generationAllowed) return plan(() => next);
       } catch (e) {if (!c.generationAllowed) {fail(e); return null;}}
     }
     if (!c.generationAllowed) return null;
