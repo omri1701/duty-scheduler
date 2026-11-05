@@ -139,6 +139,20 @@ for(const lang of ['en','he'])test(`manager clear board ${lang}`,async({page,ope
   await expect(page.getByRole('button',{name:lang==='en'?'Undo':'שחזור',exact:true})).toBeVisible();
   await snapshot(page,`manager-cleared-board-${lang}`);
 });
+for(const lang of ['en','he'])test(`published duty edit and summary ${lang}`,async({page,openApp,backend})=>{
+  backend.raw.months[0].status='published';
+  await openApp();
+  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  const t=(en:string,he:string)=>lang==='en'?en:he;
+  await duty(page,'2026-11-04').click();
+  await page.getByRole('combobox',{name:t('Engineer','מהנדס'),exact:true}).click();
+  await page.getByRole('option',{name:t('Alex Atlas · unavailable','Alex Atlas · לא זמין'),exact:true}).click();
+  await page.getByRole('checkbox',{name:t('Override availability as admin','חריגה מאילוץ כמנהל')}).check();
+  await page.getByLabel(t('Required audit reason','נימוק חובה לתיעוד')).fill('Covering a family event');
+  await snapshot(page,`published-edit-${lang}`);
+  await page.getByRole('button',{name:t('Review change','בדיקת השינוי'),exact:true}).click();
+  await snapshot(page,`published-edit-summary-${lang}`);
+});
 test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) => {
   await openApp(); await snapshot(page, 'admin-draft-en');
   await duty(page, '2026-11-02').click(); await snapshot(page, 'duty-editor-en');
