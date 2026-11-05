@@ -13,10 +13,14 @@ CREATE TABLE public.duty_members (
     -- Standing admin setting: Generate never places this member on a weekend duty
     -- (lib/scheduling/domain.ts, duty_private.generation_validate).
     no_weekends boolean DEFAULT false NOT NULL,
+    -- Set when the setting is cleared (decision 2026-11-05): the weekend rotation ignores
+    -- the member's duties in months before this one, so they rejoin level, like a new member.
+    weekends_from text,
     CONSTRAINT duty_members_identity_check CHECK ((is_temporary AND email IS NULL AND role = 'engineer' AND status = 'approved') OR (NOT is_temporary AND email IS NOT NULL)),
     CONSTRAINT duty_members_color_check CHECK ((color ~ '^#[0-9a-fA-F]{6}$'::text)),
     CONSTRAINT duty_members_name_check CHECK (((length(TRIM(BOTH FROM name)) >= 1) AND (length(TRIM(BOTH FROM name)) <= 80))),
-    CONSTRAINT duty_members_seniority_check CHECK ((seniority >= 0))
+    CONSTRAINT duty_members_seniority_check CHECK ((seniority >= 0)),
+    CONSTRAINT duty_members_weekends_from_check CHECK ((weekends_from ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text))
 );
 
 ALTER TABLE ONLY public.duty_members

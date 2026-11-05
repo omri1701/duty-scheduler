@@ -4,8 +4,10 @@ export type Calendar = {
   specialDates?: string[];
 };
 /** `noWeekends`: a standing admin setting. Generate never places the member on a weekend
- * duty (either half of a split weekend included) unless the manager locked it to them. */
-export type Member = {id: string; active: boolean; approved: boolean; eligible: boolean; noWeekends?: boolean};
+ * duty (either half of a split weekend included) unless the manager locked it to them.
+ * `weekendsFrom` (YYYY-MM): set when the setting was cleared; the weekend rotation ignores
+ * the member's duties before that month, so they rejoin level, like a new member. */
+export type Member = {id: string; active: boolean; approved: boolean; eligible: boolean; noWeekends?: boolean; weekendsFrom?: string};
 export type Neighbor = {
   id: string; ownerMonth: string; start: string; end: string; engineer: string;
   source: 'published' | 'working';

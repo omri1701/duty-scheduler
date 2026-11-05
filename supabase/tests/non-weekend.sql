@@ -53,11 +53,40 @@ do $$declare f jsonb:=duty_private.generation_facts('2026-11');begin
  if not f->'members' @> '[{"id":"75000000-0000-0000-0000-000000000002","noWeekends":true}]'
   or (select count(*) from jsonb_array_elements(f->'members') m where m ? 'noWeekends')<>1 then raise exception 'Generation facts: %',f->'members'; end if;
 end$$;
+-- November is generated, December not yet: clearing rejoins the rotation from December,
+-- level with the team like a new member (decision 2026-11-05).
+insert into public.duty_months(month,deadline,generated) values('2026-11','2026-10-24',true),('2026-12','2026-11-24',false);
 set local role authenticated;
 set local request.jwt.claim.sub='75000000-0000-0000-0000-000000000001';
 select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',false,(select revision from public.duty_workspace));
 do $$begin
  if (select no_weekends from public.duty_members where id='75000000-0000-0000-0000-000000000002') then raise exception 'Setting not cleared'; end if;
+ if (select weekends_from from public.duty_members where id='75000000-0000-0000-0000-000000000002') is distinct from '2026-12' then raise exception 'Rejoin month not stored'; end if;
+end$$;
+select pg_temp.must_fail($c$update public.duty_members set weekends_from='2027-01' where id='75000000-0000-0000-0000-000000000002'$c$,'permission denied');
+-- Clearing an already clear setting, or turning it on again, keeps the rejoin month.
+select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',false,(select revision from public.duty_workspace));
+reset role;update public.duty_months set generated=true where month='2026-12';set local role authenticated;
+select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',false,(select revision from public.duty_workspace));
+do $$begin
+ if (select weekends_from from public.duty_members where id='75000000-0000-0000-0000-000000000002') is distinct from '2026-12' then raise exception 'A clear setting moved the rejoin month'; end if;
+end$$;
+reset role;
+do $$declare f jsonb:=duty_private.generation_facts('2027-01');begin
+ if not f->'members' @> '[{"id":"75000000-0000-0000-0000-000000000002","weekendsFrom":"2026-12"}]'
+  or (select count(*) from jsonb_array_elements(f->'members') m where m ? 'weekendsFrom')<>1 or f->'members' @> '[{"id":"75000000-0000-0000-0000-000000000002","noWeekends":true}]'
+  then raise exception 'Rejoin facts: %',f->'members'; end if;
+end$$;
+set local role authenticated;
+set local request.jwt.claim.sub='75000000-0000-0000-0000-000000000001';
+-- On again and off again after December was generated: the rejoin month moves to January.
+select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',true,(select revision from public.duty_workspace));
+do $$begin
+ if (select weekends_from from public.duty_members where id='75000000-0000-0000-0000-000000000002') is distinct from '2026-12' then raise exception 'Turning it on moved the rejoin month'; end if;
+end$$;
+select public.duty_set_no_weekends('75000000-0000-0000-0000-000000000002',false,(select revision from public.duty_workspace));
+do $$begin
+ if (select weekends_from from public.duty_members where id='75000000-0000-0000-0000-000000000002') is distinct from '2027-01' then raise exception 'Rejoin month not advanced'; end if;
 end$$;
 -- A temporary member takes the setting like anyone else, and generation facts carry it.
 create temp table temporary_member as select public.duty_add_temporary_member('Visitor',(select revision from public.duty_workspace)) id;

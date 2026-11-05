@@ -163,17 +163,30 @@ test('everyone but one, or everyone, non-weekend: the plan still balances and Ge
   }
 });
 
-test('turning the setting off later puts the member back in the weekend rotation, due first', () => {
-  // October: far was non-weekend and only took weekdays; a, b and c had weekends.
-  const history = [{month: '2026-10', duties: [{startDate: '2026-10-02', primary: 'a'}, {startDate: '2026-10-09', primary: 'b'},
+test('turning the setting off rejoins the weekend rotation level, like a new member, mid-cycle or at a boundary', () => {
+  const members = (flag, from) => ['a', 'b', 'c', 'far'].map(id => ({id, active: true, approved: true, eligible: true,
+    ...(id === 'far' ? {...(flag ? {noWeekends: true} : {}), ...(from ? {weekendsFrom: from} : {})} : {})}));
+  const rotation = (history, flag, from, month = '2026-11') => generationRotations(history, members(flag, from), month).weekendRotation;
+  // Mid-cycle: in October a and b had weekends, c has not yet; far, non-weekend, took weekdays only.
+  const mid = [{month: '2026-10', duties: [{startDate: '2026-10-02', primary: 'a'}, {startDate: '2026-10-09', primary: 'b'},
+    {startDate: '2026-10-05', primary: 'far'}, {startDate: '2026-10-06', primary: 'c'}]}];
+  assert.deepEqual(rotation(mid, true), {a: 1, b: 1, c: 0});
+  // Cleared for November: far is level with those who had their turn, never ahead of c.
+  assert.deepEqual(rotation(mid, false, '2026-11'), {a: 1, b: 1, c: 0, far: 1});
+  // Without the rejoin month, far's weekday-only October would make far due first (the old rule).
+  assert.deepEqual(rotation(mid, false), {a: 1, b: 1, c: 0, far: 0});
+  // A new member with no duty at all counts the same way.
+  assert.deepEqual(generationRotations(mid, [...members(true), {id: 'new', active: true, approved: true, eligible: true}], '2026-11').weekendRotation,
+    {a: 1, b: 1, c: 0, new: 1});
+  // At a cycle boundary (a, b and c all had one: the cycle closed), far starts level at zero.
+  const boundary = [{month: '2026-10', duties: [{startDate: '2026-10-02', primary: 'a'}, {startDate: '2026-10-09', primary: 'b'},
     {startDate: '2026-10-16', primary: 'c'}, {startDate: '2026-10-05', primary: 'far'}]}];
-  const members = flag => ['a', 'b', 'c', 'far'].map(id => ({id, active: true, approved: true, eligible: true, ...(id === 'far' && flag ? {noWeekends: true} : {})}));
-  assert.deepEqual(generationRotations(history, members(true), '2026-11').weekendRotation, {a: 0, b: 0, c: 0});
-  // Cleared: far rejoins with no turn yet, so far is due before everyone else.
-  const rejoined = generationRotations(history, members(false), '2026-11').weekendRotation;
-  assert.equal(rejoined.far, 0);
-  assert.ok(['a', 'b', 'c'].every(id => rejoined[id] > rejoined.far));
-  // Once far has a weekend, the cycle closes for everyone.
-  const after = [...history, {month: '2026-11', duties: [{startDate: '2026-11-06', primary: 'far'}]}];
-  assert.deepEqual(generationRotations(after, members(false), '2026-12').weekendRotation, {a: 0, b: 0, c: 0, far: 0});
+  assert.deepEqual(rotation(boundary, false, '2026-11'), {a: 0, b: 0, c: 0, far: 0});
+  // Weekends far takes from the rejoin month on count as usual: November's weekend closes far's turn.
+  const after = [...mid, {month: '2026-11', duties: [{startDate: '2026-11-06', primary: 'far'}, {startDate: '2026-11-13', primary: 'c'}]}];
+  assert.deepEqual(rotation(after, false, '2026-11', '2026-12'), {a: 0, b: 0, c: 0, far: 0});
+  // Weekend turns from before the setting don't count either: far is new to this cycle.
+  const earlier = [{month: '2026-08', duties: [{startDate: '2026-08-07', primary: 'far'}]}, ...mid];
+  assert.deepEqual(rotation(earlier, false, '2026-11'), {a: 1, b: 1, c: 0, far: 1});
+  assert.throws(() => prepareGeneration({...generationInput(), members: generationInput().members.map((m, i) => i ? m : {...m, weekendsFrom: '2026-13'})}), /invalid-member/);
 });

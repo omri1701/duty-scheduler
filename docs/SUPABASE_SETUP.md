@@ -66,7 +66,11 @@ member row. Manager-only generation facts carry `noWeekends: true` for flagged
 members only, so other members' facts and fingerprints are unchanged, and
 `duty_private.save_generation` refuses Generate output that places such a member on
 a weekend not locked to them (`non-weekend-primary`). Publication and manual edits
-are unchanged. Focused checks (empty disposable LOCAL database only):
+are unchanged. Migration `20261105132246_non_weekend_rejoin_level.sql` adds
+`duty_members.weekends_from` (YYYY-MM, null for everyone existing): clearing the setting
+records the month after every month generated or published so far, and generation facts
+carry it as `weekendsFrom`, so the weekend rotation lets the member rejoin level, like a new
+member. Only the same checked RPC writes it. Focused checks (empty disposable LOCAL database only):
 
 ```powershell
 docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests

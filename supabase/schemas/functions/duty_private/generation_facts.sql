@@ -10,9 +10,10 @@ begin
  and (a.publication_id=m.current_publication_id or (m.status='draft' and a.publication_id is null))
  where m.month in (to_char((p_month||'-01')::date-interval '1 month','YYYY-MM'),to_char((p_month||'-01')::date+interval '1 month','YYYY-MM')) and a.primary_id is not null;
  return jsonb_build_object('month',p_month,'duties',duties,'neighbors',neighbors,
-  -- noWeekends appears only when set, so other members' facts (and fingerprints) are unchanged.
+  -- noWeekends and weekendsFrom appear only when set, so other members' facts (and fingerprints) are unchanged.
   'members',coalesce((select jsonb_agg(jsonb_build_object('id',id,'active',active,'approved',status='approved','eligible',status='approved' and active)
-   ||case when no_weekends then jsonb_build_object('noWeekends',true) else '{}'::jsonb end order by id) from public.duty_members),'[]'),
+   ||case when no_weekends then jsonb_build_object('noWeekends',true) else '{}'::jsonb end
+   ||case when weekends_from is not null then jsonb_build_object('weekendsFrom',weekends_from) else '{}'::jsonb end order by id) from public.duty_members),'[]'),
   'seniority',coalesce((select jsonb_agg(id order by seniority,joined_at,id) from public.duty_members where status='approved' and active),'[]'),
   'constraints',coalesce((select jsonb_object_agg(member_id,days) from (select member_id,jsonb_object_agg(day,kind order by day) days from public.duty_constraints
     where day>=(duties->0->>'startDate')::date and day<(duties->-1->>'endDate')::date group by member_id) c),'{}'),

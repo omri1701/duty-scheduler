@@ -40,7 +40,7 @@ export function readGenerationContext(value: unknown) {
       !nullableString(d.primary) || !nullableString(d.secondary) || !string(d.title) || typeof d.extra !== 'number' ||
       (d.saturdayExtra !== undefined && typeof d.saturdayExtra !== 'number') || !nullableString(d.weekendId)) ||
     f.members.some(m => !object(m) || !string(m.id) || ['active', 'approved', 'eligible'].some(k => typeof m[k] !== 'boolean') ||
-      (m.noWeekends !== undefined && m.noWeekends !== true)) ||
+      (m.noWeekends !== undefined && m.noWeekends !== true) || (m.weekendsFrom !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(m.weekendsFrom)))) ||
     f.neighbors.some(n => !object(n) || ['id', 'ownerMonth', 'start', 'end', 'engineer'].some(k => !string(n[k])) || !['published', 'working'].includes(String(n.source))) ||
     f.locks.some(l => !object(l) || !string(l.dutyId) || !string(l.engineer)) ||
     f.approvals.some(a => !object(a) || !string(a.reason) || !['availability', 'consecutive', 'boundary', 'weekends'].includes(String(a.rule)))) throw Error('Invalid generation facts');

@@ -1193,7 +1193,11 @@ members join the next cycle level with the team, never due first. A skipped
 member keeps count zero and remains due in later months. Locked weekend duties
 count through the same weight. Secondary cover, working drafts and the month
 being generated are ignored. Non-weekend members (section 10.2) are left out
-(`generationRotations`): they never count as due and never hold a cycle open. The state is a soft objective only: the checked
+(`generationRotations`): they never count as due and never hold a cycle open. A member
+whose setting is cleared rejoins level, exactly like a new member (decision 2026-11-05):
+the database records `weekends_from`, the month after every month generated or published
+so far, and their duties in earlier months are ignored, so a weekday-only stretch never
+makes them due first. The state is a soft objective only: the checked
 database save does not revalidate it.
 
 ### 11.4 Weekday rotation state

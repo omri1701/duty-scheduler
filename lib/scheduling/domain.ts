@@ -27,7 +27,8 @@ export function prepareGeneration(source: GenerationInput) {
   if (!input.sourceRevision?.trim()) fail('missing-source-revision');
   unique(input.members.map(e => e.id), 'duplicate-member');
   if (input.members.some(e => !e.id || [e.active, e.approved, e.eligible].some(v => typeof v !== 'boolean') ||
-    (e.noWeekends !== undefined && typeof e.noWeekends !== 'boolean'))) fail('invalid-member');
+    (e.noWeekends !== undefined && typeof e.noWeekends !== 'boolean') ||
+    (e.weekendsFrom !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(e.weekendsFrom))))) fail('invalid-member');
   const members = input.members.filter(e => e.active && e.approved && e.eligible).sort((a, b) => a.id < b.id ? -1 : 1);
   const memberIds = new Set(input.members.map(e => e.id));
   const engineers = new Map(members.map((e, i) => [e.id, i]));

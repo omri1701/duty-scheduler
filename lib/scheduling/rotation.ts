@@ -12,8 +12,11 @@ export type PublishedMonth = {month: string; duties: {startDate: string; primary
  * count as if they had already had their turn, so they are never "due first".
  * Either half of a split weekend is a turn; two halves in one month are one turn.
  * The month being generated is excluded. Lower counts receive weekends first.
+ * `joinFrom` (member → YYYY-MM): that member's duties before the month are ignored, so a
+ * member rejoining the rotation counts exactly like a new one (decision 2026-11-05).
  */
-export function weekendRotation(history: PublishedMonth[], members: string[], month: string): Record<string, number> {
+export function weekendRotation(history: PublishedMonth[], members: string[], month: string,
+  joinFrom: Readonly<Record<string, string>> = {}): Record<string, number> {
   const ids = new Set(members);
   if (ids.size !== members.length) throw new GenerationError('duplicate-member');
   const counts = new Map(members.map(id => [id, 0])), seen = new Set<string>();
@@ -22,7 +25,7 @@ export function weekendRotation(history: PublishedMonth[], members: string[], mo
   for (const m of months) {
     const turns = new Set<string>();
     for (const d of m.duties) {
-      if (!d.primary || !ids.has(d.primary)) continue;
+      if (!d.primary || !ids.has(d.primary) || (joinFrom[d.primary] && m.month < joinFrom[d.primary])) continue;
       seen.add(d.primary);
       if ([5, 6].includes(dayOf(d.startDate))) turns.add(d.primary);
     }
@@ -70,9 +73,12 @@ export function weekdayRotation(history: PublishedMonth[], members: string[], mo
 
 /** Both rotation states for one Generate run, over the participating members. Non-weekend
  * members never take a weekend, so they are left out of the weekend rotation: they never
- * count as due and never hold a cycle open. The weekday rotation includes everyone. */
+ * count as due and never hold a cycle open. One who cleared the setting rejoins level, like
+ * a new member: duties before `weekendsFrom` don't count for them (decision 2026-11-05).
+ * The weekday rotation includes everyone. */
 export function generationRotations(history: PublishedMonth[], members: Member[], month: string) {
-  const eligible = members.filter(m => m.active && m.approved && m.eligible);
-  return {weekendRotation: weekendRotation(history, eligible.filter(m => !m.noWeekends).map(m => m.id), month),
+  const eligible = members.filter(m => m.active && m.approved && m.eligible), takers = eligible.filter(m => !m.noWeekends);
+  const joinFrom = Object.fromEntries(takers.flatMap(m => m.weekendsFrom ? [[m.id, m.weekendsFrom]] : []));
+  return {weekendRotation: weekendRotation(history, takers.map(m => m.id), month, joinFrom),
     weekdayRotation: weekdayRotation(history, eligible.map(m => m.id), month)};
 }
