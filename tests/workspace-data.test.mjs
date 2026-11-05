@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {blocks, demo} from '../lib/rota/engine.ts';
-import {calendarDates, workspaceMetrics, prepareWorkspaceUpdate} from '../lib/rota/workspace-data.ts';
+import {calendarDates, workspaceMetrics, prepareWorkspaceUpdate, clearableAssignments, clearBoard, restoreCleared} from '../lib/rota/workspace-data.ts';
 
 function publishedMonths() {
   const state = demo();
@@ -91,4 +91,49 @@ test('editing a different owner fails without mutating either month', () => {
   const state = publishedMonths(), before = structuredClone(state);
   assert.throws(() => prepareWorkspaceUpdate(state, {...state, assignments: {'2026-07-31': {primary:'e1'}}}, '2026-08', state.months['2026-08']), /owning month/);
   assert.deepEqual(state, before);
+});
+
+test('Clear board removes only the draft month’s unlocked duties; locks, specials, constraints and other months stay',()=>{
+ const s=publishedMonths();
+ s.months['2026-08']={...s.months['2026-08'],status:'draft'};
+ s.specials=[{id:'h',title:'Holiday',start:'2026-08-10',end:'2026-08-11',extra:1}];
+ s.constraints={e1:{'2026-08-12':'no'}};
+ s.assignments={
+  '2026-07-31':{primary:'e0'},          // July's boundary weekend, shown in August
+  '2026-08-03':{primary:'e1',secondary:'e2'},
+  '2026-08-10':{primary:'e2'},          // the holiday date
+  '2026-08-11':{primary:'e3',locked:true},
+  '2026-08-14':{primary:'e0'},          // weekend
+  '2026-09-01':{primary:'e1'},
+  '2026-08-17':{primary:''},            // an empty saved row has nobody to clear
+ };
+ const before=structuredClone(s);
+ assert.deepEqual(Object.keys(clearableAssignments(s,'2026-08')).sort(),['2026-08-03','2026-08-10','2026-08-14']);
+ const n=clearBoard(s,'2026-08');
+ assert.deepEqual(n.assignments,{'2026-07-31':{primary:'e0'},'2026-08-11':{primary:'e3',locked:true},'2026-09-01':{primary:'e1'},'2026-08-17':{primary:''}});
+ assert.deepEqual([n.specials,n.constraints],[before.specials,before.constraints]);
+ assert.equal(n.months['2026-08'].generated,false);
+ assert.deepEqual(n.months['2026-07'],before.months['2026-07']);
+ assert.deepEqual(s,before,'input is not mutated');
+ // The checked save path accepts it: every changed duty is owned by the draft month.
+ assert.doesNotThrow(()=>prepareWorkspaceUpdate(s,n,'2026-08',s.months['2026-08']));
+});
+
+test('Clear board has nothing to clear on a published month',()=>{
+ const s=publishedMonths();
+ s.assignments={'2026-08-03':{primary:'e1'}};
+ assert.deepEqual(clearableAssignments(s,'2026-08'),{});
+ assert.deepEqual(clearBoard(s,'2026-08').assignments,s.assignments);
+});
+
+test('Undo of Clear board restores only duties still empty, so later edits win',()=>{
+ const s=publishedMonths();
+ s.months['2026-08']={...s.months['2026-08'],status:'draft',generated:true};
+ s.assignments={'2026-08-03':{primary:'e1'},'2026-08-04':{primary:'e2'},'2026-08-05':{primary:'e3',locked:true}};
+ const cleared=clearableAssignments(s,'2026-08'),n=clearBoard(s,'2026-08');
+ n.assignments['2026-08-04']={primary:'e0'};
+ n.assignments['2026-08-03']={primary:''};   // a reload brings the cleared duty back as an empty row
+ const r=restoreCleared(n,'2026-08',cleared,true);
+ assert.deepEqual(r.assignments,{'2026-08-03':{primary:'e1'},'2026-08-04':{primary:'e0'},'2026-08-05':{primary:'e3',locked:true}});
+ assert.equal(r.months['2026-08'].generated,true);
 });
