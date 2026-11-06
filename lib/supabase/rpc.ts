@@ -35,6 +35,9 @@ export type Functions = {
   duty_swap_availability: Operation<{p_from: string; p_to: string}, unknown>;
   duty_resolve_swap: Operation<Revision & {p_request: string; p_action: 'accept' | 'decline' | 'approve' | 'reject' | 'cancel'; p_override_reason: string}, string>;
   duty_review_member: Operation<Revision & {p_member: string; p_status: 'approved' | 'rejected'}>;
+  duty_calendar_status: Operation<Record<string, never>, unknown>;
+  duty_calendar_reset: Operation<{p_language: 'en' | 'he'}, unknown>;
+  duty_calendar_language: Operation<{p_language: 'en' | 'he'}>;
   // Personal settings and devices: no workspace revision (decision 2026-11-06).
   duty_set_language: Operation<{p_language: 'en' | 'he'}>;
   duty_notification_settings: Operation<Record<string, never>, unknown>;
@@ -47,7 +50,7 @@ export type Functions = {
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;
-export type MutationName = Exclude<keyof Functions, 'duty_set_language' | 'duty_notification_settings' | 'duty_set_notification_settings' | 'duty_save_push_subscription' | 'duty_delete_push_subscription' | 'duty_send_test_notification' | 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_swap_availability' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
+export type MutationName = Exclude<keyof Functions, 'duty_set_language' | 'duty_notification_settings' | 'duty_set_notification_settings' | 'duty_save_push_subscription' | 'duty_delete_push_subscription' | 'duty_send_test_notification' | 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_swap_availability' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation' | 'duty_calendar_status' | 'duty_calendar_reset' | 'duty_calendar_language'>;
 export type MutationArgs<N extends MutationName> = Omit<Functions[N]['Args'], 'p_revision'>;
 
 export function errorMessage(error: unknown, fallback: string): string {

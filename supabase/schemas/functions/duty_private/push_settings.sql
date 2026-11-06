@@ -8,6 +8,9 @@ begin
  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
  if p_language is null or p_language not in ('en','he') then raise exception 'Choose English or Hebrew'; end if;
  update public.duty_members set language=p_language where auth_user_id=auth.uid() and language is distinct from p_language;
+ -- The personal calendar feed follows the same language; its URL stays the same.
+ update public.duty_calendar_feeds f set language=p_language from public.duty_members m
+  where m.auth_user_id=auth.uid() and f.member_id=m.id and f.language<>p_language;
 end $$;
 
 -- The caller's own notification switches (defaults when never saved) and how many

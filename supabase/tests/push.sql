@@ -32,6 +32,9 @@ select pg_temp.must_fail($c$select public.duty_notification_settings()$c$,'permi
 select pg_temp.must_fail($c$select public.duty_save_push_subscription('https://fcm.googleapis.com/fcm/send/anon-device',repeat('B',87),repeat('A',22))$c$,'permission denied');
 select pg_temp.must_fail($c$select * from public.duty_push_subscriptions$c$,'permission denied');
 reset role;
+-- Calendar feeds of members 2 and 3 (made in English) follow only their own member's language.
+insert into public.duty_calendar_feeds(member_id,token_hash,language) values
+ ('76000000-0000-0000-0000-000000000002',sha256('feed-2'),'en'),('76000000-0000-0000-0000-000000000003',sha256('feed-3'),'en');
 set local role authenticated;
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000002';
 select pg_temp.must_fail($c$select duty_private.push_tick()$c$,'permission denied');
@@ -54,6 +57,7 @@ select public.duty_set_language('en');
 reset role;
 select pg_temp.check((select revision from public.duty_workspace)=(select revision from before_revision),'language never touches the workspace revision');
 select pg_temp.check((select jsonb_object_agg(right(id::text,1),coalesce(language,'-')) from public.duty_members)='{"1":"-","2":"he","3":"-","4":"en","5":"-"}','own language only');
+select pg_temp.check((select jsonb_object_agg(right(member_id::text,1),language) from public.duty_calendar_feeds)='{"2":"he","3":"en"}','the own calendar feed follows the language');
 select pg_temp.check(public.duty_load() is not null,'load still works');
 
 -- Settings: defaults, full-object validation, own rows only, approved members only.
