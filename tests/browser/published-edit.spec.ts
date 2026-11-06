@@ -1,4 +1,4 @@
-import {test, expect, ids, duty, drag} from './fixtures';
+import {test, expect, ids, duty, drag, targetReady} from './fixtures';
 
 const net = (page: import('@playwright/test').Page, id: string) => page.locator(`[data-gesture-key="${id}"] .net-points button`);
 const call = (backend: import('./fixtures').Backend) => backend.calls.filter(c => c.name === 'duty_edit_published_duty');
@@ -156,7 +156,7 @@ test('an admin swaps any two members from the editor, or by dragging one duty on
   await page.getByRole('dialog', {name: 'Edit duty'}).getByRole('button', {name: 'Swap with another duty…', exact: true}).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(duty(page, '2026-11-03')).toHaveAttribute('aria-pressed', 'true');
-  await duty(page, '2026-11-05').click();
+  await targetReady(page, '2026-11-05'); await duty(page, '2026-11-05').click();
   await expect(page.getByRole('dialog', {name: 'Propose swap'})).toBeVisible();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);

@@ -1,4 +1,4 @@
-import {test,expect,ids,duty,drag} from './fixtures';
+import {test,expect,ids,duty,drag,targetReady} from './fixtures';
 import {blocks,ownerMonth} from '../../lib/rota/engine';
 import {webkit,devices} from '@playwright/test';
 
@@ -68,7 +68,7 @@ test('published manager taps to edit, swaps from the editor or by drag',async({p
   await duty(page,'2026-11-02').focus(); await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Swap with another duty…',exact:true}).click();
   await expect(duty(page,'2026-11-02')).toHaveAttribute('aria-pressed','true');
-  await duty(page,'2026-11-03').focus(); await page.keyboard.press('Space');
+  await targetReady(page,'2026-11-03'); await duty(page,'2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('button',{name:'Confirm Request',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');
   await drag(page,info.project.name==='mobile');

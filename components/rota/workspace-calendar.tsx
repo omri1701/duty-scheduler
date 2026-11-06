@@ -78,6 +78,8 @@ export function WorkspaceCalendar({
     swapSourceDays,
     publishedDuty,
     requestTarget,
+    swapHint,
+    swapBlock,
     dragContainer,
     ignoreDragClick,
     selectCalendarDuty,
@@ -120,8 +122,8 @@ export function WorkspaceCalendar({
           {requesting
             ? keyboardSource
               ? t(
-                  'Choose another engineer’s duty · Escape cancels',
-                  'בחרו תורנות של מהנדס אחר · Escape לביטול',
+                  'Choose a green duty · Grey days say why · Escape cancels',
+                  'בחרו תורנות ירוקה · ימים אפורים מסבירים למה · Escape לביטול',
                 )
               : isManager
                 ? t(
@@ -175,9 +177,17 @@ export function WorkspaceCalendar({
             mine = a?.primary === meId || a?.secondary === meId,
             interactive = !!b && ownerMonth(b) === month,
             cell = b ? streaks[b.id] : undefined;
+          // While a swap is chosen, a day the server would refuse is greyed with its reason.
+          const swapFrom = requesting ? keyboardSource ?? dragFrom : null,
+            blocked = swapFrom && b && interactive && b.id !== swapFrom ? swapHint(swapFrom, b.id) : null,
+            // Pending until its availability is known: neither green nor grey, and not selectable.
+            swapState = swapFrom && b && interactive && b.id !== swapFrom ? swapBlock(swapFrom, b.id) : undefined;
           return (
             <CalendarDay date={d} month={month} combined={combined} weekend={!!b?.weekendId} special={b?.kind==='special'}
-              disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id))}
+              disabled={readOnly || !interactive || (requesting && !publishedDuty(b!.id) && !blocked)}
+              aria-disabled={blocked ? true : undefined}
+              title={blocked ?? undefined}
+              data-swap-state={swapState === undefined ? undefined : swapState === 'pending' ? 'pending' : swapState ? 'blocked' : 'ok'}
               key={d}
               data-gesture-key={interactive ? b?.id : undefined}
               onClick={() => {
@@ -213,8 +223,9 @@ export function WorkspaceCalendar({
                 )
                   ? 'can-swap'
                   : '',
+                blocked ? 'swap-blocked' : '',
               ].join(' ')}
-              aria-label={`${b && swapSourceDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}`}
+              aria-label={`${b && swapSourceDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}${blocked ? ` · ${t('Unavailable', 'לא זמין')}: ${blocked}` : ''}`}
             >
               <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end,-1) : undefined}>
                 {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={12}/></span>}

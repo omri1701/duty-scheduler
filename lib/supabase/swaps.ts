@@ -76,6 +76,49 @@ export function readSwapConflicts(value:unknown):SwapConflict[]{
   throw Error('Invalid availability check');
  return value.map(c=>({member:c.member,day:c.day}));
 }
+/** Why a target day can't be picked for a swap, shown before the pick (decision 2026-11-05).
+ * Built from duty_swap_availability's conflicts (who and which date, never the note or kind)
+ * and the second-weekend rule, so a day the calendar still offers is one the server accepts. */
+export type SwapBlock=
+ |{kind:'takes-target';person:string;day:string}
+ |{kind:'takes-source';person:string}
+ |{kind:'cover';person:string|null;day:string}
+ |{kind:'weekend';person:string}
+ |{kind:'inactive'}
+ |{kind:'past'};
+export function swapTargetBlock(raw:Snapshot,month:string,source:DutyRow,target:DutyRow,conflicts:SwapConflict[]):SwapBlock|null{
+ const inside=(d:DutyRow,day:string)=>day>=d.day&&day<d.end_day;
+ // validate_swap refuses a pair whose emergency cover left the team.
+ if([source.secondary_id,target.secondary_id].some(id=>id&&!raw.members.some(m=>m.id===id&&m.active&&m.status==='approved')))return {kind:'inactive'};
+ // The swap's own person first, then the other primary, then emergency cover.
+ const mine=conflicts.find(c=>c.member===source.primary_id&&inside(target,c.day));
+ if(mine)return {kind:'takes-target',person:mine.member!,day:mine.day};
+ const theirs=conflicts.find(c=>c.member===target.primary_id&&inside(source,c.day));
+ if(theirs)return {kind:'takes-source',person:theirs.member!};
+ if(conflicts[0])return {kind:'cover',person:conflicts[0].member,day:conflicts[0].day};
+ const problem=swapProblem(raw,month,source,target,false);
+ return problem?.kind==='weekend'?{kind:'weekend',person:problem.person}:null;
+}
+/** One short reason, phrased for the viewer: "you" for themselves, names for others. */
+export function swapBlockText(block:SwapBlock,{me,sourceOwner,name,day,lang}:{me:string;sourceOwner:string|null;name:(id:string)=>string;day:(d:string)=>string;lang:'en'|'he'}){
+ const he=lang==='he';
+ switch(block.kind){
+  case 'past':return he?'התורנות הזו כבר עברה':'This day has passed';
+  case 'inactive':return he?'כונן החירום כבר אינו פעיל':'Emergency cover is no longer active';
+  case 'takes-target':return block.person===me?(he?`אין לך אפשרות לקחת את ${day(block.day)}`:`You can’t take ${day(block.day)}`)
+   :he?`ל${name(block.person)} אין אפשרות לקחת את ${day(block.day)}`:`${name(block.person)} can’t take ${day(block.day)}`;
+  case 'takes-source':{
+   const whose=sourceOwner===me?(he?'התורנות שלך':'your day'):he?`התורנות של ${name(sourceOwner??'')}`:`${name(sourceOwner??'')}’s day`;
+   return block.person===me?(he?`אין לך אפשרות לקחת את ${whose}`:`You can’t take ${whose}`)
+    :he?`ל${name(block.person)} אין אפשרות לקחת את ${whose}`:`${name(block.person)} can’t take ${whose}`;
+  }
+  case 'cover':return block.person
+   ?he?`ל${name(block.person)} אין אפשרות לכסות את ${day(block.day)}`:`${name(block.person)} can’t cover ${day(block.day)}`
+   :he?`לכונן החירום אין אפשרות ב־${day(block.day)}`:`Emergency cover can’t take ${day(block.day)}`;
+  case 'weekend':return block.person===me?(he?'ההחלפה תיתן לך סוף שבוע שני':'This would give you a second weekend')
+   :he?`ההחלפה תיתן ל${name(block.person)} סוף שבוע שני`:`This would give ${name(block.person)} a second weekend`;
+ }
+}
 export async function swapAvailability(client:DutyClient,from:string,to:string){
  const {data,error}=await client.rpc('duty_swap_availability',{p_from:from,p_to:to});
  if(error)throw error;

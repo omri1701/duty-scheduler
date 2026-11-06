@@ -1,10 +1,10 @@
 // Admin-proposed swaps: both members accept, then an explicit admin approval.
 import type {Browser, Page} from '@playwright/test';
-import {test, expect, ids, duty, NOW} from './fixtures';
+import {test, expect, ids, duty, NOW, targetReady} from './fixtures';
 
 async function pick(page: Page, from: string, to: string) {
   await duty(page, from).focus(); await page.keyboard.press('Enter');
-  await duty(page, to).focus(); await page.keyboard.press('Space');
+  await targetReady(page, to); await duty(page, to).focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 async function language(page: Page, lang: 'en' | 'he') {
@@ -118,14 +118,14 @@ for (const lang of ['en', 'he'] as const) test(`a stale approval dialog shows th
 for (const lang of ['en', 'he'] as const) test(`availability alert names whose constraint blocks a swap ${lang}`, async ({page, openApp, backend}) => {
   const t = (en: string, he: string) => lang === 'en' ? en : he;
   await openApp('a'); await language(page, lang);
-  // Alex would receive 4 November, which Alex marked unavailable.
-  await pick(page, '2026-11-09', '2026-11-04');
-  const alert = page.getByRole('dialog').getByRole('alert');
-  await expect(alert).toContainText(t('Availability conflict', 'התנגשות זמינות'));
-  await expect(alert).toContainText(t('Alex Atlas is unavailable on 4 Nov 2026', 'ל־Alex Atlas יש אילוץ אי־זמינות ב־4 בנוב׳ 2026'));
-  await expect(alert).not.toContainText('Synthetic vacation');
-  await expect(page.getByRole('button', {name: t('Confirm Request', 'אישור בקשה'), exact: true})).toBeDisabled();
-  await page.getByRole('button', {name: t('Cancel', 'ביטול'), exact: true}).click();
+  // Alex would receive 4 November, which Alex marked unavailable: greyed before the pick, no note.
+  await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
+  await targetReady(page, '2026-11-04');
+  await expect(duty(page, '2026-11-04')).toHaveAttribute('title', t('You can’t take 4 Nov', 'אין לך אפשרות לקחת את 4 בנוב׳'));
+  await duty(page, '2026-11-04').focus(); await page.keyboard.press('Space');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('Synthetic vacation');
+  await page.keyboard.press('Escape');
   expect(backend.calls.filter(c => c.name === 'duty_request_swap')).toHaveLength(0);
   // Without a conflict the same dialog sends normally.
   await pick(page, '2026-11-02', '2026-11-03');

@@ -151,6 +151,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
     month,
     tab,
     today,
+    lang,
     requesting,
     publication,
     duties: calendarBlocks,

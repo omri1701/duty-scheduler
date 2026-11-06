@@ -1,4 +1,4 @@
-import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids} from './fixtures';
+import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids, targetReady} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
@@ -74,13 +74,16 @@ test('published swap confirmation and outgoing request', async ({page, openApp})
   await expect(page.getByText('Swap request submitted.', {exact: true})).toBeHidden({timeout: 10_000});
   await snapshot(page, 'swap-request-en');
 });
-for (const lang of ['en', 'he'] as const) test(`swap availability alert ${lang}`, async ({page, openApp}) => {
+// Decision 2026-11-05: a day the server would refuse is greyed before the pick; usable days stay green.
+for (const lang of ['en', 'he'] as const) test(`swap target hints ${lang}`, async ({page, openApp, backend}) => {
+  backend.raw.constraints.push({member_id: ids.b, day: '2026-11-09', kind: 'no', note: 'Synthetic private note'});
   await openApp('a');
   if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
   await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
-  await duty(page, '2026-11-04').focus(); await page.keyboard.press('Space');
-  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
-  await snapshot(page, `swap-availability-alert-${lang}`);
+  await expect(duty(page, '2026-11-04')).toHaveClass(/swap-blocked/);
+  await expect(duty(page, '2026-11-03')).toHaveClass(/swap-blocked/);
+  await expect(duty(page, '2026-11-05')).toHaveClass(/drag-target/);
+  await snapshot(page, `swap-target-hints-${lang}`);
 });
 for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval summary ${lang}`, async ({page, openApp, backend}) => {
   const t = (en: string, he: string) => lang === 'en' ? en : he;
@@ -88,7 +91,7 @@ for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval
   if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
   await page.getByRole('button', {name: t('Published', 'פורסם'), exact: true}).click();
   await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
-  await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
+  await targetReady(page, '2026-11-03'); await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true})).toBeEnabled();
   await snapshot(page, `admin-swap-proposal-${lang}`);
   await page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true}).click();
