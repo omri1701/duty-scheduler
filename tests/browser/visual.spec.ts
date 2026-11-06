@@ -107,6 +107,9 @@ for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval
   if (lang === 'he') await switchLanguage(page, 'he');
   await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  // Clicking Approve scrolled the page; in a right-to-left page Chromium does not restore that
+  // scroll after a full-page capture, so successive captures differ. Start the capture at the top.
+  if (lang === 'he') await page.evaluate(() => window.scrollTo(0, 0));
   await snapshot(page, `admin-swap-approval-${lang}`);
 });
 test('pending approval', async ({page, openApp}) => {
