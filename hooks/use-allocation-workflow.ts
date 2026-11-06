@@ -16,6 +16,7 @@ import {inputKey, prepareGeneration, snapshotKey} from '@/lib/scheduling/domain'
 import {generationRotations} from '@/lib/scheduling/rotation';
 import {publishedHistory} from '@/lib/supabase/snapshot';
 import {addDays, dayOf} from '@/lib/rota/calendar-dates';
+import {joinUnlockedSplits} from '@/lib/rota/engine';
 import {acceptGeneration, type GenerationResult} from '@/lib/scheduling/generate';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {GenerationContext} from '@/lib/supabase/generation';
@@ -315,7 +316,17 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
         const comparable = (c: GenerationContext) => inputKey({...c.input.schedule, sourceRevision: undefined});
         if (comparable(source) !== comparable(captured) || source.accountingFingerprint !== captured.accountingFingerprint) throw Error('Generation inputs changed. Refresh and review.');
       }
-      const confirmed = await latest.current.confirmAllocation(source, draft, locks, approvals);
+      // An unlocked hand split is a one-off edit (decision 2026-11-07): Generate fills it as one
+      // weekend again, so it is joined in the draft first. A split with a lock stays split.
+      let confirming = draft;
+      const current = latest.current.state;
+      const joined = generate && current ? joinUnlockedSplits(current, month) : current;
+      if (generate && joined && joined !== current) {
+        source = await latest.current.openGenerationMonth(source, joined);
+        if (id !== sequence.current) return;
+        confirming = review(source.input, draft, !!source.sourcePublicationId);
+      }
+      const confirmed = await latest.current.confirmAllocation(source, confirming, locks, approvals);
       if (id !== sequence.current) return;
       accept(confirmed); rpc.current = false;
       if (!generate) {

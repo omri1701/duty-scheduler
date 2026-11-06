@@ -170,4 +170,36 @@ try {
  assert.deepEqual(view.claims.map(c=>[c.debtorId,c.creditorId,c.units]),[[crew[0],crew[3],1]]);
  console.log('PASS: a published uneven month carries the credit as one ordinary temporary half-point claim, recorded with its uneven counterpart and reported by duty_balance as kind uneven');
  await sql('rollback;');
+
+ // A hand split never changes the stored fair shares (decision 2026-11-07). Six members, one +2
+ // Sunday: fair shares 4, 4, 5, 5, 5, 5. Splitting the 20 November weekend by hand adds half-point
+ // duties, so 4, 4.5, 4.5, 5, 5, 5 would now be fairer; the plan saved before the split, with the
+ // manager's half-point changes (−0.5 / +0.5), is still saved exactly as typed. A new baseline
+ // must still be the month's fit, and a stored one that no longer splits into the duties is refused.
+ context=await fixture(6,'2026-11-02');
+ const plain=proposeAllocation(context.input),staff=context.input.seniority;
+ assert.deepEqual(Object.values(plain.draft.baselineUnits).sort((a,b)=>a-b),[8,8,10,10,10,10]);
+ context=await confirm(plain.draft,context);
+ const handSplit=await load();
+ handSplit.splitWeekends=[...handSplit.splitWeekends,'2026-11-20'];
+ await sql(`select public.duty_save_schedule(${q(schedulePayload(handSplit,month))},${rev},null);`);
+ context=await contextOf();
+ assert.ok(context.input.schedule.calendar.splitWeekends.includes('2026-11-20'));
+ assert.notDeepEqual(Object.values(proposeAllocation(context.input).draft.baselineUnits).sort((a,b)=>a-b),[8,8,10,10,10,10]);
+ let typed=reviewAllocation(context.input,context.allocation);
+ typed=editAllocation(context.input,typed,{engineer:staff[0],deltaUnits:-1,kind:'temporary'}).draft;
+ typed=persistedDraft(editAllocation(context.input,typed,{engineer:staff[1],deltaUnits:1,kind:'temporary'}).draft);
+ context=await confirm(typed,context);
+ assert.deepEqual(context.allocation.targetsUnits,typed.targetsUnits);assert.deepEqual(context.allocation.baselineUnits,plain.draft.baselineUnits);
+ const fair=proposeAllocation(context.input).draft;
+ await refuse({...fair,baselineUnits:{...fair.baselineUnits,[staff[0]]:fair.baselineUnits[staff[0]]+1,[staff[5]]:fair.baselineUnits[staff[5]]-1},
+  offeredUnits:{...fair.offeredUnits,[staff[0]]:fair.offeredUnits[staff[0]]+1,[staff[5]]:fair.offeredUnits[staff[5]]-1},
+  targetsUnits:{...fair.targetsUnits,[staff[0]]:fair.targetsUnits[staff[0]]+1,[staff[5]]:fair.targetsUnits[staff[5]]-1}},context,'invalid-ordinary-baseline|invalid-uneven-credit');
+ await sql('reset role;');
+ // The kept check is an exact partition: shares the duties can't make are refused.
+ await sql(`select duty_private.allocation_kept_baseline(${q({duties:[{units:2},{units:1},{units:1}]})},${q({a:2,b:2})});`);
+ for(const shares of [{a:3,b:1},{a:3,b:3},{a:1,b:3}]) await sql(`do $$begin perform duty_private.allocation_kept_baseline(${q({duties:[{units:2},{units:2}]})},${q(shares)});
+  raise exception 'unexpected acceptance';exception when raise_exception then if sqlerrm<>'invalid-ordinary-baseline' then raise;end if;end$$;`);
+ console.log('PASS: after a hand split the stored fair shares are kept and the typed half-point changes save exactly; a new baseline is still checked');
+ await sql('rollback;');
 } finally {db.stdin.end();}

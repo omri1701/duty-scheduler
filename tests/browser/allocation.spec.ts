@@ -1,4 +1,4 @@
-import {test, expect, ids, MONTH, type Backend, switchLanguage} from './fixtures';
+import {test, expect, ids, MONTH, duty, type Backend, switchLanguage} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
 import {record} from '../../lib/compensation';
@@ -742,3 +742,43 @@ for (const count of [12, 24]) {
     await info.attach('allocation-timing.json', {body: JSON.stringify({count, project: info.project.name, proposalMs, generationMs, includes: 'Worker initialization, domain work, intercepted checked RPCs and UI feedback'}), contentType: 'application/json'});
   });
 }
+
+test('a hand split keeps the plan: half-point changes save exactly as typed, and Generate joins the unlocked split again', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  const draftRow = (day: string) => backend.raw.assignments.filter(d => d.day === day && d.publication_id === null);
+  const team = backend.raw.members.filter(m => m.status === 'approved' && m.active);
+  const a = team.find(m => m.id === draftRow('2026-11-06')[0].primary_id)!, b = team.find(m => m.id !== a.id)!;
+  // Split by hand: A keeps Friday, B takes Saturday.
+  await duty(page, '2026-11-06').click();
+  await page.getByRole('combobox', {name: 'Saturday engineer', exact: true}).click();
+  await page.getByRole('option', {name: b.name, exact: true}).click();
+  const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
+  if (await override.isVisible()) await override.check();
+  await page.getByRole('button', {name: 'Save assignment'}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  expect(draftRow('2026-11-07')).toHaveLength(1);
+  await openPlan(page);
+  const [ma, mb] = [member(page, a.name), member(page, b.name)], [ta, tb] = [await targetOf(ma), await targetOf(mb)];
+  // The plan says the schedule differs from it; the stored fair shares are kept.
+  await expect(ma.row.locator('.allocation-row-warning')).toHaveText(`${ta - .5} scheduled, plan says ${ta}`);
+  await page.getByRole('button', {name: '0.5', exact: true}).click();
+  await dialog.getByRole('button', {name: `Decrease Temporary · ${a.name}`, exact: true}).click();
+  await dialog.getByRole('button', {name: `Increase Temporary · ${b.name}`, exact: true}).click();
+  const typed = await dialog.locator('.plan-row output').allTextContents();
+  expect([await targetOf(ma), await targetOf(mb)]).toEqual([ta - .5, tb + .5]);
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  await expect(dialog.locator('.plan-row output')).toHaveText(typed);
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  expect(backend.allocations.get(MONTH)!.draft.targetsUnits[a.id]).toBe((ta - .5) * 2);
+  await page.keyboard.press('Escape'); await openPlan(page);
+  await expect(dialog.locator('.plan-row output')).toHaveText(typed);
+  // Generate fills the unlocked split as one weekend for one member again.
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  expect(draftRow('2026-11-06').map(d => d.end_day)).toEqual(['2026-11-08']);
+  expect(draftRow('2026-11-07')).toHaveLength(0);
+});

@@ -23,7 +23,12 @@ begin
   projected:=duty_private.compensation_replan(projected,p_month,instant);
   projected:=duty_private.compensation_reconcile(projected,greatest(instant,(ctx->>'coverageStartMs')::bigint,coalesce((projected->'events'->-1->>'at')::bigint,0)),false);
   perform duty_private.allocation_compile(facts,p_allocation,checked->'actualUnits',projected);
-  perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits');
+  -- A hand split never changes the stored fair shares (decision 2026-11-07): the stored
+  -- baseline, kept unchanged, only has to still split into the month's duties. A new
+  -- baseline must be the month's ordinary fit.
+  if old_meta.month is not null and old_meta.allocation->'baselineUnits'=p_allocation->'baselineUnits' then
+   perform duty_private.allocation_kept_baseline(facts,p_allocation->'baselineUnits');
+  else perform duty_private.allocation_baseline(facts,p_allocation->'baselineUnits'); end if;
   -- The transfer list is derived, never chosen: the per-person changes and the
   -- recorded pairs must give exactly this list under the current seniority.
   if p_allocation->'transfers' IS DISTINCT FROM duty_private.allocation_transfers(facts->'seniority',p_allocation->'changes',p_allocation->'pairs') then raise exception 'invalid-derived-transfers'; end if;

@@ -233,3 +233,24 @@ test('single-day pills centre the name too: plain, with a second member, "(you)"
     }
   }
 });
+
+test('adding a holiday on assigned days keeps every person, lock and emergency cover; only the points change', async ({page, backend, openApp}) => {
+  // 4 Nov (weekday, emergency cover on it) through the 6–8 Nov weekend (locked), all assigned.
+  draftRow(backend, '2026-11-04').secondary_id = ids.c;
+  draftRow(backend, '2026-11-06').locked = true;
+  const before = ['2026-11-04', '2026-11-05', '2026-11-06'].map(day => ({...draftRow(backend, day)}));
+  await openApp();
+  await page.getByRole('button', {name: 'Special block', exact: true}).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.');
+  await page.getByLabel('First duty date', {exact: true}).fill('2026-11-04');
+  await page.getByLabel('Last duty date', {exact: true}).fill('2026-11-07');
+  await dialog.getByRole('button', {name: 'Add special block', exact: true}).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Special block added. The assigned people stay; check the points in Plan the month.')).toBeVisible();
+  for (const row of before) expect(draftRow(backend, row.day)).toMatchObject({end_day: row.end_day, primary_id: row.primary_id, secondary_id: row.secondary_id, locked: row.locked, extra_points: 1});
+  // The weekend stays one duty, now 1 + 2 × 1; its lock was reviewed with the change.
+  expect(draftRow(backend, '2026-11-06')).toMatchObject({end_day: '2026-11-08', saturday_extra_points: 1, points: 3});
+  expect(backend.calls.filter(c => c.name === 'duty_save_schedule').at(-1)!.params.p_state).toMatchObject({lock_edits: ['2026-11-06', '2026-11-07']});
+  await expect(duty(page, '2026-11-05')).toHaveAccessibleName(new RegExp(backend.raw.members.find(m => m.id === before[1].primary_id)!.name));
+});

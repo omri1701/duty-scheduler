@@ -52,6 +52,24 @@ export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
  });
  return {...s,assignments,splitWeekends};
 }
+/** Generate's calendar (decision 2026-11-07): an unlocked hand split is a one-off edit, so
+ * Generate fills that weekend again as one Friday–Sunday duty for one member. A split with
+ * a lock on either half stays split: a locked half keeps its person and Generate fills an
+ * unlocked half like any unlocked duty. The joined weekend keeps Friday's emergency cover
+ * (else Saturday's); Generate picks its primary. */
+export function joinUnlockedSplits(s:State,month:string):State{
+ const assignments={...s.assignments};
+ const splitWeekends=(s.splitWeekends??[]).filter(f=>{
+  if(f.slice(0,7)!==month)return true;
+  const a=assignments[f],b=assignments[addDays(f,1)];
+  if(a?.locked||b?.locked)return true;
+  const secondary=a?.secondary||b?.secondary;
+  assignments[f]={primary:a?.primary??'',...(secondary?{secondary}:{})};
+  delete assignments[addDays(f,1)];
+  return false;
+ });
+ return splitWeekends.length===(s.splitWeekends??[]).length?s:{...s,assignments,splitWeekends};
+}
 export function setWeekendAssignment(s:State,friday:string,scope:'all'|'fri'|'sat',assignment:Assignment):State{
  const saturday=addDays(friday,1),assignments={...s.assignments};
  const alreadySplit=blocks(friday.slice(0,7),s.specials,s.splitWeekends).some(b=>b.id===saturday);

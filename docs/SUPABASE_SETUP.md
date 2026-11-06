@@ -53,6 +53,13 @@ month is accepted by `duty_confirm_allocation` and the equal split is refused. E
 data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
 These commands never target the populated `duty-scheduler-app` database.
 
+Migration `20261106234300_kept_baseline_after_split.sql` (decision 2026-11-07) adds
+`duty_private.allocation_kept_baseline` (private, no role may execute it) and redefines
+`duty_private.confirm_allocation`: a stored baseline saved again unchanged only has to still split
+exactly into the month's duties, so a weekend split by hand (half-point duties) no longer refuses the
+saved plan as `invalid-ordinary-baseline`. A new or changed baseline is still checked as the month's
+ordinary fit. No table, data or grant changes; `allocation-fit.mjs` covers both paths.
+
 Hosted Development activation requires the normal reviewed database-first release
 after merge into `develop`; this feature PR does not apply hosted migrations.
 

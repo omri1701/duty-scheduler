@@ -252,8 +252,8 @@ export function SpecialDutyDialog({
         </div>
         <p className="muted-copy">
           {t(
-            'Replaces duties in these dates, including weekends. Affected assignments are cleared for review.',
-            'מחליף את התורנויות בתאריכים אלה, כולל סופי שבוע. השיבוצים המושפעים ינוקו לבדיקה מחדש.',
+            'Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.',
+            'תורנויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.',
           )}
         </p>
         <Button onClick={addSpecial}>{t('Add special block', 'הוספת מקטע מיוחד')}</Button>
