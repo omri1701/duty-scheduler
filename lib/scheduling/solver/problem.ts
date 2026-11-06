@@ -27,7 +27,9 @@ export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; bou
  * the whole ascending gap vector. Back-to-back duties (gap 0) are not spacing gaps. */
 export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
   rotation: number; preferred: number; repeats: number; weekdays: number; extraWeekends: number; adjacent: number;
-  wave: number; follows: number; patterns: number};
+  wave: number; follows: number; patterns: number;
+  /** Members with both a Thursday and a weekend this month (decision 2026-11-06). */
+  thursdays: number};
 
 /** Start-to-start days of a spacing gap (minutes; DST shifts round away). */
 export const spanDays = (from: number, to: number) => Math.round((to - from) / 1440);
@@ -205,7 +207,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     }
     preferred += p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0;
   });
-  let rotation = 0, repeats = 0, extraWeekends = 0, patterns = 0;
+  let rotation = 0, repeats = 0, extraWeekends = 0, patterns = 0, thursdays = 0;
   const wave = (p.wave ?? []).reduce((n, w) => n + (assignment[w.duty] === w.engineer ? w.cost : 0), 0) +
     (p.waveAbsent ?? []).reduce((n, w) => n + (assignment.some((e, i) => e === w.engineer && p.duties[i].weekend !== undefined) ? 0 : w.cost), 0);
   const follows = (p.follows ?? []).filter(f => assignment[f.duty] === f.engineer &&
@@ -213,6 +215,8 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   for (let e = 0; e < used.length; e++) {
     // Each weekend costs the member's turns this cycle, as in the model (extra weekends cost again).
     rotation += weekends[e].size * (p.rotation?.[e] ?? 0);
+    // A Thursday and a weekend (either half) in one month: one per member, however many.
+    if (weekends[e].size && selected[e].some(i => p.duties[i].weekday === 4)) thursdays++;
     for (const n of weekdays[e].values()) repeats += Math.max(0, n - 1);
     extraWeekends += extraWeekendCost(weekends[e].size, weekendAllowance(p, e));
     if (!selected[e].length) continue; // No external-anchor-to-anchor gap.
@@ -229,7 +233,7 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
   }
   return {coverage, special, units: used.reduce((a, b) => a + b, 0),
     deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays: weekdayCost,
-    extraWeekends, adjacent, wave, follows, patterns};
+    extraWeekends, adjacent, wave, follows, patterns, thursdays};
 }
 
 export function decodeAssignment(p: Problem, values: Record<string, number>) {
@@ -258,12 +262,13 @@ const lexicographic = (av: number[], bv: number[]) => {
   return 0;
 };
 /** The quality levels above the seeded tie, lower is better: coverage, special, units,
- * extra weekends, back-to-back pairs, minimum gap, weekend rotation, weekend wave, repeats,
+ * extra weekends, back-to-back pairs, minimum gap, weekend rotation, Thursday with a weekend,
+ * weekend wave, repeats,
  * weekday staircases, weekday rotation, preferred, repeated weekend predecessors. */
 export function compareQuality(a: Metrics, b: Metrics, spacing = true) {
   const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent,
     ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []),
-    m.rotation, m.wave, m.repeats, m.patterns, m.weekdays, -m.preferred, m.follows];
+    m.rotation, m.thursdays, m.wave, m.repeats, m.patterns, m.weekdays, -m.preferred, m.follows];
   return lexicographic(head(a), head(b));
 }
 /** The sorted-gap leximin below the seed; missing gaps pad with infinity. */

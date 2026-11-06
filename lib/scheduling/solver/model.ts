@@ -13,12 +13,13 @@ const minimum = (m: Metrics) => m.gaps[0] ?? Infinity;
 const score = (name: string, m: Metrics) => name === 'coverage' ? -m.coverage : name === 'special' ? -m.special :
   name === 'units' ? -m.units : name === 'minimum-gap' ? minimum(m) : name === 'rotation' ? m.rotation :
   name === 'wave' ? m.wave : name === 'follows' ? m.follows : name === 'patterns' ? m.patterns :
+  name === 'thursdays' ? m.thursdays :
   name === 'preferred' ? -m.preferred : name === 'repeats' ? m.repeats : name === 'weekdays' ? m.weekdays :
   name === 'extra-weekends' ? m.extraWeekends : name === 'adjacent' ? m.adjacent :
   m.gaps.filter(g => g === Number(name.slice(4))).length;
-/** Counter stages minimize continuous columns bounded below by their counts (r, z, b, v, p and f columns). */
-const counters = new Set(['repeats', 'extra-weekends', 'adjacent', 'wave', 'patterns', 'follows']);
-const counter = (column: string) => /^[rzbvpf]_/.test(column);
+/** Counter stages minimize continuous columns bounded below by their counts (r, z, b, h, v, p and f columns). */
+const counters = new Set(['repeats', 'extra-weekends', 'adjacent', 'thursdays', 'wave', 'patterns', 'follows']);
+const counter = (column: string) => /^[rzbhvpf]_/.test(column);
 /** Stages whose objective is a nonnegative sum of nonnegative columns: an incumbent at zero is optimal. */
 const nonnegative = (name: string) => name.startsWith('gap:') || name === 'rotation' || name === 'weekdays' || counters.has(name);
 /** 32-bit hash mixer (splitmix-style); every output bit depends on the whole state. */
@@ -121,6 +122,19 @@ function buildWave(p: Problem, ids: number[][]) {
 
 /** Repeated weekend predecessors: f[k] >= x[e,i] + x[a,j] - 1 for an engineer e right after
  * last cycle's predecessor a; the previous month's last holder needs no column (x[e,i] alone). */
+function buildThursdays(p: Problem, ids: number[][]) {
+  const columns: Column[] = [], rows: Row[] = [], terms: Term[] = [];
+  for (let e = 0; e < p.targets.length; e++) {
+    const thursdays = ids[e].filter(i => p.duties[i].weekday === 4);
+    const weekends = [...new Set(ids[e].flatMap(i => p.duties[i].weekend === undefined ? [] : [p.duties[i].weekend!]))];
+    if (!thursdays.length || !weekends.length) continue;
+    const name = `h_${e}`;
+    columns.push({name, upper: 1}); terms.push([1, name]);
+    for (const i of thursdays) for (const w of weekends) rows.push({terms: [[1, name], [-1, x(e, i)], [-1, `w_${e}_${w}`]], lower: -1});
+  }
+  return {columns, rows, stage: {name: 'thursdays', terms} as Stage};
+}
+
 function buildFollows(p: Problem) {
   const columns: Column[] = [], rows: Row[] = [], terms: Term[] = [];
   for (const [k, f] of (p.follows ?? []).entries()) {
@@ -312,7 +326,7 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
   const rotationStage: Stage = {name: 'rotation', terms: base.rotation};
   // Weekday staircases ride on the flow arcs: filled in once the proved minimum gap builds them.
   const patterns = {columns: [] as Column[], rows: [] as Row[], stage: {name: 'patterns', terms: []} as Stage};
-  const wave = buildWave(p, base.ids), follows = buildFollows(p), weekdayStage: Stage = {name: 'weekdays', terms: base.weekdays};
+  const thursdays = buildThursdays(p, base.ids), wave = buildWave(p, base.ids), follows = buildFollows(p), weekdayStage: Stage = {name: 'weekdays', terms: base.weekdays};
   const preference: Stage = {name: 'preferred', terms: (p.preferences ?? []).map(v => [-v.weight, x(v.engineer, v.duty)])};
   const repeats = buildRepeats(p, base.ids);
   const seeded: Stage = {name: 'seed', terms: p.seededTies ? p.duties.flatMap((d, i) => d.eligible.map(e => {
@@ -321,18 +335,18 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     // million-scale costs produced >1e-7 drift on ordinary six-engineer months.
     return [random() % 1000, x(e, i)] as Term;
   })) : []};
-  // Directly below the proved minimum gap: cross-month weekend fairness (turns, then each
-  // member's band in the weekend wave), in-month weekday variety (no weekday twice, then no
+  // Directly below the proved minimum gap: weekend turns, no Thursday with a weekend in one
+  // month (decision 2026-11-06: either half counts), each member's band in the weekend wave, in-month weekday variety (no weekday twice, then no
   // weekday staircase), cross-month weekday rotation,
   // explicit preferred dates, a new weekend predecessor (decision 2026-11-06), then the seeded tie.
   // The remaining sorted-gap leximin runs last, as a pure tie-breaker: above the seed it
   // pushed every pair towards the same two-week pattern month after month. This list is
   // the one place that fixes the order below the minimum gap.
-  const quality = [rotationStage, wave.stage, repeats.stage, patterns.stage, weekdayStage, preference, follows.stage, seeded];
+  const quality = [rotationStage, thursdays.stage, wave.stage, repeats.stage, patterns.stage, weekdayStage, preference, follows.stage, seeded];
   let qualityDone = false;
   const runQuality = () => {
     for (const stage of quality) {
-      for (const level of [wave, repeats, patterns, follows]) if (stage === level.stage && stage.terms.length) {
+      for (const level of [thursdays, wave, repeats, patterns, follows]) if (stage === level.stage && stage.terms.length) {
         session.addColumns(level.columns); session.addRows(level.rows);
         columns += level.columns.length; rows += level.rows.length;
       }

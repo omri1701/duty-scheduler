@@ -14,7 +14,7 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
   const fail = (code: string, dutyId?: string): never => {throw new GenerationError(code, {dutyId});};
   if (Object.keys(assignments).length !== duties.length || Object.keys(assignments).some(id => !duties.some(d => d.id === id))) fail('assignment-coverage-shape');
   const totals = members.map(() => 0), gaps: number[] = [];
-  let coverage = 0, special = 0, preferred = 0, rotation = 0, repeats = 0, weekdayCost = 0, extraWeekends = 0, adjacent = 0, patterns = 0;
+  let coverage = 0, special = 0, preferred = 0, rotation = 0, repeats = 0, weekdayCost = 0, extraWeekends = 0, adjacent = 0, patterns = 0, thursdays = 0;
   for (const d of duties) {
     const a = assignments[d.id];
     if (!a || a.secondary !== input.secondary?.[d.id]) fail('secondary-changed', d.id);
@@ -58,6 +58,8 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
     const extra = Math.max(0, weekends.size - (approved?.rule === 'weekends' ? approved.weekends.length : 1));
     extraWeekends += extra * (extra + 1) / 2;
     rotation += weekends.size * (input.weekendRotation?.[member.id] ?? 0); // per weekend, like the model
+    // A Thursday and a weekend (either half) in one month count once per member.
+    if (weekends.size && selected.some(d => !d.weekendId && dayOf(d.startDate) === 4)) thursdays++;
     const weekdays = new Map<number, number>();
     for (const d of selected) if (!d.weekendId) {
       weekdays.set(dayOf(d.startDate), (weekdays.get(dayOf(d.startDate)) ?? 0) + 1);
@@ -116,7 +118,7 @@ export function validatePrepared(prepared: PreparedGeneration, assignments: Prim
   const missing = duties.filter(d => assignments[d.id].primary === null).reduce((sum, d) => sum + d.units, 0);
   if (deficits.reduce((sum, v) => sum + v, 0) !== missing) fail('point-conservation');
   return {coverage, special, units: totals.reduce((sum, v) => sum + v, 0), deficits, gaps: gaps.sort((a, b) => a - b),
-    rotation, preferred, repeats, weekdays: weekdayCost, extraWeekends, adjacent, wave, follows, patterns};
+    rotation, preferred, repeats, weekdays: weekdayCost, extraWeekends, adjacent, wave, follows, patterns, thursdays};
 }
 /** Generate's own output only: a non-weekend member on a weekend duty the manager did not
  * lock to them. Manual calendar edits stay the manager's call, so validatePrepared (which
