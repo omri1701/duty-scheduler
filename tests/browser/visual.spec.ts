@@ -284,3 +284,21 @@ for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${l
   const top = (await page.locator('.month-toolbar-container').boundingBox())!, bottom = (await note.boundingBox())!;
   await region(page, `publish-waits-${lang}`, {x: 0, y: top.y, width: page.viewportSize()!.width, height: bottom.y + bottom.height - top.y + 8});
 });
+
+// Subscribe to my calendar (decision 2026-11-06): new, ready and reset-confirm states.
+for (const lang of ['en', 'he'] as const) test(`calendar subscription ${lang}`, async ({page, openApp}) => {
+  await openApp('a');
+  const he = lang === 'he';
+  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('button', {name: he ? 'הפרופיל שלי' : 'My profile', exact: true}).click();
+  const section = page.getByRole('region', {name: he ? 'הרשמה ללוח השנה שלי' : 'Subscribe to my calendar'});
+  await expect(section.getByRole('button', {name: he ? 'יצירת קישור ללוח השנה שלי' : 'Create my calendar link'})).toBeVisible();
+  await snapshot(page, `calendar-subscription-new-${lang}`);
+  await section.getByRole('button', {name: he ? 'יצירת קישור ללוח השנה שלי' : 'Create my calendar link'}).click();
+  await expect(section.getByRole('link', {name: he ? 'הוספה ליומן Apple' : 'Add to Apple Calendar'})).toBeVisible();
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 10_000});
+  await snapshot(page, `calendar-subscription-ready-${lang}`);
+  await section.getByRole('button', {name: he ? 'איפוס הקישור' : 'Reset link'}).click();
+  await expect(section.getByRole('group')).toBeVisible();
+  await snapshot(page, `calendar-subscription-reset-${lang}`);
+});

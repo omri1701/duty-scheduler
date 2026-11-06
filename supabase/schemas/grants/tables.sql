@@ -39,3 +39,8 @@ GRANT SELECT ON TABLE public.duty_compensation_events TO authenticated, service_
 
 REVOKE ALL ON TABLE public.duty_allocations FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.duty_allocations TO authenticated;
+
+-- Own row only (RLS); writes only through duty_private.calendar_reset/calendar_language.
+REVOKE ALL ON TABLE public.duty_calendar_feeds FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_calendar_feeds TO authenticated;
+GRANT ALL ON TABLE public.duty_calendar_feeds TO service_role;

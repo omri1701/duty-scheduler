@@ -138,6 +138,10 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/Temporary member required/, 'Choose a temporary member.', 'יש לבחור חבר זמני.'],
   [/The counterpart changed\. Refresh first|This publication changed\. Request a new swap/, 'The schedule changed since this request. Ask for a new swap.', 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.'],
   [/The current engineer must accept before admin review|Both engineers must accept before admin review/, 'Both engineers have to accept before an admin reviews it.', 'שני המהנדסים צריכים לאשר לפני שמנהל יבדוק.'],
+  // Personal calendar feed (decision 2026-11-06).
+  [/calendar-member-required/, 'Only approved, active team members can subscribe to their duties.', 'רק חברי צוות פעילים ומאושרים יכולים להירשם לתורנויות שלהם.'],
+  [/invalid-calendar-language/, 'Choose English or Hebrew for your calendar.', 'יש לבחור אנגלית או עברית ללוח השנה.'],
+  [/invalid-calendar-feed|calendar-feed-unavailable/, 'Your calendar couldn’t be read right now. Try again later.', 'לא ניתן היה לקרוא את לוח השנה שלך כרגע. כדאי לנסות שוב מאוחר יותר.'],
   [/Use Publish to publish a draft/, 'Use Publish to publish the draft.', 'יש להשתמש בכפתור הפרסום כדי לפרסם את הטיוטה.'],
   [/Use a name between 1 and 80 characters/, 'Use a name between 1 and 80 characters.', 'יש להשתמש בשם באורך 1 עד 80 תווים.'],
   [/Version no longer exists/, 'This version was already deleted. Refresh the list.', 'הגרסה הזו כבר נמחקה. יש לרענן את הרשימה.'],
