@@ -59,7 +59,7 @@ AI/docs-only edits need no application build or tests. Changes to the validator
 itself are executable changes and remain subject to full GitHub Quality.
 
 GitHub owns CI. The required `quality` check still aggregates scope, application,
-browser shard/report and disposable database checks. PRs run unit/tsc/lint/build
+eight browser shards/report and disposable database checks. PRs run unit/tsc/lint/build
 plus browser specs mapped from the changed files (database job only for SQL or
 Supabase paths); allowlisted documentation/AI-only PRs skip application/database
 jobs. Unknown/global paths, branch pushes and manual runs require full checks.

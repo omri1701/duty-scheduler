@@ -253,7 +253,7 @@ caching and failure traces/reports. Checks are tiered by the PR diff:
 - Unknown or global paths (package/lockfile, configs, `app/globals.css`, shared
   shells, UI primitives, test fixtures, workflows, `scripts/**`) run everything.
 - Pushes to `develop`/`master` and manual runs always run everything: the browser
-  and visual suite as four shards merged into one report, plus the database job
+  and visual suite as eight duration-balanced shards (scripts/browser-shard.mjs, weights in tests/browser/shard-weights.json) merged into one report, plus the database job
   (about 6 minutes). This full run gates Development deployment and releases.
 
 The selector (`scripts/quality-scope.mjs`) runs from the PR's base commit, so a PR

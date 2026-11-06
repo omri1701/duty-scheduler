@@ -133,7 +133,7 @@ test('reject missing, expired, stale, forged, wrong-attempt and ambiguous contra
 });
 
 test('full jobs cannot be missing, failed, skipped, cancelled or from a different attempt', async () => {
-  assert.deepEqual(FULL_QUALITY_JOBS.filter(name => name.startsWith('browser ')), ['browser 1/4', 'browser 2/4', 'browser 3/4', 'browser 4/4']);
+  assert.deepEqual(FULL_QUALITY_JOBS.filter(name => name.startsWith('browser ')), Array.from({length: 8}, (_, i) => `browser ${i + 1}/8`));
   for (const name of FULL_QUALITY_JOBS) {
     for (const conclusion of ['failure', 'skipped', 'cancelled', null]) {
       const f = fixture(); f.jobs.find(job => job.name === name).conclusion = conclusion;
@@ -179,8 +179,8 @@ test('required quality gate cannot silently skip checks; browsers and releases h
   assert.match(workflow, /if: needs\.scope\.outputs\.application == 'true'/);
   assert.match(workflow, /if: needs\.scope\.outputs\.database == 'true'/);
   assert.match(workflow, /if: needs\.scope\.outputs\.browser == 'full'/);
-  assert.match(workflow, /name: browser \$\{\{ matrix\.shard \}\}\/4/);
-  assert.match(workflow, /shard: \[1, 2, 3, 4\]/);
+  assert.match(workflow, /name: browser \$\{\{ matrix\.shard \}\}\/8/);
+  assert.match(workflow, /shard: \[1, 2, 3, 4, 5, 6, 7, 8\]/);
   assert.match(workflow, /group: quality-browser-\$\{\{ github\.ref \}\}-\$\{\{ matrix\.shard \}\}/, 'shards must not cancel each other');
   assert(!workflow.split('jobs:')[0].includes('cancel-in-progress'), 'Testing concurrency must not cancel deploy jobs');
   const deploy = readFileSync('.github/workflows/deploy.yml', 'utf8');

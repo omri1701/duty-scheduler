@@ -15,8 +15,8 @@ export function githubAPI(repository, token, fetchAPI = fetch) {
   };
 }
 
-// Branch Quality runs the whole browser suite as four shards merged by browser-report.
-export const FULL_QUALITY_JOBS = ['scope', 'application', 'browser 1/4', 'browser 2/4', 'browser 3/4', 'browser 4/4',
+// Branch Quality runs the whole browser suite as eight shards merged by browser-report.
+export const FULL_QUALITY_JOBS = ['scope', 'application', ...Array.from({length: 8}, (_, i) => `browser ${i + 1}/8`),
   'browser-report', 'database', 'quality'];
 
 export async function verifyQualityEvidence(api, {repository, branch, sha, runId, currentRunId, now = Date.now()}) {

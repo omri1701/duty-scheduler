@@ -230,7 +230,7 @@ Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 Production dispatch reuses Quality without rerunning tests. The gate requires the
 canonical `quality.yml` workflow, same repository/head repository, exact current
 `master` SHA, push/manual event, completed successful run and successful scope,
-application, all four `browser N/4` shards, `browser-report`, database and
+application, all eight `browser N/8` shards, `browser-report`, database and
 `quality` jobs from the current attempt. PR runs may select fewer checks and can
 never authorize a release. It rejects PR,
 fork, skipped, failed, cancelled, stale and incomplete runs. The immutable artifact
