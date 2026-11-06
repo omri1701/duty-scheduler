@@ -2,18 +2,18 @@
 DO $schema$
 DECLARE t record; f record;
 BEGIN
-  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 13 THEN
-    RAISE EXCEPTION 'Expected exactly 13 application tables';
+  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 17 THEN
+    RAISE EXCEPTION 'Expected exactly 17 application tables';
   END IF;
   IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 95 THEN
-    RAISE EXCEPTION 'Expected exactly 95 application functions';
+      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 116 THEN
+    RAISE EXCEPTION 'Expected exactly 116 application functions';
   END IF;
   IF (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 24
+      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 29
     OR EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
       WHERE n.nspname='public' AND c.conrelid::regclass::text LIKE 'duty_%' AND NOT c.convalidated) THEN
-    RAISE EXCEPTION 'Expected 24 validated application foreign keys';
+    RAISE EXCEPTION 'Expected 29 validated application foreign keys';
   END IF;
   IF EXISTS (SELECT 1 FROM auth.users) OR EXISTS (SELECT 1 FROM auth.identities) THEN
     RAISE EXCEPTION 'Clean database requires zero Auth users and identities';
@@ -52,7 +52,9 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.duty_members) OR EXISTS (SELECT 1 FROM public.duty_assignments)
     OR EXISTS (SELECT 1 FROM public.duty_constraints) OR EXISTS (SELECT 1 FROM public.duty_months)
     OR EXISTS (SELECT 1 FROM public.duty_publications) OR EXISTS (SELECT 1 FROM public.duty_swap_requests)
-    OR EXISTS (SELECT 1 FROM public.duty_compensation_events) OR EXISTS (SELECT 1 FROM public.duty_allocations) THEN
+    OR EXISTS (SELECT 1 FROM public.duty_compensation_events) OR EXISTS (SELECT 1 FROM public.duty_allocations)
+    OR EXISTS (SELECT 1 FROM public.duty_notification_settings) OR EXISTS (SELECT 1 FROM public.duty_push_subscriptions)
+    OR EXISTS (SELECT 1 FROM public.duty_push_notifications) OR EXISTS (SELECT 1 FROM public.duty_push_deliveries) THEN
     RAISE EXCEPTION 'Operational data must be empty';
   END IF;
 END

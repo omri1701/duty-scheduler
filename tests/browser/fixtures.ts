@@ -10,6 +10,8 @@ import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
 import type {Balance} from '../../lib/supabase/balance';
 import {dutyPoints, owedUnits} from '../../lib/supabase/published-edit';
 import type {CompensationEvent} from '../../lib/compensation/types';
+import {supportedPushEndpoint, BASE64URL_KEY} from '../../lib/push/endpoint';
+import {DEFAULT_SETTINGS, SWITCHES, validTime, type NotificationSettings} from '../../lib/push/settings';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -66,6 +68,12 @@ export class Backend {
   sourcePublication: string | null = null;
   replanBlocked: string | null | undefined = undefined;
   oauthRequests: URL[] = [];
+  /** Served by /api/config when set; absent means notifications aren't set up. */
+  vapidPublicKey?: string;
+  /** Personal settings and devices (duty_notification_settings, duty_push_subscriptions). */
+  notificationSettings = new Map<string, NotificationSettings>();
+  devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
+  testNotifications = 0;
   generationEnvelope(month: string) {
     const state = fromSnapshot(this.raw, ids.admin);
     const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
@@ -110,6 +118,42 @@ export class Backend {
       return null;
     }
     if (name === 'duty_load') return this.snapshot(user);
+    // Personal RPCs (decision 2026-11-06): own rows only, no workspace revision.
+    if (name === 'duty_set_language') {
+      expect(['en', 'he']).toContain(p.p_language);
+      const member = this.raw.members.find(m => m.id === user);
+      if (member) member.language = p.p_language as 'en' | 'he';
+      return null;
+    }
+    if (['duty_notification_settings', 'duty_set_notification_settings', 'duty_save_push_subscription', 'duty_send_test_notification'].includes(name)) {
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
+    }
+    const settingsState = () => ({...(this.notificationSettings.get(user) ?? DEFAULT_SETTINGS), devices: this.devices.filter(d => d.member === user).length});
+    if (name === 'duty_notification_settings') return settingsState();
+    if (name === 'duty_set_notification_settings') {
+      const next = p.p_settings as NotificationSettings;
+      expect(Object.keys(next).sort()).toEqual([...SWITCHES, 'eveningTime', 'morningTime'].sort());
+      expect(SWITCHES.every(key => typeof next[key] === 'boolean') && validTime(next.eveningTime) && validTime(next.morningTime)).toBe(true);
+      this.notificationSettings.set(user, next);
+      return settingsState();
+    }
+    if (name === 'duty_save_push_subscription') {
+      expect(supportedPushEndpoint(p.p_endpoint)).toBe(true);
+      expect(BASE64URL_KEY.p256dh.test(String(p.p_p256dh)) && BASE64URL_KEY.auth.test(String(p.p_auth))).toBe(true);
+      this.devices = this.devices.filter(d => d.endpoint !== p.p_endpoint);
+      this.devices.push({member: user, endpoint: String(p.p_endpoint), p256dh: String(p.p_p256dh), auth: String(p.p_auth)});
+      return null;
+    }
+    if (name === 'duty_delete_push_subscription') {
+      this.devices = this.devices.filter(d => !(d.endpoint === p.p_endpoint && d.member === user));
+      return null;
+    }
+    if (name === 'duty_send_test_notification') {
+      if (!this.devices.some(d => d.member === user)) throw Error('push-no-device');
+      this.testNotifications++;
+      return true;
+    }
     if (name === 'duty_replanned_versions') {
       if (!canManage(this.raw, user)) throw Error('Admin access required');
       return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
@@ -335,7 +379,7 @@ export const test = base.extend<Fixtures>({
       }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
-        if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only'}});}
+        if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}
         if (url.origin === backend.url) {
           if (url.pathname === '/auth/v1/settings') return route.fulfill({json: {external: {google: backend.googleEnabled}}});
           if (url.pathname === '/auth/v1/authorize') {
@@ -365,7 +409,9 @@ export const test = base.extend<Fixtures>({
         return route.abort('blockedbyclient');
       });
       await target.goto((backend.runtimeOrigin??'/')+(oauthReturn?'?code=synthetic-oauth-code':''));
-      if (waitForReady) await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
+      // The workspace's Sign out lives in Settings (decision 2026-11-06); the access screen keeps its own.
+      const workspace = !['pending', 'rejected', 'inactive', 'signed-out'].includes(identity);
+      if (waitForReady) await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : workspace ? 'Settings' : 'Sign out', exact: true})).toBeVisible();
       if (waitForReady && canManage(backend.raw, user.id)) await expect(target.locator('.workspace-controls')).toBeEnabled();
       return target;
     });
@@ -418,6 +464,12 @@ export async function touchEvent(page: Page, type: string, x: number, y: number)
     const touch = new Touch({identifier: 1, target, clientX: x, clientY: y});
     target.dispatchEvent(new TouchEvent(type, {bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [touch], changedTouches: [touch]}));
   }, {type, x, y});
+}
+
+/** Sign out of the workspace: Settings, then Sign out. */
+export async function signOutFromSettings(page: Page) {
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Sign out', exact: true}).click();
 }
 
 export async function monthAction(page: Page, name: string) {

@@ -1,4 +1,4 @@
-import {test, expect, ids} from './fixtures';
+import {test, expect, ids, signOutFromSettings} from './fixtures';
 
 function gate() {
   let release!: () => void;
@@ -15,13 +15,13 @@ test('late private workspace refresh cannot restore data after sign-out', async 
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await started.wait;
-  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  await signOutFromSettings(page);
   await expect(page.getByRole('button', {name: 'Continue with Google'})).toBeVisible();
   const late = page.waitForResponse('**/rest/v1/rpc/duty_load');
   held.release(); await (await late).finished();
   await page.evaluate(() => new Promise(requestAnimationFrame));
   await expect(page.getByRole('button', {name: 'Continue with Google'})).toBeVisible();
-  await expect(page.getByRole('button', {name: 'My profile'})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: 'Settings'})).toHaveCount(0);
   await expect(page.getByText('Synthetic vacation')).toHaveCount(0);
 });
 

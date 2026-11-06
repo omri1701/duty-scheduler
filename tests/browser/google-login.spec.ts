@@ -1,4 +1,4 @@
-import {test, expect, ids} from './fixtures';
+import {test, expect, ids, signOutFromSettings} from './fixtures';
 import {resolveEnvironment} from '../../lib/supabase/environment';
 
 test('returning authenticated users enter the calendar without Google OAuth', async ({page, openApp, backend}) => {
@@ -25,12 +25,12 @@ for (const [identity, heading] of [
     await openApp('admin');
     const storageKey = resolveEnvironment(backend.url, new URL(baseURL!).origin).storageKey;
     const logout = page.waitForRequest('**/auth/v1/logout*');
-    await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+    await signOutFromSettings(page);
     expect((await logout).method()).toBe('POST');
     await expect(page.getByRole('button', {name: 'Continue with Google'})).toBeVisible();
     expect(await page.evaluate(key => localStorage.getItem(key), storageKey)).toBeNull();
     expect(backend.oauthRequests).toEqual([]);
-    await expect(page.getByRole('button', {name: 'My profile'})).toHaveCount(0);
+    await expect(page.getByRole('button', {name: 'Settings'})).toHaveCount(0);
     await page.getByRole('button', {name: 'Continue with Google'}).click();
     await expect(page.getByRole('heading', {name: 'Synthetic OAuth handoff'})).toBeVisible();
     expect(backend.oauthRequests).toHaveLength(1);
@@ -54,7 +54,7 @@ for (const [identity, heading] of [
       await expect(page.getByRole('tab', {name: 'Schedule', exact: true})).toHaveCount(0);
     } else {
       await expect(page.getByRole('tab', {name: 'Schedule', exact: true})).toBeVisible();
-      await page.getByRole('button', {name: 'My profile', exact: true}).click();
+      await page.getByRole('button', {name: 'Settings', exact: true}).click();
       await expect(page.getByRole('textbox', {name: 'Display name'})).toHaveValue('Blair Birch');
       await page.keyboard.press('Escape');
       await expect(page.getByRole('button', {name: 'Publish', exact: true})).toHaveCount(0);

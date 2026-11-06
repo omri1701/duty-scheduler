@@ -93,6 +93,16 @@ const EDITS: readonly (readonly [RegExp, string, string])[] = [
 ];
 
 const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
+  // Notifications and personal settings (decision 2026-11-06).
+  [/push-service-unsupported/, 'This browser’s notification service isn’t supported. On iPhone use Duty from the Home Screen; on Android use Chrome.', 'שירות ההתראות של הדפדפן הזה אינו נתמך. באייפון יש להשתמש ב־Duty ממסך הבית; באנדרואיד ב־Chrome.'],
+  [/push-keys-invalid|push-subscribe-failed/, 'This device couldn’t turn notifications on. Try again; if it repeats, reset notifications for this site in the browser settings.', 'לא ניתן היה להפעיל התראות במכשיר הזה. יש לנסות שוב; אם זה חוזר, יש לאפס את ההתראות לאתר בהגדרות הדפדפן.'],
+  [/push-no-device/, 'Turn notifications on for this device first.', 'יש להפעיל קודם התראות במכשיר הזה.'],
+  [/push-install-first/, 'On iPhone, add Duty to the Home Screen first, open it from there, then turn notifications on.', 'באייפון יש להוסיף קודם את Duty למסך הבית, לפתוח אותו משם ואז להפעיל התראות.'],
+  [/push-unsupported/, 'This browser can’t receive notifications. Use Chrome on Android, or Duty from the Home Screen on iPhone (iOS 16.4 or later).', 'הדפדפן הזה לא יכול לקבל התראות. יש להשתמש ב־Chrome באנדרואיד, או ב־Duty ממסך הבית באייפון (iOS 16.4 ומעלה).'],
+  [/push-permission-denied/, 'Notifications weren’t allowed. Allow them for Duty in the browser or phone settings, then try again.', 'ההתראות לא אושרו. יש לאפשר אותן ל־Duty בהגדרות הדפדפן או הטלפון ולנסות שוב.'],
+  [/Choose English or Hebrew/, 'Choose English or Hebrew.', 'יש לבחור עברית או אנגלית.'],
+  [/Invalid notification settings|Invalid notification time/, 'Those notification settings couldn’t be saved. Refresh, then try again.', 'לא ניתן היה לשמור את הגדרות ההתראות. יש לרענן ולנסות שוב.'],
+  [/Could not load notification settings/, 'Couldn’t load your notification settings. Try again.', 'לא ניתן היה לטעון את הגדרות ההתראות. יש לנסות שוב.'],
   // Solver and validation internals: Generate didn't finish; nothing was saved.
   [/Prior objective degraded|Threshold violated|Objective mismatch|contradicts verified incumbent|Unbalanced\/oversized targets|Wrong assignment length|Noncanonical generation context|solver-domain-validation-mismatch/, 'Generate couldn’t finish. Try again, or adjust the plan.', 'השיבוץ לא הושלם. אפשר לנסות שוב או לשנות את התוכנית.'],
   [/Weekend cap exceeded by fixed duties/, 'Locked duties give someone a second weekend. Review those locks in the calendar.', 'תורנויות נעולות נותנות למישהו סוף שבוע שני. יש לבדוק את הנעילות האלה בלוח.'],

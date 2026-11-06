@@ -78,6 +78,41 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 node supabase/tests/generation.mjs supabase_db_duty-scheduler
 ```
 
+## Web push notifications
+
+Migration `20261106013729_push_notifications.sql` (decision 2026-11-06) adds `duty_members.language`
+(NULL until the member chooses; only `duty_set_language` writes it, for the caller's own
+row) and four tables that members read only for their own rows: notification switches,
+devices (push subscriptions), the notification log and its deliveries. Writes go through
+checked RPCs (`duty_notification_settings`, `duty_set_notification_settings`,
+`duty_save_push_subscription`, `duty_delete_push_subscription`, `duty_send_test_notification`),
+none of which reads or advances the workspace revision. AFTER triggers on months
+(publish, published edits), swap requests and new members record event notifications in the
+same transaction; they never raise into the change. `duty_private.push_tick()` (pg_cron,
+every minute) records the deadline and reminder notifications for the current minute in
+Asia/Jerusalem, settles finished pg_net responses and posts due deliveries, 50 per request, to
+`/api/push/dispatch` with a shared secret from Vault. Each notification has a unique key, so
+every run is idempotent; only refusals the sender made before sending anything are retried,
+so nothing arrives twice. Notifications still unsent after six hours expire. Without pg_net,
+pg_cron or the Vault secrets nothing is sent and nothing fails.
+
+Hosted setup, in order, per environment (DEV first): release the migration through the
+normal database-first workflow; add the server-only Vercel variables `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `DUTY_PUSH_SECRET` (own keys per environment) and
+redeploy; then run [`supabase/admin/push-scheduler.sql`](../supabase/admin/push-scheduler.sql)
+in that project's SQL editor with the deployment's `/api/push/dispatch` URL and the same
+secret (plus the Vercel protection-bypass secret where Deployment Protection is on). Check
+with Settings → Enable notifications → Send a test.
+
+Focused checks (empty disposable LOCAL database only; the sending checks stub pg_net):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/push.sql
+node --test tests/push.test.mjs
+pnpm exec playwright test settings.spec.ts
+```
+
 ## Unmerged migrations in local development
 
 `pnpm start:dev` connects to hosted **DEV**; it does not apply branch migrations there.

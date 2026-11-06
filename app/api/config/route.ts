@@ -1,3 +1,4 @@
+import {validVapidPublicKey} from '../../../lib/push/endpoint.ts';
 import {configuredDevOrigin,configuredLocalTunnel,isLoopback,resolveEnvironment, validatePublicKey} from '../../../lib/supabase/environment.ts';
 export const dynamic = 'force-dynamic';
 
@@ -32,5 +33,7 @@ export async function GET(request: Request){
   if (environment.readOnly && process.env.DUTY_PRODUCTION_INSPECTION !== 'confirmed') throw Error('Confirmation required');
  } catch {return Response.json({error:'Not configured'},{status:503,headers});}
  // Only the public, RLS-protected client configuration crosses into the browser.
- return Response.json({url,key,...(deploymentOrigin ? {deploymentOrigin} : {}),...(devOrigin ? {devOrigin} : {}),...(localTunnel ? {localTunnel} : {})},{headers});
+ // The VAPID public key is public by design; its private half never leaves the server.
+ const vapidPublicKey=validVapidPublicKey(process.env.VAPID_PUBLIC_KEY)?process.env.VAPID_PUBLIC_KEY:undefined;
+ return Response.json({url,key,...(vapidPublicKey ? {vapidPublicKey} : {}),...(deploymentOrigin ? {deploymentOrigin} : {}),...(devOrigin ? {devOrigin} : {}),...(localTunnel ? {localTunnel} : {})},{headers});
 }

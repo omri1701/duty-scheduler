@@ -143,6 +143,13 @@ schema_paths = [
   "./schemas/functions/public/duty_replanned_versions.sql",
   "./schemas/functions/duty_private/set_no_weekends.sql",
   "./schemas/functions/public/duty_set_no_weekends.sql",
+  "./schemas/tables/duty_notifications.sql",
+  "./schemas/functions/duty_private/push_events.sql",
+  "./schemas/functions/duty_private/push_settings.sql",
+  "./schemas/functions/duty_private/push_delivery.sql",
+  "./schemas/functions/public/duty_push.sql",
+  "./schemas/triggers/duty_push_events.sql",
+  "./schemas/policies/duty_notifications.sql",
   "./schemas/grants/functions.sql",
   "./schemas/grants/tables.sql",
 ]

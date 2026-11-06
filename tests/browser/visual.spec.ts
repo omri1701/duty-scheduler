@@ -2,6 +2,7 @@ import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids, t
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
+import {mockPush, VAPID_PUBLIC_KEY} from './push-mock';
 
 // Retain the deployed Production baseline (no badge). Environment-specific
 // headers/access states have their own new snapshots in environment.spec.ts.
@@ -283,4 +284,21 @@ for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${l
   await expect(note).toBeVisible();
   const top = (await page.locator('.month-toolbar-container').boundingBox())!, bottom = (await note.boundingBox())!;
   await region(page, `publish-waits-${lang}`, {x: 0, y: top.y, width: page.viewportSize()!.width, height: bottom.y + bottom.height - top.y + 8});
+});
+
+// The settings screen (decision 2026-11-06), before and after enabling notifications (Push mocked).
+for (const lang of ['en', 'he']) test(`settings screen ${lang}`, async ({page, openApp, backend}) => {
+  await mockPush(page);
+  backend.vapidPublicKey = VAPID_PUBLIC_KEY;
+  await openApp();
+  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await page.getByRole('button', {name: lang === 'en' ? 'Settings' : 'הגדרות', exact: true}).click();
+  const sheet = page.getByRole('dialog');
+  const enable = sheet.getByRole('button', {name: lang === 'en' ? 'Enable notifications' : 'הפעלת התראות'});
+  await expect(enable).toBeEnabled();
+  await expect(sheet.getByRole('checkbox').first()).toBeEnabled();
+  await snapshot(page, `settings-${lang}`);
+  await enable.click();
+  await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Send a test' : 'שליחת בדיקה'})).toBeEnabled();
+  await snapshot(page, `settings-enabled-${lang}`);
 });

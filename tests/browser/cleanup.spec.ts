@@ -2,7 +2,7 @@ import {test, expect, ids, touchEvent} from './fixtures';
 
 test('profile reopening resets edits and captures the latest saved name', async ({page, openApp, backend}) => {
   await openApp();
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   const name = page.getByRole('textbox', {name: 'Display name'});
   await expect(name).toHaveValue('Avery Admin');
   await name.fill('Unsaved edit');
@@ -14,7 +14,7 @@ test('profile reopening resets edits and captures the latest saved name', async 
   await expect(name).toHaveValue('Unsaved edit');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   await expect(name).toHaveValue('Updated Admin');
 });
 

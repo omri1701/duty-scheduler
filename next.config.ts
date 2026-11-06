@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     '/api/solver-spike/asset/*': ['./node_modules/highs/build/highs.mjs', './node_modules/highs/build/highs.wasm', './node_modules/highs/LICENSE'],
     '/api/scheduling/asset/*': ['./node_modules/highs/build/highs.mjs', './node_modules/highs/build/highs.wasm', './node_modules/highs/LICENSE'],
   },
+  // The push service worker must never be served stale (decision 2026-11-06).
+  headers: async () => [{ source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }] }],
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   // Vercel restored pre-PR #22 CSS despite receiving the updated source.
   // Port 5173 also served old CSS beside current JSX. Do not persist transforms;

@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import type {User} from '@supabase/supabase-js';
 import {getSupabase,getEnvironment,signInWithGoogle,signInLocally,completeInspectionLogin} from '@/lib/supabase/client';
 import type {Environment} from '@/lib/supabase/environment';
@@ -17,6 +17,8 @@ import {balance as readBalance} from '@/lib/supabase/balance';
 import type {PublishedEdit} from '@/lib/supabase/published-edit';
 import {swapAvailability} from '@/lib/supabase/swaps';
 import {replannedVersions} from '@/lib/supabase/versions';
+import {readNotificationState, settingsPayload, type NotificationSettings} from '@/lib/push/settings';
+import type {DeviceSubscription} from '@/lib/push/browser';
 
 export function useTeamWorkspace(){
  const [environment,setEnvironment]=useState<Environment|null>(null);
@@ -53,6 +55,16 @@ export function useTeamWorkspace(){
   return()=>{alive=false;clearInterval(timer)};
  },[client,user,workspace]);
  const me=snapshot?.members.find(m=>m.id===user?.id);
+ // Personal settings (decision 2026-11-06): direct checked RPCs without the workspace
+ // revision, so they never conflict with schedule edits or refresh the team.
+ const personal=useMemo(()=>({
+  async setLanguage(language:'en'|'he'){if(client&&!environment?.readOnly&&user){const {error}=await client.rpc('duty_set_language',{p_language:language});if(error)throw error}},
+  async notificationSettings(){if(!client)throw Error('Not connected');const {data,error}=await client.rpc('duty_notification_settings',{});if(error)throw error;return readNotificationState(data)},
+  async saveNotificationSettings(settings:NotificationSettings){if(!client)throw Error('Not connected');const {data,error}=await client.rpc('duty_set_notification_settings',{p_settings:settingsPayload(settings)});if(error)throw error;return readNotificationState(data)},
+  async saveDevice(device:DeviceSubscription){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_save_push_subscription',{p_endpoint:device.endpoint,p_p256dh:device.p256dh,p_auth:device.auth});if(error)throw error},
+  async removeDevice(endpoint:string){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_delete_push_subscription',{p_endpoint:endpoint});if(error)throw error},
+  async sendTest(){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_send_test_notification',{});if(error)throw error},
+  }),[client,environment,user]);
  return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   refresh:()=>workspace.refresh(),
   // Display-only projection; read where it is shown, never at startup.
@@ -73,6 +85,8 @@ export function useTeamWorkspace(){
   save:(s:State,publish?:string,month?:string,reviewedLocks?:string[])=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s,month??publish,!!publish,reviewedLocks),p_publish:publish??null}).then(()=>{}),
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),
+  personal,
+
   setRole:(person:string,role:string)=>workspace.mutate('duty_set_role',{p_member:person,p_role:role}).then(()=>{}),
   setNoWeekends:(person:string,noWeekends:boolean)=>workspace.mutate('duty_set_no_weekends',{p_member:person,p_no_weekends:noWeekends}).then(()=>{}),
   restore:(publication:string)=>workspace.mutate('duty_restore_publication',{p_publication:publication}).then(()=>{}),
