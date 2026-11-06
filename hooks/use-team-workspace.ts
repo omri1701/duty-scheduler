@@ -16,6 +16,7 @@ import type {PrimaryAssignments} from '@/lib/scheduling/validate';
 import {balance as readBalance} from '@/lib/supabase/balance';
 import type {PublishedEdit} from '@/lib/supabase/published-edit';
 import {swapAvailability} from '@/lib/supabase/swaps';
+import {editReturns} from '@/lib/supabase/published-edit';
 import {replannedVersions} from '@/lib/supabase/versions';
 import {forgetCalendarLinks} from '@/lib/supabase/calendar';
 import {readNotificationState, settingsPayload, type NotificationSettings} from '@/lib/push/settings';
@@ -95,6 +96,7 @@ export function useTeamWorkspace(){
   deleteVersion:(publication:string)=>workspace.mutate('duty_delete_publication',{p_publication:publication}).then(()=>{}),
   // Read-only: whose unavailability blocks a swap, rechecked by every swap write.
   swapAvailability:(from:string,to:string)=>client?swapAvailability(client,from,to):Promise.reject(Error('Not connected')),
+  editReturns:(publication:string,day:string)=>client?editReturns(client,publication,day):Promise.reject(Error('Not connected')),
   requestSwap:(from:string,to:string,explanation:string)=>workspace.mutate('duty_request_swap',{p_from:from,p_to:to,p_explanation:explanation}).then(()=>{}),
   async resolveSwap(id:string,action:'accept'|'decline'|'approve'|'reject'|'cancel',overrideReason=''){
    const result=await workspace.mutate('duty_resolve_swap',{p_request:id,p_action:action,p_override_reason:overrideReason});

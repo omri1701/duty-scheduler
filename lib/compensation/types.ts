@@ -41,7 +41,9 @@ export type ManualOperation =
   | {kind: 'release'; contributionId: string};
 export type Operation = ManualOperation
   | {kind: 'members'; members: readonly Member[]}
-  | {kind: 'publication'; month: string; beforeId: string | null; after: Publication | null; mode?: 'delete'};
+  | {kind: 'publication'; month: string; beforeId: string | null; after: Publication | null; mode?: 'delete';
+    /** Deleting back to an earlier version is that version's exact undo (decision 2026-11-06). */
+    revert?: true};
 export type InternalOperation =
   | {kind: 'earned'; contributionId: string}
   | {kind: 'hold'; contributionId: string; reason: string};

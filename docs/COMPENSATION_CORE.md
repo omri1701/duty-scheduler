@@ -105,7 +105,12 @@ obtain post-transfer claim references before compiling the final operation.
 
 Ordinary publication commands reject changes to completed facts. `mode: 'delete'`
 may select a previously recorded immutable version, or drop the live pointer; it
-preserves completed effects and never resurrects terminal contributions. Historical
+preserves completed effects and never resurrects terminal contributions. Deleting back to
+an earlier version also carries `revert: true` (decision 2026-11-06) and is the removed
+version's exact undo: capacity its intents moved returns without an ordinary debt, each
+Temporary leg is reversed, and a repayment it cancelled by a Permanent move counts as done
+(its creditor owes the debtor the same units). Deletions recorded before that replay as
+they were booked. Historical
 corrections use explicit accounting operations, not a retroactive rota editor.
 
 `projected.candidates` additionally exposes the simulated unreserved active slices,

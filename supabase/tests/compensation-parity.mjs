@@ -55,6 +55,27 @@ for(const kind of ['temporary','permanent']) {
 }
 h=publish(setup(),publication('v1',[duty('2026-11-02','a',2),duty('2026-11-04','b',6,'2026-11-05')]));
 keep(publish(h,publication('v2',[duty('2026-11-02','b',2),duty('2026-11-04','a',6,'2026-11-05')]),'v1'));
+// Deleting back to an earlier version is its exact undo (decision 2026-11-06): Temporary and
+// Permanent intents, a routed edit recorded before the fix, and a repayment a Permanent move cancelled.
+const revert=(h,from,to)=>send(h,{kind:'publication',month:'2026-11',beforeId:from,mode:'delete',revert:true,
+ after:replay(h).events.find(e=>e.operation.kind==='publication'&&e.operation.after?.id===to).operation.after},'revert/'+from);
+const moved=(id,kind,fromId,toId,route)=>({id,kind,fromId,toId,capacity:[{date:'2026-11-02',offset:0,units:2}],...(route?{route}:{})});
+for(const kind of ['temporary','permanent']) {
+ h=publish(setup(),publication('v1',[duty('2026-11-02','a')]));
+ h=keep(publish(h,publication('v2',[duty('2026-11-02','b')],[],[moved('intent',kind,'a','b')]),'v1'));
+ keep(revert(h,'v2','v1'));
+}
+h=publish(publish(setup(),publication('v1',[duty('2026-11-02','a')])),publication('v2',[duty('2026-11-02','b')]),'v1');
+h=keep(publish(h,publication('v3',[duty('2026-11-02','c')],[],[moved('edit','temporary','b','c',[
+ {fromId:'b',toId:'a',kind:'temporary',transferIds:['return'],counterparts:[{id:'return',fromId:'b',toId:'a',units:2,kind:'temporary'}]},
+ {fromId:'a',toId:'c',kind:'permanent',transferIds:['gift'],counterparts:[{id:'gift',fromId:'a',toId:'c',units:2,kind:'permanent'}]}])]),'v2'));
+keep(revert(h,'v3','v2'));
+for(const kind of ['temporary','permanent']) {
+ h=owe(setup(),'a','b',2,'debt');
+ h=publish(h,publication('v1',[duty('2026-11-02','a')],[plan(h,'r')]));
+ h=keep(publish(h,publication('v2',[duty('2026-11-02','c')],[],kind==='permanent'?[moved('volunteer','permanent','a','c')]:[]),'v1'));
+ keep(revert(h,'v2','v1'));
+}
 // Incremental graph parity also checks frozen endpoint/provenance decisions.
 for(let seed=1;seed<=30;seed++) {
  let random=seed;const rand=()=>random=(Math.imul(random,1664525)+1013904223)>>>0;

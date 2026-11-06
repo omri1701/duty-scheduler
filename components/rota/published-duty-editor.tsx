@@ -1,5 +1,5 @@
 'use client';
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Copy,ArrowLeftRight} from 'lucide-react';
 import {toast} from 'sonner';
 import {shortDate} from '@/lib/date-format';
@@ -26,6 +26,15 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const [approveWeekend,setApproveWeekend]=useState(false);
  const [kind,setKind]=useState<EditKind>('temporary'),[override,setOverride]=useState(false),[reason,setReason]=useState(''),[step,setStep]=useState<'edit'|'review'>('edit');
  const lock=useRef(false),[pending,setPending]=useState(false),busy=remote.saving||pending;
+ // Who a Permanent edit would give the duty back to, undoing a Temporary change (H1): the server decides.
+ const [returns,setReturns]=useState<string[]|'error'|null>(null);
+ useEffect(()=>{
+  let live=true;
+  if(row.publication_id)remote.editReturns(row.publication_id,row.day).then(r=>{if(live)setReturns(r)},()=>{if(live)setReturns('error')});
+  return ()=>{live=false};
+  // The opened version is fixed for this dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[row]);
  const extraValue=Number(extra),saturdayValue=weekend?Number(saturday):0;
  const validExtras=extra.trim()!==''&&validExtra(extraValue)&&(!weekend||(saturday.trim()!==''&&validExtra(saturdayValue)));
  const changed=primary!==row.primary_id,conflicts=changed?editConflicts(raw,primary,row):[];
@@ -36,10 +45,11 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const edit:PublishedEdit={primary,extra:extraValue,saturdayExtra:saturdayValue,kind,overrideReason:conflicts.length?reason:''};
  // A newer version or a reopened draft (another tab or admin) makes this copy stale; reopening the duty starts from the live one.
  const stale=editStale(raw,row),partners=swapPartners(raw,row).map(name).join(', ');
- const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()))&&(!skipped||approveWeekend);
+ const permanent=changed&&kind==='permanent',known=Array.isArray(returns),returning=permanent&&known&&returns.includes(primary);
+ const ready=!stale&&validExtras&&!unchanged&&(!conflicts.length||(override&&!!reason.trim()))&&(!skipped||approveWeekend)&&(!permanent||known);
  const fmt=(day:string)=>shortDate(day,lang),last=addDays(row.end_day,-1);
  const members=raw.members.filter(m=>m.status==='approved'&&(m.active||m.id===row.primary_id)&&m.id!==row.secondary_id);
- const summary=ready?editSummary(row,edit,name,lang):'';
+ const summary=ready?editSummary(row,edit,name,lang,returning):'';
  async function copy(){
   try{
    if(navigator.clipboard)await navigator.clipboard.writeText(summary);
@@ -81,6 +91,9 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
     </div>
     <p className="muted-copy">{kind==='temporary'
      ?t(`${name(row.primary_id!)} owes ${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, repaid in later months.`,`${name(row.primary_id!)} חייב/ת ל־${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, שיוחזרו בחודשים הבאים.`)
+     :returns===null?t('Checking this duty’s earlier changes…','בודקים את השינויים הקודמים בתורנות…')
+     :returns==='error'?t('Could not read this duty’s earlier changes. Close and open the duty again.','לא ניתן לקרוא את השינויים הקודמים בתורנות. יש לסגור ולפתוח אותה מחדש.')
+     :returning?t(`${name(primary)} gets the duty back: this undoes the Temporary change, so its debt cancels.`,`${name(primary)} מקבל/ת את התורנות בחזרה: השינוי הזמני מתבטל, וגם החוב שלו.`)
      :t(`No debt. ${name(primary)} takes this duty for good.`,`ללא חוב. ${name(primary)} לוקח/ת את התורנות לצמיתות.`)}</p>
    </div>}
    {!!conflicts.length&&<div className="warning-note" role="alert">

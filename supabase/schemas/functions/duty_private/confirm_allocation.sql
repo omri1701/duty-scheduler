@@ -1,6 +1,6 @@
 CREATE FUNCTION duty_private.confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
-declare ctx jsonb; facts jsonb; assignments jsonb; checked jsonb; projected jsonb; old_meta public.duty_allocations; instant bigint;
+declare ctx jsonb; facts jsonb; assignments jsonb; checked jsonb; projected jsonb; old_meta public.duty_allocations; instant bigint; fits boolean:=true;
 begin
  ctx:=duty_private.generation_context(p_month,p_revision);
  if p_fingerprint IS DISTINCT FROM ctx->>'fingerprint' then raise exception 'Generation inputs changed. Refresh and review.' using errcode='40001'; end if;
@@ -32,7 +32,14 @@ begin
   -- members still below it, paired under the current seniority. A manager can neither
   -- add, enlarge, redirect nor drop it.
   if coalesce(p_allocation->'uneven','[]'::jsonb) IS DISTINCT FROM duty_private.allocation_uneven(facts,p_allocation->'baselineUnits',p_allocation->'changes') then raise exception 'invalid-uneven-credit'; end if;
-  if old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
+  -- A stored baseline the month's duties can no longer split into (a published edit changed their
+  -- points, and the copied plan's calendar follows it) is replaced by the new plan's (2026-11-06).
+  if old_meta.month is not null and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then
+   begin perform duty_private.allocation_baseline(facts,old_meta.allocation->'baselineUnits');
+   exception when raise_exception then if SQLERRM<>'invalid-ordinary-baseline' then raise; end if; fits:=false;
+   end;
+  end if;
+  if fits and old_meta.month is not null and old_meta.calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text from jsonb_array_elements(facts->'duties') d))
    and (select array_agg(key order by key) from jsonb_each(old_meta.allocation->'baselineUnits'))=(select array_agg(key order by key) from jsonb_each(p_allocation->'baselineUnits'))
    and old_meta.allocation->'baselineUnits'<>p_allocation->'baselineUnits' then raise exception 'Ordinary baseline is immutable. Classify target changes as transfers.'; end if;
  end if;

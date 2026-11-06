@@ -307,6 +307,7 @@ jobs:
           node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
           node supabase/tests/generation.mjs supabase_db_duty-scheduler
           node supabase/tests/published-edit-lifecycle.mjs supabase_db_duty-scheduler
+          node supabase/tests/ledger-hunt.mjs supabase_db_duty-scheduler
           node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
           node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
           node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler
