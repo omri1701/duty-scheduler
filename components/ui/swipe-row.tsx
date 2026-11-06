@@ -16,7 +16,7 @@ export function SwipeRow({id, action, leading, children, openId, onOpen, disable
 }) {
   const root = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null), endActions = useRef<HTMLDivElement>(null), startActions = useRef<HTMLDivElement>(null);
   const [x, setX] = useState(0), [dragging, setDragging] = useState(false), [side, setSide] = useState<'start' | 'end' | null>(null), [busy, setBusy] = useState(false);
-  const gesture = useRef<{id: number; x: number; y: number; start: number; live: boolean} | null>(null);
+  const gesture = useRef<{id: number; x: number; y: number; start: number; live: boolean; reach: number} | null>(null);
   const suppressClick = useRef(0), live = useRef(0);
   const open = openId === id;
   // Physical sign of a reveal: the end action moves the row toward the inline start.
@@ -28,7 +28,7 @@ export function SwipeRow({id, action, leading, children, openId, onOpen, disable
   function down(e: React.PointerEvent<HTMLDivElement>) {
     if (disabled || busy || (!action && !leading) || !e.isPrimary || e.button !== 0) return;
     if ((e.target as HTMLElement).closest(ignore)) return;
-    gesture.current = {id: e.pointerId, x: e.clientX, y: e.clientY, start: live.current, live: false};
+    gesture.current = {id: e.pointerId, x: e.clientX, y: e.clientY, start: live.current, live: false, reach: 0};
   }
   function move(e: React.PointerEvent<HTMLDivElement>) {
     const g = gesture.current;
@@ -41,6 +41,8 @@ export function SwipeRow({id, action, leading, children, openId, onOpen, disable
       content.current?.setPointerCapture(e.pointerId);
     }
     const raw = g.start + dx, toward = raw * endSign;
+    // The finger's own distance decides a long swipe; the row only shows it damped.
+    g.reach = Math.abs(toward);
     // Toward the end action (positive) or the leading one (negative); a little resistance past either.
     const which = toward > 0 ? (action ? 'end' : null) : toward < 0 ? (leading ? 'start' : null) : null;
     setSide(which);
@@ -71,7 +73,7 @@ export function SwipeRow({id, action, leading, children, openId, onOpen, disable
     const toward = live.current * endSign, which = toward > 0 ? 'end' : toward < 0 ? 'start' : null;
     if (!which) {onOpen(null); set(0); return;}
     const w = width(which), reveal = Math.abs(toward);
-    if (reveal > w * 1.6) {void trigger(which); return;}
+    if (g.reach > w * 1.6) {void trigger(which); return;}
     if (reveal > w / 2) {onOpen(id); set((which === 'end' ? endSign : -endSign) * w);} else {onOpen(null); set(0); setSide(null);}
   }
   function cancel() {gesture.current = null; setDragging(false); if (!open) {set(0); setSide(null);}}

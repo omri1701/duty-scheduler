@@ -5,7 +5,8 @@ import {webkit,devices,type Page} from '@playwright/test';
 const schedule=(page:Page,lang='en')=>page.getByRole('tab',{name:lang==='en'?'Schedule':'לוח',exact:true}).click();
 /** A tap (or Enter) opens the duty sheet on PC; on phones it shows the day's details, whose row opens the sheet. */
 async function openSheet(page:Page,day:string,how:'click'|'tap'|'Enter'='click') {
-  if(how==='Enter'){await duty(page,day).focus();await page.keyboard.press('Enter');} else await duty(page,day)[how]();
+  // A second tap on the selected phone day closes it: only tap a day not already open.
+  if(!await duty(page,day).evaluate(el=>el.classList.contains('selected-day'))){if(how==='Enter'){await duty(page,day).focus();await page.keyboard.press('Enter');} else await duty(page,day)[how]();}
   const sheet=page.getByRole('dialog'),details=page.locator('[data-day-details] .day-duty');
   await expect(sheet.or(details).first()).toBeVisible();
   if(!(await sheet.isVisible())) {if(how==='Enter'){await details.focus();await page.keyboard.press('Enter');} else await details[how]();}

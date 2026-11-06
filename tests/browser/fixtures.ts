@@ -463,7 +463,8 @@ export async function openDutySheet(page: Page, day: string) {
   const he = await page.locator('html').getAttribute('lang') === 'he';
   const tab = page.getByRole('tab', {name: he ? 'לוח' : 'Schedule', exact: true});
   if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
-  await duty(page, day).focus(); await page.keyboard.press('Enter');
+  // A second tap on the selected phone day closes it (owner round 2): only tap a day not already open.
+  if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) {await duty(page, day).focus(); await page.keyboard.press('Enter');}
   const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
   await expect(sheet.or(details)).toBeVisible();
   if (!await sheet.isVisible()) await details.click();

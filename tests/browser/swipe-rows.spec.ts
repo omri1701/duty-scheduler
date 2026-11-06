@@ -51,7 +51,9 @@ for (const lang of ['en', 'he'] as const) test(`the calendar follows a sideways 
   if (lang === 'he') await switchLanguage(page, 'he');
   await page.getByRole('tab', {name: lang === 'en' ? 'Schedule' : 'לוח', exact: true}).click();
   const start = await month(page).textContent(), toward = lang === 'he' ? 1 : -1;
-  const grid = (await page.locator('.calendar-grid').boundingBox())!, y = grid.y + 20;
+  const grid = (await page.locator('.calendar-grid').boundingBox())!, head = (await page.locator('.calendar-weekdays:visible').boundingBox())!;
+  // The weekday row: no duty there, so a mouse drag belongs to the month.
+  const y = info.project.name === 'mobile' ? grid.y + 20 : head.y + head.height / 2;
   const x = grid.x + grid.width / 2;
   if (info.project.name === 'mobile') {
     await touchSwipe(page, x, y, toward * 40);
@@ -120,7 +122,7 @@ test('Settings slides out when it closes on a phone', async ({page, openApp}, in
   const sheet = page.getByRole('dialog', {name: 'Settings'});
   await expect(sheet).toBeVisible();
   await page.waitForTimeout(400);
-  await sheet.getByRole('button', {name: 'Back'}).click();
+  await sheet.locator('.sheet-back').click();
   const leaving = await page.locator('.sheet-page').evaluate(el => el.getAnimations().map(a => (a as CSSAnimation).animationName));
   expect(leaving).toContain('page-out');
   await expect(sheet).toHaveCount(0);
