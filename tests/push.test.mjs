@@ -194,3 +194,10 @@ test('a refusal carries the push service reason, without endpoints or keys', asy
   assert.ok(!line.includes('QGAb') && !line.includes(apple.keys.p256dh));
   assert.deepEqual(refusalLog([apple], [{id: '12', outcome: 'sent', status: 201}]), []);
 });
+
+test('every notification carries its own tag, so a new event of the same kind alerts instead of replacing the last', () => {
+  const first = JSON.parse(payload(message({id: '12', tag: 'duty-101', kind: 'test', params: {}}))), second = JSON.parse(payload(message({id: '13', tag: 'duty-102', kind: 'test', params: {}})));
+  assert.equal(first.tag, 'duty-101');
+  assert.equal(second.tag, 'duty-102');
+  assert.notEqual(first.tag, second.tag);
+});

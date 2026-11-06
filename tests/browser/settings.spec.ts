@@ -1,4 +1,4 @@
-import {test, expect, ids, switchLanguage} from './fixtures';
+import {test, expect, ids, switchLanguage, NOW} from './fixtures';
 import {mockPush, pushState, VAPID_PUBLIC_KEY, SYNTHETIC_ENDPOINT} from './push-mock';
 
 // The settings screen (decision 2026-11-06): name, language saved on the member,
@@ -75,7 +75,18 @@ test('enable flow: permission, subscribe, save this device, test and turn off', 
   expect(backend.devices).toEqual([{member: ids.a, endpoint: SYNTHETIC_ENDPOINT, p256dh: Buffer.alloc(65, 4).toString('base64url'), auth: Buffer.alloc(16, 7).toString('base64url')}]);
   await expect(sheet.getByText('iPhone: Add to Home Screen first')).toHaveCount(0);
   await sheet.getByRole('button', {name: 'Send a test'}).click();
-  await expect(sheet.getByText('A test notification is on its way. It can take up to a minute.')).toBeVisible();
+  await expect(sheet.getByText('A test notification is on its way. It should arrive within seconds.')).toBeVisible();
+  expect(backend.testNotifications).toBe(1);
+  // One test a minute: the button says how long until the next one, then comes back.
+  await expect(sheet.getByRole('button', {name: 'Send a test (in 60 s)'})).toBeDisabled();
+  await page.clock.setFixedTime(new Date(Date.parse(NOW) + 60_000));
+  await expect(sheet.getByRole('button', {name: 'Send a test', exact: true})).toBeEnabled();
+  // If the server still refuses, nothing claims success.
+  backend.refuseTests = true;
+  await sheet.getByRole('button', {name: 'Send a test', exact: true}).click();
+  await expect(sheet.getByRole('alert')).toHaveText('No test was sent: only one test a minute. Try again in 60 seconds.');
+  await expect(sheet.getByText(/test notification is on its way/)).toHaveCount(0);
+  await expect(sheet.getByRole('button', {name: /^Send a test \(in \d+ s\)$/})).toBeDisabled();
   expect(backend.testNotifications).toBe(1);
   await sheet.getByRole('button', {name: 'Turn off on this device'}).click();
   await expect(sheet.getByText('Notifications are off on this device.')).toBeVisible();

@@ -65,7 +65,8 @@ export function useTeamWorkspace(){
   async saveNotificationSettings(settings:NotificationSettings){if(!client)throw Error('Not connected');const {data,error}=await client.rpc('duty_set_notification_settings',{p_settings:settingsPayload(settings)});if(error)throw error;return readNotificationState(data)},
   async saveDevice(device:DeviceSubscription){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_save_push_subscription',{p_endpoint:device.endpoint,p_p256dh:device.p256dh,p_auth:device.auth});if(error)throw error},
   async removeDevice(endpoint:string){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_delete_push_subscription',{p_endpoint:endpoint});if(error)throw error},
-  async sendTest(){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_send_test_notification',{});if(error)throw error},
+  // true: recorded and sent; false: the server allows one test a minute (no new notification).
+  async sendTest(){if(!client)throw Error('Not connected');const {data,error}=await client.rpc('duty_send_test_notification',{});if(error)throw error;return data===true},
   }),[client,environment,user]);
  return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
   refresh:()=>workspace.refresh(),

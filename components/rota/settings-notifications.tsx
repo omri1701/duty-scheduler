@@ -17,6 +17,14 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   const [settings, setSettings] = useState<NotificationState | null>(null);
   const [loadError, setLoadError] = useState(''), [error, setError] = useState(''), [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'enable' | 'disable' | 'test' | 'save'>('');
+  // One test a minute (the server's rule, per clock minute): the button counts down to the next one.
+  const [nextTestAt, setNextTestAt] = useState(0), [now, setNow] = useState(0);
+  useEffect(() => {
+    if (!nextTestAt) return;
+    const timer = setInterval(() => {const at = Date.now(); setNow(at); if (at >= nextTestAt) clearInterval(timer);}, 1000);
+    return () => clearInterval(timer);
+  }, [nextTestAt]);
+  const testWait = Math.max(0, Math.ceil((nextTestAt - now) / 1000));
   const readOnly = remote.readOnly, personal = remote.personal, vapid = useRef<string | null>(null);
   const [wasOpen, setWasOpen] = useState(false);
   // Each opening starts without the last visit's messages.
@@ -77,8 +85,12 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   }
   async function test() {
     setBusy('test'); setError(''); setNote('');
-    try {await personal.sendTest(); setNote(t('A test notification is on its way. It can take up to a minute.', 'התראת בדיקה בדרך. זה יכול לקחת עד דקה.'));}
-    catch (e) {setError(say(e));}
+    try {
+      const sent = await personal.sendTest(), at = Date.now(), next = (Math.floor(at / 60_000) + 1) * 60_000, wait = Math.ceil((next - at) / 1000);
+      setNow(at); setNextTestAt(next);
+      if (sent) setNote(t('A test notification is on its way. It should arrive within seconds.', 'התראת בדיקה בדרך. היא אמורה להגיע תוך שניות.'));
+      else setError(t(`No test was sent: only one test a minute. Try again in ${wait} seconds.`, `לא נשלחה בדיקה: אפשר בדיקה אחת בדקה. אפשר לנסות שוב בעוד ${wait} שניות.`));
+    } catch (e) {setError(say(e));}
     finally {setBusy('');}
   }
 
@@ -110,7 +122,8 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
         {status === 'on' && settings && settings.devices > 1 && ' ' + t(`${settings.devices} of your devices get them.`, `${settings.devices} מהמכשירים שלך מקבלים אותן.`)}</p>
       <div className="settings-actions">
         {status === 'on'
-          ? <><Button variant="outline" disabled={readOnly || !!busy} onClick={test}><Send/>{busy === 'test' ? t('Sending…', 'שולח…') : t('Send a test', 'שליחת בדיקה')}</Button>
+          ? <><Button variant="outline" disabled={readOnly || !!busy || testWait > 0} onClick={test}><Send/>{busy === 'test' ? t('Sending…', 'שולח…')
+              : testWait > 0 ? t(`Send a test (in ${testWait} s)`, `שליחת בדיקה (בעוד ${testWait} שנ׳)`) : t('Send a test', 'שליחת בדיקה')}</Button>
             <Button variant="outline" disabled={readOnly || !!busy} onClick={disable}><BellOff/>{busy === 'disable' ? t('Turning off…', 'מכבה…') : t('Turn off on this device', 'כיבוי במכשיר הזה')}</Button></>
           : <Button disabled={!canEnable} onClick={enable} aria-describedby="settings-iphone-help"><BellRing/>{busy === 'enable' ? t('Enabling…', 'מפעיל…') : t('Enable notifications', 'הפעלת התראות')}</Button>}
       </div>

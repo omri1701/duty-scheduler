@@ -295,6 +295,10 @@ begin
  select id,net.sent.body into request,body from net.sent;
  perform pg_temp.check((select headers->>'Authorization' from net.sent)='Bearer '||repeat('s',40),'secret header');
  perform pg_temp.check(not body::text ~ 'private|@example','no notes, explanations or emails in the request');
+ -- Tags are per notification (duty-<id>), never per kind: a new event of a kind the device
+ -- already shows alerts again instead of silently replacing it.
+ perform pg_temp.check((select bool_and(m->>'tag'='duty-'||d.notification_id) from jsonb_array_elements(body->'messages') m join public.duty_push_deliveries d on d.id=(m->>'id')::bigint)
+  and exists(select 1 from jsonb_array_elements(body->'messages') a, jsonb_array_elements(body->'messages') b where a->>'kind'=b->>'kind' and a->>'tag'<>b->>'tag'),'one tag per notification');
  perform pg_temp.check((select count(*) from jsonb_array_elements(body->'messages') m where m->>'lang'='he')
   =(select count(*) from public.duty_push_deliveries d join public.duty_push_notifications n on n.id=d.notification_id where n.member_id='76000000-0000-0000-0000-000000000002'),'member 2''s language');
  perform pg_temp.check((select count(*) from public.duty_push_notifications where status='pending')=0,'every pending notification dispatched or skipped');

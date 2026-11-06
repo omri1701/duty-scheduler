@@ -79,6 +79,8 @@ export class Backend {
   notificationSettings = new Map<string, NotificationSettings>();
   devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
   testNotifications = 0;
+  /** duty_send_test_notification answers false (the server's one-test-a-minute rule). */
+  refuseTests = false;
   /** Languages saved through duty_set_language. Served back by duty_load only when
    * persistLanguage is set, so older specs that switch language and reload keep English. */
   languages = new Map<string, 'en' | 'he'>();
@@ -160,6 +162,7 @@ export class Backend {
     }
     if (name === 'duty_send_test_notification') {
       if (!this.devices.some(d => d.member === user)) throw Error('push-no-device');
+      if (this.refuseTests) return false;
       this.testNotifications++;
       return true;
     }
