@@ -27,6 +27,12 @@ BEGIN
       RAISE EXCEPTION 'Unexpected client table privileges: %',t.relname;
     END IF;
   END LOOP;
+  -- anon has USAGE on duty_private only to reach the calendar feed lookup, so the schema
+  -- must never hold anything but functions (no table, view, sequence or type to reach).
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='duty_private')
+    OR EXISTS (SELECT 1 FROM pg_type y JOIN pg_namespace n ON n.oid=y.typnamespace WHERE n.nspname='duty_private') THEN
+    RAISE EXCEPTION 'duty_private must contain only functions';
+  END IF;
   FOR f IN SELECT p.oid,p.proname,p.prosecdef,p.proconfig,n.nspname FROM pg_proc p
     JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%') LOOP
