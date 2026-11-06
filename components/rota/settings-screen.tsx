@@ -35,6 +35,8 @@ export function SettingsScreen({remote, open, onOpenChange, lang, setLang}: {rem
   }
   return <Dialog open={open} onOpenChange={next => {if (!leaving) onOpenChange(next);}}>
     <DialogContent className="settings-sheet" dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={leaving}
+      // Focus the sheet itself, not the name field: on a phone that would open the keyboard.
+      onOpenAutoFocus={event => {event.preventDefault(); (event.currentTarget as HTMLElement | null)?.focus();}}
       onCloseAutoFocus={event => {event.preventDefault(); document.querySelector<HTMLButtonElement>('[data-settings-button]')?.focus();}}>
       <DialogHeader><DialogTitle>{t('Settings', 'הגדרות')}</DialogTitle><DialogDescription>{remote.me?.email}</DialogDescription></DialogHeader>
       <section className="settings-section" aria-labelledby="settings-profile-title">

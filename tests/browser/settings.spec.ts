@@ -41,6 +41,10 @@ test('keyboard: open, move through the language radios and close back to the but
   await page.keyboard.press('Enter');
   const sheet = settings(page);
   await expect(sheet).toBeVisible();
+  // The sheet takes focus, not the name field (which would open a phone's keyboard).
+  await expect(sheet).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(sheet.getByRole('textbox', {name: 'Display name'})).toBeFocused();
   await sheet.getByRole('radio', {name: 'English'}).focus();
   await page.keyboard.press('ArrowRight');
   await expect(sheet.getByRole('radio', {name: 'עברית'})).toBeChecked();
