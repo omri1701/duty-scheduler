@@ -142,7 +142,11 @@ For the isolated LOCAL stack that `pnpm start:local` and `pnpm local:reset` use 
 values are kept), enables pg_net and pg_cron when absent, and writes the Vault secrets and the 15-minute
 job targeting `http://host.docker.internal:5173/api/push/dispatch`. It is idempotent, touches no
 application data and never connects to a hosted project (`--container` and `--url` override the
-defaults). Restart `pnpm start:local` afterwards. `pnpm local:reset` drops pg_cron and the Vault
+defaults). `VAPID_SUBJECT` is the phone tunnel origin (`DUTY_DEV_ORIGIN`) or else the app's URL: Apple
+refuses every send (403 BadJwtToken) signed with a placeholder such as `example.com` or `.invalid`, so a
+placeholder is replaced, `/api/config` offers push only with a usable subject, and the sender refuses one
+(503 with the reason). A push service's refusal is returned with its reason and logged as host, kind,
+status and reason only. Restart `pnpm start:local` afterwards. `pnpm local:reset` drops pg_cron and the Vault
 secrets with the rest of the database, so once the keys are in `.env.local` every `pnpm start:local`,
 `local:setup` and `local:reset` re-applies them by itself (a failure there only warns).
 

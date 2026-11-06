@@ -27,3 +27,26 @@ export function vapidKeyBytes(key: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 export const validVapidPublicKey = (key: unknown): key is string => typeof key === 'string' && /^[A-Za-z0-9_-]{86,88}$/.test(key);
+
+// Reserved, local and example names: push services refuse them as the VAPID `sub` claim
+// (Apple answers 403 BadJwtToken for every send).
+const PLACEHOLDER_HOST = /(^|\.)(localhost|local|invalid|test|example|internal|localdomain)$|^(example\.(com|org|net)|\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])$/i;
+/** Why a VAPID subject would be refused (null when it is usable): it must be a real
+ * `mailto:` address or an `https://` URL, never a placeholder or local name. */
+export function vapidSubjectProblem(subject: unknown): string | null {
+  const advice = 'use a real mailto: address or the app\'s https URL';
+  if (typeof subject !== 'string' || !subject.trim()) return `VAPID_SUBJECT is missing: ${advice}.`;
+  let host: string;
+  if (subject.startsWith('mailto:')) {
+    const match = subject.slice(7).match(/^[^@\s/?#]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/);
+    if (!match) return `VAPID_SUBJECT is not a valid mailto: address: ${advice}.`;
+    host = match[1];
+  } else if (subject.startsWith('https://')) {
+    let url: URL;
+    try {url = new URL(subject);} catch {return `VAPID_SUBJECT is not a valid https URL: ${advice}.`;}
+    if (url.username || url.password) return `VAPID_SUBJECT must not carry credentials: ${advice}.`;
+    host = url.hostname;
+  } else return `VAPID_SUBJECT must start with mailto: or https:// (${advice}).`;
+  if (PLACEHOLDER_HOST.test(host)) return `VAPID_SUBJECT uses ${host}, which push services such as Apple refuse: ${advice}.`;
+  return null;
+}

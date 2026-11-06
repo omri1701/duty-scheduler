@@ -5,8 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PUSH_KINDS, pushText, pushDate, pushMonth} from '../lib/push/messages.ts';
-import {authorized, dispatch, outcome, parseDispatch, payload} from '../lib/push/dispatch.ts';
-import {supportedPushEndpoint, base64url, vapidKeyBytes, validVapidPublicKey} from '../lib/push/endpoint.ts';
+import {authorized, dispatch, outcome, parseDispatch, payload, refusalLog, serviceReason} from '../lib/push/dispatch.ts';
+import {supportedPushEndpoint, base64url, vapidKeyBytes, validVapidPublicKey, vapidSubjectProblem} from '../lib/push/endpoint.ts';
 import {DEFAULT_SETTINGS, deepLink, readNotificationState, settingsPayload, validTime} from '../lib/push/settings.ts';
 import {POST} from '../app/api/push/dispatch/route.ts';
 
@@ -135,7 +135,12 @@ test('the sender refuses before sending: no secret, wrong secret, no VAPID keys,
     assert.equal((await call('{}', `Bearer ${'s'.repeat(40)}`)).status, 503);
     process.env.VAPID_PUBLIC_KEY = Buffer.from(new Uint8Array(65).fill(4)).toString('base64url');
     process.env.VAPID_PRIVATE_KEY = Buffer.from(new Uint8Array(32).fill(9)).toString('base64url');
+    // Apple refuses every send signed with a placeholder subject: refused first, with the reason.
     process.env.VAPID_SUBJECT = 'mailto:duty@example.invalid';
+    const placeholder = await call('{}', `Bearer ${'s'.repeat(40)}`);
+    assert.equal(placeholder.status, 503);
+    assert.match((await placeholder.json()).error, /example.invalid.*Apple/);
+    process.env.VAPID_SUBJECT = 'https://duty-scheduler-prod.vercel.app';
     assert.equal((await call('not json', `Bearer ${'s'.repeat(40)}`)).status, 400);
     assert.equal((await call(JSON.stringify({messages: [message({lang: 'fr'})]}), `Bearer ${'s'.repeat(40)}`)).status, 400);
     assert.equal((await call('x'.repeat(200_001), `Bearer ${'s'.repeat(40)}`)).status, 413);
@@ -164,4 +169,28 @@ test('signing out and turning off always unsubscribe this browser, even when the
     if (saved) Object.defineProperty(globalThis, 'navigator', saved); else delete globalThis.navigator;
     globalThis.window = savedWindow;
   }
+});
+
+test('the VAPID subject must be a real mailto: address or https URL, never a placeholder', () => {
+  for (const ok of ['mailto:omri@datateam.co.il', 'https://duty-scheduler-prod.vercel.app', 'https://abc-12.ngrok-free.app', 'https://duty.example.co.il/'])
+    assert.equal(vapidSubjectProblem(ok), null, ok);
+  for (const bad of [undefined, '', 'duty@x.com', 'mailto:duty-local@example.invalid', 'mailto:you@example.com', 'mailto:a@localhost', 'mailto:nobody',
+    'https://localhost:5173', 'https://127.0.0.1', 'https://host.docker.internal', 'https://duty.test', 'https://user:pw@duty.co.il', 'http://duty.co.il'])
+    assert.notEqual(vapidSubjectProblem(bad), null, String(bad));
+});
+
+test('a refusal carries the push service reason, without endpoints or keys', async () => {
+  assert.equal(serviceReason('{"reason":"BadJwtToken"}'), 'BadJwtToken');
+  assert.equal(serviceReason('<html><body>Error 403 (Forbidden) see https://fcm.googleapis.com/fcm/send/abcdefghijklmnopqrstuvwxyz0123456789</body></html>'), 'Error 403 (Forbidden) see …');
+  assert.equal(serviceReason('token cXdlcnR5dWlvcGFzZGZnaGprbHp4Y3Zibm0xMjM0NTY3 invalid'), 'token … invalid');
+  assert.equal(serviceReason(''), undefined);
+  assert.equal(serviceReason(undefined), undefined);
+  assert.ok(serviceReason('x'.repeat(10) + ' '.repeat(5) + 'y '.repeat(200)).length <= 160);
+  const apple = message({endpoint: 'https://web.push.apple.com/QGAbCdEfGhIjKlMnOpQrStUvWxYz0123456789'});
+  const result = await dispatch([apple], async () => {throw Object.assign(new Error('Received unexpected response code'), {statusCode: 403, body: '{"reason":"BadJwtToken"}'});});
+  assert.deepEqual(result.results, [{id: '12', outcome: 'rejected', status: 403, reason: 'BadJwtToken'}]);
+  const [line] = refusalLog([apple], result.results);
+  assert.equal(line, 'duty push: web.push.apple.com refused remind_evening (403: BadJwtToken) → rejected');
+  assert.ok(!line.includes('QGAb') && !line.includes(apple.keys.p256dh));
+  assert.deepEqual(refusalLog([apple], [{id: '12', outcome: 'sent', status: 201}]), []);
 });

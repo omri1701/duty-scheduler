@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {LOCAL_CONTAINER} from '../scripts/local-supabase.mjs';
-import {DEFAULT_LOCAL_CONTAINER} from '../scripts/push-setup.mjs';
+import {APP_URL, DEFAULT_LOCAL_CONTAINER, localSubject} from '../scripts/push-setup.mjs';
+import {vapidSubjectProblem} from '../lib/push/endpoint.ts';
 import {LOCAL_DISPATCH_URL, applyLocalPush, hasPushKeys, setupSql} from '../scripts/push-local.mjs';
 
 test('push:setup local targets the same database container as pnpm start:local and local:reset', () => {
@@ -33,4 +34,12 @@ test('the operator SQL is filled in, quoted, every 15 minutes, and keeps the byp
   // DEV: the bypass line is active, with its placeholder (the SQL refuses to run with it) or the value.
   assert.match(setupSql({url: 'https://x.example/api/push/dispatch', pushSecret: 's'.repeat(40), bypass: null}), /^select pg_temp\.duty_secret\('duty_push_bypass', '<BYPASS_SECRET>'/m);
   assert.match(setupSql({url: 'https://x.example/api/push/dispatch', pushSecret: 's'.repeat(40), bypass: 'b$&1'}), /^select pg_temp\.duty_secret\('duty_push_bypass', 'b\$&1'/m);
+});
+
+test('push:setup local signs with a subject Apple accepts: the phone tunnel origin, else the app URL', () => {
+  assert.equal(localSubject({DUTY_DEV_ORIGIN: 'https://abc-12.ngrok-free.app/'}), 'https://abc-12.ngrok-free.app');
+  assert.equal(localSubject({}), APP_URL);
+  assert.equal(localSubject({DUTY_DEV_ORIGIN: 'http://localhost:5173'}), APP_URL);
+  assert.equal(localSubject({DUTY_DEV_ORIGIN: 'https://localhost'}), APP_URL);
+  assert.equal(vapidSubjectProblem(APP_URL), null);
 });

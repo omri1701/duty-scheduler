@@ -9,7 +9,8 @@ import {BASE64URL_KEY, supportedPushEndpoint} from './endpoint.ts';
 export type DispatchMessage = {id: string; endpoint: string; keys: {p256dh: string; auth: string}; lang: PushLanguage; kind: PushKind;
   params: PushParams; url: string; tag: string};
 export type Outcome = 'sent' | 'gone' | 'retry' | 'rejected' | 'unknown';
-export type DispatchResult = {id: string; outcome: Outcome; status?: number};
+/** reason: the push service's own explanation of a refusal (e.g. Apple's "BadJwtToken"), cleaned. */
+export type DispatchResult = {id: string; outcome: Outcome; status?: number; reason?: string};
 /** web-push's sendNotification shape: resolves with the push service's status, or throws one. */
 export type Send = (subscription: {endpoint: string; keys: {p256dh: string; auth: string}}, payload: string,
   options: {TTL: number; urgency: 'normal' | 'high'; topic?: string}) => Promise<{statusCode: number}>;
@@ -66,6 +67,29 @@ export function payload(message: DispatchMessage) {
   return JSON.stringify({...pushText(message.kind, message.params, message.lang), url: message.url, tag: message.tag, lang: message.lang});
 }
 
+/** The push service's reason for a refusal, safe to return and log: Apple and Mozilla answer
+ * JSON {reason}; others plain text or HTML. URLs and long tokens (endpoints, keys) are removed. */
+export function serviceReason(body: unknown): string | undefined {
+  if (typeof body !== 'string' || !body.trim()) return undefined;
+  try {
+    const json = JSON.parse(body) as {reason?: unknown; message?: unknown; error?: unknown};
+    const given = [json?.reason, json?.message, json?.error].find(value => typeof value === 'string');
+    if (typeof given === 'string') body = given;
+  } catch {}
+  const text = (body as string).replace(/<[^>]*>/g, ' ').replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '…').replace(/[A-Za-z0-9_-]{24,}/g, '…')
+    .replace(/[^\w .,:;'()…-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, 160) : undefined;
+}
+
+/** One log line per refused send: push service host, kind, status and reason; never the endpoint path or keys. */
+export function refusalLog(messages: DispatchMessage[], results: DispatchResult[]): string[] {
+  return results.filter(r => r.outcome === 'rejected' || r.outcome === 'retry').map(r => {
+    const message = messages.find(m => m.id === r.id);
+    const host = message && supportedPushEndpoint(message.endpoint) ? new URL(message.endpoint).hostname : 'unsupported endpoint';
+    return `duty push: ${host} refused ${message?.kind ?? 'message'} (${r.status ?? 'no status'}${r.reason ? `: ${r.reason}` : ''}) → ${r.outcome}`;
+  });
+}
+
 const reminder = (kind: PushKind) => kind === 'remind_evening' || kind === 'remind_morning' || kind === 'deadline_1';
 export async function dispatch(messages: DispatchMessage[], send: Send): Promise<{results: DispatchResult[]}> {
   const results = await Promise.all(messages.map(async (message): Promise<DispatchResult> => {
@@ -78,8 +102,9 @@ export async function dispatch(messages: DispatchMessage[], send: Send): Promise
       return {id: message.id, outcome: outcome(response.statusCode), status: response.statusCode};
     } catch (error) {
       const status = typeof (error as {statusCode?: unknown})?.statusCode === 'number' ? (error as {statusCode: number}).statusCode : undefined;
+      const reason = status === undefined ? undefined : serviceReason((error as {body?: unknown}).body);
       // No status: the request may have reached the service, so it is never resent.
-      return {id: message.id, outcome: outcome(status), ...(status === undefined ? {} : {status})};
+      return {id: message.id, outcome: outcome(status), ...(status === undefined ? {} : {status}), ...(reason ? {reason} : {})};
     }
   }));
   return {results};

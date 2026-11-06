@@ -15,6 +15,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import webpush from 'web-push';
 import {LOCAL_CONTAINER} from './local-supabase.mjs';
 import {LOCAL_DISPATCH_URL, applyLocalPush, readEnvFile, setupSql} from './push-local.mjs';
+import {vapidSubjectProblem} from '../lib/push/endpoint.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** push:setup local defaults to the same database container as pnpm start:local. */
@@ -28,6 +29,13 @@ const CHECK = `select jobname, schedule, active from cron.job where jobname = 'd
 select name from vault.secrets where name like 'duty_push_%' order by name;
 select status, count(*) from public.duty_push_deliveries group by status;`;
 const secret = () => randomBytes(36).toString('base64url');
+/** The app's public URL: a VAPID subject every push service accepts (Apple refuses placeholders). */
+export const APP_URL = 'https://duty-scheduler-prod.vercel.app';
+/** LOCAL subject: the phone tunnel origin (DUTY_DEV_ORIGIN) when it is a usable https URL, else the app's URL. */
+export function localSubject(env) {
+  const origin = env.DUTY_DEV_ORIGIN?.trim();
+  return origin && origin.startsWith('https://') && !vapidSubjectProblem(origin) ? new URL(origin).origin : APP_URL;
+}
 
 function local(options) {
   // 1. Server-only keys in the gitignored local env file (existing values are kept).
@@ -39,14 +47,16 @@ function local(options) {
     const keys = webpush.generateVAPIDKeys();
     added.VAPID_PUBLIC_KEY = keys.publicKey; added.VAPID_PRIVATE_KEY = keys.privateKey;
   }
-  if (!current.VAPID_SUBJECT) added.VAPID_SUBJECT = 'mailto:duty-local@example.invalid';
+  // A placeholder subject (e.g. an .invalid mailto) makes Apple refuse every send: replace it.
+  const subjectProblem = vapidSubjectProblem(current.VAPID_SUBJECT);
+  if (subjectProblem) added.VAPID_SUBJECT = localSubject({...current, ...readEnvFile(path.join(root, '.env.dev.local'))});
   if (!current.DUTY_PUSH_SECRET || current.DUTY_PUSH_SECRET.length < 32) added.DUTY_PUSH_SECRET = secret();
   if (Object.keys(added).length) {
     const kept = text.split(/\r?\n/).filter(line => !Object.keys(added).some(key => line.startsWith(`${key}=`)));
     while (kept.length && kept.at(-1) === '') kept.pop();
     writeFileSync(envPath, [...kept, ...(kept.length ? [''] : []), '# Web push, LOCAL only (pnpm push:setup local)', ...Object.entries(added).map(([k, v]) => `${k}=${v}`), ''].join('\n'));
   }
-  console.log(Object.keys(added).length ? `1. .env.local: added ${Object.keys(added).join(', ')}.` : '1. .env.local: keys already present, kept.');
+  console.log(Object.keys(added).length ? `1. .env.local: set ${Object.keys(added).join(', ')}${added.VAPID_SUBJECT ? ` (VAPID_SUBJECT=${added.VAPID_SUBJECT}${current.VAPID_SUBJECT ? `; was refused: ${subjectProblem}` : ''})` : ''}.` : '1. .env.local: keys already present, kept.');
 
   // 2. Extensions when absent, Vault secrets and the job on the LOCAL database container.
   const container = options.container ?? DEFAULT_LOCAL_CONTAINER, url = options.url ?? LOCAL_DISPATCH_URL;
@@ -63,11 +73,12 @@ function hosted(mode, options) {
 Do this only after the release has applied the push migrations to ${target.name}.
 
 1. Vercel → duty-scheduler → Settings → Environment Variables, environment "${target.vercel}" only,
-   add these four (server-only; never NEXT_PUBLIC_, mark them Sensitive):
+   add these four (server-only; never NEXT_PUBLIC_, mark them Sensitive). VAPID_SUBJECT may instead be a real
+   mailto: address, never a placeholder such as example.com or .invalid (Apple refuses every send):
 
 VAPID_PUBLIC_KEY=${keys.publicKey}
 VAPID_PRIVATE_KEY=${keys.privateKey}
-VAPID_SUBJECT=mailto:you@example.com   (replace with a real contact address)
+VAPID_SUBJECT=${new URL(target.url).origin}
 DUTY_PUSH_SECRET=${pushSecret}
 
 2. Redeploy ${target.name} so the app reads them.

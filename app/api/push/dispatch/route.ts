@@ -1,6 +1,6 @@
 import webpush from 'web-push';
-import {MAX_BODY_BYTES, authorized, dispatch, parseDispatch} from '../../../../lib/push/dispatch.ts';
-import {validVapidPublicKey} from '../../../../lib/push/endpoint.ts';
+import {MAX_BODY_BYTES, authorized, dispatch, parseDispatch, refusalLog} from '../../../../lib/push/dispatch.ts';
+import {validVapidPublicKey, vapidSubjectProblem} from '../../../../lib/push/endpoint.ts';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -15,7 +15,10 @@ export async function POST(request: Request) {
   const subject = process.env.VAPID_SUBJECT;
   if (!secret || secret.length < 32) return Response.json({error: 'Not configured'}, {status: 503, headers});
   if (!authorized(request.headers.get('authorization'), secret)) return Response.json({error: 'Unauthorized'}, {status: 401, headers});
-  if (!validVapidPublicKey(publicKey) || !privateKey || !subject || !/^(mailto:|https:\/\/)/.test(subject)) return Response.json({error: 'Not configured'}, {status: 503, headers});
+  if (!validVapidPublicKey(publicKey) || !privateKey) return Response.json({error: 'Not configured'}, {status: 503, headers});
+  // Apple refuses every send signed with a placeholder subject (403 BadJwtToken): refuse first, with the reason.
+  const subjectProblem = vapidSubjectProblem(subject);
+  if (subjectProblem || !subject) {console.warn(`duty push: ${subjectProblem}`); return Response.json({error: subjectProblem}, {status: 503, headers});}
   const text = await request.text();
   if (Buffer.byteLength(text) > MAX_BODY_BYTES) return Response.json({error: 'Too large'}, {status: 413, headers});
   let body: unknown;
@@ -25,5 +28,8 @@ export async function POST(request: Request) {
   const vapidDetails = {subject, publicKey, privateKey};
   const result = await dispatch(messages, (subscription, payload, options) =>
     webpush.sendNotification(subscription, payload, {...options, vapidDetails, timeout: 10_000}));
+  // Refusals are visible in the server log (host, kind, status, the service's reason) and in the
+  // answer pg_net keeps (net._http_response); never an endpoint path, key or secret.
+  for (const line of refusalLog(messages, result.results)) console.warn(line);
   return Response.json(result, {headers});
 }
