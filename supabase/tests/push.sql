@@ -25,6 +25,9 @@ create function pg_temp.sent(member text, kind text) returns bigint language sql
 create temp table before_revision as select revision from public.duty_workspace;
 grant select on before_revision to authenticated;
 
+-- There is no test notification (user review): no RPC, no 'test' kind.
+select pg_temp.check(to_regprocedure('public.duty_send_test_notification()') is null and to_regprocedure('duty_private.send_test_notification()') is null,'no test RPC');
+select pg_temp.must_fail($c$insert into public.duty_push_notifications(member_id,kind,dedupe_key,url) values('76000000-0000-0000-0000-000000000002','test','old-test','/?tab=schedule')$c$,'kind_check');
 -- Anonymous callers reach nothing; clients cannot call the internal sender or write tables.
 set local role anon;
 select pg_temp.must_fail($c$select public.duty_set_language('he')$c$,'permission denied');
@@ -41,10 +44,10 @@ select pg_temp.must_fail($c$select duty_private.push_tick()$c$,'permission denie
 select pg_temp.must_fail($c$select duty_private.push_schedule(now())$c$,'permission denied');
 select pg_temp.must_fail($c$select duty_private.push_dispatch(now())$c$,'permission denied');
 select pg_temp.must_fail($c$select duty_private.push_settle(1,200,'{}',false)$c$,'permission denied');
-select pg_temp.must_fail($c$select duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','test','forged','{}','/?tab=schedule')$c$,'permission denied');
+select pg_temp.must_fail($c$select duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','swap_rejected','forged','{}','/?tab=schedule')$c$,'permission denied');
 select pg_temp.must_fail($c$insert into public.duty_push_subscriptions(member_id,endpoint,p256dh,auth) values('76000000-0000-0000-0000-000000000002','https://fcm.googleapis.com/fcm/send/direct-write',repeat('B',87),repeat('A',22))$c$,'permission denied');
 select pg_temp.must_fail($c$insert into public.duty_notification_settings(member_id) values('76000000-0000-0000-0000-000000000002')$c$,'permission denied');
-select pg_temp.must_fail($c$insert into public.duty_push_notifications(member_id,kind,dedupe_key,url) values('76000000-0000-0000-0000-000000000002','test','forged','/?tab=team')$c$,'permission denied');
+select pg_temp.must_fail($c$insert into public.duty_push_notifications(member_id,kind,dedupe_key,url) values('76000000-0000-0000-0000-000000000002','swap_rejected','forged','/?tab=team')$c$,'permission denied');
 select pg_temp.must_fail($c$update public.duty_members set language='he' where id='76000000-0000-0000-0000-000000000002'$c$,'permission denied');
 
 -- Language: only the caller's own row, any member including a pending one, no revision.
@@ -78,7 +81,6 @@ select pg_temp.check(public.duty_notification_settings()->>'eveningTime'='18:00'
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000004';
 select pg_temp.must_fail($c$select public.duty_notification_settings()$c$,'Member access required');
 select pg_temp.must_fail($c$select public.duty_save_push_subscription('https://fcm.googleapis.com/fcm/send/pending-device',repeat('B',87),repeat('A',22))$c$,'Member access required');
-select pg_temp.must_fail($c$select public.duty_send_test_notification()$c$,'Member access required');
 -- Member 1 (admin) turns deadline reminders off.
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000001';
 select public.duty_set_notification_settings('{"deadlines":false,"published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"18:00","morning":true,"morningTime":"08:30","members":true}');
@@ -86,7 +88,6 @@ select public.duty_set_notification_settings('{"deadlines":false,"published":tru
 -- Devices: only known push services and well-formed keys; an endpoint is unique and
 -- moves to whoever registered it last; ten devices per member; delete only your own.
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000002';
-select pg_temp.must_fail($c$select public.duty_send_test_notification()$c$,'push-no-device');
 select pg_temp.must_fail($c$select public.duty_save_push_subscription('http://fcm.googleapis.com/fcm/send/plain-http',repeat('B',87),repeat('A',22))$c$,'push-service-unsupported');
 select pg_temp.must_fail($c$select public.duty_save_push_subscription('https://evil.example.com/fcm/send/device',repeat('B',87),repeat('A',22))$c$,'push-service-unsupported');
 select pg_temp.must_fail($c$select public.duty_save_push_subscription('https://fcm.googleapis.com.evil.example/x/device',repeat('B',87),repeat('A',22))$c$,'push-service-unsupported');
@@ -121,12 +122,12 @@ select pg_temp.check((select jsonb_object_agg(endpoint,right(member_id::text,1))
 select pg_temp.check((select revision from public.duty_workspace)=(select revision from before_revision),'settings and devices never touch the workspace revision');
 
 -- Recording: once per key, only for members who can receive that kind.
-select pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','test','fixture-key','{}','/?tab=schedule'),'recorded');
-select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','test','fixture-key','{}','/?tab=schedule'),'idempotent');
+select pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','swap_rejected','fixture-key','{}','/?tab=schedule'),'recorded');
+select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','swap_rejected','fixture-key','{}','/?tab=schedule'),'idempotent');
 select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','remind_morning','fixture-off','{}','/?tab=schedule'),'switched off');
-select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000005','test','fixture-no-device','{}','/?tab=schedule'),'no device');
-select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000004','test','fixture-pending','{}','/?tab=schedule'),'pending member');
-select pg_temp.must_fail($c$select duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','test','fixture-url','{}','https://evil.example/')$c$,'url_check');
+select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000005','swap_rejected','fixture-no-device','{}','/?tab=schedule'),'no device');
+select pg_temp.check(not duty_private.push_enqueue('76000000-0000-0000-0000-000000000004','swap_rejected','fixture-pending','{}','/?tab=schedule'),'pending member');
+select pg_temp.must_fail($c$select duty_private.push_enqueue('76000000-0000-0000-0000-000000000002','swap_rejected','fixture-url','{}','https://evil.example/')$c$,'url_check');
 delete from public.duty_push_notifications;
 
 -- Constraint deadline for March 2027 (Israel UTC+2): 10:00 three days before to
@@ -269,7 +270,6 @@ set local role authenticated;
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000003';
 select pg_temp.check((select count(*) from public.duty_push_notifications where member_id<>'76000000-0000-0000-0000-000000000003')=0
  and (select count(*) from public.duty_push_notifications)>0,'own notifications only');
-select pg_temp.check(public.duty_send_test_notification() and not public.duty_send_test_notification(),'test notification once a minute');
 reset role;
 
 -- Sending: without pg_net and the Vault configuration nothing leaves; old ones expire.
@@ -337,7 +337,7 @@ begin
  perform duty_private.push_reconcile(now());
  perform pg_temp.check((select status from public.duty_push_deliveries where id=retry_id)='abandoned','abandoned after three attempts');
  -- A timed-out request may have been delivered: unknown, never resent.
- perform pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000001','test','fixture-timeout','{}','/?tab=schedule'),'one more');
+ perform pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000001','swap_rejected','fixture-timeout','{}','/?tab=schedule'),'one more');
  perform pg_temp.check(duty_private.push_dispatch(now()+interval '20 minutes')=1,'sent');
  select max(id) into request from net.sent;
  insert into net._http_response values(request,null,null,true);
@@ -347,7 +347,7 @@ begin
  -- A shared phone: a delivery still waiting for member 2 is never sent once the device
  -- belongs to member 3; it is abandoned instead.
  insert into public.duty_push_notifications(member_id,kind,dedupe_key,url,status)
- values('76000000-0000-0000-0000-000000000002','test','fixture-moved','/?tab=schedule','dispatched') returning id into moved;
+ values('76000000-0000-0000-0000-000000000002','swap_rejected','fixture-moved','/?tab=schedule','dispatched') returning id into moved;
  insert into public.duty_push_deliveries(notification_id,subscription_id) select moved,id from public.duty_push_subscriptions where endpoint like '%device-2a';
  update public.duty_push_subscriptions set member_id='76000000-0000-0000-0000-000000000003' where endpoint like '%device-2a';
  perform pg_temp.check(duty_private.push_dispatch(now()+interval '40 minutes')=0,'moved device: nothing sent');
@@ -358,7 +358,7 @@ begin
  perform pg_temp.check(duty_private.push_dispatch(now()+interval '50 minutes')=0 and (select count(*) from net.sent)=total,'idle: no HTTP request');
  -- Event alerts do not wait for the clock: at commit (here: constraints made immediate)
  -- the transaction's alerts go out in one request.
- perform pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000001','test','fixture-immediate','{}','/?tab=schedule'),'an event alert');
+ perform pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000001','swap_rejected','fixture-immediate','{}','/?tab=schedule'),'an event alert');
  perform pg_temp.check((select count(*) from net.sent)=total,'not before commit');
  execute 'set constraints duty_push_dispatch_now immediate';
  perform pg_temp.check((select count(*) from net.sent)=total+1 and (select status from public.duty_push_notifications where dedupe_key='fixture-immediate')='dispatched','sent at commit');

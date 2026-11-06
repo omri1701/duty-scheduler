@@ -316,6 +316,6 @@ for (const lang of ['en', 'he']) test(`settings screen ${lang}`, async ({page, o
   await expect(sheet.getByRole('checkbox').first()).toBeEnabled();
   await snapshot(page, `settings-${lang}`);
   await enable.click();
-  await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Send a test' : 'שליחת בדיקה'})).toBeEnabled();
+  await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Turn off on this device' : 'כיבוי במכשיר הזה'})).toBeEnabled();
   await snapshot(page, `settings-enabled-${lang}`);
 });

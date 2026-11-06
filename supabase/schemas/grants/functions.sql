@@ -280,11 +280,6 @@ GRANT EXECUTE ON FUNCTION duty_private.delete_push_subscription(text) TO authent
 REVOKE ALL ON FUNCTION public.duty_delete_push_subscription(text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_delete_push_subscription(text) TO authenticated;
 
-REVOKE ALL ON FUNCTION duty_private.send_test_notification() FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION duty_private.send_test_notification() TO authenticated;
-REVOKE ALL ON FUNCTION public.duty_send_test_notification() FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.duty_send_test_notification() TO authenticated;
-
 -- Internal: triggers and the pg_cron scheduler (runs as the owner). No client access.
 REVOKE ALL ON FUNCTION duty_private.push_enqueue(uuid, text, text, jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.push_month_events() FROM PUBLIC, anon, authenticated, service_role;

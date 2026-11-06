@@ -196,7 +196,7 @@ test('a refusal carries the push service reason, without endpoints or keys', asy
 });
 
 test('every notification carries its own tag, so a new event of the same kind alerts instead of replacing the last', () => {
-  const first = JSON.parse(payload(message({id: '12', tag: 'duty-101', kind: 'test', params: {}}))), second = JSON.parse(payload(message({id: '13', tag: 'duty-102', kind: 'test', params: {}})));
+  const first = JSON.parse(payload(message({id: '12', tag: 'duty-101', kind: 'published', params: {month: '2026-12'}}))), second = JSON.parse(payload(message({id: '13', tag: 'duty-102', kind: 'published', params: {month: '2026-12'}})));
   assert.equal(first.tag, 'duty-101');
   assert.equal(second.tag, 'duty-102');
   assert.notEqual(first.tag, second.tag);

@@ -62,7 +62,7 @@ function local(options) {
   const container = options.container ?? DEFAULT_LOCAL_CONTAINER, url = options.url ?? LOCAL_DISPATCH_URL;
   const job = applyLocalPush({container, url, pushSecret: added.DUTY_PUSH_SECRET ?? current.DUTY_PUSH_SECRET});
   console.log(`2. ${container}: pg_net and pg_cron enabled, Vault secrets set, job duty-push-tick (${job}) → ${url}.`);
-  console.log('3. Restart pnpm start:local so the app reads the keys (it re-applies this setup after every start and local:reset), then Settings → Enable notifications → Send a test.');
+  console.log('3. Restart pnpm start:local so the app reads the keys (it re-applies this setup after every start and local:reset), then Settings → Enable notifications, and trigger a real alert from a second account (for example a swap request).');
 }
 
 function hosted(mode, options) {
@@ -93,7 +93,8 @@ ${target.protected ? 5 : 4}. Check (read-only, same SQL Editor):
 
 ${CHECK}
 
-   Then in the app: Settings → Enable notifications → Send a test (arrives within seconds).`);
+   Then in the app: Settings → Enable notifications, and trigger a real alert from a second account
+   (for example a swap request); it arrives within seconds.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

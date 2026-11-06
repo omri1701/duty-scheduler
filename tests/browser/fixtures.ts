@@ -78,9 +78,6 @@ export class Backend {
   /** Personal settings and devices (duty_notification_settings, duty_push_subscriptions). */
   notificationSettings = new Map<string, NotificationSettings>();
   devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
-  testNotifications = 0;
-  /** duty_send_test_notification answers false (the server's one-test-a-minute rule). */
-  refuseTests = false;
   /** Languages saved through duty_set_language. Served back by duty_load only when
    * persistLanguage is set, so older specs that switch language and reload keep English. */
   languages = new Map<string, 'en' | 'he'>();
@@ -136,7 +133,7 @@ export class Backend {
       if (this.persistLanguage) {const member = this.raw.members.find(m => m.id === user); if (member) member.language = p.p_language as 'en' | 'he';}
       return null;
     }
-    if (['duty_notification_settings', 'duty_set_notification_settings', 'duty_save_push_subscription', 'duty_send_test_notification'].includes(name)) {
+    if (['duty_notification_settings', 'duty_set_notification_settings', 'duty_save_push_subscription'].includes(name)) {
       const member = this.raw.members.find(m => m.id === user);
       if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
     }
@@ -159,12 +156,6 @@ export class Backend {
     if (name === 'duty_delete_push_subscription') {
       this.devices = this.devices.filter(d => !(d.endpoint === p.p_endpoint && d.member === user));
       return null;
-    }
-    if (name === 'duty_send_test_notification') {
-      if (!this.devices.some(d => d.member === user)) throw Error('push-no-device');
-      if (this.refuseTests) return false;
-      this.testNotifications++;
-      return true;
     }
     if (name === 'duty_replanned_versions') {
       if (!canManage(this.raw, user)) throw Error('Admin access required');

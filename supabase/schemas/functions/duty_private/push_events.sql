@@ -18,7 +18,6 @@ begin
   when p_kind='remind_evening' then coalesce(s.evening,true)
   when p_kind='remind_morning' then coalesce(s.morning,true)
   when p_kind='member_waiting' then coalesce(s.members,true)
-  when p_kind='test' then true
   else false end;
  if not wanted then return false; end if;
  insert into public.duty_push_notifications(member_id,kind,dedupe_key,params,url) values(p_member,p_kind,p_key,coalesce(p_params,'{}'::jsonb),p_url)

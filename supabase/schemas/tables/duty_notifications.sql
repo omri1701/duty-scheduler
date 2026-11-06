@@ -68,7 +68,7 @@ CREATE TABLE public.duty_push_notifications (
     status text DEFAULT 'pending'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     sent_at timestamp with time zone,
-    CONSTRAINT duty_push_notifications_kind_check CHECK ((kind = ANY (ARRAY['deadline_3'::text, 'deadline_1'::text, 'published'::text, 'republished'::text, 'edit'::text, 'swap_new'::text, 'swap_accepted'::text, 'swap_awaiting_admin'::text, 'swap_declined'::text, 'swap_rejected'::text, 'swap_approved'::text, 'remind_evening'::text, 'remind_morning'::text, 'member_waiting'::text, 'test'::text]))),
+    CONSTRAINT duty_push_notifications_kind_check CHECK ((kind = ANY (ARRAY['deadline_3'::text, 'deadline_1'::text, 'published'::text, 'republished'::text, 'edit'::text, 'swap_new'::text, 'swap_accepted'::text, 'swap_awaiting_admin'::text, 'swap_declined'::text, 'swap_rejected'::text, 'swap_approved'::text, 'remind_evening'::text, 'remind_morning'::text, 'member_waiting'::text]))),
     CONSTRAINT duty_push_notifications_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'dispatched'::text, 'skipped'::text, 'expired'::text]))),
     CONSTRAINT duty_push_notifications_url_check CHECK ((url ~ '^/\?[a-z]+=[A-Za-z0-9=&_-]*$'::text)),
     CONSTRAINT duty_push_notifications_params_check CHECK (((jsonb_typeof(params) = 'object'::text) AND (length((params)::text) <= 500)))

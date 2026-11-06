@@ -112,10 +112,10 @@ Migrations `20261106104701_push_notifications.sql` and `20261106125504_push_effi
 writes it, for the caller's own row) and four tables that members read only for their own rows:
 notification switches, devices (push subscriptions), the notification log and its deliveries.
 Writes go through checked RPCs (`duty_notification_settings`, `duty_set_notification_settings`,
-`duty_save_push_subscription`, `duty_delete_push_subscription`, `duty_send_test_notification`),
+`duty_save_push_subscription`, `duty_delete_push_subscription`),
 none of which reads or advances the workspace revision. Reminder times are quarter hours.
 
-- **Event alerts** (publish, swaps, published edits, a new member, the test): AFTER triggers on
+- **Event alerts** (publish, swaps, published edits, a new member): AFTER triggers on
   months, swap requests and members record them in the same transaction, and a deferred trigger
   (`duty_push_dispatch_now`) hands them to pg_net at commit, once per transaction. pg_net sends
   after the commit, so the change never waits for the push service and a push problem never fails it.
@@ -161,7 +161,8 @@ redeploy, the filled-in [`supabase/admin/push-scheduler.sql`](../supabase/admin/
 that project's SQL editor (DEV includes the Vercel protection-bypass line; `--bypass <secret>` fills it
 in, and the SQL refuses to run with a placeholder left in), and a read-only check query. Order per
 environment, DEV first: the normal database-first release applies the migrations, then the Vercel
-variables and redeploy, then the SQL. Check with Settings → Enable notifications → Send a test.
+variables and redeploy, then the SQL. Check with Settings → Enable notifications, then trigger a real alert
+from a second account (for example a swap request).
 
 Focused checks (empty disposable LOCAL database only; the sending checks stub pg_net):
 

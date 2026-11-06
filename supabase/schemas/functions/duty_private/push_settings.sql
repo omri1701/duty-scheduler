@@ -86,14 +86,3 @@ begin
  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
  delete from public.duty_push_subscriptions where endpoint=p_endpoint and member_id=auth.uid();
 end $$;
-
--- Queues one test notification to the caller's own devices (at most one a minute).
-CREATE FUNCTION duty_private.send_test_notification() RETURNS boolean
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO ''
-    AS $$
-begin
- if not duty_private.is_member() then raise exception 'Member access required' using errcode='42501'; end if;
- if not exists(select 1 from public.duty_push_subscriptions where member_id=auth.uid()) then raise exception 'push-no-device'; end if;
- return duty_private.push_enqueue(auth.uid(),'test','test:'||auth.uid()||':'||to_char(now() at time zone 'UTC','YYYYMMDDHH24MI'),'{}'::jsonb,'/?tab=schedule');
-end $$;

@@ -22,8 +22,3 @@ CREATE FUNCTION public.duty_delete_push_subscription(p_endpoint text) RETURNS vo
     LANGUAGE sql
     SET search_path TO ''
     AS $$select duty_private.delete_push_subscription(p_endpoint)$$;
-
-CREATE FUNCTION public.duty_send_test_notification() RETURNS boolean
-    LANGUAGE sql
-    SET search_path TO ''
-    AS $$select duty_private.send_test_notification()$$;

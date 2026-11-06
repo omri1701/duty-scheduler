@@ -3,7 +3,7 @@
 // carry constraint notes, swap explanations or anything else private.
 export type PushLanguage = 'en' | 'he';
 export const PUSH_KINDS = ['deadline_3', 'deadline_1', 'published', 'republished', 'edit', 'swap_new', 'swap_accepted', 'swap_awaiting_admin',
-  'swap_declined', 'swap_rejected', 'swap_approved', 'remind_evening', 'remind_morning', 'member_waiting', 'test'] as const;
+  'swap_declined', 'swap_rejected', 'swap_approved', 'remind_evening', 'remind_morning', 'member_waiting'] as const;
 export type PushKind = typeof PUSH_KINDS[number];
 export type PushParams = {month?: string; deadline?: string; version?: number; day?: string; count?: number; fromDay?: string; toDay?: string;
   endDay?: string; role?: 'primary' | 'secondary'; name?: string};
@@ -56,6 +56,5 @@ export function pushText(kind: PushKind, params: PushParams, lang: PushLanguage)
       return {title: t('New member waiting', 'חבר צוות חדש ממתין'),
         body: name ? t(`${name} is waiting for your approval.`, `${name} ממתין/ה לאישור שלך.`) : t('Someone is waiting for your approval.', 'מישהו ממתין לאישור שלך.')};
     }
-    case 'test': return {title: t('Notifications are on', 'ההתראות פועלות'), body: t('This device will get your Duty notifications.', 'המכשיר הזה יקבל את ההתראות שלך מ־Duty.')};
   }
 }
