@@ -16,6 +16,9 @@
 
 create extension if not exists pg_net;
 create extension if not exists pg_cron;
+-- The queued requests carry the shared secret in their headers: no client role reads pg_net's tables.
+revoke all on all tables in schema net from anon, authenticated;
+revoke usage on schema net from anon, authenticated;
 
 -- Secrets live in Supabase Vault (encrypted at rest), readable only by privileged roles.
 select vault.create_secret('<DISPATCH_URL>', 'duty_push_url', 'Duty web push sender');

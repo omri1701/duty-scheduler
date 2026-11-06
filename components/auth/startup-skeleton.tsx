@@ -26,7 +26,6 @@ export function StartupSkeleton({lang,environment}:{lang:'en'|'he';environment:E
         {environment?.badge?<EnvironmentBadge environment={environment}/>:<span className="demo-badge skeleton-content">{t('TEAM WORKSPACE','סביבת הצוות')}</span>}
         <Button variant="ghost" size="icon" disabled className="skeleton-content"><Globe/></Button>
         <button disabled className="avatar startup-avatar skeleton-content"/>
-        <Button variant="ghost" size="sm" disabled className="skeleton-content">{t('Sign out','יציאה')}</Button>
       </WorkspaceHeader>
       <div className="main-wrap">
         <div className="workspace-status"><span className="skeleton-content">{t('Shared team schedule','לוח תורנויות משותף')}</span><Button variant="ghost" size="sm" disabled className="skeleton-content"><Info/>{t('Help','עזרה')}</Button></div>

@@ -25,9 +25,9 @@ self.addEventListener('notificationclick', event => {
     const windows = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
     const open = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (open) {
-      await open.focus();
-      if ('navigate' in open) {try {await open.navigate(target); return;} catch {}}
+      // The open app switches tab and month itself, keeping any unsaved edit (no reload).
       open.postMessage({type: 'duty-open', url: link});
+      await open.focus();
       return;
     }
     await self.clients.openWindow(target);

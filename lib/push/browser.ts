@@ -68,13 +68,18 @@ export async function enablePush(vapidKey: string, save: (device: DeviceSubscrip
 export async function disablePush(remove: (endpoint: string) => Promise<void>) {
   const subscription = await currentSubscription();
   if (!subscription) return;
-  await remove(subscription.endpoint);
-  await subscription.unsubscribe().catch(() => false);
+  // The browser stops receiving even if the server can't be told; the push service's
+  // 410 then removes the server's copy on the next send.
+  try {await remove(subscription.endpoint);}
+  finally {await subscription.unsubscribe().catch(() => false);}
 }
 
 /** Signing out on this device: best effort, never blocks sign-out. */
 export async function forgetDevice(remove: (endpoint: string) => Promise<void>, timeoutMs = 3000) {
+  const subscription = await currentSubscription().catch(() => null);
+  if (!subscription) return;
   try {
-    await Promise.race([disablePush(remove), new Promise(resolve => setTimeout(resolve, timeoutMs))]);
+    await Promise.race([remove(subscription.endpoint), new Promise(resolve => setTimeout(resolve, timeoutMs))]);
   } catch {}
+  finally {await subscription.unsubscribe().catch(() => false);}
 }

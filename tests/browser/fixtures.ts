@@ -74,6 +74,10 @@ export class Backend {
   notificationSettings = new Map<string, NotificationSettings>();
   devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
   testNotifications = 0;
+  /** Languages saved through duty_set_language. Served back by duty_load only when
+   * persistLanguage is set, so older specs that switch language and reload keep English. */
+  languages = new Map<string, 'en' | 'he'>();
+  persistLanguage = false;
   generationEnvelope(month: string) {
     const state = fromSnapshot(this.raw, ids.admin);
     const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
@@ -121,8 +125,8 @@ export class Backend {
     // Personal RPCs (decision 2026-11-06): own rows only, no workspace revision.
     if (name === 'duty_set_language') {
       expect(['en', 'he']).toContain(p.p_language);
-      const member = this.raw.members.find(m => m.id === user);
-      if (member) member.language = p.p_language as 'en' | 'he';
+      this.languages.set(user, p.p_language as 'en' | 'he');
+      if (this.persistLanguage) {const member = this.raw.members.find(m => m.id === user); if (member) member.language = p.p_language as 'en' | 'he';}
       return null;
     }
     if (['duty_notification_settings', 'duty_set_notification_settings', 'duty_save_push_subscription', 'duty_send_test_notification'].includes(name)) {

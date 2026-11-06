@@ -231,6 +231,27 @@ insert into public.duty_swap_requests(month,source_publication_id,requester_id,o
 values('2027-04','76000000-0000-0000-0000-0000000000a4','76000000-0000-0000-0000-000000000002','76000000-0000-0000-0000-000000000003','2027-04-20','2027-04-21','2027-04-15','2027-04-16');
 select pg_temp.check(pg_temp.sent('3','swap_new')=2,'swaps switched off');
 select pg_temp.check(not exists(select 1 from public.duty_push_notifications where params::text ~ 'private'),'notes and explanations never recorded');
+-- Asked again: after the counterpart's consent is reset, a new acceptance asks the admins again.
+set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000002';
+insert into public.duty_swap_requests(id,month,source_publication_id,requester_id,other_id,from_day,from_end_day,to_day,to_end_day)
+values('76000000-0000-0000-0000-0000000000b3','2027-04','76000000-0000-0000-0000-0000000000a4','76000000-0000-0000-0000-000000000002','76000000-0000-0000-0000-000000000003','2027-04-15','2027-04-16','2027-04-20','2027-04-21');
+set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000003';
+update public.duty_swap_requests set status='awaiting_admin',accepted_by=other_id,accepted_at='2027-04-01 10:00Z' where id='76000000-0000-0000-0000-0000000000b3';
+set local request.jwt.claim.sub='';
+update public.duty_swap_requests set status='awaiting_engineer',accepted_by=null,accepted_at=null where id='76000000-0000-0000-0000-0000000000b3';
+set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000003';
+update public.duty_swap_requests set status='awaiting_admin',accepted_by=other_id,accepted_at='2027-04-01 11:00Z' where id='76000000-0000-0000-0000-0000000000b3';
+select pg_temp.check((select count(*) from public.duty_push_notifications where kind='swap_awaiting_admin' and params->>'request'='76000000-0000-0000-0000-0000000000b3')=2
+ and (select count(*) from public.duty_push_notifications where kind='swap_accepted' and params->>'request'='76000000-0000-0000-0000-0000000000b3')=2,'each round is told');
+-- Asked, then cancelled before the next send (as an admin's edit does in the same step): never sent.
+insert into public.duty_swap_requests(id,month,source_publication_id,requester_id,other_id,from_day,from_end_day,to_day,to_end_day)
+values('76000000-0000-0000-0000-0000000000b4','2027-04','76000000-0000-0000-0000-0000000000a4','76000000-0000-0000-0000-000000000003','76000000-0000-0000-0000-000000000002','2027-04-15','2027-04-16','2027-04-20','2027-04-21');
+update public.duty_swap_requests set status='invalidated',resolved_at=now() where id='76000000-0000-0000-0000-0000000000b4';
+select pg_temp.check((select count(*) from public.duty_push_notifications where kind='swap_new' and params->>'request'='76000000-0000-0000-0000-0000000000b4')=1,'asked');
+-- Deleting the live version brings the edited version back: everyone whose duty changes again is told again.
+set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000001';
+update public.duty_months set current_publication_id='76000000-0000-0000-0000-0000000000a3' where month='2027-04';
+select pg_temp.check(pg_temp.sent('2','edit')=2 and pg_temp.sent('3','edit')=2,'rolled back to an earlier version: told again');
 
 -- A new sign-up: admins are told, with the name only.
 set local request.jwt.claim.sub='76000000-0000-0000-0000-000000000006';
@@ -248,7 +269,7 @@ reset role;
 
 -- Sending: without pg_net and the Vault configuration nothing leaves; old ones expire.
 update public.duty_push_notifications set created_at=now()-interval '7 hours' where kind='deadline_3' and member_id='76000000-0000-0000-0000-000000000003' and params->>'deadline'='2027-02-20';
-do $$declare request bigint; body jsonb; total integer; sent_id bigint; gone_id bigint; retry_id bigint; reject_id bigint;
+do $$declare request bigint; body jsonb; total integer; moved bigint; sent_id bigint; gone_id bigint; retry_id bigint; reject_id bigint;
 begin
  if to_regnamespace('net') is not null then raise notice 'pg_net is installed here: the stubbed sending checks are skipped'; return; end if;
  perform pg_temp.check(duty_private.push_dispatch(now())=0,'unconfigured: nothing sent');
@@ -264,6 +285,8 @@ begin
  perform pg_temp.check(duty_private.push_dispatch(now())=0,'no secret: nothing sent');
  perform vault.create_secret(repeat('s',40),'duty_push_secret');
  perform pg_temp.check(duty_private.push_dispatch(now())=1,'one batch');
+ perform pg_temp.check((select status from public.duty_push_notifications where kind='swap_new' and params->>'request'='76000000-0000-0000-0000-0000000000b4')='skipped'
+  and not exists(select 1 from public.duty_push_deliveries d join public.duty_push_notifications n on n.id=d.notification_id where n.params->>'request'='76000000-0000-0000-0000-0000000000b4'),'a cancelled ask is never sent');
  select id,net.sent.body into request,body from net.sent;
  perform pg_temp.check((select headers->>'Authorization' from net.sent)='Bearer '||repeat('s',40),'secret header');
  perform pg_temp.check(not body::text ~ 'private|@example','no notes, explanations or emails in the request');
@@ -312,6 +335,15 @@ begin
  perform duty_private.push_reconcile(now());
  perform pg_temp.check((select status from public.duty_push_deliveries where request_id=request)='unknown','timed out');
  perform pg_temp.check(duty_private.push_dispatch(now()+interval '30 minutes')=0,'never resent');
+ -- A shared phone: a delivery still waiting for member 2 is never sent once the device
+ -- belongs to member 3; it is abandoned instead.
+ insert into public.duty_push_notifications(member_id,kind,dedupe_key,url,status)
+ values('76000000-0000-0000-0000-000000000002','test','fixture-moved','/?tab=schedule','dispatched') returning id into moved;
+ insert into public.duty_push_deliveries(notification_id,subscription_id) select moved,id from public.duty_push_subscriptions where endpoint like '%device-2a';
+ update public.duty_push_subscriptions set member_id='76000000-0000-0000-0000-000000000003' where endpoint like '%device-2a';
+ perform pg_temp.check(duty_private.push_dispatch(now()+interval '40 minutes')=0,'moved device: nothing sent');
+ perform duty_private.push_reconcile(now());
+ perform pg_temp.check((select status from public.duty_push_deliveries where notification_id=moved)='abandoned','moved device: abandoned');
  -- The tick runs everything and skips when another run holds the lock.
  perform pg_temp.check(duty_private.push_tick() ? 'scheduled','tick');
 end$$;

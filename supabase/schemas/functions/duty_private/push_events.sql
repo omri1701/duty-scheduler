@@ -43,8 +43,11 @@ begin
     perform duty_private.push_enqueue(r.id,case when old.current_publication_id is null then 'published' else 'republished' end,
      'published:'||new.current_publication_id||':'||r.id,jsonb_build_object('month',new.month,'version',v),'/?tab=schedule&month='||new.month);
    end loop;
+  -- A swap approved in this same transaction has its own notices (resolved_at is the
+  -- transaction time); any other change of the live version (an admin's edit, deleting
+  -- the live version) tells whoever's duty changed.
   elsif old.status='published' and new.status='published'
-   and not exists(select 1 from public.duty_swap_requests s where s.result_publication_id=new.current_publication_id) then
+   and not exists(select 1 from public.duty_swap_requests s where s.result_publication_id=new.current_publication_id and s.status='approved' and s.resolved_at=now()) then
    for r in
     with o as (select day,end_day,primary_id,secondary_id,points from public.duty_assignments where publication_id=old.current_publication_id),
      n as (select day,end_day,primary_id,secondary_id,points from public.duty_assignments where publication_id=new.current_publication_id),
@@ -58,7 +61,7 @@ begin
     select a.member,min(a.day) as first_day,count(distinct a.day) as days from affected a
     where a.member is not null and a.member is distinct from actor group by a.member
    loop
-    perform duty_private.push_enqueue(r.member,'edit','edit:'||new.current_publication_id||':'||r.member,
+    perform duty_private.push_enqueue(r.member,'edit','edit:'||old.current_publication_id||':'||new.current_publication_id||':'||r.member,
      jsonb_build_object('month',new.month,'day',r.first_day,'count',r.days),'/?tab=schedule&month='||new.month);
    end loop;
   end if;
@@ -76,10 +79,13 @@ CREATE FUNCTION duty_private.push_swap_events() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare actor uuid:=auth.uid(); params jsonb; url text; who uuid; side text; answered uuid;
+declare actor uuid:=auth.uid(); params jsonb; url text; who uuid; side text; answered uuid; round text;
 begin
  begin
-  params:=jsonb_build_object('month',new.month,'fromDay',new.from_day,'toDay',new.to_day);
+  params:=jsonb_build_object('month',new.month,'fromDay',new.from_day,'toDay',new.to_day,'request',new.id);
+  -- Each round of a request gets its own keys: a new counterpart (this transaction's
+  -- time) or a new acceptance (its timestamp), so a request asked again is told again.
+  round:=to_char(now() at time zone 'UTC','YYYYMMDDHH24MISSUS');
   url:='/?tab=schedule&month='||new.month;
   if tg_op='INSERT' then
    if new.status='awaiting_engineer' then
@@ -88,17 +94,24 @@ begin
     end loop;
    end if;
   else
-   -- The published duty changed hands while waiting: its new holder is asked.
-   if new.status='awaiting_engineer' and new.other_id is distinct from old.other_id and new.other_id is distinct from actor then
-    perform duty_private.push_enqueue(new.other_id,'swap_new','swap:'||new.id||':new:'||new.other_id,params,url);
+   -- The published duty changed hands while waiting: its new holder is asked, and the
+   -- requester of an admin's proposal, who must accept again.
+   if new.status='awaiting_engineer' and new.other_id is distinct from old.other_id then
+    foreach who in array array[new.other_id,case when new.proposed_by is not null and new.requester_accepted_at is null then new.requester_id end] loop
+     if who is not null and who is distinct from actor then perform duty_private.push_enqueue(who,'swap_new','swap:'||new.id||':new:'||round||':'||who,params,url); end if;
+    end loop;
    end if;
    side:=case when new.accepted_by is not null and old.accepted_by is null then 'other'
     when new.requester_accepted_at is not null and old.requester_accepted_at is null then 'requester' end;
    if side is not null then
     answered:=case side when 'other' then new.other_id else new.requester_id end;
     foreach who in array array[new.requester_id,new.other_id,new.proposed_by] loop
-     if who is not null and who is distinct from actor and who is distinct from answered then
-      perform duty_private.push_enqueue(who,'swap_accepted','swap:'||new.id||':accepted-'||side||':'||who,params,url);
+     -- An admin asked to approve in the same step hears that instead.
+     if who is not null and who is distinct from actor and who is distinct from answered
+      and not (new.status='awaiting_admin' and old.status<>'awaiting_admin' and exists(select 1 from public.duty_members m join public.duty_roles r on r.code=m.role
+       where m.id=who and r.can_manage and m.status='approved' and m.active)) then
+      perform duty_private.push_enqueue(who,'swap_accepted','swap:'||new.id||':accepted-'||side||':'
+       ||to_char(case side when 'other' then new.accepted_at else new.requester_accepted_at end at time zone 'UTC','YYYYMMDDHH24MISSUS')||':'||who,params,url);
      end if;
     end loop;
    end if;
@@ -106,7 +119,7 @@ begin
     if new.status='awaiting_admin' then
      for who in select m.id from public.duty_members m join public.duty_roles r on r.code=m.role
       where r.can_manage and m.status='approved' and m.active and m.id is distinct from actor loop
-      perform duty_private.push_enqueue(who,'swap_awaiting_admin','swap:'||new.id||':admin:'||who,params,url);
+      perform duty_private.push_enqueue(who,'swap_awaiting_admin','swap:'||new.id||':admin:'||to_char(new.accepted_at at time zone 'UTC','YYYYMMDDHH24MISSUS')||':'||who,params,url);
      end loop;
     elsif new.status in ('declined','rejected','approved') then
      foreach who in array array[new.requester_id,new.other_id,new.proposed_by] loop

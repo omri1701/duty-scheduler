@@ -183,8 +183,11 @@ begin
     perform duty_private.push_enqueue(r.id,case when old.current_publication_id is null then 'published' else 'republished' end,
      'published:'||new.current_publication_id||':'||r.id,jsonb_build_object('month',new.month,'version',v),'/?tab=schedule&month='||new.month);
    end loop;
+  -- A swap approved in this same transaction has its own notices (resolved_at is the
+  -- transaction time); any other change of the live version (an admin's edit, deleting
+  -- the live version) tells whoever's duty changed.
   elsif old.status='published' and new.status='published'
-   and not exists(select 1 from public.duty_swap_requests s where s.result_publication_id=new.current_publication_id) then
+   and not exists(select 1 from public.duty_swap_requests s where s.result_publication_id=new.current_publication_id and s.status='approved' and s.resolved_at=now()) then
    for r in
     with o as (select day,end_day,primary_id,secondary_id,points from public.duty_assignments where publication_id=old.current_publication_id),
      n as (select day,end_day,primary_id,secondary_id,points from public.duty_assignments where publication_id=new.current_publication_id),
@@ -198,7 +201,7 @@ begin
     select a.member,min(a.day) as first_day,count(distinct a.day) as days from affected a
     where a.member is not null and a.member is distinct from actor group by a.member
    loop
-    perform duty_private.push_enqueue(r.member,'edit','edit:'||new.current_publication_id||':'||r.member,
+    perform duty_private.push_enqueue(r.member,'edit','edit:'||old.current_publication_id||':'||new.current_publication_id||':'||r.member,
      jsonb_build_object('month',new.month,'day',r.first_day,'count',r.days),'/?tab=schedule&month='||new.month);
    end loop;
   end if;
@@ -216,10 +219,13 @@ CREATE FUNCTION duty_private.push_swap_events() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare actor uuid:=auth.uid(); params jsonb; url text; who uuid; side text; answered uuid;
+declare actor uuid:=auth.uid(); params jsonb; url text; who uuid; side text; answered uuid; round text;
 begin
  begin
-  params:=jsonb_build_object('month',new.month,'fromDay',new.from_day,'toDay',new.to_day);
+  params:=jsonb_build_object('month',new.month,'fromDay',new.from_day,'toDay',new.to_day,'request',new.id);
+  -- Each round of a request gets its own keys: a new counterpart (this transaction's
+  -- time) or a new acceptance (its timestamp), so a request asked again is told again.
+  round:=to_char(now() at time zone 'UTC','YYYYMMDDHH24MISSUS');
   url:='/?tab=schedule&month='||new.month;
   if tg_op='INSERT' then
    if new.status='awaiting_engineer' then
@@ -228,17 +234,24 @@ begin
     end loop;
    end if;
   else
-   -- The published duty changed hands while waiting: its new holder is asked.
-   if new.status='awaiting_engineer' and new.other_id is distinct from old.other_id and new.other_id is distinct from actor then
-    perform duty_private.push_enqueue(new.other_id,'swap_new','swap:'||new.id||':new:'||new.other_id,params,url);
+   -- The published duty changed hands while waiting: its new holder is asked, and the
+   -- requester of an admin's proposal, who must accept again.
+   if new.status='awaiting_engineer' and new.other_id is distinct from old.other_id then
+    foreach who in array array[new.other_id,case when new.proposed_by is not null and new.requester_accepted_at is null then new.requester_id end] loop
+     if who is not null and who is distinct from actor then perform duty_private.push_enqueue(who,'swap_new','swap:'||new.id||':new:'||round||':'||who,params,url); end if;
+    end loop;
    end if;
    side:=case when new.accepted_by is not null and old.accepted_by is null then 'other'
     when new.requester_accepted_at is not null and old.requester_accepted_at is null then 'requester' end;
    if side is not null then
     answered:=case side when 'other' then new.other_id else new.requester_id end;
     foreach who in array array[new.requester_id,new.other_id,new.proposed_by] loop
-     if who is not null and who is distinct from actor and who is distinct from answered then
-      perform duty_private.push_enqueue(who,'swap_accepted','swap:'||new.id||':accepted-'||side||':'||who,params,url);
+     -- An admin asked to approve in the same step hears that instead.
+     if who is not null and who is distinct from actor and who is distinct from answered
+      and not (new.status='awaiting_admin' and old.status<>'awaiting_admin' and exists(select 1 from public.duty_members m join public.duty_roles r on r.code=m.role
+       where m.id=who and r.can_manage and m.status='approved' and m.active)) then
+      perform duty_private.push_enqueue(who,'swap_accepted','swap:'||new.id||':accepted-'||side||':'
+       ||to_char(case side when 'other' then new.accepted_at else new.requester_accepted_at end at time zone 'UTC','YYYYMMDDHH24MISSUS')||':'||who,params,url);
      end if;
     end loop;
    end if;
@@ -246,7 +259,7 @@ begin
     if new.status='awaiting_admin' then
      for who in select m.id from public.duty_members m join public.duty_roles r on r.code=m.role
       where r.can_manage and m.status='approved' and m.active and m.id is distinct from actor loop
-      perform duty_private.push_enqueue(who,'swap_awaiting_admin','swap:'||new.id||':admin:'||who,params,url);
+      perform duty_private.push_enqueue(who,'swap_awaiting_admin','swap:'||new.id||':admin:'||to_char(new.accepted_at at time zone 'UTC','YYYYMMDDHH24MISSUS')||':'||who,params,url);
      end loop;
     elsif new.status in ('declined','rejected','approved') then
      foreach who in array array[new.requester_id,new.other_id,new.proposed_by] loop
@@ -384,8 +397,8 @@ end $$;
 --   from 10:00 the day before, only to members with no constraints in that month.
 --   Only for months not yet published.
 -- * duty reminders: the evening before (default 18:00) and the morning of the duty
---   (default 08:30), for the primary engineer and emergency cover of the current
---   publication. Each has a three-hour window, so a late run still reminds once.
+--   (default 08:30), for the primary engineer and emergency cover of the duties the
+--   team sees (duty_private.current_duties: each date from its owning month). Each has a three-hour window, so a late run still reminds once.
 CREATE FUNCTION duty_private.push_schedule(p_now timestamp with time zone) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -405,13 +418,12 @@ begin
    jsonb_build_object('month',r.month,'deadline',r.deadline),'/?tab=availability&month='||r.month) then added:=added+1; end if;
  end loop;
  for r in
-  select a.day,a.end_day,p.member,p.role,k.kind from public.duty_months m
-  join public.duty_assignments a on a.publication_id=m.current_publication_id
+  select a.day,a.end_day,p.member,p.role,k.kind from duty_private.current_duties() a
   cross join lateral (values (a.primary_id,'primary'),(a.secondary_id,'secondary')) p(member,role)
   left join public.duty_notification_settings s on s.member_id=p.member
   cross join lateral (values ('remind_evening',(a.day-1)+coalesce(s.evening_time,time '18:00')),
    ('remind_morning',a.day+coalesce(s.morning_time,time '08:30'))) k(kind,fire)
-  where p.member is not null and a.day between today and today+1 and local>=k.fire and local<k.fire+interval '3 hours'
+  where p.member is not null and a.day between today-1 and today+1 and local>=k.fire and local<k.fire+interval '3 hours'
  loop
   if duty_private.push_enqueue(r.member,r.kind,r.kind||':'||r.day||':'||r.role||':'||r.member,
    jsonb_build_object('day',r.day,'endDay',r.end_day,'role',r.role),'/?tab=schedule&month='||to_char(r.day,'YYYY-MM')) then added:=added+1; end if;
@@ -452,7 +464,7 @@ end $$;
 
 -- Reads finished pg_net responses (when pg_net is installed) and settles them.
 -- A request with no response after ten minutes is 'unknown'; a refusal retried
--- three times, or a delivery whose device is gone, is abandoned.
+-- three times, or a delivery whose device is gone or moved to another member, is abandoned.
 CREATE FUNCTION duty_private.push_reconcile(p_now timestamp with time zone) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -469,6 +481,8 @@ begin
  update public.duty_push_deliveries set status='unknown',updated_at=p_now where status='sending' and updated_at<p_now-interval '10 minutes';
  update public.duty_push_deliveries set status='abandoned',updated_at=p_now
  where (status='failed' and attempts>=3) or (status in ('queued','failed') and subscription_id is null);
+ update public.duty_push_deliveries d set status='abandoned',updated_at=p_now from public.duty_push_subscriptions s,public.duty_push_notifications n
+ where s.id=d.subscription_id and n.id=d.notification_id and s.member_id<>n.member_id and d.status in ('queued','failed');
 end $$;
 
 -- Sends what is due through the protected sender (Vault secrets duty_push_url and
@@ -490,6 +504,13 @@ begin
  insert into public.duty_push_deliveries(notification_id,subscription_id)
  select n.id,s.id from public.duty_push_notifications n join public.duty_push_subscriptions s on s.member_id=n.member_id where n.status='pending'
  on conflict do nothing;
+ -- A swap ask or approval request that was answered, cancelled or invalidated before
+ -- sending (for example by an admin's edit in the same step) is no longer sent.
+ update public.duty_push_notifications n set status='skipped' where n.status='pending' and n.kind in ('swap_new','swap_awaiting_admin')
+  and not exists(select 1 from public.duty_swap_requests r where r.id::text=n.params->>'request'
+   and r.status=case n.kind when 'swap_new' then 'awaiting_engineer' else 'awaiting_admin' end
+   and (n.kind='swap_awaiting_admin' or n.member_id=r.other_id or (n.member_id=r.requester_id and r.proposed_by is not null)));
+ delete from public.duty_push_deliveries d using public.duty_push_notifications n where n.id=d.notification_id and n.status='skipped' and d.status='queued';
  update public.duty_push_notifications n set status=case when exists(select 1 from public.duty_push_deliveries d where d.notification_id=n.id) then 'dispatched' else 'skipped' end
  where n.status='pending';
  headers:=jsonb_build_object('Content-Type','application/json','Authorization','Bearer '||secret)
@@ -498,8 +519,10 @@ begin
   picked:=null; batch:=null;
   with due as (
    select d.id from public.duty_push_deliveries d
-   where d.subscription_id is not null and (d.status='queued' or (d.status='failed' and d.attempts<3 and d.updated_at<=p_now-make_interval(mins=>(2^d.attempts)::integer)))
-   order by d.id limit 50 for update skip locked)
+   join public.duty_push_subscriptions s on s.id=d.subscription_id join public.duty_push_notifications n on n.id=d.notification_id
+   -- A device that moved to another member (shared phone) never gets the earlier member's notifications.
+   where s.member_id=n.member_id and (d.status='queued' or (d.status='failed' and d.attempts<3 and d.updated_at<=p_now-make_interval(mins=>(2^d.attempts)::integer)))
+   order by d.id limit 50 for update of d skip locked)
   select array_agg(d.id order by d.id),jsonb_agg(jsonb_build_object('id',d.id::text,'endpoint',s.endpoint,'keys',jsonb_build_object('p256dh',s.p256dh,'auth',s.auth),
     'lang',coalesce(m.language,'en'),'kind',n.kind,'params',n.params,'url',n.url,'tag','duty-'||n.id) order by d.id)
   into picked,batch

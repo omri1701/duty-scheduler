@@ -147,3 +147,21 @@ test('the sender refuses before sending: no secret, wrong secret, no VAPID keys,
     for (const key of ['DUTY_PUSH_SECRET', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']) if (key in saved) process.env[key] = saved[key]; else delete process.env[key];
   }
 });
+
+test('signing out and turning off always unsubscribe this browser, even when the server call fails or hangs', async () => {
+  const {disablePush, forgetDevice} = await import('../lib/push/browser.ts');
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator'), savedWindow = globalThis.window;
+  let unsubscribed = 0;
+  const subscription = {endpoint: 'https://fcm.googleapis.com/fcm/send/x', unsubscribe: async () => {unsubscribed++; return true;}};
+  Object.defineProperty(globalThis, 'navigator', {configurable: true, value: {serviceWorker: {getRegistration: async () => ({pushManager: {getSubscription: async () => subscription}})}}});
+  globalThis.window = {PushManager() {}, Notification() {}};
+  try {
+    await forgetDevice(async () => {throw Error('offline');});
+    await forgetDevice(() => new Promise(() => {}), 10);
+    await assert.rejects(disablePush(async () => {throw Error('offline');}), /offline/);
+    assert.equal(unsubscribed, 3);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'navigator', saved); else delete globalThis.navigator;
+    globalThis.window = savedWindow;
+  }
+});

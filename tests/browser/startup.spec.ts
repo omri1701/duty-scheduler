@@ -43,7 +43,7 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
       const navBefore=await page.locator('.nav-row').boundingBox();
       if (phase==='auth') await info.attach('startup-shell',{body:await page.screenshot(),contentType:'image/png'});
       held.release();
-      await expect(page.getByRole('button',{name:'My profile'})).toBeVisible();
+      await expect(page.getByRole('button',{name:'Settings'})).toBeVisible();
       await expect(shell).toHaveCount(0);
       expect(await page.evaluate(()=>(window as unknown as {accessMounts:number}).accessMounts)).toBe(0);
       expect(await page.locator('.topbar').boundingBox()).toEqual(before);
@@ -90,7 +90,7 @@ test('Google PKCE return keeps the public shell until verification succeeds',asy
     await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')).toHaveCount(0);
     expect(await page.evaluate(()=>(window as unknown as {accessMounts:number}).accessMounts)).toBe(0);
   } finally {held.release();}
-  await expect(page.getByRole('button',{name:'My profile'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Settings'})).toBeVisible();
   await expect(page.locator('.startup-skeleton')).toHaveCount(0);
   expect(new URL(page.url()).searchParams.has('code')).toBe(false);
 });

@@ -35,19 +35,25 @@ test('save reload wins over a delayed older refresh and supplies the next revisi
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await started.wait;
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   await page.getByRole('textbox', {name: 'Display name'}).fill('Updated Admin');
   await page.getByRole('button', {name: 'Save name', exact: true}).click();
+  // Settings stays open after saving and says so (decision 2026-11-06).
+  await expect(page.getByRole('dialog').getByRole('status').filter({hasText: 'Saved'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
   await expect(page.locator('.admin-avatar')).toHaveText('UA');
   const late = page.waitForResponse('**/rest/v1/rpc/duty_load');
   held.release(); await (await late).finished();
   await page.evaluate(() => new Promise(requestAnimationFrame));
   await expect(page.locator('.admin-avatar')).toHaveText('UA');
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   await expect(page.getByRole('textbox', {name: 'Display name'})).toHaveValue('Updated Admin');
   await page.getByRole('textbox', {name: 'Display name'}).fill('Latest Admin');
   await page.getByRole('button', {name: 'Save name', exact: true}).click();
+  // Settings stays open after saving and says so (decision 2026-11-06).
+  await expect(page.getByRole('dialog').getByRole('status').filter({hasText: 'Saved'})).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(backend.calls.filter(c => c.name === 'duty_rename_self').map(c => c.params.p_revision)).toEqual([1, 2]);
 });
@@ -62,7 +68,7 @@ test('restored private data waits for verified auth and skips registration', asy
     await started.wait;
     await loaded;
     await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toHaveCount(0);
-    await expect(page.getByRole('button',{name:'My profile'})).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Settings'})).toHaveCount(0);
     expect(backend.calls.filter(c=>c.name==='duty_join')).toHaveLength(0);
   } finally {held.release();}
   await opening;await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid')).toBeVisible();

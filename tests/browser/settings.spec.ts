@@ -28,7 +28,7 @@ for (const lang of ['en', 'he'] as const) test(`settings screen sections and lan
   const other = lang === 'en' ? 'he' : 'en';
   await sheet.getByRole('radio', {name: other === 'he' ? 'עברית' : 'English'}).check();
   await expect(sheet).toHaveAttribute('dir', other === 'he' ? 'rtl' : 'ltr');
-  await expect.poll(() => backend.raw.members.find(m => m.id === ids.admin)?.language).toBe(other);
+  await expect.poll(() => backend.languages.get(ids.admin)).toBe(other);
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
   await expect(page.locator('html')).toHaveAttribute('lang', other);
@@ -44,7 +44,7 @@ test('keyboard: open, move through the language radios and close back to the but
   await sheet.getByRole('radio', {name: 'English'}).focus();
   await page.keyboard.press('ArrowRight');
   await expect(sheet.getByRole('radio', {name: 'עברית'})).toBeChecked();
-  await expect.poll(() => backend.raw.members.find(m => m.id === ids.admin)?.language).toBe('he');
+  await expect.poll(() => backend.languages.get(ids.admin)).toBe('he');
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
   await expect(page.getByRole('button', {name: 'הגדרות', exact: true})).toBeFocused();
