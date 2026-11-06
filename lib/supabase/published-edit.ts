@@ -1,7 +1,9 @@
 import {addDays,dayOf} from '../rota/engine.ts';
 import type {Snapshot,DutyRow} from './snapshot.ts';
+import type {DutyClient} from './rpc.ts';
 
-/** Temporary: the old engineer owes the new one. Permanent: no debt. */
+/** Temporary: the old engineer owes the new one. Permanent: no debt, except that giving the duty
+ * back to someone who held it before a Temporary change still in effect undoes that change (H1). */
 export type EditKind='temporary'|'permanent';
 export type PublishedEdit={primary:string;extra:number;saturdayExtra:number;kind:EditKind;overrideReason:string};
 
@@ -43,6 +45,15 @@ export function owedUnits(row:DutyRow,extra:number,saturdayExtra=0){
  return Math.min(1+2*row.extra_points,1+2*extra)+Math.min(1+2*oldSaturday,1+2*saturdayExtra);
 }
 
+/** Who a Permanent edit of this duty would give it back to, undoing a Temporary change (H1,
+ * decision 2026-11-06), most recent first: duty_private.edit_returns decides, as the edit does. */
+export async function editReturns(client:DutyClient,publication:string,day:string){
+ const {data,error}=await client.rpc('duty_edit_returns',{p_publication:publication,p_day:day});
+ if(error)throw error;
+ if(!Array.isArray(data)||data.some(id=>typeof id!=='string'))throw Error('Invalid edit returns');
+ return data as string[];
+}
+
 /** Dates in the duty the member marked unavailable, with the admin-visible note. */
 export function editConflicts(raw:Snapshot,member:string,row:DutyRow){
  return raw.constraints.filter(c=>c.member_id===member&&c.kind==='no'&&c.day>=row.day&&c.day<row.end_day)
@@ -51,7 +62,7 @@ export function editConflicts(raw:Snapshot,member:string,row:DutyRow){
 
 /** Plain text for the admin's external record, written before the change is saved.
  * Never includes availability notes; the override reason is the admin's own text. */
-export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>string,lang:'en'|'he'){
+export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>string,lang:'en'|'he',returning=false){
  const he=lang==='he',t=(en:string,hebrew:string)=>he?hebrew:en;
  // Fixed day/month/year text, independent of the browser's date formatting.
  const date=(day:string)=>`${(he?['יום א׳','יום ב׳','יום ג׳','יום ד׳','יום ה׳','יום ו׳','שבת']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])[dayOf(day)]} ${day.slice(8)}/${day.slice(5,7)}/${day.slice(0,4)}`;
@@ -72,7 +83,8 @@ export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>str
  ];
  if(changed){
   lines.push(`${t('Type','סוג')}: ${edit.kind==='temporary'?t('Temporary','זמני'):t('Permanent','קבוע')}`);
-  lines.push(`${t('Balance','מאזן')}: ${edit.kind==='temporary'?t(`${from} owes ${to} ${points(owed)}`,`${from} חייב/ת ל־${to} ${points(owed)}`):t('No debt','ללא חוב')}`);
+  lines.push(`${t('Balance','מאזן')}: ${edit.kind==='temporary'?t(`${from} owes ${to} ${points(owed)}`,`${from} חייב/ת ל־${to} ${points(owed)}`)
+   :returning?t(`${to} gets the duty back: the earlier Temporary change is undone and its debt cancels`,`${to} מקבל/ת את התורנות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו`):t('No debt','ללא חוב')}`);
   if(edit.overrideReason.trim())lines.push(`${t('Availability override','חריגה מאילוץ')}: ${edit.overrideReason.trim()}`);
  }
  else lines.push(`${t('Balance','מאזן')}: ${t(`No debt; the extra counts for ${from}`,`ללא חוב; התוספת נזקפת ל־${from}`)}`);

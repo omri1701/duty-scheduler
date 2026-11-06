@@ -103,6 +103,9 @@ begin
  op:=jsonb_build_object('kind','publication','month',month,'beforeId',before_pub->'id','after',after_pub);
  -- Unknown pre-cutover versions preserve completed facts below the ordinary
  -- transition rules. Known deletion uses the core's terminal handling.
- if deleting and (after_pub is null or known is not null) and before_pub is not null then op:=op||'{"mode":"delete"}'; end if;
+ -- Deleting back to a known earlier version is that version's exact undo (decision 2026-11-06).
+ if deleting and (after_pub is null or known is not null) and before_pub is not null then
+  op:=op||case when after_pub is null then '{"mode":"delete"}' else '{"mode":"delete","revert":true}' end::jsonb;
+ end if;
  perform duty_private.compensation_append(s,op,'publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1),instant,coalesce(auth.uid()::text,'system'),nullif(edit->>'reason',''));
 end $$;
