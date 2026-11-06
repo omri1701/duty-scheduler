@@ -59,7 +59,7 @@ export async function feedResponse(request: Request, segment: string, deps: {loa
   const etag = await etagOf(body);
   // Private: the URL is a secret, so no shared cache may keep it after a reset. Clients may
   // keep it five minutes, then revalidate cheaply with the ETag.
-  const headers = {...PRIVATE, 'Cache-Control': 'private, max-age=300', ETag: etag, 'Content-Type': 'text/calendar; charset=utf-8',
+  const headers = {...PRIVATE, 'Cache-Control': 'private, max-age=60', ETag: etag, 'Content-Type': 'text/calendar; charset=utf-8',
     'Content-Disposition': 'inline; filename="duties.ics"'};
   if (request.headers.get('if-none-match')?.split(',').map(v => v.trim().replace(/^W\//, '')).includes(etag)) return new Response(null, {status: 304, headers});
   return new Response(request.method === 'HEAD' ? null : body, {status: 200, headers});

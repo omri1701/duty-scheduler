@@ -100,7 +100,7 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 node --test tests/calendar-feed.test.mjs
 ```
 
-The route answers `private, max-age=300` with an ETag (304 when unchanged), `no-store` 404s,
+The route answers `private, max-age=60` with an ETag (304 when unchanged) and asks calendar apps to refresh every 15 minutes (Apple honours it; Google refreshes on its own schedule), `no-store` 404s,
 a per-instance limit of 30 requests per feed per 5 minutes (429) and 503 when the database is
 unreachable. Hosted feeds need the deployment to be reachable without Vercel Authentication:
 calendar servers cannot pass it, so a protected Development deployment cannot serve feeds.

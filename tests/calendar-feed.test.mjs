@@ -78,6 +78,8 @@ test('duties are all-day events on their Israel dates, with exclusive ends and s
   const [edited] = events(buildCalendar(feed([duty('2026-11-06', '2026-11-07', {points: 0.5})]), APP));
   assert.equal(edited.UID, weekend.UID);
   assert.ok(ics.includes('X-WR-TIMEZONE:Asia/Jerusalem\r\n'));
+  // Refresh hint (Apple honours it; Google refreshes on its own schedule).
+  assert.ok(ics.includes('REFRESH-INTERVAL;VALUE=DURATION:PT15M\r\n') && ics.includes('X-PUBLISHED-TTL:PT15M\r\n'));
 });
 
 test('split weekends are two events, each half named; emergency cover has its own UID and no points', () => {
@@ -129,7 +131,7 @@ test('the route serves the calendar privately with an ETag, and answers 304 when
   const response = await feedResponse(request(), `${TOKEN}.ics`, {load, limit: always});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/calendar; charset=utf-8');
-  assert.equal(response.headers.get('cache-control'), 'private, max-age=300');
+  assert.equal(response.headers.get('cache-control'), 'private, max-age=60');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.match(response.headers.get('x-robots-tag'), /noindex/);
   const body = await response.text();

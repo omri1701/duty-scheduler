@@ -102,7 +102,7 @@ export function buildCalendar(feed: Feed, appUrl: string): string {
   const l = LABELS[feed.language];
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Duty Scheduler//Personal duty feed//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     `NAME:${escapeText(l.calendar)}`, `X-WR-CALNAME:${escapeText(l.calendar)}`, `X-WR-CALDESC:${escapeText(l.description)}`,
-    'X-WR-TIMEZONE:Asia/Jerusalem', 'REFRESH-INTERVAL;VALUE=DURATION:PT1H', 'X-PUBLISHED-TTL:PT1H',
+    'X-WR-TIMEZONE:Asia/Jerusalem', 'REFRESH-INTERVAL;VALUE=DURATION:PT15M', 'X-PUBLISHED-TTL:PT15M',
     ...feed.duties.flatMap(duty => eventLines(duty, feed, appUrl)), 'END:VCALENDAR'];
   return lines.map(foldLine).join('\r\n') + '\r\n';
 }
