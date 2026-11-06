@@ -1,4 +1,4 @@
-import {test,expect,duty,ids} from './fixtures';
+import {test,expect,duty,ids, switchLanguage} from './fixtures';
 import type {Page,Locator} from '@playwright/test';
 
 async function centered(page:Page,dialog:Locator){
@@ -19,7 +19,7 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  const original=backend.raw.assignments.find(row=>row.day===weekend.friday&&row.publication_id===null)!;
  await openApp();
  for(let i=0;i<weekend.previous;i++)await page.getByRole('button',{name:'Previous month',exact:true}).click();
- if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ if(lang==='he')await switchLanguage(page, 'he');
  await duty(page,weekend.friday).click();
  const dialog=page.getByRole('dialog'),description=dialog.locator('[data-slot="dialog-description"]');
  await expect(dialog).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');

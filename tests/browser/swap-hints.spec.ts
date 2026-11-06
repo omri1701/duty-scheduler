@@ -1,14 +1,13 @@
 // Swap-target hints (decision 2026-11-05): while a swap is chosen, a day the server would refuse
 // is greyed with a short reason (who and which day, never the note); the usable days stay green.
 import type {Page} from '@playwright/test';
-import {test, expect, ids, duty, dragTo, targetReady, NOW} from './fixtures';
+import {test, expect, ids, duty, dragTo, targetReady, NOW, switchLanguage} from './fixtures';
 
 type Lang = 'en' | 'he';
 const say = (lang: Lang) => (en: string, he: string) => lang === 'en' ? en : he;
 async function language(page: Page, lang: Lang) {
-  const toggle = page.getByRole('button', {name: /^Switch to (Hebrew|English)$/});
-  await expect(toggle).toBeVisible();
-  if (lang === 'he' && await toggle.getAttribute('aria-label') === 'Switch to Hebrew') await toggle.click();
+  await expect(page.locator('[data-settings-button]')).toBeVisible();
+  if (lang === 'he') await switchLanguage(page, 'he');
 }
 async function expectBlocked(page: Page, day: string, reason: string) {
   const cell = duty(page, day);

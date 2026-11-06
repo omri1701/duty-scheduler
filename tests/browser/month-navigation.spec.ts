@@ -1,4 +1,4 @@
-import {test,expect,seed,MONTH,ids,NOW} from './fixtures';
+import {test,expect,seed,MONTH,ids,NOW, switchLanguage} from './fixtures';
 import {monthNext} from '../../lib/rota/engine';
 import {assertMonthNavigation,traverseMonths} from './month-navigation';
 import {zoomContext,setBrowserZoom} from './zoom-context.mjs';
@@ -29,7 +29,7 @@ for(const identity of ['admin','a'] as const) test(`month navigation survives em
   await openApp(identity);
   await expect(page.locator('.swap-requests')).toBeVisible();
   for(const language of ['en','he']) {
-    if(language==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+    if(language==='he')await switchLanguage(page, 'he');
     await expect(page.locator('.app-shell')).toHaveAttribute('dir',language==='he'?'rtl':'ltr');
     for(let tab=0;tab<3;tab++) {
       await page.locator('[data-slot=tabs-trigger]').nth(tab).click();
@@ -41,7 +41,7 @@ for(const identity of ['admin','a'] as const) test(`month navigation survives em
   await expect(page.locator('.app-shell:not(.startup-skeleton)')).toBeVisible();
   await assertMonthNavigation(page);
   await traverseMonths(page,1);
-  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_balance'||(identity==='admin'&&call.name==='duty_generation_context')),'navigation only loads the workspace, the Team balance and manager allocation facts (and saves a language change)').toBe(true);
+  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_notification_settings'||call.name==='duty_calendar_status'||call.name==='duty_balance'||(identity==='admin'&&call.name==='duty_generation_context')),'navigation only loads the workspace, the Team balance and manager allocation facts (and Settings reads and saves a language change)').toBe(true);
 });
 
 test('month navigation remains usable after actual browser zoom with visible completed requests',async({backend,openApp},info)=>{
@@ -55,12 +55,11 @@ test('month navigation remains usable after actual browser zoom with visible com
       expect(await setBrowserZoom(context,page,zoom)).toBe(zoom);
       await expect.poll(()=>page.evaluate(()=>devicePixelRatio)).toBe(zoom);
       for(const language of ['en','he']) {
-        const toggle=page.getByRole('button',{name:language==='he'?'Switch to Hebrew':'Switch to English',exact:true});
-        if(await toggle.count())await toggle.click();
+        await switchLanguage(page,language as 'en'|'he');
         await expect(page.locator('.app-shell')).toHaveAttribute('dir',language==='he'?'rtl':'ltr');
         await traverseMonths(page,zoom===2&&language==='en'?24:4);
       }
     }
   } finally {await context.close();}
-  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_generation_context')).toBe(true);
+  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_notification_settings'||call.name==='duty_calendar_status'||call.name==='duty_generation_context')).toBe(true);
 });

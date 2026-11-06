@@ -1,4 +1,4 @@
-import {test,expect,ids} from './fixtures';
+import {test,expect,ids, switchLanguage} from './fixtures';
 
 const net=(page:import('@playwright/test').Page,id:string)=>page.locator(`[data-gesture-key="${id}"] .net-points button`);
 
@@ -32,7 +32,7 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
  if(info.project.name==='mobile')await net(page,ids.b).tap();else await net(page,ids.b).hover();
  await expect(breakdown).toContainText(`Covered ${name(ids.a)}'s duty · 3 Nov · temporary`);
  await page.mouse.click(5,5);await expect(breakdown).toBeHidden();
- await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ await switchLanguage(page, 'he');
  await net(page,ids.a).focus();
  await expect(breakdown).toHaveAttribute('dir','rtl');
  await expect(breakdown).toContainText('תורנות כוסתה על ידי');

@@ -1,4 +1,4 @@
-import {test, expect, ids, touchEvent} from './fixtures';
+import {test, expect, ids, touchEvent, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 const selector = '.gesture-grid.team-list > .team-row';
@@ -52,7 +52,7 @@ for (const lang of ['en','he'] as const) test(`optimistic drop survives latency,
  await page.emulateMedia({reducedMotion:'no-preference'});
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
- if (lang==='he') await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ if (lang==='he') await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  const initial = await order(page), expected = [...initial.slice(1,3),initial[0],...initial.slice(3)];
  const stale = backend.snapshot(ids.admin), held = gate(), started = gate();
@@ -122,7 +122,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
  await page.emulateMedia({reducedMotion:'no-preference'});
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
- if(failure==='network')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ if(failure==='network')await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  const initial=await order(page), expected=[...initial.slice(1,3),initial[0],...initial.slice(3)];
  const held=gate(),started=gate();let writes=0;
@@ -167,7 +167,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
 for(const moveFocus of [false,true])test(`keyboard reorder survives delayed allocation refresh; moved focus ${moveFocus}`,async({page,openApp,backend})=>{
  await openApp();await page.getByRole('tab').nth(2).click();
  const handle=page.locator(`[data-gesture-key="${ids.admin}"] .team-grip`);
- const other=page.getByRole('button',{name:'Switch to Hebrew',exact:true});
+ const other=page.locator('[data-settings-button]');
  const held=gate();
  await page.route('**/rest/v1/rpc/duty_generation_context',async route=>{await held.wait;await route.fallback()});
  const refreshing=page.waitForRequest('**/rest/v1/rpc/duty_generation_context');
@@ -197,7 +197,7 @@ for(const width of [320,375,390,430])test(`inline grip fits ${width}px in Englis
  test.skip(info.project.name!=='mobile','Phone layout matrix.');
  await page.setViewportSize({width,height:1000});await openApp();
  for(const lang of ['en','he']){
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   await page.getByRole('tab').nth(2).click();
   const measurements=await rows(page).first().evaluate(el=>{
    const box=(selector:string)=>{const r=el.querySelector(selector)!.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};

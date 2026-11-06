@@ -1,4 +1,4 @@
-import {test, expect, ids, NOW, touchEvent} from './fixtures';
+import {test, expect, ids, NOW, touchEvent, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 const day = (page: Page, date: string) => page.locator(`.availability-day[data-gesture-key="2026-11-${date}"]`);
@@ -14,7 +14,7 @@ for (const width of [320, 375, 390, 430]) for (const lang of ['en', 'he'] as con
     test.skip(info.project.name !== 'mobile', 'Touch matrix runs once.');
     await page.setViewportSize({width, height: 844});
     await openApp();
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     await page.getByRole('tab').nth(1).click();
     const header = page.locator('.availability-tools'), hint = header.locator('.gesture-hint');
     const instructions = await hint.innerText();

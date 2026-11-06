@@ -1,6 +1,6 @@
 // Admin-proposed swaps: both members accept, then an explicit admin approval.
 import type {Browser, Page} from '@playwright/test';
-import {test, expect, ids, duty, NOW, targetReady} from './fixtures';
+import {test, expect, ids, duty, NOW, targetReady, switchLanguage} from './fixtures';
 
 async function pick(page: Page, from: string, to: string) {
   await duty(page, from).focus(); await page.keyboard.press('Enter');
@@ -8,9 +8,8 @@ async function pick(page: Page, from: string, to: string) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 async function language(page: Page, lang: 'en' | 'he') {
-  const toggle = page.getByRole('button', {name: /^Switch to (Hebrew|English)$/});
-  await expect(toggle).toBeVisible();
-  if (lang === 'he' && await toggle.getAttribute('aria-label') === 'Switch to Hebrew') await toggle.click();
+  await expect(page.locator('[data-settings-button]')).toBeVisible();
+  if (lang === 'he') await switchLanguage(page, 'he');
 }
 async function published(page: Page, lang: 'en' | 'he') {
   await language(page, lang);

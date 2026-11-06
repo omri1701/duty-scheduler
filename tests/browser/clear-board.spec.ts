@@ -1,4 +1,4 @@
-import {test, expect, duty, MONTH} from './fixtures';
+import {test, expect, duty, MONTH, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 import {addDays, dayOf} from '../../lib/rota/engine';
 
@@ -61,7 +61,7 @@ test('Clear board confirms first, keeps locks, holidays, constraints and history
 
 test('Clear board is in Hebrew RTL and offers nothing on the published version or a published month', async ({page, backend, openApp}) => {
   await openApp();
-  await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  await switchLanguage(page, 'he');
   const count = backend.raw.assignments.filter(r => !r.publication_id && owner(r.day) === MONTH).length;
   const special = page.locator('.calendar-top').getByRole('button', {name: 'מקטע מיוחד', exact: true});
   // Right next to Special block on the same row, the same size, on phones too (the pair wraps together).
@@ -131,7 +131,7 @@ test('Clear board and Special block join the filters’ row on phones, as icons 
   };
   for (const lang of ['en', 'he'] as const) {
     const [clear, special] = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     // Room for the labels beside the filters: full text.
     await page.setViewportSize({width: 700, height: 844});
     await expect(tools).not.toHaveAttribute('data-compact');

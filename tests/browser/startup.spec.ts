@@ -1,4 +1,4 @@
-import {test, expect, ids, MONTH} from './fixtures';
+import {test, expect, ids, MONTH, switchLanguage} from './fixtures';
 
 function gate() {
   let release!: () => void;
@@ -117,7 +117,7 @@ for (const identity of ['signed-out','pending','rejected','inactive'] as const) 
 
 test('Hebrew account switching clears private UI before re-verification',async({page,openApp,backend})=>{
   await openApp();
-  await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   const held=gate();
   const member=backend.raw.members.find(m=>m.id===ids.pending)!;
   await page.route('**/auth/v1/user',async route=>{await held.wait;await route.fulfill({json:{...member,email_confirmed_at:'2026-01-01',is_anonymous:false}});});

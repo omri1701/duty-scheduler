@@ -1,4 +1,4 @@
-import {test, expect, ids} from './fixtures';
+import {test, expect, ids, switchLanguage} from './fixtures';
 import {mockPush, pushState, VAPID_PUBLIC_KEY, SYNTHETIC_ENDPOINT} from './push-mock';
 
 // The settings screen (decision 2026-11-06): name, language saved on the member,
@@ -10,7 +10,7 @@ for (const lang of ['en', 'he'] as const) test(`settings screen sections and lan
   await mockPush(page);
   backend.vapidPublicKey = VAPID_PUBLIC_KEY;
   await openApp();
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   const label = lang === 'en' ? 'Settings' : 'הגדרות';
   await page.getByRole('button', {name: label, exact: true}).click();
   const sheet = settings(page);

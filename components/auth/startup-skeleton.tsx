@@ -1,6 +1,6 @@
 'use client';
 import {useSyncExternalStore} from 'react';
-import {CalendarDays,Globe,Info,ArrowRight} from 'lucide-react';
+import {CalendarDays,Info,ArrowRight} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {LoadingNavigation} from '@/components/rota/navigation-presentation';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
@@ -24,7 +24,6 @@ export function StartupSkeleton({lang,environment}:{lang:'en'|'he';environment:E
     <div inert aria-hidden="true">
       <WorkspaceHeader brand={<span className="brand"><BrandContent t={t}/></span>}>
         {environment?.badge?<EnvironmentBadge environment={environment}/>:<span className="demo-badge skeleton-content">{t('TEAM WORKSPACE','סביבת הצוות')}</span>}
-        <Button variant="ghost" size="icon" disabled className="skeleton-content"><Globe/></Button>
         <button disabled className="avatar startup-avatar skeleton-content"/>
       </WorkspaceHeader>
       <div className="main-wrap">

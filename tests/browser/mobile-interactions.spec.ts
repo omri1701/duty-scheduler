@@ -1,11 +1,11 @@
-import {test, expect, duty, touchEvent, ids, NOW} from './fixtures';
+import {test, expect, duty, touchEvent, ids, NOW, switchLanguage} from './fixtures';
 
 test('navigation follows horizontal touch, commits on release and respects RTL and keyboard', async ({page, openApp, backend}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone navigation.');
   await openApp();
   const client = await page.context().newCDPSession(page);
   for (const rtl of [false, true]) {
-    if (rtl) await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (rtl) await switchLanguage(page, 'he');
     const tabs = page.getByRole('tab');
     await tabs.nth(0).click();
     const a = (await tabs.nth(0).boundingBox())!, b = (await tabs.nth(2).boundingBox())!;

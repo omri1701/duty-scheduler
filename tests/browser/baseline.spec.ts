@@ -1,4 +1,4 @@
-import {test, expect, monthAction, ids, MONTH, duty, drag} from './fixtures';
+import {test, expect, monthAction, ids, MONTH, duty, drag, switchLanguage} from './fixtures';
 
 test('signed out, OAuth denial, provider configuration and PKCE handoff', async ({page, openApp, backend, baseURL}) => {
   await openApp('signed-out');
@@ -189,12 +189,12 @@ test('English/Hebrew RTL and keyboard dialog focus', async ({page, openApp}) => 
   expect(await page.getByRole('dialog').evaluate(dialog => dialog.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('html')).toHaveAttribute('lang', 'he');
   await expect(page.getByRole('heading', {name: 'נובמבר 2026'})).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('button', {name: 'Switch to English'}).click();
+  await switchLanguage(page, 'en');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 });
 

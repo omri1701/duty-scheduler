@@ -1,4 +1,4 @@
-import {test, expect, ids, NOW} from './fixtures';
+import {test, expect, ids, NOW, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 // Personal calendar subscription (decision 2026-11-06), in the settings screen's Calendar
@@ -12,7 +12,7 @@ const TEXT = {
 const token = (n: number) => n.toString(16).padStart(64, 'c');
 
 async function openSettings(page: Page, lang: 'en' | 'he') {
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   await page.getByRole('button', {name: lang === 'he' ? 'הגדרות' : 'Settings', exact: true}).click();
   return page.getByRole('dialog');
 }

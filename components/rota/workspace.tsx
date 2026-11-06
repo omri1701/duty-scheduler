@@ -7,7 +7,7 @@ import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
-import { Info, Globe } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { DutyEditor } from '@/components/rota/duty-editor';
@@ -279,14 +279,6 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
       <Toaster position="bottom-center" richColors />
       <WorkspaceHeader brand={<Link className="brand" href="/" aria-label="Duty home"><BrandContent t={t}/></Link>}>
           {remote.environment?.badge?<EnvironmentBadge environment={remote.environment}/>:<span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setLang(lang === 'en' ? 'he' : 'en')}
-            aria-label={t('Switch to Hebrew', 'Switch to English')}
-          >
-            <Globe />
-          </Button>
           <button
             className="avatar admin-avatar"
             data-settings-button

@@ -1,4 +1,4 @@
-import {test} from './fixtures';
+import {test, switchLanguage} from './fixtures';
 import {webkit, devices} from '@playwright/test';
 import {assertToolbar} from './toolbar-assertions';
 
@@ -11,7 +11,7 @@ for (const width of [1024,1280,1440,340,375,390,430]) {
       else await page.setViewportSize({width,height:1000});
       await openApp('admin',page);
       for (const language of ['en','he']) {
-        if (language === 'he') await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+        if (language === 'he') await switchLanguage(page, 'he');
         const evidence = await assertToolbar(page);
         await info.attach(`computed-${language}`,{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
       }

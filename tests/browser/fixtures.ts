@@ -485,6 +485,18 @@ export async function touchEvent(page: Page, type: string, x: number, y: number)
   }, {type, x, y});
 }
 
+/** Switch the signed-in app's language. It lives only in Settings (decision 2026-11-06):
+ * open Settings, choose the language, close. Does nothing when already in that language. */
+export async function switchLanguage(page: Page, lang: 'en' | 'he') {
+  if (await page.locator('html').getAttribute('lang') === lang) return;
+  await page.locator('[data-settings-button]').click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('radio', {name: lang === 'he' ? 'עברית' : 'English', exact: true}).check();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('html')).toHaveAttribute('dir', lang === 'he' ? 'rtl' : 'ltr');
+}
+
 /** Sign out of the workspace: Settings, then Sign out. */
 export async function signOutFromSettings(page: Page) {
   await page.getByRole('button', {name: 'Settings', exact: true}).click();

@@ -1,4 +1,4 @@
-import {test, expect, ids, duty, drag, targetReady} from './fixtures';
+import {test, expect, ids, duty, drag, targetReady, switchLanguage} from './fixtures';
 
 const net = (page: import('@playwright/test').Page, id: string) => page.locator(`[data-gesture-key="${id}"] .net-points button`);
 const call = (backend: import('./fixtures').Backend) => backend.calls.filter(c => c.name === 'duty_edit_published_duty');
@@ -50,7 +50,7 @@ test('admin edits a published duty: Temporary by default, copyable summary, new 
 
 test('Hebrew: an unavailable engineer needs an override reason; Permanent records no debt', async ({page, openApp, backend}) => {
   await openApp();
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   const owner = backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id)!.primary_id;
   await duty(page, '2026-11-04').click();
   const dialog = page.getByRole('dialog', {name: 'עריכת תורנות'});

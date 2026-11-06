@@ -1,4 +1,4 @@
-import {test, expect, duty, ids, MONTH} from './fixtures';
+import {test, expect, duty, ids, MONTH, switchLanguage} from './fixtures';
 
 test('lock edits save atomically with a new primary; dismissals discard both lock and unlock', async ({page, backend, openApp}) => {
   backend.raw.assignments.find(d => d.day === '2026-11-02' && !d.publication_id)!.manager_override = true;
@@ -65,7 +65,7 @@ test('lock-only save retains the existing override and failed saves keep the loc
 test('weekend lock covers both saved primaries and preserves emergency cover in Hebrew RTL', async ({page, backend, openApp}, info) => {
   const before = structuredClone(backend.raw.assignments.find(d => d.day === '2026-11-06' && !d.publication_id)!);
   await openApp();
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   await duty(page, '2026-11-06').click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');

@@ -1,4 +1,4 @@
-import {test,expect} from './fixtures';
+import {test,expect, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 async function bounds(page:Page){
@@ -39,7 +39,7 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
   test(`navigation geometry and forgiving drag ${width}px ${lang}`,async({page,openApp,backend},info)=>{
     test.skip(info.project.name!=='mobile','Phone matrix.');
     await page.setViewportSize({width,height:900});await openApp();
-    if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+    if(lang==='he')await switchLanguage(page, 'he');
     const tabs=page.getByRole('tab'),nav=page.locator('.mobile-navigation');
     const initial=await bounds(page),gutter=initial.pill.x-initial.viewport.left;
     close(gutter,16,'sixteen-pixel design gutter');

@@ -1,4 +1,4 @@
-import {test, expect} from './fixtures';
+import {test, expect, switchLanguage} from './fixtures';
 
 // Runs against next start by default, or the actual deployment via DUTY_E2E_URL.
 // Only app assets reach that origin: configuration, auth and RPC use synthetic fixtures.
@@ -23,7 +23,7 @@ for (const width of [1440, 390, 320]) {
     expect(stylesheets.length).toBeGreaterThan(0);
     for (const sheet of stylesheets) expect(sheet.rules, sheet.path).toBeGreaterThan(0);
     for (const language of ['en', 'he']) {
-      if (language === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+      if (language === 'he') await switchLanguage(page, 'he');
       await expect(page.locator('html')).toHaveAttribute('dir', language === 'he' ? 'rtl' : 'ltr');
       const phone = width <= 600;
       const nav = page.locator('.nav-row');
