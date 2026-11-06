@@ -1,4 +1,4 @@
-import {test,expect,ids,MONTH,duty} from './fixtures';
+import {test,expect,ids,MONTH,duty, switchLanguage} from './fixtures';
 import {validateGeneration} from '../../lib/scheduling/validate';
 import {readGenerationContext} from '../../lib/supabase/generation';
 
@@ -74,7 +74,7 @@ test('temporary member controls are absent for engineers',async({page,backend,op
 
 test('Hebrew temporary member dialog supports keyboard, validation and retry at 320px',async({page,backend,openApp},info)=>{
  await page.setViewportSize({width:320,height:812});await openApp();
- await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  await page.getByRole('button',{name:'הוספת חבר זמני',exact:true}).click();
  const dialog=page.getByRole('dialog');await expect(dialog).toHaveAttribute('dir','rtl');

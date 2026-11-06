@@ -1,4 +1,4 @@
-import {test, expect, duty, ids, type Backend} from './fixtures';
+import {test, expect, duty, ids, type Backend, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 // Fixture rows exist twice: the published copy and the working draft. The draft calendar is what the admin edits.
@@ -30,7 +30,7 @@ test('the holiday badge sits on the date line at normal row height and marks onl
   // Both dates +2: the badge is the weekend's total and both dates are marked.
   await expect(duty(page, '2026-11-12').locator('.tiny-badge')).toHaveText('+2');
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') {await page.getByRole('button', {name: 'Switch to Hebrew'}).click(); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
+    if (lang === 'he') {await switchLanguage(page, 'he'); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
     const b = await box(badge), line = await box(dateLine), cell = await box(weekend), neighbor = await box(duty(page, '2026-11-19'));
     expect(b.y).toBeGreaterThanOrEqual(line.y - 1); expect(b.y + b.height).toBeLessThanOrEqual(line.y + line.height + 1);
     // At the grid's inline end (right in a left-to-right grid, left in a right-to-left one), like a regular special cell.
@@ -100,7 +100,7 @@ test('adjacent duties of one member render as one bar with one name, one title a
   await expect(duty(page, '2026-11-10')).toHaveClass(/streak-only/);
   await expect(chip('2026-11-10')).not.toHaveText('');
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') {await page.getByRole('button', {name: 'Switch to Hebrew'}).click(); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
+    if (lang === 'he') {await switchLanguage(page, 'he'); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
     const a = await box(chip('2026-11-04')), b = await box(chip('2026-11-05')), weekend = await box(chip('2026-11-06')), sunday = await box(chip('2026-11-08'));
     // Joined inside a row: the bar runs on with no gap; the row break keeps each chip inside its own cell.
     if (await gridIsRtl(page)) expect(Math.abs(b.x + b.width - a.x)).toBeLessThanOrEqual(1); else expect(Math.abs(a.x + a.width - b.x)).toBeLessThanOrEqual(1);
@@ -130,7 +130,7 @@ test('each row of a streak is one level bar with no join, its name centred once 
   await expect(label('2026-11-08')).toHaveText('Blair');
   for (const day of ['2026-11-06', '2026-11-09']) await expect(chip(day)).toHaveText('');
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') {await page.getByRole('button', {name: 'Switch to Hebrew'}).click(); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
+    if (lang === 'he') {await switchLanguage(page, 'he'); await expect(page.locator('.app-shell')).toHaveAttribute('dir', 'rtl');}
     const rtl = await gridIsRtl(page);
     const thu = await box(chip('2026-11-05')), weekend = await box(chip('2026-11-06')), sun = await box(chip('2026-11-08')), mon = await box(chip('2026-11-09'));
     // Same top and height in every cell of a row segment, and as tall as a lone duty's bar; the joins meet edge to edge.
@@ -164,7 +164,7 @@ test('the lock, the dates and the +extra never overlap on a locked holiday weeke
   const overlap = (a: {x: number; y: number; width: number; height: number}, b: typeof a) =>
     a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
       await page.setViewportSize({width, height: 900});
       for (const day of ['2026-11-12', '2026-11-20', '2026-11-27', '2026-11-28']) {
@@ -199,7 +199,7 @@ test('weekend bars centre the name: plain, locked holiday, a weekend ending a st
   for (const r of rows(backend, '2026-11-26')) r.primary_id = ids.a;
   await openApp();
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
       await page.setViewportSize({width, height: 900});
       for (const day of ['2026-11-06', '2026-11-13', '2026-11-20', '2026-11-27', '2026-11-28']) {
@@ -220,7 +220,7 @@ test('single-day pills centre the name too: plain, with a second member, "(you)"
   await openApp();
   await expect(duty(page, '2026-11-17').locator('.assignment-chip small')).toContainText('(you)');
   for (const lang of ['en', 'he'] as const) {
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
       await page.setViewportSize({width, height: 900});
       for (const day of ['2026-11-02', '2026-11-03', '2026-11-12', '2026-11-17']) {

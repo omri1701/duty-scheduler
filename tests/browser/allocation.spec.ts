@@ -1,4 +1,4 @@
-import {test, expect, ids, MONTH, type Backend} from './fixtures';
+import {test, expect, ids, MONTH, type Backend, switchLanguage} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
 import {record} from '../../lib/compensation';
@@ -194,7 +194,7 @@ test('the pie shows one slice per member and the details of the slice or row in 
 for (const [width, lang] of [[320, 'he'], [375, 'en'], [1440, 'en']] as const) {
   test(`allocation visual review at ${width}px in ${lang}`, async ({page, backend, openApp}, info) => {
     fresh(backend); await page.setViewportSize({width, height: width === 1440 ? 1000 : 812}); await openApp();
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     await page.getByRole('button', {name: lang === 'he' ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', {name: lang === 'he' ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
@@ -253,7 +253,7 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   await expect(page.getByRole('dialog').locator('.allocation-details li')).toHaveText(`${first} → ${fourth} · 0.5 · 0.5 waiting for the second half · uneven split`);
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   await page.getByRole('button', {name: 'יצירת שיבוץ', exact: true}).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
@@ -416,7 +416,7 @@ test('keyboard action on an engineer opens Give 1 point to… and transfers exac
 test('long-press opens Give 1 point to… in Hebrew RTL on touch', async ({page, backend, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Touch path.');
   fresh(backend); await openApp();
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   await page.getByRole('button', {name: 'יצירת שיבוץ', exact: true}).click();
   await expect(page.getByRole('button', {name: 'אישור ושיבוץ', exact: true})).toBeEnabled({timeout: 30_000});
   const avery = member(page, 'Avery Admin'), alex = member(page, 'Alex Atlas');

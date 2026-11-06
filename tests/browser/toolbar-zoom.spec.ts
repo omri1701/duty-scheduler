@@ -1,4 +1,4 @@
-import {test,expect,seed} from './fixtures';
+import {test,expect,seed, switchLanguage} from './fixtures';
 import {assertToolbar,assertMonthMenu} from './toolbar-assertions';
 import {zoomContext,setBrowserZoom} from './zoom-context.mjs';
 
@@ -18,11 +18,11 @@ test('actual browser zoom adapts the served toolbar and menu in every manager st
     for(const zoom of [1,1.25,1.5,2]) {
      expect(await setBrowserZoom(context,page,zoom)).toBe(zoom);
      for(const lang of ['en','he']) {
-      if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+      if(lang==='he')await switchLanguage(page, 'he');
       const toolbar=await assertToolbar(page);
       if(toolbar.containerWidth<960)await assertMonthMenu(page);
       if(width===1280&&state==='reopened')await info.attach(`${lang}-${zoom}`,{body:await page.screenshot({scale:'css'}),contentType:'image/png'});
-      if(lang==='he')await page.getByRole('button',{name:'Switch to English',exact:true}).click();
+      if(lang==='he')await switchLanguage(page, 'en');
      }
     }
    }

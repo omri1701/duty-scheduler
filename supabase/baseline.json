@@ -138,6 +138,13 @@
     "schemas/functions/public/duty_calendar_reset.sql",
     "schemas/functions/public/duty_calendar_status.sql",
     "schemas/functions/public/duty_calendar_language.sql",
+    "schemas/tables/duty_notifications.sql",
+    "schemas/functions/duty_private/push_events.sql",
+    "schemas/functions/duty_private/push_settings.sql",
+    "schemas/functions/duty_private/push_delivery.sql",
+    "schemas/functions/public/duty_push.sql",
+    "schemas/triggers/duty_push_events.sql",
+    "schemas/policies/duty_notifications.sql",
     "schemas/grants/functions.sql",
     "schemas/grants/tables.sql"
   ],

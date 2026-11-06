@@ -1,4 +1,4 @@
-import {test,expect,ids,duty,drag,targetReady} from './fixtures';
+import {test,expect,ids,duty,drag,targetReady, switchLanguage} from './fixtures';
 import {blocks,ownerMonth} from '../../lib/rota/engine';
 import {webkit,devices} from '@playwright/test';
 
@@ -19,7 +19,7 @@ test('iPhone WebKit keeps published requests and bilingual version controls usab
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.getByRole('button',{name:'Reopen draft',exact:true}).click();
     for(const lang of ['en','he']) {
-      if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+      if(lang==='he')await switchLanguage(page, 'he');
       const controls=page.locator('.calendar-top');
       for(const button of await controls.getByRole('button').all()) {
         if(await button.isVisible())expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -152,7 +152,7 @@ for(const split of [false,true])for(const role of ['admin','a'] as const)for(con
   }
   await openApp(role);
   for(let i=0;i<14;i++)await page.getByRole('button',{name:'Next month',exact:true}).click();
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   const grid=page.locator('.calendar-grid');
   await expect(grid.locator('[data-date]').first()).toHaveAttribute('data-date','2028-01-02');
   const boundary=grid.locator(`[data-date="${split?'2028-01-01':'2027-12-31'}"]`);

@@ -44,3 +44,13 @@ GRANT SELECT ON TABLE public.duty_allocations TO authenticated;
 REVOKE ALL ON TABLE public.duty_calendar_feeds FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.duty_calendar_feeds TO authenticated;
 GRANT ALL ON TABLE public.duty_calendar_feeds TO service_role;
+-- Web push: members read only their own rows (RLS); writes go through checked RPCs,
+-- the event triggers and the scheduler.
+REVOKE ALL ON TABLE public.duty_notification_settings FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_notification_settings TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_subscriptions FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_subscriptions TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_notifications FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_notifications TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_deliveries FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_deliveries TO authenticated;

@@ -1,7 +1,8 @@
-import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids, targetReady} from './fixtures';
+import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids, targetReady, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
+import {mockPush, VAPID_PUBLIC_KEY} from './push-mock';
 
 // Retain the deployed Production baseline (no badge). Environment-specific
 // headers/access states have their own new snapshots in environment.spec.ts.
@@ -26,7 +27,7 @@ for(const lang of ['en','he'])test(`today accent in combined weekend ${lang}`,as
   await openApp();
   await page.clock.setFixedTime(new Date('2026-11-07T12:00:00Z'));
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   await expect(duty(page,'2026-11-06').locator('[aria-current="date"]')).toHaveText('7');
   await snapshot(page,`today-weekend-draft-${lang}`);
   await page.getByRole('button',{name:lang==='en'?'Published':'פורסם',exact:true}).click();
@@ -47,7 +48,7 @@ for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${la
     {id: `split-fri-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-27', end_day: '2026-11-28', primary_id: ids.d, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5},
     {id: `split-sat-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-28', end_day: '2026-11-29', primary_id: ids.e, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5});
   await openApp();
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   await snapshot(page, `streaks-${lang}`);
   // The app has no dark theme of its own; this checks that the OS preference leaves the calendar intact.
   await page.emulateMedia({colorScheme: 'dark'});
@@ -78,7 +79,7 @@ test('published swap confirmation and outgoing request', async ({page, openApp})
 for (const lang of ['en', 'he'] as const) test(`swap target hints ${lang}`, async ({page, openApp, backend}) => {
   backend.raw.constraints.push({member_id: ids.b, day: '2026-11-09', kind: 'no', note: 'Synthetic private note'});
   await openApp('a');
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
   await expect(duty(page, '2026-11-04')).toHaveClass(/swap-blocked/);
   await expect(duty(page, '2026-11-03')).toHaveClass(/swap-blocked/);
@@ -88,7 +89,7 @@ for (const lang of ['en', 'he'] as const) test(`swap target hints ${lang}`, asyn
 for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval summary ${lang}`, async ({page, openApp, backend}) => {
   const t = (en: string, he: string) => lang === 'en' ? en : he;
   await openApp('admin');
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   await page.getByRole('button', {name: t('Published', 'פורסם'), exact: true}).click();
   await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
   await targetReady(page, '2026-11-03'); await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
@@ -103,10 +104,12 @@ for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval
   backend.raw.constraints.push({member_id: ids.b, day: '2026-11-02', kind: 'no', note: 'Synthetic late note'});
   backend.raw.revision!++;
   await page.reload();
-  const toggle = page.getByRole('button', {name: /^Switch to (Hebrew|English)$/});
-  if (lang === 'he' && await toggle.getAttribute('aria-label') === 'Switch to Hebrew') await toggle.click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  // Clicking Approve scrolled the page; in a right-to-left page Chromium does not restore that
+  // scroll after a full-page capture, so successive captures differ. Start the capture at the top.
+  if (lang === 'he') await page.evaluate(() => window.scrollTo(0, 0));
   await snapshot(page, `admin-swap-approval-${lang}`);
 });
 test('pending approval', async ({page, openApp}) => {
@@ -116,7 +119,7 @@ test('pending approval', async ({page, openApp}) => {
 for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({page,openApp,backend})=>{
   backend.raw.months[0].status='published';
   await openApp();
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   const button=(en:string,he:string)=>page.getByRole('button',{name:lang==='en'?en:he,exact:true});
   await snapshot(page,`manager-published-${lang}`);
   await button('Next month','חודש הבא').click();
@@ -132,7 +135,7 @@ for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({
 for(const lang of ['en','he'])test(`manager clear board ${lang}`,async({page,openApp,backend})=>{
   for(const r of backend.raw.assignments)if(!r.publication_id&&['2026-11-02','2026-11-20'].includes(r.day))r.locked=true;
   await openApp();
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   const label=lang==='en'?'Clear board':'ניקוי הלוח';
   await snapshot(page,`manager-clear-board-button-${lang}`);
   await page.locator('.calendar-top').getByRole('button',{name:label,exact:true}).click();
@@ -145,7 +148,7 @@ for(const lang of ['en','he'])test(`manager clear board ${lang}`,async({page,ope
 for(const lang of ['en','he'])test(`published duty edit and summary ${lang}`,async({page,openApp,backend})=>{
   backend.raw.months[0].status='published';
   await openApp();
-  if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(lang==='he')await switchLanguage(page, 'he');
   const t=(en:string,he:string)=>lang==='en'?en:he;
   await duty(page,'2026-11-04').click();
   await page.getByRole('combobox',{name:t('Engineer','מהנדס'),exact:true}).click();
@@ -162,13 +165,13 @@ test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) =
   await page.keyboard.press('Escape');
   await monthAction(page, 'Versions'); await snapshot(page, 'version-history-en');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+  await switchLanguage(page, 'he');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl'); await snapshot(page, 'admin-draft-he');
 });
 test('engineer publication and availability', async ({page, openApp, backend}) => {
   await openApp('a'); await snapshot(page, 'engineer-published-en');
-  await page.getByRole('button', {name: 'Switch to Hebrew'}).click(); await snapshot(page, 'engineer-published-he');
-  await page.getByRole('button', {name: 'Switch to English'}).click();
+  await switchLanguage(page, 'he'); await snapshot(page, 'engineer-published-he');
+  await switchLanguage(page, 'en');
   backend.raw.months[0].current_publication_id = null;
   await page.reload(); await page.getByRole('tab', {name: 'Availability', exact: true}).click();
   await snapshot(page, 'engineer-availability-en');
@@ -178,7 +181,7 @@ test('phone availability sheet and team in English and Hebrew', async ({page, op
   test.skip(info.project.name !== 'mobile', 'Phone-only design.');
   await openApp();
   for (const lang of ['en', 'he']) {
-    if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+    if (lang === 'he') await switchLanguage(page, 'he');
     await page.getByRole('tab').nth(1).click();
     await page.locator('.availability-day[data-gesture-key="2026-11-05"]').click();
     await snapshot(page, `availability-sheet-${lang}`);
@@ -195,7 +198,7 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   backend.raw.assignments.push({id: 'locked', publication_id: null, day: '2026-11-10', end_day: '2026-11-11', primary_id: ids.admin, secondary_id: null, title: '', extra_points: 0, points: 1, locked: true, manager_override: false});
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
-  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (he) await switchLanguage(page, 'he');
   await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
   await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
   // Park the emulated mouse: a row opening under it would read as hovered.
@@ -232,7 +235,7 @@ for (const lang of ['en', 'he']) test(`non-weekend member ${lang}`, async ({page
   backend.raw.assignments.push({id: 'locked-weekend', publication_id: null, day: '2026-11-06', end_day: '2026-11-08', primary_id: ids.e, secondary_id: null, title: '', extra_points: 0, points: 1, locked: true, manager_override: false});
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
-  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (he) await switchLanguage(page, 'he');
   await page.getByRole('tab').nth(2).click();
   await snapshot(page, `team-no-weekends-${lang}`);
   await page.getByRole('tab').first().click();
@@ -262,7 +265,7 @@ for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${l
   backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
-  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (he) await switchLanguage(page, 'he');
   await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
   const confirm = dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true});
   await expect(confirm).toBeEnabled({timeout: 30_000});
@@ -289,8 +292,8 @@ for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${l
 for (const lang of ['en', 'he'] as const) test(`calendar subscription ${lang}`, async ({page, openApp}) => {
   await openApp('a');
   const he = lang === 'he';
-  if (he) await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
-  await page.getByRole('button', {name: he ? 'הפרופיל שלי' : 'My profile', exact: true}).click();
+  if (he) await switchLanguage(page, 'he');
+  await page.getByRole('button', {name: he ? 'הגדרות' : 'Settings', exact: true}).click();
   const section = page.getByRole('region', {name: he ? 'הרשמה ללוח השנה שלי' : 'Subscribe to my calendar'});
   await expect(section.getByRole('button', {name: he ? 'יצירת קישור ללוח השנה שלי' : 'Create my calendar link'})).toBeVisible();
   await snapshot(page, `calendar-subscription-new-${lang}`);
@@ -301,4 +304,32 @@ for (const lang of ['en', 'he'] as const) test(`calendar subscription ${lang}`, 
   await section.getByRole('button', {name: he ? 'איפוס הקישור' : 'Reset link'}).click();
   await expect(section.getByRole('group')).toBeVisible();
   await snapshot(page, `calendar-subscription-reset-${lang}`);
+});
+
+// The settings screen (decision 2026-11-06), before and after enabling notifications (Push mocked).
+for (const lang of ['en', 'he']) test(`settings screen ${lang}`, async ({page, openApp, backend}) => {
+  await mockPush(page);
+  backend.vapidPublicKey = VAPID_PUBLIC_KEY;
+  await openApp();
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await page.getByRole('button', {name: lang === 'en' ? 'Settings' : 'הגדרות', exact: true}).click();
+  const sheet = page.getByRole('dialog');
+  const enable = sheet.getByRole('button', {name: lang === 'en' ? 'Enable notifications' : 'הפעלת התראות'});
+  await expect(enable).toBeEnabled();
+  await expect(sheet.getByRole('checkbox').first()).toBeEnabled();
+  await snapshot(page, `settings-${lang}`);
+  await enable.click();
+  await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Turn off on this device' : 'כיבוי במכשיר הזה'})).toBeEnabled();
+  await snapshot(page, `settings-enabled-${lang}`);
+  // The reminder-time wheels open under their row (decision 2026-11-06), in light and dark mode.
+  const evening = sheet.getByRole('button', {name: lang === 'en' ? /^Evening before my duty · time/ : /^ערב לפני התורנות · שעה/});
+  await evening.click();
+  const wheels = sheet.locator('.time-wheels');
+  await expect(wheels.getByRole('spinbutton').first()).toHaveAttribute('aria-valuenow', '18');
+  await wheels.evaluate(el => el.scrollIntoView({block: 'center'}));
+  await expect.poll(() => wheels.locator('.time-wheel').first().evaluate(el => el.scrollTop)).toBe(18 * 44);
+  await snapshot(page, `settings-wheel-${lang}`);
+  await page.emulateMedia({colorScheme: 'dark'});
+  await snapshot(page, `settings-wheel-dark-${lang}`);
+  await page.emulateMedia({colorScheme: 'light'});
 });

@@ -16,10 +16,15 @@ CREATE TABLE public.duty_members (
     -- Set when the setting is cleared (decision 2026-11-05): the weekend rotation ignores
     -- the member's duties in months before this one, so they rejoin level, like a new member.
     weekends_from text,
+    -- The member's own app language (decision 2026-11-06): the default on sign-in and on a
+    -- new device, and the language of their notifications. NULL until they first choose.
+    -- Only duty_private.set_language writes it, for the caller's own row.
+    language text,
     CONSTRAINT duty_members_identity_check CHECK ((is_temporary AND email IS NULL AND role = 'engineer' AND status = 'approved') OR (NOT is_temporary AND email IS NOT NULL)),
     CONSTRAINT duty_members_color_check CHECK ((color ~ '^#[0-9a-fA-F]{6}$'::text)),
     CONSTRAINT duty_members_name_check CHECK (((length(TRIM(BOTH FROM name)) >= 1) AND (length(TRIM(BOTH FROM name)) <= 80))),
     CONSTRAINT duty_members_seniority_check CHECK ((seniority >= 0)),
+    CONSTRAINT duty_members_language_check CHECK ((language = ANY (ARRAY['en'::text, 'he'::text]))),
     CONSTRAINT duty_members_weekends_from_check CHECK ((weekends_from ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text))
 );
 

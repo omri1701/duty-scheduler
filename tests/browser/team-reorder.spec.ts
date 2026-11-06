@@ -1,4 +1,4 @@
-import {test,expect,ids,touchEvent} from './fixtures';
+import {test,expect,ids,touchEvent, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 const rows=(page:Page)=>page.locator('.gesture-grid.team-list > .team-row');
@@ -9,7 +9,7 @@ for(const lang of ['en','he'] as const) test(`vertical team stack, cancellation,
  // Keep all measured rows visible on touch while varying heights and slot gaps.
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
- if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ if(lang==='he')await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  await page.addStyleTag({content:`.gesture-grid.team-list > [data-gesture-key="${ids.a}"]{padding-block:22px}.gesture-grid.team-list > [data-gesture-key="${ids.c}"]{padding-block:18px}.gesture-grid.team-list > .team-row:nth-child(2){margin-bottom:11px}.gesture-grid.team-list > .team-row:nth-child(4){margin-bottom:7px}`});
  const initial=await order(page),mobile=info.project.name==='mobile';

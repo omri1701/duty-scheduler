@@ -25,6 +25,7 @@ const calendar = ['calendar-controls', 'calendar-final-polish', 'interaction-pol
 const mobile = ['mobile-interactions', 'mobile-layout', 'mobile-navigation', 'month-navigation', 'calendar-final-polish'];
 const editors = ['editor-dialogs', 'availability-polish', 'cleanup', 'duty-locks', 'mobile-layout'];
 const team = ['team-optimistic', 'team-reorder', 'temporary-members', 'cleanup', 'final-polish'];
+const settings = ['settings', 'cleanup', 'google-login', 'supabase-lifecycle', 'environment'];
 const startup = ['startup', 'startup-layout', 'startup-layout-capture', 'startup-performance-capture', 'environment', 'google-login'];
 
 // Explicit source -> spec map (exact file, or directory ending in "/"). Anything unmapped,
@@ -43,8 +44,13 @@ export const SPEC_MAP = {
   'components/rota/mobile-navigation.tsx': mobile,
   'components/rota/month-heading.tsx': calendar,
   'components/rota/navigation-presentation.tsx': mobile,
-  'components/rota/profile-dialog.tsx': ['cleanup', 'final-polish'],
+  'app/api/push/': ['settings'],
   'components/rota/publication-history.tsx': ['calendar-controls'],
+  'components/rota/calendar-subscription.tsx': ['calendar-subscription', 'settings'],
+  'components/rota/settings-calendar.tsx': [...settings, 'calendar-subscription'],
+  'components/rota/settings-notifications.tsx': settings,
+  'components/rota/settings-screen.tsx': settings,
+  'components/rota/time-wheel.tsx': settings,
   'components/rota/swap-requests.tsx': ['swaps', 'calendar-controls'],
   'components/rota/team-list.tsx': team,
   'components/rota/temporary-member-dialog.tsx': team,
@@ -61,6 +67,7 @@ export const SPEC_MAP = {
   'hooks/use-optimistic-team.ts': team,
   'lib/allocation/': allocation,
   'lib/compensation/': allocation,
+  'lib/push/': settings,
   'lib/date-format.ts': calendar,
   'lib/rota/calendar-dates.ts': [...calendar, 'startup-layout', 'startup-layout-capture'],
   'lib/rota/drag-presentation.ts': calendar,

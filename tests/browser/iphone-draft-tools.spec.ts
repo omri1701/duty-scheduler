@@ -1,4 +1,4 @@
-import {test, expect} from './fixtures';
+import {test, expect, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 import {existsSync} from 'node:fs';
 
@@ -38,7 +38,7 @@ for (const reopened of [false, true]) for (const lang of ['en', 'he'] as const)
 test(`calendar tools stay on one row on iPhones, ${lang}, ${reopened ? 'reopened draft' : 'new draft'}`, async ({page, backend, openApp}) => {
   if (!reopened) backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft'};
   await openApp();
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
+  if (lang === 'he') await switchLanguage(page, 'he');
   const tools = page.locator('.calendar-draft-tools'), buttons = tools.locator('button');
   const names = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
   for (const width of WIDTHS) {

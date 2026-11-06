@@ -3,7 +3,8 @@ import {createClient} from '@supabase/supabase-js';
 import type {Database,DutyClient} from './rpc.ts';
 import {resolveEnvironment, validatePublicKey, type Environment} from './environment.ts';
 import {guardedFetch, registerEnvironment} from './write-policy.ts';
-type Connection = {client: DutyClient; url: string; key: string; environment: Environment};
+import {validVapidPublicKey} from '../push/endpoint.ts';
+type Connection = {client: DutyClient; url: string; key: string; environment: Environment; vapidPublicKey: string | null};
 let pending:Promise<Connection>|undefined;
 function getConnection(){
  if(!pending)pending=fetch('/api/config',{cache:'no-store'}).then(async response=>{
@@ -24,12 +25,15 @@ function getConnection(){
   } catch {throw Error('Invalid connection configuration.');}
   const client=createClient<Database>(api,key,{global:{fetch:guardedFetch(api,environment)},auth:{storageKey:environment.storageKey,flowType:'pkce',detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
   registerEnvironment(client,environment);
-  return {url,key,client,environment};
+  // Absent until the server has VAPID keys: settings then explains that notifications aren't set up.
+  const vapidPublicKey='vapidPublicKey' in config&&validVapidPublicKey(config.vapidPublicKey)?config.vapidPublicKey:null;
+  return {url,key,client,environment,vapidPublicKey};
  }).catch(error=>{pending=undefined;throw error});
  return pending;
 }
 export async function getSupabase(): Promise<DutyClient>{return (await getConnection()).client}
 export async function getEnvironment(){return (await getConnection()).environment}
+export async function getVapidPublicKey(){return (await getConnection()).vapidPublicKey}
 export async function signInLocally(email: string,password: string){
  const {client,environment}=await getConnection();
  if(environment.target!=='local')throw Error('Password login is available only for LOCAL.');

@@ -7,13 +7,15 @@ import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
-import { Info, Globe } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { DutyEditor } from '@/components/rota/duty-editor';
 import { PublishedDutyEditor } from '@/components/rota/published-duty-editor';
 import { editablePublishedDuty } from '@/lib/supabase/published-edit';
-import { ProfileDialog } from '@/components/rota/profile-dialog';
+import { SettingsScreen } from '@/components/rota/settings-screen';
+import { deepLink } from '@/lib/push/settings';
+import { currentSubscription, describe } from '@/lib/push/browser';
 import { PublicationHistory } from '@/components/rota/publication-history';
 import { SwapRequests } from '@/components/rota/swap-requests';
 import { WorkspaceAvailability } from './workspace-availability';
@@ -64,11 +66,33 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
   }, [mobile]);
   const isManager = remote.isAdmin,
     meId = remote.user!.id;
-  const [month, setMonth] = useState(initialCalendarMonth),
-    [tab, setTab] = useState('schedule');
+  // A notification opens the screen it links to (`/?tab=…&month=…`, decision 2026-11-06).
+  const [link] = useState(() => typeof window === 'undefined' ? {} : deepLink(window.location.search));
+  const [month, setMonth] = useState(() => link.month ?? initialCalendarMonth()),
+    [tab, setTab] = useState<string>(link.tab ?? 'schedule');
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('tab') || url.searchParams.has('month')) {
+      url.searchParams.delete('tab'); url.searchParams.delete('month');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    }
+    // A notification tapped while the app is open (public/sw.js falls back to a message).
+    const open = (event: MessageEvent) => {
+      if (event.data?.type !== 'duty-open' || typeof event.data.url !== 'string') return;
+      const next = deepLink(event.data.url.replace(/^\/\?/, '?'));
+      if (next.month) setMonth(next.month);
+      if (next.tab) setTab(next.tab);
+    };
+    navigator.serviceWorker?.addEventListener('message', open);
+    // A device that already receives notifications belongs to whoever is signed in now.
+    if (!remote.readOnly && typeof Notification !== 'undefined' && Notification.permission === 'granted')
+      void currentSubscription().then(subscription => subscription && remote.personal.saveDevice(describe(subscription))).catch(() => {});
+    return () => navigator.serviceWorker?.removeEventListener('message', open);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per signed-in workspace
+  }, []);
   const state = remote.state!;
   const today = useIsraelToday();
-  const [profileOpen, setProfileOpen] = useState(false),
+  const [settingsOpen, setSettingsOpen] = useState(false),
     [historyOpen, setHistoryOpen] = useState(false);
   const [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
@@ -255,18 +279,12 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
       <Toaster position="bottom-center" richColors />
       <WorkspaceHeader brand={<Link className="brand" href="/" aria-label="Duty home"><BrandContent t={t}/></Link>}>
           {remote.environment?.badge?<EnvironmentBadge environment={remote.environment}/>:<span className="demo-badge">{t('TEAM WORKSPACE', 'סביבת הצוות')}</span>}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setLang(lang === 'en' ? 'he' : 'en')}
-            aria-label={t('Switch to Hebrew', 'Switch to English')}
-          >
-            <Globe />
-          </Button>
           <button
             className="avatar admin-avatar"
-            onClick={() => setProfileOpen(true)}
-            aria-label={t('My profile', 'הפרופיל שלי')}
+            data-settings-button
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t('Settings', 'הגדרות')}
+            title={t('Settings', 'הגדרות')}
           >
             {remote?.me?.name
               .split(' ')
@@ -274,11 +292,6 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
               .join('')
               .slice(0, 2) || 'AM'}
           </button>
-          {remote && (
-            <Button variant="ghost" size="sm" onClick={() => remote.signOut()}>
-              {t('Sign out', 'יציאה')}
-            </Button>
-          )}
       </WorkspaceHeader>
       <main className="main-wrap">
         <div className="workspace-status">
@@ -443,7 +456,7 @@ export function RotaWorkspace({ remote, lang, setLang }: { remote: TeamWorkspace
         </fieldset>
         <WorkspaceFooter t={t} onExport={exportBackup}/>
       </main>
-      <ProfileDialog remote={remote} open={profileOpen} onOpenChange={setProfileOpen} lang={lang} />
+      <SettingsScreen remote={remote} open={settingsOpen} onOpenChange={setSettingsOpen} lang={lang} setLang={setLang} />
       {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} monthLabel={monthLabel} lang={lang} t={t}/>}
       {isManager && (
         <PublicationHistory

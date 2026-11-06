@@ -30,7 +30,7 @@ for(const {name,url,origin,badge} of [
     await page.keyboard.press('Escape');
    }else await expect(page.getByRole('button',{name:'Change month deadline'})).toBeDisabled();
    await expect(duty(page,'2026-11-02')).toBeDisabled();
-   await page.getByRole('button',{name:'My profile'}).click();
+   await page.getByRole('button',{name:'Settings'}).click();
    await expect(page.getByRole('button',{name:'Save name'})).toBeDisabled();
    await page.keyboard.press('Escape');
    await page.getByRole('tab',{name:'Team & fairness'}).click();

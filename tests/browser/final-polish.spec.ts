@@ -1,4 +1,4 @@
-import {test,expect,ids,duty,touchEvent,NOW} from './fixtures';
+import {test,expect,ids,duty,touchEvent,NOW, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 test('native select cloning loses the live role selection',async({page})=>{
@@ -17,7 +17,7 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
  const original=structuredClone(backend.raw.members);
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await page.emulateMedia({reducedMotion:'no-preference'});await openApp();
- if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ if(lang==='he')await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  for(const id of [ids.admin,ids.a,ids.e]){
   const row=page.locator(`.gesture-grid [data-gesture-key="${id}"]`),handle=row.locator('.team-grip');
@@ -89,7 +89,7 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  }
  if(availability)backend.raw.constraints.push({member_id:ids.a,day:'2026-11-07',kind:'no',note:'Weekend vacation'});
  const published=structuredClone(backend.raw.assignments.filter(d=>d.publication_id!==null));
- await openApp();if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew'}).click();
+ await openApp();if(lang==='he')await switchLanguage(page, 'he');
  const mobile=info.project.name==='mobile',dialog=page.getByRole('dialog'),confirm=dialog.locator('button').filter({hasText:lang==='en'?'Confirm swap':'אישור החלפה'});
  await propose(page,mobile);
  await expect(dialog).toContainText(lang==='en'?'Alex Atlas 2 weekends in November':'Alex Atlas 2 סופי שבוע בחודש נובמבר');

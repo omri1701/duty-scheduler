@@ -1,4 +1,4 @@
-import {test,expect,ids,duty,drag,seed} from './fixtures';
+import {test,expect,ids,duty,drag,seed, switchLanguage} from './fixtures';
 import {webkit,devices} from '@playwright/test';
 
 // Eligibility and date accents must use Israel even on an engineer's foreign browser.
@@ -25,7 +25,7 @@ test('iPhone all manager states keep menu and workflow actions on one row',async
     backend.raw=managerMonth(state);
     const page=await context.newPage();await openApp('admin',page);
     for(const lang of ['en','he']) {
-      if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+      if(lang==='he')await switchLanguage(page, 'he');
       for(const width of [375,390,430]) {
         await page.setViewportSize({width,height:844});
         const buttons=page.locator('.toolbar-actions').getByRole('button');
@@ -69,7 +69,7 @@ test('desktop direct tools frame a centered month in all manager states',async({
   for(const state of managerStates) {
     backend.raw=managerMonth(state);await openApp();
     for(const lang of ['en','he']) {
-      if(lang==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+      if(lang==='he')await switchLanguage(page, 'he');
       for(const width of [1024,1280,1440]) {
         await page.setViewportSize({width,height:1000});
         await expect(page.getByRole('button',{name:lang==='en'?'Month actions':'פעולות לחודש',exact:true})).toHaveCount(0);

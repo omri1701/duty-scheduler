@@ -1,19 +1,19 @@
-import {test, expect, ids, NOW} from './fixtures';
+import {test, expect, ids, NOW, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
-// Personal calendar subscription (decision 2026-11-06), in the profile dialog until the
-// settings screen's Calendar section takes it. Runs on the desktop and phone projects.
+// Personal calendar subscription (decision 2026-11-06), in the settings screen's Calendar
+// section. Runs on the desktop and phone projects.
 const TEXT = {
-  en: {profile: 'My profile', section: 'Subscribe to my calendar', create: 'Create my calendar link', apple: 'Add to Apple Calendar', google: 'Add to Google Calendar',
+  en: {section: 'Subscribe to my calendar', create: 'Create my calendar link', apple: 'Add to Apple Calendar', google: 'Add to Google Calendar',
     copy: 'Copy link', reset: 'Reset link', cancel: 'Cancel', copied: 'Link copied.', link: 'Calendar link', active: /Your calendar link is active/, google_help: /Google Calendar can take a few hours/},
-  he: {profile: 'My profile', section: 'הרשמה ללוח השנה שלי', create: 'יצירת קישור ללוח השנה שלי', apple: 'הוספה ליומן Apple', google: 'הוספה ליומן Google',
+  he: {section: 'הרשמה ללוח השנה שלי', create: 'יצירת קישור ללוח השנה שלי', apple: 'הוספה ליומן Apple', google: 'הוספה ליומן Google',
     copy: 'העתקת הקישור', reset: 'איפוס הקישור', cancel: 'ביטול', copied: 'הקישור הועתק.', link: 'קישור ללוח השנה', active: /הקישור ללוח השנה שלך פעיל/, google_help: /ביומן Google השינויים עשויים להופיע רק אחרי כמה שעות/},
 } as const;
 const token = (n: number) => n.toString(16).padStart(64, 'c');
 
-async function openProfile(page: Page, lang: 'en' | 'he') {
-  if (lang === 'he') await page.getByRole('button', {name: 'Switch to Hebrew', exact: true}).click();
-  await page.getByRole('button', {name: lang === 'he' ? 'הפרופיל שלי' : 'My profile', exact: true}).click();
+async function openSettings(page: Page, lang: 'en' | 'he') {
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await page.getByRole('button', {name: lang === 'he' ? 'הגדרות' : 'Settings', exact: true}).click();
   return page.getByRole('dialog');
 }
 
@@ -23,7 +23,7 @@ for (const lang of ['en', 'he'] as const) test(`create, copy and reset my calend
   // Headless Linux has no system clipboard; capture what the page copies instead.
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable: true,
     value: {writeText: async (text: string) => {(window as unknown as {copied: string}).copied = text;}}}));
-  const dialog = await openProfile(page, lang);
+  const dialog = await openSettings(page, lang);
   const section = dialog.getByRole('region', {name: x.section});
   await expect(section).toBeVisible();
   await expect(section).toContainText(x.google_help);
@@ -65,7 +65,7 @@ for (const lang of ['en', 'he'] as const) test(`create, copy and reset my calend
   // Reopening on this device shows the same link again without a reset.
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
-  await page.getByRole('button', {name: lang === 'he' ? 'הפרופיל שלי' : 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: lang === 'he' ? 'הגדרות' : 'Settings', exact: true}).click();
   await expect(section.getByRole('textbox', {name: x.link})).toHaveValue(`${origin}/api/calendar/${token(2)}.ics`);
   expect(backend.calendarResets).toBe(2);
 });
@@ -75,7 +75,7 @@ for (const lang of ['en', 'he'] as const) test(`a link made on another device is
   // Made earlier in the other language: opening here moves the feed to this language.
   backend.calendars.set(ids.a, {createdAt: NOW, language: lang === 'en' ? 'he' : 'en'});
   await openApp('a');
-  const dialog = await openProfile(page, lang), section = dialog.getByRole('region', {name: x.section});
+  const dialog = await openSettings(page, lang), section = dialog.getByRole('region', {name: x.section});
   await expect(section).toContainText(x.active);
   await expect(section).toContainText(lang === 'en' ? '9 Oct 2026' : '9 באוק׳ 2026');
   await expect(section.getByRole('link')).toHaveCount(0);
@@ -89,12 +89,12 @@ for (const lang of ['en', 'he'] as const) test(`a link made on another device is
 
 test('signing out forgets the link on this device', async ({page, openApp}) => {
   await openApp('a');
-  const dialog = await openProfile(page, 'en');
+  const dialog = await openSettings(page, 'en');
   await dialog.getByRole('button', {name: TEXT.en.create, exact: true}).click();
   await expect(dialog.getByRole('link', {name: TEXT.en.apple})).toBeVisible();
   expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('duty-calendar-link:')).length)).toBe(1);
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', {name: 'Sign out', exact: true}).click();
+  // Sign out is in the settings screen (decision 2026-11-06).
+  await dialog.getByRole('button', {name: 'Sign out', exact: true}).click();
   await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('duty-calendar-link:')).length)).toBe(0);
 });
 

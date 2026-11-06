@@ -1,4 +1,4 @@
-import {test,expect,ids,MONTH,duty} from './fixtures';
+import {test,expect,ids,MONTH,duty, switchLanguage} from './fixtures';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {canonicalDuties} from '../../lib/scheduling/calendar';
 
@@ -9,7 +9,7 @@ const name=(backend:{raw:{members:{id:string;name:string}[]}},id:string)=>backen
 for(const lang of ['en','he'] as const)test(`admin marks a member as non-weekend in Team ${lang}`,async({page,openApp,backend})=>{
  const he=lang==='he',label=he?'ללא סופי שבוע':'No weekends';
  await openApp();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  const row=page.locator(`.gesture-grid [data-gesture-key="${ids.e}"]`),toggle=row.getByRole('checkbox',{name:`${label} ${name(backend,ids.e)}`,exact:true});
  await expect(toggle).toBeVisible();await expect(toggle).not.toBeChecked();
@@ -21,7 +21,7 @@ for(const lang of ['en','he'] as const)test(`admin marks a member as non-weekend
  expect(backend.calls.filter(c=>c.name==='duty_set_no_weekends').map(c=>c.params.p_no_weekends)).toEqual([true]);
  // It is a standing setting: it survives a reload, and only another click clears it.
  await page.reload();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await page.getByRole('tab').nth(2).click();
  await expect(toggle).toBeChecked();
  await toggle.click();await expect(toggle).not.toBeChecked();
@@ -46,7 +46,7 @@ async function openPlan(page:import('@playwright/test').Page,backend:import('./f
  backend.raw.assignments.push({id:'locked-weekend',publication_id:null,day:'2026-11-06',end_day:'2026-11-08',primary_id:ids.e,secondary_id:null,title:'',extra_points:0,points:1,locked:true,manager_override:false});
  await openApp();
  const he=lang==='he',dialog=page.getByRole('dialog');
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  return {dialog,row:dialog.locator(`.plan-row[data-engineer="${ids.e}"]`)};
@@ -87,7 +87,7 @@ for(const lang of ['en','he'] as const)test(`Plan the month says before Generate
  for(const takers of [1,0]){
   participants.forEach((m,i)=>{m.no_weekends=i>=takers;});
   await page.reload();
-  if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+  if(he)await switchLanguage(page, 'he');
   await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
   await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
   await expect(dialog.getByRole('note').filter({hasText:takers?(he?'רק חבר אחד כאן עושה סופי שבוע':'Only one member here takes weekends'):(he?'אף אחד כאן לא עושה סופי שבוע':'No one here takes weekends')})).toBeVisible();
@@ -100,7 +100,7 @@ for(const lang of ['en','he'] as const)test(`Plan the month says when the weeken
  const participants=backend.raw.members.filter(m=>m.active&&m.status==='approved');
  participants.forEach((m,i)=>{m.no_weekends=i>=1;});
  await page.reload();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  const taker=participants[0].name,left=await dialog.locator('.allocation-row-note').filter({hasText:new RegExp(`^${he?'ללא סופי שבוע':'No weekends'}$`)}).count();
@@ -153,7 +153,7 @@ for(const lang of ['en','he'] as const)test(`Reset in Plan the month returns to 
 for(const lang of ['en','he'] as const)test(`clearing a weekend in the editor keeps it one weekend ${lang}`,async({page,openApp,backend})=>{
  const he=lang==='he';
  await openApp();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await duty(page,'2026-11-06').click();
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
@@ -174,7 +174,7 @@ for(const lang of ['en','he'] as const)test(`placing a No weekends member on a w
  // The weekend starts with someone else, so the member is newly placed.
  backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
  await openApp();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await duty(page,'2026-11-06').click();
  const dialog=page.getByRole('dialog'),save=dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true});
  await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
@@ -204,7 +204,7 @@ for(const lang of ['en','he'] as const)test(`a published weekend edit to a No we
  // The weekend starts with someone else, so the member is newly placed.
  backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
  await openApp();
- if(he)await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
+ if(he)await switchLanguage(page, 'he');
  await duty(page,'2026-11-06').click();
  const dialog=page.getByRole('dialog'),review=dialog.getByRole('button',{name:he?'בדיקת השינוי':'Review change',exact:true});
  await dialog.getByRole('combobox',{name:he?'מהנדס':'Engineer',exact:true}).click();

@@ -254,3 +254,40 @@ GRANT EXECUTE ON FUNCTION duty_private.calendar_language(p_language text) TO aut
 
 REVOKE ALL ON FUNCTION public.duty_calendar_language(p_language text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_calendar_language(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_language(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_language(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_set_language(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_language(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.notification_settings() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.notification_settings() TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_notification_settings() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_notification_settings() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_notification_settings(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_notification_settings(jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_set_notification_settings(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_notification_settings(jsonb) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.save_push_subscription(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.save_push_subscription(text, text, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_save_push_subscription(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_save_push_subscription(text, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.delete_push_subscription(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.delete_push_subscription(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_delete_push_subscription(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_delete_push_subscription(text) TO authenticated;
+
+-- Internal: triggers and the pg_cron scheduler (runs as the owner). No client access.
+REVOKE ALL ON FUNCTION duty_private.push_enqueue(uuid, text, text, jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_month_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_swap_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_member_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_schedule(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_settle(bigint, integer, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_reconcile(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_dispatch(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_tick() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_dispatch_now() FROM PUBLIC, anon, authenticated, service_role;

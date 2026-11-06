@@ -1,4 +1,4 @@
-import {test, expect, ids, duty, monthAction, touchEvent} from './fixtures';
+import {test, expect, ids, duty, monthAction, touchEvent, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
 async function fits(page: Page) {
@@ -17,7 +17,7 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
     for (const identity of ['admin', 'a'] as const) {
       await openApp(identity);
       for (const language of ['en', 'he'] as const) {
-        if (language === 'he') await page.getByRole('button', {name: 'Switch to Hebrew'}).click();
+        if (language === 'he') await switchLanguage(page, 'he');
         if (width <= 600) await expect(page.locator('.main-tabs')).toHaveCSS('direction', language === 'he' ? 'rtl' : 'ltr');
         const tabs = page.getByRole('tab');
         await tabs.nth(0).click();
@@ -62,7 +62,7 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
       }
     }
     expect(backend.raw).toEqual(original);
-    expect(backend.calls.filter(c => !['duty_load','duty_join','duty_generation_context','duty_balance'].includes(c.name))).toEqual([]);
+    expect(backend.calls.filter(c => !['duty_load','duty_join','duty_generation_context','duty_balance','duty_set_language','duty_notification_settings','duty_calendar_status'].includes(c.name))).toEqual([]);
     for(const call of backend.calls.filter(c=>c.name==='duty_generation_context'))expect(call.user).toBe(ids.admin);
   });
 }
