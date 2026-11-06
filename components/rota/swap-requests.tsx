@@ -124,9 +124,8 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
    <div className="swap-card-text">
     <strong>{incoming?answerFor===me?t(`${name(r.requester_id===me?r.other_id:r.requester_id)} asks to swap`,`${name(r.requester_id===me?r.other_id:r.requester_id)} מבקש/ת להחליף`):t(`Answer for ${name(answerFor!)} (temporary)`,`מענה עבור ${name(answerFor!)} (זמני)`):admin?t('Swap to approve','החלפה לאישור'):r.proposed_by===me?t('Your proposal','ההצעה שלך'):t('Your request','הבקשה שלך')}</strong>
     <span className="swap-card-pair">
-     <Avatar name={name(r.requester_id)} color={member(r.requester_id)?.color} size={22}/>{you(r.requester_id)} · {spanOf(r.from_day,r.from_end_day,lang)}
-     <span className="swap-arrow">↔</span>
-     <Avatar name={name(r.other_id)} color={member(r.other_id)?.color} size={22}/>{you(r.other_id)} · {spanOf(r.to_day,r.to_end_day,lang)}
+     <span className="swap-party"><Avatar name={name(r.requester_id)} color={member(r.requester_id)?.color} size={22}/>{you(r.requester_id)} · {spanOf(r.from_day,r.from_end_day,lang)}</span>
+     <span className="swap-party"><span className="swap-arrow">↔</span><Avatar name={name(r.other_id)} color={member(r.other_id)?.color} size={22}/>{you(r.other_id)} · {spanOf(r.to_day,r.to_end_day,lang)}</span>
     </span>
     {r.proposed_by&&r.proposed_by!==me&&<small>{t('Proposed by','הוצעה על ידי')} {name(r.proposed_by)}</small>}
     {waiting.length>0&&(r.proposed_by||waiting.some(id=>temporary.has(id)))&&!incoming&&<small>{t('Waiting for','ממתינה ל')}: {waiting.map(id=>temporary.has(id)?t(`${name(id)} (temporary, an admin answers)`,`${name(id)} (זמני, מנהל עונה)`):name(id)).join(', ')}</small>}

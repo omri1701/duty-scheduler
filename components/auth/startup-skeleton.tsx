@@ -3,6 +3,8 @@ import {Logo, Wordmark} from '@/components/brand/logo';
 import {LoadingNavigation, navigationItems, NavigationLabel} from '@/components/rota/navigation-presentation';
 import {EnvironmentBadge, InspectionWarning} from '@/components/environment-indicator';
 import {Skeleton} from '@/components/ui/skeleton';
+import {tabsTriggerStyles} from '@/components/ui/tabs-styles';
+import {cn} from '@/lib/utils';
 import {Card} from '@/components/ui/card';
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import type {Environment} from '@/lib/supabase/environment';
@@ -19,7 +21,7 @@ export function StartupSkeleton({lang, environment}: {lang: 'en' | 'he'; environ
       {!mobile && <aside className="side">
         <div className="side-brand"><Wordmark size={30}/></div>
         <div className="side-nav" data-slot="tabs-list">
-          {navigationItems(t).map(item => <button disabled key={item.value} className="side-item" data-slot="tabs-trigger" data-state={item.value === 'home' ? 'active' : 'inactive'}><NavigationLabel item={item}/></button>)}
+          {navigationItems(t).map(item => <button disabled key={item.value} className={cn(tabsTriggerStyles, 'side-item')} data-slot="tabs-trigger" data-state={item.value === 'home' ? 'active' : 'inactive'}><NavigationLabel item={item}/></button>)}
         </div>
       </aside>}
       <div className="app-main">

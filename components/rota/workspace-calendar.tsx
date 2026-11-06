@@ -91,7 +91,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
         >
           <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end, -1) : undefined}>
             {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={11}/></span>}
-            {cell?.badge !== undefined && <span className="tiny-badge">+{cell.badge}</span>}
+            {cell?.badge !== undefined && <span className="tiny-badge" dir="ltr">+{cell.badge}</span>}
           </CalendarDateLine>
           {b && (p || interactive) && <>
             <CalendarAssignment className={(p ? 'member-tint' : 'empty-assignment') + (mine ? ' mine-chip' : '')}>
@@ -103,7 +103,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
               : <span className="pill-text">{draft ? t('Open', 'פנוי') : '—'}</span>}
             </CalendarAssignment>
             {b.title && cell?.showTitle !== false && <div className="special-title">{b.title}</div>}
-            {a?.secondary && <div className="secondary-name">+ {nickname(a.secondary)}</div>}
+            {a?.secondary && <div className="secondary-name"><bdi dir="ltr">+ {nickname(a.secondary)}</bdi></div>}
           </>}
         </CalendarDay>
       );

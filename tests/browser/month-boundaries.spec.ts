@@ -25,7 +25,8 @@ for(const iphone of [false,true])for(const split of [false,true])for(const lang 
       for(let i=0;i<13;i++)await page.getByRole('button',{name:'Next month',exact:true}).click();
       if(lang==='he')await switchLanguage(page, 'he');
       await expect(page.locator('.app-shell')).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
-      const nav=page.locator('.month-title button');
+      // The Schedule panel stays mounted behind the other tabs: only the visible month title counts.
+      const nav=page.locator('.month-title:visible button');
       // Attach read-only captures before assertions so old/new builds can be reviewed.
       for(const month of ['2027-12','2028-01']) {
         for(const tab of [scheduleTab,availabilityTab]) {

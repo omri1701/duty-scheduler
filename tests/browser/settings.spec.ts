@@ -77,7 +77,8 @@ test('enable flow: permission, subscribe, save this device, test and turn off', 
   await expect(device(sheet)).toHaveText('Off on this device');
   await sheet.getByRole('button', {name: 'Enable', exact: true}).click();
   await expect(device(sheet)).toHaveText('On for this device');
-  expect(await pushState(page)).toMatchObject({requested: 1, registered: 1, subscribed: 1, active: true, permission: 'granted'});
+  // The app shell registers the worker for offline use on start; enabling registers it again (browsers reuse it).
+  expect(await pushState(page)).toMatchObject({requested: 1, registered: 2, subscribed: 1, active: true, permission: 'granted'});
   expect(backend.devices).toEqual([{member: ids.a, endpoint: SYNTHETIC_ENDPOINT, p256dh: Buffer.alloc(65, 4).toString('base64url'), auth: Buffer.alloc(16, 7).toString('base64url')}]);
   // No test button (user review): Settings just says notifications are on for this device.
   await expect(sheet.getByRole('button', {name: /Send a test/})).toHaveCount(0);

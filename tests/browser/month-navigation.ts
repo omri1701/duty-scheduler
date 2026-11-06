@@ -20,14 +20,14 @@ export async function assertMonthNavigation(page: Page) {
     expect(r.width).toBeGreaterThanOrEqual(44);
     expect(r.height).toBeGreaterThanOrEqual(44);
   }
-  return heading.locator('h2').innerText();
+  return (await heading.locator('h2').textContent())!.replace(/\s+/g,' ').trim();
 }
 
 export async function traverseMonths(page:Page, count=24) {
   const start=await assertMonthNavigation(page),labels=[start];
   const title=visibleTitle(page).locator('h2'),buttons=visibleTitle(page).locator('button');
   for(const direction of [1,-1]) for(let i=0;i<count;i++) {
-    const before=await title.innerText(),button=direction===1?buttons.last():buttons.first();
+    const before=(await title.textContent())!.replace(/\s+/g,' ').trim(),button=direction===1?buttons.last():buttons.first();
     // Recovery must use the visible controls, including keyboard, without reload.
     if(i===0){await button.focus();await button.press(direction===1?'Enter':'Space');}
     else await button.click();

@@ -66,7 +66,8 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
         }
         await tab(page, 3).click();
         await fits(page);
-        await expect(page.locator('.team-list').getByText('Alexandria Verylongfamilyname Atlas', {exact: true})).toBeVisible();
+        // The signed-in member's row adds " · you" after the name.
+        await expect(page.locator('.team-list').getByText('Alexandria Verylongfamilyname Atlas')).toBeVisible();
         await tab(page, 0).click();
       }
     }

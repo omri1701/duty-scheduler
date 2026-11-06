@@ -39,7 +39,7 @@ import {useIsraelToday} from '@/hooks/use-israel-today';
 import {useCalendarInteractions} from '@/hooks/use-calendar-interactions';
 import {fromSnapshot} from '@/lib/supabase/snapshot';
 import {toast} from 'sonner';
-import {addDays, monthNext, blocks, type Duty} from '@/lib/rota/engine';
+import {addDays, monthNext, blocks, ownerMonth, type Duty} from '@/lib/rota/engine';
 import {calendarDates, workspaceMetrics, visibleCalendarBlocks} from '@/lib/rota/workspace-data';
 import {userMessage} from '@/lib/messages';
 
@@ -321,7 +321,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
                   selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices}/>
               </div>
             </div>
-            {mobile && selectedDay && <DayDetails date={selectedDay} duty={selectedDuty && selectedDuty.start.slice(0, 7) <= month ? selectedDuty : undefined} state={calendarState} lang={lang} t={t} meId={meId}
+            {mobile && selectedDay && <DayDetails date={selectedDay} duty={selectedDuty && ownerMonth(selectedDuty) === month ? selectedDuty : undefined} state={calendarState} lang={lang} t={t} meId={meId}
               interactive={!remote.readOnly} onOpen={b => setSheetDuty(b)}/>}
           </TabsContent>
           <TabsContent value="availability">

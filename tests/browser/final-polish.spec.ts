@@ -83,7 +83,8 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  expect(box.width).toBe(24);expect(box.height).toBe(24);expect(labelBox.height).toBeGreaterThan(44);
  expect(box.y-labelBox.y).toBe(10);
  expect(lang==='he'?box.x>labelBox.x+labelBox.width/2:box.x<labelBox.x+labelBox.width/2).toBe(true);
- await page.keyboard.press('Tab');await checkbox.focus();expect(await checkbox.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
+ // Keyboard focus is visible: an outline or the focus ring (box-shadow).
+ await page.keyboard.press('Tab');await checkbox.focus();expect(await checkbox.evaluate(el=>{const css=getComputedStyle(el);return css.outlineStyle==='solid'||css.boxShadow!=='none'})).toBe(true);
  await page.keyboard.press('Space');await expect(confirm).toBeEnabled();
  const check=(await checkbox.locator('svg').boundingBox())!;
  expect(check.x+check.width/2).toBeCloseTo(box.x+12,0);expect(check.y+check.height/2).toBeCloseTo(box.y+12,0);

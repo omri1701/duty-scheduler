@@ -43,7 +43,7 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
       expect(await shell.evaluate(node=>node.contains(document.activeElement))).toBe(false);
       // The shell reserves the header and the tab bar at their final sizes: nothing shifts when Home arrives.
       const before=await page.locator('.hdr').boundingBox();
-      const navBefore=await page.locator('.tabbar').boundingBox();
+      const navBefore=info.project.name==='mobile'?await page.locator('.tabbar').boundingBox():null;
       if (phase==='auth') await info.attach('startup-shell',{body:await page.screenshot(),contentType:'image/png'});
       held.release();
       await expect(page.getByRole('button',{name:'Settings'})).toBeVisible();

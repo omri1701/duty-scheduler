@@ -1,4 +1,4 @@
-import {test, expect, ids, switchLanguage} from './fixtures';
+import {test, expect, ids, switchLanguage, monthAction} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
@@ -128,6 +128,8 @@ for (const lang of ['en', 'he'] as const) {
       await both(page, `team-swipe-${lang}`);
       await page.locator(`[data-member="${ids.b}"] .swipe-action`).click();
       await expect(page.locator(`[data-member="${ids.b}"]`)).toHaveClass(/inactive/);
+      // The deactivation toast leaves before the member sheet is captured.
+      await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 15_000});
     }
     await page.locator(`[data-member="${ids.c}"] .team-row-inner`).click();
     await expect(page.getByRole('dialog')).toBeVisible();
@@ -234,5 +236,69 @@ for (const lang of ['en', 'he'] as const) {
     await openApp('pending');
     if (lang === 'he') await page.getByRole('button', {name: 'עברית', exact: true}).click();
     await both(page, `access-pending-${lang}`);
+  });
+}
+
+// Remaining dialogs: Publish, Cancel draft, Constraints deadline, Delete version, Add temporary
+// member, the activity bell, swap consent, and the declined / inactive access screens.
+for (const lang of ['en', 'he'] as const) {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+
+  test(`month dialogs, team dialog and bell ${lang}`, async ({page, openApp, backend}) => {
+    backend.raw.swapRequests = [{
+      id: 'request-approved', month: '2026-11', source_publication_id: backend.raw.publications[0].id, requester_id: ids.b, other_id: ids.a,
+      from_day: '2026-11-03', from_end_day: '2026-11-04', to_day: '2026-11-02', to_end_day: '2026-11-03', explanation: '', status: 'approved',
+      accepted_by: ids.a, accepted_at: '2026-10-08T10:00:00Z', created_at: '2026-10-08T09:00:00Z', resolved_at: '2026-10-09T08:00:00Z', resolved_by: ids.admin, result_publication_id: null, override_reason: '',
+    }];
+    await openApp('admin');
+    if (lang === 'he') await switchLanguage(page, 'he');
+    await page.locator('[data-bell]').click();
+    await expect(page.locator('.bell-list')).toBeVisible();
+    await both(page, `bell-${lang}`);
+    await page.keyboard.press('Escape');
+    await tab(page, t('Schedule', 'לוח')).click();
+    await page.getByRole('button', {name: t('Publish', 'פרסום'), exact: true}).click();
+    await expect(page.getByRole('dialog', {name: t('Publish?', 'לפרסם?')})).toBeVisible();
+    await both(page, `publish-${lang}`);
+    await page.keyboard.press('Escape');
+    await monthAction(page, t('Cancel draft', 'ביטול טיוטה'));
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await both(page, `cancel-draft-${lang}`);
+    await page.keyboard.press('Escape');
+    await monthAction(page, t('Constraints deadline', 'מועד אחרון לאילוצים'));
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await both(page, `deadline-${lang}`);
+    await page.keyboard.press('Escape');
+    await monthAction(page, t('Versions', 'גרסאות'));
+    await page.getByRole('dialog').getByRole('button', {name: t('Delete version', 'מחיקת גרסה'), exact: true}).click();
+    await expect(page.getByRole('dialog').getByRole('button', {name: t('Confirm', 'אישור'), exact: true})).toBeVisible();
+    await both(page, `versions-delete-${lang}`);
+    await page.keyboard.press('Escape');
+    await tab(page, t('Team', 'צוות')).click();
+    await page.getByRole('button', {name: t('Add temporary', 'הוספת זמני'), exact: true}).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await both(page, `temporary-member-${lang}`);
+  });
+
+  test(`swap consent and declined or inactive access ${lang}`, async ({page, openApp, backend}) => {
+    backend.raw.months[0].status = 'published';
+    backend.raw.constraints.push({member_id: ids.a, day: '2026-11-03', kind: 'no', note: 'Synthetic appointment'});
+    backend.raw.swapRequests = [{
+      id: 'request-conflict', month: '2026-11', source_publication_id: backend.raw.publications[0].id, requester_id: ids.b, other_id: ids.a,
+      from_day: '2026-11-03', from_end_day: '2026-11-04', to_day: '2026-11-02', to_end_day: '2026-11-03', explanation: 'Family event', status: 'awaiting_engineer',
+      accepted_by: null, accepted_at: null, created_at: '2026-10-09T09:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: '',
+    }];
+    await openApp('a');
+    if (lang === 'he') await switchLanguage(page, 'he');
+    await page.locator('[data-swap-card]').getByRole('button', {name: t('Accept', 'קבלה'), exact: true}).click();
+    await expect(page.getByRole('dialog', {name: t('Accept despite a conflict?', 'לאשר למרות התנגשות?')})).toBeVisible();
+    await both(page, `swap-consent-${lang}`);
+    await page.keyboard.press('Escape');
+    await openApp('rejected');
+    if (lang === 'he') await page.getByRole('button', {name: 'עברית', exact: true}).click();
+    await both(page, `access-declined-${lang}`);
+    await openApp('inactive');
+    if (lang === 'he') await page.getByRole('button', {name: 'עברית', exact: true}).click();
+    await both(page, `access-inactive-${lang}`);
   });
 }
