@@ -122,41 +122,6 @@ jobs:
         run: node scripts/lint-regressions.mjs
       - name: Production build
         run: pnpm build
-      - name: Browser and visual regressions for the changed areas
-        if: needs.scope.outputs.browser == 'selected'
-        env:
-          VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SPECS: ${{ needs.scope.outputs.specs }}
-        # One browser invocation owns this runner's report directories. Reuses build
-        # and JS dependencies; the pinned image supplies Chromium and fonts once.
-        # Full runs use the sharded browser job below instead.
-        run: |
-          set -f
-          pnpm test:e2e:ci $SPECS
-      - name: Retain screenshot comparison gallery
-        id: visual-review
-        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: visual-review
-          path: work/visual-review/
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Link screenshot review in Quality summary
-        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
-        env:
-          VISUAL_REVIEW_URL: ${{ steps.visual-review.outputs.artifact-url }}
-        run: node scripts/visual-review-reporter.mjs --ci-summary
-      - name: Retain browser report and failure traces
-        if: ${{ !cancelled() && needs.scope.outputs.browser == 'selected' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: browser-baseline
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
 
   browser:
     name: browser ${{ matrix.shard }}/8
@@ -164,7 +129,7 @@ jobs:
       group: quality-browser-${{ github.ref }}-${{ matrix.shard }}
       cancel-in-progress: true
     needs: scope
-    if: needs.scope.outputs.browser == 'full'
+    if: needs.scope.outputs.browser != 'none'
     strategy:
       fail-fast: false # Every shard reports, so the merged report is complete.
       matrix:
@@ -191,19 +156,31 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      # Duration-balanced split by file:line (scripts/browser-shard.mjs); each test runs in exactly one
+      # shard. Selected runs limit it to the changed-area specs (already validated by the scope job);
+      # a shard left with no tests skips the build and passes.
+      - name: Select this shard's tests
+        id: tests
+        env:
+          SHARD: ${{ matrix.shard }}
+          SPECS: ${{ needs.scope.outputs.browser == 'selected' && needs.scope.outputs.specs || '' }}
+        run: |
+          set -f
+          node scripts/browser-shard.mjs "$SHARD" 8 $SPECS > "$RUNNER_TEMP/shard-tests.txt"
+          if [ -s "$RUNNER_TEMP/shard-tests.txt" ]; then echo "empty=false" >> "$GITHUB_OUTPUT"; else echo "empty=true" >> "$GITHUB_OUTPUT"; echo "No tests in shard $SHARD." >> "$GITHUB_STEP_SUMMARY"; fi
       # Shards build the same commit in parallel rather than waiting for application.
       - name: Production build
+        if: steps.tests.outputs.empty == 'false'
         run: pnpm build
       - name: Browser and visual regression shard
+        if: steps.tests.outputs.empty == 'false'
         env:
           VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           DUTY_E2E_BLOB: "1"
-          SHARD: ${{ matrix.shard }}
         # The pinned image supplies Chromium and fonts; do not also run playwright install.
         run: |
           set -f
-          # Duration-balanced split by file:line (scripts/browser-shard.mjs); each test runs in exactly one shard.
-          pnpm test:e2e:ci $(node scripts/browser-shard.mjs "$SHARD" 8)
+          pnpm test:e2e:ci $(cat "$RUNNER_TEMP/shard-tests.txt")
       - name: Retain shard report for merging
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -226,7 +203,7 @@ jobs:
       group: quality-browser-report-${{ github.ref }}
       cancel-in-progress: true
     needs: [scope, browser]
-    if: ${{ !cancelled() && needs.scope.outputs.browser == 'full' }}
+    if: ${{ !cancelled() && needs.scope.outputs.browser != 'none' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -386,12 +363,12 @@ jobs:
             test "$RUN_BROWSER" = full
           fi
           case "$RUN_BROWSER" in full|selected|none) ;; *) exit 1 ;; esac
-          full=false
-          if [ "$RUN_BROWSER" = full ]; then full=true; fi
+          browser=true
+          if [ "$RUN_BROWSER" = none ]; then browser=false; fi
           require "$APPLICATION" "$RUN_APPLICATION"
           require "$DATABASE" "$RUN_DATABASE"
-          require "$BROWSER" "$full"
-          require "$BROWSER_REPORT" "$full"
+          require "$BROWSER" "$browser"
+          require "$BROWSER_REPORT" "$browser"
 
   deploy-development:
     needs: quality

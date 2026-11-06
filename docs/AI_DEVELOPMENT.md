@@ -60,7 +60,7 @@ itself are executable changes and remain subject to full GitHub Quality.
 
 GitHub owns CI. The required `quality` check still aggregates scope, application,
 eight browser shards/report and disposable database checks. PRs run unit/tsc/lint/build
-plus browser specs mapped from the changed files (database job only for SQL or
+plus browser specs mapped from the changed files, run in the same eight shards (database job only for SQL or
 Supabase paths); allowlisted documentation/AI-only PRs skip application/database
 jobs. Unknown/global paths, branch pushes and manual runs require full checks.
 The selector runs from the PR's base commit; see the README's test section. Delivery stops after push and PR creation/update;
