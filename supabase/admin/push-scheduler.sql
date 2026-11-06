@@ -1,18 +1,20 @@
--- Operator-only hosted setup for web push (decision 2026-11-06). Never a migration and
--- never an RPC. Run once per hosted project in the Supabase SQL editor, AFTER the
--- push_notifications migration is released there and AFTER the app with
--- /api/push/dispatch and its server-only environment is deployed.
+-- Operator-only setup for web push (decision 2026-11-06). Never a migration and never an
+-- RPC. `pnpm push:setup dev|prod` prints this script filled in for that hosted project
+-- (run it in its Supabase SQL editor); `pnpm push:setup local` runs it on the local stack.
+-- Run it AFTER the push migrations are applied there and AFTER the app with
+-- /api/push/dispatch and its server-only environment is deployed. Safe to re-run: it
+-- updates the secrets and the job in place and never touches application data.
 --
--- Replace the three placeholders first:
---   <DISPATCH_URL>   https://duty-scheduler-dev.vercel.app/api/push/dispatch (DEV) or
---                    https://duty-scheduler-prod.vercel.app/api/push/dispatch (PROD)
---   <PUSH_SECRET>    the same value as that Vercel environment's DUTY_PUSH_SECRET
---                    (at least 32 characters; e.g. `openssl rand -base64 48`)
---   <BYPASS_SECRET>  only if that deployment has Vercel Deployment Protection: its
---                    "Protection Bypass for Automation" secret. Otherwise skip that line.
+-- Placeholders:
+--   <DISPATCH_URL>   that deployment's /api/push/dispatch URL
+--   <PUSH_SECRET>    the same value as that deployment's DUTY_PUSH_SECRET (32+ characters)
+--   <BYPASS_SECRET>  only where Vercel Deployment Protection is on (DEV): its
+--                    "Protection Bypass for Automation" secret. Otherwise leave that line out.
 --
--- pg_net sends the HTTP request after the scheduler's transaction commits; pg_cron
--- runs the scheduler every minute. Both are available on the Supabase free plan.
+-- Cost: pg_cron runs duty_private.push_tick() every 15 minutes (96 runs a day). An idle run
+-- is a handful of indexed queries, reads no secret and makes no HTTP request. Event alerts
+-- do not wait for it: they are handed to pg_net when their change commits. pg_net sends
+-- after the commit; both extensions are on the Supabase free plan.
 
 create extension if not exists pg_net;
 create extension if not exists pg_cron;
@@ -21,18 +23,28 @@ revoke all on all tables in schema net from anon, authenticated;
 revoke usage on schema net from anon, authenticated;
 
 -- Secrets live in Supabase Vault (encrypted at rest), readable only by privileged roles.
-select vault.create_secret('<DISPATCH_URL>', 'duty_push_url', 'Duty web push sender');
-select vault.create_secret('<PUSH_SECRET>', 'duty_push_secret', 'Duty web push shared secret');
--- select vault.create_secret('<BYPASS_SECRET>', 'duty_push_bypass', 'Vercel protection bypass for the push sender');
+create or replace function pg_temp.duty_secret(p_name text, p_value text, p_description text) returns void language plpgsql as $f$
+begin
+ if p_value ~ '^<[A-Z_]+>$' then raise exception 'Replace % with its value first', p_value; end if;
+ if exists(select 1 from vault.secrets where name=p_name) then
+  perform vault.update_secret((select id from vault.secrets where name=p_name), p_value);
+ else
+  perform vault.create_secret(p_value, p_name, p_description);
+ end if;
+end $f$;
+select pg_temp.duty_secret('duty_push_url', '<DISPATCH_URL>', 'Duty web push sender');
+select pg_temp.duty_secret('duty_push_secret', '<PUSH_SECRET>', 'Duty web push shared secret');
+-- select pg_temp.duty_secret('duty_push_bypass', '<BYPASS_SECRET>', 'Vercel protection bypass for the push sender');
 
--- One job; re-running replaces it (cron.schedule upserts by name).
-select cron.schedule('duty-push-tick', '* * * * *', $$select duty_private.push_tick()$$);
+-- One job, every 15 minutes; re-running replaces it (cron.schedule upserts by name). The
+-- job itself keeps only 7 days of its pg_cron run history and 90 days of notifications.
+select cron.schedule('duty-push-tick', '*/15 * * * *', $$select duty_private.push_tick()$$);
 
--- Checks (read-only):
+-- Check (read-only):
 --   select jobname, schedule, active from cron.job where jobname = 'duty-push-tick';
 --   select status, return_message, start_time from cron.job_run_details
 --    where jobid = (select jobid from cron.job where jobname = 'duty-push-tick') order by start_time desc limit 5;
 --   select status, count(*) from public.duty_push_deliveries group by status;
 --
--- Rotate a secret:  select vault.update_secret((select id from vault.secrets where name = 'duty_push_secret'), '<NEW_SECRET>');
--- Pause sending:    select cron.unschedule('duty-push-tick');   (notifications still recorded; older than 6 h expire)
+-- Pause sending:    select cron.unschedule('duty-push-tick');   (alerts still go out at commit
+--                   while the Vault secrets exist; delete them to stop everything)

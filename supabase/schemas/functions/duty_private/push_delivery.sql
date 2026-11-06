@@ -94,7 +94,8 @@ end $$;
 -- Sends what is due through the protected sender (Vault secrets duty_push_url and
 -- duty_push_secret, optional duty_push_bypass for Vercel deployment protection), in
 -- batches of 50 over pg_net. Without pg_net or that configuration nothing is sent.
--- Notifications still waiting after six hours expire instead of arriving late.
+-- Notifications still waiting after six hours expire instead of arriving late. With
+-- nothing waiting it reads no secret and makes no HTTP request.
 CREATE FUNCTION duty_private.push_dispatch(p_now timestamp with time zone) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -102,6 +103,10 @@ CREATE FUNCTION duty_private.push_dispatch(p_now timestamp with time zone) RETUR
 declare target text; secret text; bypass text; headers jsonb; batch jsonb; picked bigint[]; request bigint; requests integer:=0;
 begin
  update public.duty_push_notifications set status='expired' where status='pending' and created_at<p_now-interval '6 hours';
+ if not exists(select 1 from public.duty_push_notifications where status='pending')
+  and not exists(select 1 from public.duty_push_deliveries where status='queued' or (status='failed' and attempts<3 and updated_at<=p_now-make_interval(mins=>(2^attempts)::integer))) then
+  return 0;
+ end if;
  if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is null or to_regclass('vault.decrypted_secrets') is null then return 0; end if;
  execute $sql$select max(decrypted_secret) filter (where name='duty_push_url'),max(decrypted_secret) filter (where name='duty_push_secret'),
   max(decrypted_secret) filter (where name='duty_push_bypass') from vault.decrypted_secrets where name in ('duty_push_url','duty_push_secret','duty_push_bypass')$sql$
@@ -142,8 +147,9 @@ begin
  return requests;
 end $$;
 
--- The scheduler's single entry point (pg_cron, every minute; see
--- supabase/admin/push-scheduler.sql). Overlapping runs skip; keeps 90 days of log.
+-- The scheduler's single entry point (pg_cron, every 15 minutes; see
+-- supabase/admin/push-scheduler.sql). Overlapping runs skip; keeps 90 days of log
+-- (deliveries go with their notification) and 7 days of this job's pg_cron history.
 CREATE FUNCTION duty_private.push_tick() RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -155,5 +161,33 @@ begin
  scheduled:=duty_private.push_schedule(now());
  requests:=duty_private.push_dispatch(now());
  delete from public.duty_push_notifications where created_at<now()-interval '90 days';
+ if to_regclass('cron.job_run_details') is not null then
+  begin
+   execute $q$delete from cron.job_run_details where end_time<now()-interval '7 days' and jobid in (select jobid from cron.job where jobname='duty-push-tick')$q$;
+  exception when others then
+   raise warning 'duty push (cron history): %',sqlerrm;
+  end;
+ end if;
  return jsonb_build_object('scheduled',scheduled,'requests',requests);
+end $$;
+
+-- Event alerts (publication, swaps, published edits, sign-ups, the test) do not wait
+-- for the clock: at commit, once per transaction, their deliveries are handed to
+-- pg_net, which sends them after the commit. A problem here never blocks the change.
+CREATE FUNCTION duty_private.push_dispatch_now() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+ if current_setting('duty.push_dispatched',true) is distinct from 'on' then
+  perform set_config('duty.push_dispatched','on',true);
+  begin
+   -- One sender at a time: the clock's run holds the same lock.
+   perform pg_advisory_xact_lock(hashtext('duty_private.push_tick'));
+   perform duty_private.push_dispatch(now());
+  exception when others then
+   raise warning 'duty push (dispatch): %',sqlerrm;
+  end;
+ end if;
+ return null;
 end $$;

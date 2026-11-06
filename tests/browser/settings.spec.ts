@@ -126,8 +126,10 @@ test('switches and reminder times save for the member; admins also see new membe
   await expect.poll(() => backend.notificationSettings.get(ids.a)?.morning).toBe(false);
   await expect(morningTime).toBeDisabled();
   const evening = sheet.getByLabel('Evening before my duty · time');
-  await evening.fill('20:15');
-  await evening.press('Enter');
+  // Quarter hours only: the clock runs every 15 minutes.
+  await expect(evening.locator('option')).toHaveCount(96);
+  await expect(evening.locator('option[value="20:10"]')).toHaveCount(0);
+  await evening.selectOption('20:15');
   await expect.poll(() => backend.notificationSettings.get(ids.a)?.eveningTime).toBe('20:15');
   // Reopening reads the saved choices back.
   await page.keyboard.press('Escape');

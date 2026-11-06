@@ -15,7 +15,7 @@ CREATE TABLE public.duty_notification_settings (
     morning_time time without time zone DEFAULT '08:30:00'::time without time zone NOT NULL,
     members boolean DEFAULT true NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT duty_notification_settings_minutes_check CHECK (((EXTRACT(second FROM evening_time) = (0)::numeric) AND (EXTRACT(second FROM morning_time) = (0)::numeric)))
+    CONSTRAINT duty_notification_settings_minutes_check CHECK (((EXTRACT(second FROM evening_time) = (0)::numeric) AND (EXTRACT(second FROM morning_time) = (0)::numeric) AND ((EXTRACT(minute FROM evening_time))::integer % 15 = 0) AND ((EXTRACT(minute FROM morning_time))::integer % 15 = 0)))
 );
 
 ALTER TABLE ONLY public.duty_notification_settings

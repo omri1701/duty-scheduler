@@ -68,6 +68,7 @@ select pg_temp.must_fail($c$select public.duty_set_notification_settings('{"dead
 select pg_temp.must_fail($c$select public.duty_set_notification_settings('{"deadlines":"yes","published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"20:15","morning":false,"morningTime":"07:00","members":true}')$c$,'Invalid notification settings');
 select pg_temp.must_fail($c$select public.duty_set_notification_settings('{"deadlines":true,"published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"20:15","morning":false,"morningTime":"07:00","members":true,"extra":1}')$c$,'Invalid notification settings');
 select pg_temp.must_fail($c$select public.duty_set_notification_settings('{"deadlines":true,"published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"24:00","morning":false,"morningTime":"07:00","members":true}')$c$,'Invalid notification time');
+select pg_temp.must_fail($c$select public.duty_set_notification_settings('{"deadlines":true,"published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"20:10","morning":false,"morningTime":"07:00","members":true}')$c$,'Invalid notification time');
 select pg_temp.must_fail($c$select public.duty_set_notification_settings('[]')$c$,'Invalid notification settings');
 -- Member 2: evening at 20:15, no morning reminder.
 select pg_temp.check((public.duty_set_notification_settings('{"deadlines":true,"published":true,"swaps":true,"edits":true,"evening":true,"eveningTime":"20:15","morning":false,"morningTime":"07:00","members":true}')->>'eveningTime')='20:15','saved');
@@ -348,6 +349,15 @@ begin
  perform pg_temp.check(duty_private.push_dispatch(now()+interval '40 minutes')=0,'moved device: nothing sent');
  perform duty_private.push_reconcile(now());
  perform pg_temp.check((select status from public.duty_push_deliveries where notification_id=moved)='abandoned','moved device: abandoned');
+ -- Idle: nothing due means no secret read and no HTTP request.
+ total:=(select count(*) from net.sent);
+ perform pg_temp.check(duty_private.push_dispatch(now()+interval '50 minutes')=0 and (select count(*) from net.sent)=total,'idle: no HTTP request');
+ -- Event alerts do not wait for the clock: at commit (here: constraints made immediate)
+ -- the transaction's alerts go out in one request.
+ perform pg_temp.check(duty_private.push_enqueue('76000000-0000-0000-0000-000000000001','test','fixture-immediate','{}','/?tab=schedule'),'an event alert');
+ perform pg_temp.check((select count(*) from net.sent)=total,'not before commit');
+ execute 'set constraints duty_push_dispatch_now immediate';
+ perform pg_temp.check((select count(*) from net.sent)=total+1 and (select status from public.duty_push_notifications where dedupe_key='fixture-immediate')='dispatched','sent at commit');
  -- The tick runs everything and skips when another run holds the lock.
  perform pg_temp.check(duty_private.push_tick() ? 'scheduled','tick');
 end$$;

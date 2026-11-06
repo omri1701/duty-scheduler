@@ -107,29 +107,54 @@ calendar servers cannot pass it, so a protected Development deployment cannot se
 
 ## Web push notifications
 
-Migration `20261106013729_push_notifications.sql` (decision 2026-11-06) adds `duty_members.language`
-(NULL until the member chooses; only `duty_set_language` writes it, for the caller's own
-row) and four tables that members read only for their own rows: notification switches,
-devices (push subscriptions), the notification log and its deliveries. Writes go through
-checked RPCs (`duty_notification_settings`, `duty_set_notification_settings`,
+Migrations `20261106013729_push_notifications.sql` and `20261106125504_push_efficiency.sql` (decision
+2026-11-06) add `duty_members.language` (NULL until the member chooses; only `duty_set_language`
+writes it, for the caller's own row) and four tables that members read only for their own rows:
+notification switches, devices (push subscriptions), the notification log and its deliveries.
+Writes go through checked RPCs (`duty_notification_settings`, `duty_set_notification_settings`,
 `duty_save_push_subscription`, `duty_delete_push_subscription`, `duty_send_test_notification`),
-none of which reads or advances the workspace revision. AFTER triggers on months
-(publish, published edits), swap requests and new members record event notifications in the
-same transaction; they never raise into the change. `duty_private.push_tick()` (pg_cron,
-every minute) records the deadline and reminder notifications for the current minute in
-Asia/Jerusalem, settles finished pg_net responses and posts due deliveries, 50 per request, to
-`/api/push/dispatch` with a shared secret from Vault. Each notification has a unique key, so
-every run is idempotent; only refusals the sender made before sending anything are retried,
-so nothing arrives twice. Notifications still unsent after six hours expire. Without pg_net,
-pg_cron or the Vault secrets nothing is sent and nothing fails.
+none of which reads or advances the workspace revision. Reminder times are quarter hours.
 
-Hosted setup, in order, per environment (DEV first): release the migration through the
-normal database-first workflow; add the server-only Vercel variables `VAPID_PUBLIC_KEY`,
-`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `DUTY_PUSH_SECRET` (own keys per environment) and
-redeploy; then run [`supabase/admin/push-scheduler.sql`](../supabase/admin/push-scheduler.sql)
-in that project's SQL editor with the deployment's `/api/push/dispatch` URL and the same
-secret (plus the Vercel protection-bypass secret where Deployment Protection is on). Check
-with Settings → Enable notifications → Send a test.
+- **Event alerts** (publish, swaps, published edits, a new member, the test): AFTER triggers on
+  months, swap requests and members record them in the same transaction, and a deferred trigger
+  (`duty_push_dispatch_now`) hands them to pg_net at commit, once per transaction. pg_net sends
+  after the commit, so the change never waits for the push service and a push problem never fails it.
+- **Deadlines and reminders**: `duty_private.push_tick()` runs from pg_cron every 15 minutes
+  (`*/15 * * * *`, 96 runs a day) in Asia/Jerusalem; it also settles finished pg_net responses,
+  retries refusals and sends anything still due, 50 per request, to `/api/push/dispatch` with a
+  shared secret from Vault.
+- **Cost of a run**: with nothing due it is a handful of indexed queries (settle, schedule, the
+  idle check, purges): no Vault read and **no HTTP request**. It keeps 90 days of notifications
+  (deliveries go with them) and 7 days of its own `cron.job_run_details` rows.
+- **No duplicates**: each notification has a unique key, so every run is idempotent; only refusals
+  the sender made before sending anything are retried. Notifications still unsent after six hours
+  expire. Without pg_net, pg_cron or the Vault secrets nothing is sent and nothing fails.
+
+### Setup in one command
+
+```powershell
+pnpm push:setup local
+```
+
+For the shared LOCAL stack, after its migrations are applied: adds `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `DUTY_PUSH_SECRET` to the gitignored `.env.local` (existing
+values are kept), enables pg_net and pg_cron when absent, and writes the Vault secrets and the 15-minute
+job targeting `http://host.docker.internal:5173/api/push/dispatch`. It is idempotent, touches no
+application data and never connects to a hosted project (`--container` and `--url` override the
+defaults). Restart `pnpm dev` afterwards.
+
+```powershell
+pnpm push:setup dev
+pnpm push:setup prod
+```
+
+These change nothing. They print numbered, paste-ready steps with freshly generated values: the four
+Vercel variables for that environment (Preview for DEV, Production for PROD; server-only), the
+redeploy, the filled-in [`supabase/admin/push-scheduler.sql`](../supabase/admin/push-scheduler.sql) for
+that project's SQL editor (DEV includes the Vercel protection-bypass line; `--bypass <secret>` fills it
+in, and the SQL refuses to run with a placeholder left in), and a read-only check query. Order per
+environment, DEV first: the normal database-first release applies the migrations, then the Vercel
+variables and redeploy, then the SQL. Check with Settings → Enable notifications → Send a test.
 
 Focused checks (empty disposable LOCAL database only; the sending checks stub pg_net):
 

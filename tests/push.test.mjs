@@ -112,8 +112,8 @@ test('only known push services; keys are base64url', () => {
 test('settings: exact payload, valid times and safe links', () => {
   assert.deepEqual(settingsPayload({...DEFAULT_SETTINGS, devices: 3, extra: 1}), DEFAULT_SETTINGS);
   assert.throws(() => settingsPayload({...DEFAULT_SETTINGS, eveningTime: '24:00'}), /Invalid notification time/);
-  for (const ok of ['00:00', '08:30', '18:00', '23:59']) assert.equal(validTime(ok), true, ok);
-  for (const bad of ['24:00', '8:30', '08:60', '', null, '08:30:00']) assert.equal(validTime(bad), false, String(bad));
+  for (const ok of ['00:00', '08:30', '18:00', '23:45']) assert.equal(validTime(ok), true, ok);
+  for (const bad of ['24:00', '8:30', '08:60', '08:10', '23:59', '', null, '08:30:00']) assert.equal(validTime(bad), false, String(bad));
   assert.deepEqual(readNotificationState({...DEFAULT_SETTINGS, devices: 2, other: 'x'}), {...DEFAULT_SETTINGS, devices: 2});
   assert.throws(() => readNotificationState({...DEFAULT_SETTINGS, devices: -1}), /Could not load notification settings/);
   assert.throws(() => readNotificationState({...DEFAULT_SETTINGS, swaps: 'yes', devices: 0}), /Could not load notification settings/);

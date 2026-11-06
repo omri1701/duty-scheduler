@@ -289,3 +289,4 @@ REVOKE ALL ON FUNCTION duty_private.push_settle(bigint, integer, text, boolean) 
 REVOKE ALL ON FUNCTION duty_private.push_reconcile(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.push_dispatch(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.push_tick() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_dispatch_now() FROM PUBLIC, anon, authenticated, service_role;

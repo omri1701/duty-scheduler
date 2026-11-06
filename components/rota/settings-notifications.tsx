@@ -6,7 +6,7 @@ import {Checkbox} from '@/components/ui/checkbox';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {getVapidPublicKey} from '@/lib/supabase/client';
 import {currentSubscription, describe, disablePush, enablePush, pushStatus, type PushStatus} from '@/lib/push/browser';
-import {validTime, type NotificationSettings, type NotificationState, type Switch} from '@/lib/push/settings';
+import {QUARTER_HOURS, type NotificationSettings, type NotificationState, type Switch} from '@/lib/push/settings';
 import {userMessage} from '@/lib/messages';
 
 /** Notifications in the settings screen (decision 2026-11-06): this device's web push
@@ -15,7 +15,6 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   const t = (en: string, he: string) => lang === 'he' ? he : en;
   const [status, setStatus] = useState<PushStatus | 'loading'>('loading');
   const [settings, setSettings] = useState<NotificationState | null>(null);
-  const [drafts, setDrafts] = useState({eveningTime: '', morningTime: ''});
   const [loadError, setLoadError] = useState(''), [error, setError] = useState(''), [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'enable' | 'disable' | 'test' | 'save'>('');
   const readOnly = remote.readOnly, personal = remote.personal, vapid = useRef<string | null>(null);
@@ -36,7 +35,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   }, [personal, readOnly]);
   const apply = useCallback((loaded: Awaited<ReturnType<typeof fetchState>>) => {
     vapid.current = loaded.key; setStatus(loaded.next); setLoadError('');
-    if (loaded.state) {setSettings(loaded.state); setDrafts({eveningTime: loaded.state.eveningTime, morningTime: loaded.state.morningTime});}
+    if (loaded.state) setSettings(loaded.state);
   }, []);
   const failed = useCallback((e: unknown) => setLoadError(userMessage(e instanceof Error ? e.message : String(e), lang === 'he' ? (_en, he) => he : en => en)), [lang]);
   useEffect(() => {
@@ -53,16 +52,9 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     setSettings(next); setBusy('save'); setError(''); setNote('');
     try {
       const saved = await personal.saveNotificationSettings(next);
-      setSettings(saved); setDrafts({eveningTime: saved.eveningTime, morningTime: saved.morningTime});
-    } catch (e) {setSettings(previous); setDrafts({eveningTime: previous.eveningTime, morningTime: previous.morningTime}); setError(say(e));}
+      setSettings(saved);
+    } catch (e) {setSettings(previous); setError(say(e));}
     finally {setBusy('');}
-  }
-  function commitTime(key: 'eveningTime' | 'morningTime') {
-    if (!settings) return;
-    const value = drafts[key];
-    // An incomplete time is never sent: it returns to the saved one.
-    if (!validTime(value)) {setDrafts(d => ({...d, [key]: settings[key]})); return;}
-    if (value !== settings[key]) void save({[key]: value});
   }
   async function enable() {
     if (!vapid.current) return;
@@ -136,10 +128,13 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
           <Checkbox disabled={locked} checked={settings?.[row.key] ?? false} onCheckedChange={value => void save({[row.key]: value === true})}/>
           <span><strong>{row.label}</strong><small>{row.help}{row.time && ':'}</small></span>
         </label>
-        {row.time && <input type="time" className="settings-time" step={60} aria-label={`${row.label} · ${t('time', 'שעה')}`}
-          disabled={locked || !settings?.[row.key]} value={drafts[row.time]}
-          onChange={e => setDrafts(d => ({...d, [row.time!]: e.target.value}))} onBlur={() => commitTime(row.time!)}
-          onKeyDown={e => {if (e.key === 'Enter') {e.preventDefault(); commitTime(row.time!);}}}/>}
+        {/* 15-minute steps: the scheduler runs every quarter hour (decision 2026-11-06). */}
+        {row.time && <select className="settings-time" dir="ltr" aria-label={`${row.label} · ${t('time', 'שעה')}`}
+          disabled={locked || !settings?.[row.key]} value={settings?.[row.time] ?? ''}
+          onChange={e => void save({[row.time!]: e.target.value})}>
+          {!settings && <option value=""/>}
+          {QUARTER_HOURS.map(time => <option key={time} value={time}>{time}</option>)}
+        </select>}
       </div>)}
       <p className="muted-copy">{t('Times are Israel time. These choices apply to all your devices.', 'השעות לפי שעון ישראל. הבחירות חלות על כל המכשירים שלך.')}</p>
     </fieldset>}

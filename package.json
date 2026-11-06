@@ -19,7 +19,8 @@
     "start": "next start --port 5173",
     "lint": "eslint .",
     "local:setup": "node scripts/local-supabase.mjs",
-    "local:reset": "node scripts/local-supabase.mjs --reset"
+    "local:reset": "node scripts/local-supabase.mjs --reset",
+    "push:setup": "node scripts/push-setup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",

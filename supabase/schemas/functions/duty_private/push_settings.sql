@@ -30,7 +30,8 @@ begin
 end $$;
 
 -- Replaces the caller's own switches. Every key is required with its exact type;
--- times are HH:MM in Asia/Jerusalem. No workspace revision: it is personal.
+-- times are quarter hours (HH:00/15/30/45, the clock runs every 15 minutes) in
+-- Asia/Jerusalem. No workspace revision: it is personal.
 CREATE FUNCTION duty_private.set_notification_settings(p_settings jsonb) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -45,7 +46,7 @@ begin
  foreach k in array array['deadlines','published','swaps','edits','evening','morning','members'] loop
   if jsonb_typeof(p_settings->k) is distinct from 'boolean' then raise exception 'Invalid notification settings'; end if;
  end loop;
- if coalesce(p_settings->>'eveningTime','') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' or coalesce(p_settings->>'morningTime','') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then
+ if coalesce(p_settings->>'eveningTime','') !~ '^([01][0-9]|2[0-3]):(00|15|30|45)$' or coalesce(p_settings->>'morningTime','') !~ '^([01][0-9]|2[0-3]):(00|15|30|45)$' then
   raise exception 'Invalid notification time';
  end if;
  insert into public.duty_notification_settings(member_id,deadlines,published,swaps,edits,evening,evening_time,morning,morning_time,members,updated_at)
