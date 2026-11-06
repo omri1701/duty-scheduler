@@ -1277,6 +1277,13 @@ tie-breakers (a best-found label; everything through the seed was proved). A
 stricter rule, each gap length only once per member, took 27 s to prove for one
 six-member month and was dropped.
 
+The gap counts after the seed only break ties the seed left. Once the seed is
+proved, one feasibility check with a no-good row against the incumbent assignment
+(every proved level still fixed) shows whether any other schedule ties. Usually none
+does, and then every gap-count level is proved at once ("Unique seeded optimum");
+otherwise they run as before. This keeps months whose Thursday or staircase rules
+force repeats (a six-member November took over 30 s) at about their earlier time.
+
 Stages count as proved when the dual bound is at least `value − 1 + 1e-6` (all
 stage objectives are integral). The native relative gap is no longer required:
 HiGHS closes on objective integrality with a bound such as 15.17 for 16, and the

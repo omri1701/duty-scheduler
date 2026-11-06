@@ -10,7 +10,8 @@ const solver = await createHighsAdapter(loadHighs);
 const duty = (day, units = 2, eligible = [0, 1], extra = {}) =>
   ({start: day * 1440, end: (day + 1) * 1440, units, days: 1, special: 0, eligible, ...extra});
 // Without seeded ties the seed stage is empty, so the full hierarchy ends with the sorted-gap leximin.
-const key = m => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent, -(m.gaps[0] ?? Infinity), m.rotation, m.repeats, m.weekdays, -m.preferred, ...m.gaps.map(g => -g)];
+const key = m => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent, -(m.gaps[0] ?? Infinity), m.rotation, m.thursdays, m.wave,
+  m.repeats, m.patterns, m.weekdays, -m.preferred, m.follows, ...m.gaps.map(g => -g)];
 function compare(a, b) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const diff = (a[i] ?? -Infinity) - (b[i] ?? -Infinity);
@@ -74,10 +75,29 @@ function referenceMetrics(p, a) {
     if (first > 0) gaps.push(first);
     if (last > 0) gaps.push(last);
   }
-  let rotation = 0, preferred = 0, repeats = 0, weekdays = 0;
+  let rotation = 0, preferred = 0, repeats = 0, weekdays = 0, thursdays = 0, patterns = 0;
+  // Weekday steps, start to start: forward 8 or 15 days, back 6 or 13.
+  const step = d => d === 8 || d === 15 ? 1 : d === 6 || d === 13 ? -1 : 0, days = (from, to) => Math.round((to - from) / 1440);
   for (let e = 0; e < totals.length; e++) {
     const indices = a.flatMap((owner, i) => owner === e ? [i] : []);
-    rotation += new Set(indices.map(i => p.duties[i].weekend).filter(w => w !== undefined)).size * (p.rotation?.[e] ?? 0);
+    const weekendCount = new Set(indices.map(i => p.duties[i].weekend).filter(w => w !== undefined)).size;
+    rotation += weekendCount * (p.rotation?.[e] ?? 0);
+    if (weekendCount && indices.some(i => p.duties[i].weekday === 4)) thursdays++;
+    if (p.spacing && indices.length) {
+      // Staircases: a second step in one direction counts, the neighbouring months' nearest step first.
+      const mine = (p.boundaries ?? []).filter(b => b.engineer === e);
+      const previous = mine.filter(b => b.end <= p.duties[0].start).sort((x, y) => x.end - y.end);
+      const following = mine.filter(b => b.start >= p.duties.at(-1).end).sort((x, y) => x.start - y.start);
+      const own = indices.map(i => p.duties[i]), spans = [];
+      if (previous.length && own[0].start > previous.at(-1).end) spans.push(days(previous.at(-1).start, own[0].start));
+      for (let k = 1; k < own.length; k++) if (own[k].start > own[k - 1].end) spans.push(days(own[k - 1].start, own[k].start));
+      if (following.length && following[0].start > own.at(-1).end) spans.push(days(own.at(-1).start, following[0].start));
+      const carried = [previous.slice(-2), following.slice(0, 2)].flatMap(([x, y]) => x && y && y.start > x.end ? [step(days(x.start, y.start))] : []);
+      for (const direction of [1, -1]) {
+        const n = spans.filter(d => step(d) === direction).length;
+        if (n) patterns += n - 1 + Number(carried.includes(direction));
+      }
+    }
     const byWeekday = new Map();
     for (const i of indices) if (p.duties[i].weekday !== undefined) {
       byWeekday.set(p.duties[i].weekday, (byWeekday.get(p.duties[i].weekday) ?? 0) + 1);
@@ -86,9 +106,13 @@ function referenceMetrics(p, a) {
     for (const n of byWeekday.values()) repeats += Math.max(0, n - 1);
     preferred += indices.reduce((n, i) => n + (p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0), 0);
   }
+  // Weekend wave: listed costs per weekend duty taken, plus an overdue member's absence.
+  const wave = (p.wave ?? []).reduce((n, w) => n + (a[w.duty] === w.engineer ? w.cost : 0), 0) +
+    (p.waveAbsent ?? []).reduce((n, w) => n + (a.some((e, i) => e === w.engineer && p.duties[i].weekend !== undefined) ? 0 : w.cost), 0);
+  const follows = (p.follows ?? []).filter(f => a[f.duty] === f.engineer && (!f.after || a[f.after.duty] === f.after.engineer)).length;
   return {coverage, special, units: totals.reduce((a, b) => a + b, 0),
     deficits: totals.map((v, e) => p.targets[e] - v), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays,
-    extraWeekends, adjacent};
+    extraWeekends, adjacent, wave, follows, patterns, thursdays};
 }
 
 test('binary MIP, exact units, locks, eligibility, split weekend identity and partial coverage', () => {
@@ -346,6 +370,27 @@ test('small varied weighted/partial/boundary instances match an independent exha
     const p = {duties, targets, spacing: true, boundaries: seed % 2 ? [
       {id: 'prior', engineer: 1, start: -2880, end: -60, source: 'draft'},
       {id: 'next', engineer: 0, start: 15000, end: 16000, source: 'published'}] : []};
+    const r = solveProblem(solver, p);
+    assert.equal(r.allStagesProved, true, `seed ${seed}`);
+    assert.deepEqual(key(r.metrics), key(enumerate(p)), `seed ${seed}`);
+    assert.deepEqual(r.metrics, referenceMetrics(p, r.assignment));
+  }
+});
+
+test('Thursday with a weekend, weekend wave, weekday staircases and predecessors match the exhaustive oracle', () => {
+  for (let seed = 0; seed < 16; seed++) {
+    // Thursdays on days 0 and 8, weekends on days 6 and 13: spans of 6, 8, 13 and 15 days are possible.
+    const shape = [[0, {weekday: 4}], [2, {weekday: 1}], [6, {weekend: 0}], [8, {weekday: 4}], [13, {weekend: 1}], [15, {weekday: 0}]];
+    const duties = shape.map(([day, extra], i) => duty(day, 2, [0, 1, 2].filter(e => (seed * 5 + i * 3 + e * 7) % 10 < 7), extra));
+    const eligible = (e, i) => duties[i].eligible.includes(e);
+    const wave = [[0, 2], [1, 4], [2, 2]].flatMap(([e, i], k) => eligible(e, i) && (seed + k) % 3 ? [{engineer: e, duty: i, cost: 100 + (seed + k) % 4}] : []);
+    const follows = [...(eligible(1, 4) && eligible(0, 2) ? [{engineer: 1, duty: 4, after: {engineer: 0, duty: 2}}] : []),
+      ...(seed % 2 && eligible(2, 2) ? [{engineer: 2, duty: 2}] : [])];
+    const p = {duties, targets: [4, 4 - seed % 3, 4 + seed % 3], spacing: true, rotation: [seed % 2, 0, (seed >> 1) % 2], wave, follows,
+      waveAbsent: seed % 4 === 1 ? [{engineer: 2, cost: 103}] : [],
+      // Engineer 0 stepped forward between the two previous-month duties (8 days, start to start).
+      boundaries: seed % 3 ? [{id: 'p1', engineer: 0, start: -16 * 1440, end: -15 * 1440, source: 'published'},
+        {id: 'p2', engineer: 0, start: -8 * 1440, end: -7 * 1440, source: 'published'}] : []};
     const r = solveProblem(solver, p);
     assert.equal(r.allStagesProved, true, `seed ${seed}`);
     assert.deepEqual(key(r.metrics), key(enumerate(p)), `seed ${seed}`);

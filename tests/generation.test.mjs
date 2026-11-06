@@ -28,7 +28,9 @@ test('seeded ties with preserved emergency coverage retain exact integer objecti
     members: ids.map(id => ({id, active: true, approved: true, eligible: true})),
     targets: Object.fromEntries(ids.map((id, i) => [id, i < 4 ? 4 : 5])),
     constraints: {[ids[1]]: {'2026-11-04': 'no'}}, secondary: {'2026-11-02': ids[1]}};
-  const result = run(input, {seed: 1701, seconds: 15});
+  // Generate's own 30 s budget: avoiding a Thursday with a weekend forces two same-weekday repeats
+  // in this six-member month, and the seed takes several seconds to prove after them.
+  const result = run(input, {seed: 1701, seconds: 30});
   assert.equal(result.complete, true);
   assert.equal(result.assignments['2026-11-02'].secondary, ids[1]);
   assert.notEqual(result.assignments['2026-11-02'].primary, ids[1]);

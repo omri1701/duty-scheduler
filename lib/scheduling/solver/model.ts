@@ -429,6 +429,21 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
     }
     return proved;
   };
+  // The gap counts only break ties left by the seed. One feasibility check proves there is none:
+  // every proved level is fixed, and a no-good row excludes the incumbent assignment.
+  const unique = () => {
+    if (!p.seededTies) return false;
+    const terms: Term[] = p.duties.flatMap((d, i) => d.eligible.map(e => [assignment[i] === e ? -1 : 1, x(e, i)] as Term));
+    const chosen = assignment.filter(e => e !== null).length;
+    const offset = session.addRows([{terms, lower: 1 - chosen}]);
+    try {
+      const result = run([], false);
+      if (!result) return false;
+      if (result.status === 'infeasible') return true;
+      if (result.values) candidate(result, []);
+      return false;
+    } finally {session.deleteRows(offset, 1);}
+  };
   try {
     session.addColumns(base.columns); session.addRows(base.rows);
     let headProved = true;
@@ -500,7 +515,8 @@ export function solveProblem(adapter: SolverAdapter, p: Problem, settings: Setti
           columns += flows.columns.length; rows += flows.rows.length;
           patterns.columns = flows.patterns.columns; patterns.rows = flows.patterns.rows; patterns.stage.terms = flows.patterns.terms;
           qualityDone = true; finished = runQuality();
-          if (finished) for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
+          if (finished && unique()) for (const stage of flows.stages) identity(stage.name, objective(stage.name, metrics, assignment), 'Unique seeded optimum');
+          else if (finished) for (const stage of flows.stages) if (!optimize(stage)) {finished = false; break;}
         }
       } else {
         stages.push({name: 'minimum-gap', status: termination, statusCode: 0, objective: floor,
