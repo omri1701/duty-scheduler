@@ -19,20 +19,23 @@ for(const iphone of [false,true])for(const split of [false,true])for(const lang 
       }
       const schedule=structuredClone({months:backend.raw.months,assignments:backend.raw.assignments,publications:backend.raw.publications});
       await openApp('a',page);
+      // The app opens on Home; Schedule (tab 1) and Availability (tab 2) carry the month.
+      const scheduleTab=page.getByRole('tab').nth(1),availabilityTab=page.getByRole('tab').nth(2);
+      await scheduleTab.click();
       for(let i=0;i<13;i++)await page.getByRole('button',{name:'Next month',exact:true}).click();
       if(lang==='he')await switchLanguage(page, 'he');
       await expect(page.locator('.app-shell')).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
       const nav=page.locator('.month-title button');
       // Attach read-only captures before assertions so old/new builds can be reviewed.
       for(const month of ['2027-12','2028-01']) {
-        for(const tab of [0,1]) {
-          await page.getByRole('tab').nth(tab).click();
+        for(const tab of [scheduleTab,availabilityTab]) {
+          await tab.click();
           expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-          await info.attach(`${month}-${tab===0?'schedule':'constraints'}-${lang}.png`,{body:await page.screenshot({fullPage:true,animations:'disabled'}),contentType:'image/png'});
+          await info.attach(`${month}-${tab===scheduleTab?'schedule':'constraints'}-${lang}.png`,{body:await page.screenshot({fullPage:true,animations:'disabled'}),contentType:'image/png'});
         }
         if(month==='2027-12')await nav.last().click();
       }
-      await nav.first().click();await page.getByRole('tab').nth(0).click();
+      await nav.first().click();await scheduleTab.click();
       const grid=page.locator('.calendar-grid');
       await expect(grid.locator('[data-date]').first()).toHaveAttribute('data-date','2027-11-28');
       const last=grid.locator('[data-date]').last();
@@ -42,7 +45,7 @@ for(const iphone of [false,true])for(const split of [false,true])for(const lang 
       await nav.last().click();
       await expect(grid.locator('[data-date]').first()).toHaveAttribute('data-date','2028-01-02');
       await expect(grid.locator('[data-date="2028-01-01"]')).toHaveCount(0);
-      await page.getByRole('tab').nth(1).click();
+      await availabilityTab.click();
       const days=page.locator('.availability-day');
       await expect(days.first().locator('strong')).toHaveText('2');
       await expect(days).toHaveCount(35);
@@ -91,8 +94,9 @@ for(const iphone of [false,true])for(const split of [false,true])for(const lang 
         await page.keyboard.press('Escape');
       }
       await page.reload();
+      await scheduleTab.click();
       for(let i=0;i<13;i++)await page.getByRole('button',{name:'Next month',exact:true}).click();
-      await page.getByRole('tab').nth(1).click();
+      await availabilityTab.click();
       await expect(days.last()).toHaveClass(/\bno\b/);
       await days.last().click();await expect(page.getByRole('dialog').locator('textarea')).toHaveValue('Actual Saturday');
       expect({months:backend.raw.months,assignments:backend.raw.assignments,publications:backend.raw.publications}).toEqual(schedule);

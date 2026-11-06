@@ -1,4 +1,8 @@
 import {test, expect, duty, touchEvent, ids, NOW, switchLanguage} from './fixtures';
+import type {Page} from '@playwright/test';
+
+// Tabs (decision 2026-11-06): Home · Schedule · Availability · Team.
+const tab = (page: Page, index: number) => page.getByRole('tab').nth(index);
 
 test('navigation follows horizontal touch, commits on release and respects RTL and keyboard', async ({page, openApp, backend}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone navigation.');
@@ -27,7 +31,7 @@ test('navigation follows horizontal touch, commits on release and respects RTL a
 test('mobile cells have only note dots and outside taps discard local edits', async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone sheet.');
   await openApp('a');
-  await page.getByRole('tab').nth(1).click();
+  await tab(page, 2).click();
   const noted = page.locator('.availability-day[data-gesture-key="2026-11-04"]');
   await expect(page.locator('.availability-day .availability-marker')).toHaveCount(0);
   await expect(noted.locator('.mobile-note-dot')).toHaveCount(1);
@@ -49,8 +53,8 @@ test('duty preview follows touch and cancellation never writes; team body scroll
   test.skip(info.project.name !== 'mobile', 'Touch presentation.');
   await page.emulateMedia({reducedMotion: 'no-preference'});
   await openApp();
-  await page.getByRole('tab').nth(1).click();
-  await page.getByRole('tab').nth(0).click();
+  await tab(page, 2).click();
+  await tab(page, 1).click();
   const from = duty(page, '2026-11-02'), to = duty(page, '2026-11-03');
   const a = (await from.boundingBox())!, b = (await to.boundingBox())!;
   const x = a.x + a.width / 2, y = a.y + a.height / 2;
@@ -63,7 +67,7 @@ test('duty preview follows touch and cancellation never writes; team body scroll
   await page.keyboard.press('Escape');
   await expect(page.locator('.mobile-drag-preview')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('tab').nth(2).click();
+  await tab(page, 3).click();
   const row = page.locator(`.team-row[data-gesture-key="${ids.admin}"] .team-name`);
   const r = (await row.boundingBox())!;
   await touchEvent(page, 'touchstart', r.x + 10, r.y + 10);
@@ -76,6 +80,7 @@ test('duty preview follows touch and cancellation never writes; team body scroll
 
 test('combined weekend dates align with daily columns across month and year', async ({page, openApp}) => {
   await openApp();
+  await tab(page, 1).click();
   for (let i = 0; i < 13; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'December 2027'})).toBeVisible();
   const weekend = duty(page, '2027-12-31');
@@ -97,6 +102,7 @@ test('mobile rejects unassigned drag targets and cannot cancel an assignment sav
   test.skip(info.project.name !== 'mobile', 'Phone editing guards.');
   backend.raw.assignments = backend.raw.assignments.filter(d => d.day !== '2026-11-03');
   await openApp();
+  await tab(page, 1).click();
   const first = duty(page, '2026-11-02'), empty = duty(page, '2026-11-03');
   const a = (await first.boundingBox())!, b = (await empty.boundingBox())!;
   await touchEvent(page, 'touchstart', a.x + a.width / 2, a.y + a.height / 2);
@@ -111,7 +117,10 @@ test('mobile rejects unassigned drag targets and cannot cancel an assignment sav
   let release!: () => void;
   const pending = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/rest/v1/rpc/duty_save_schedule', async route => {await pending; await route.fallback();});
+  // A tap shows the day; its row opens the duty sheet, whose Edit opens the editor.
   await first.click();
+  await page.locator('[data-day-details] .day-duty').click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Edit', exact: true}).click();
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Close', exact: true})).toBeDisabled();
   await page.keyboard.press('Escape');

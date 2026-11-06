@@ -43,7 +43,13 @@ export function Sheet({open, onOpenChange, title, description, children, footer,
   const t = (en: string, he: string) => lang === 'he' ? he : en;
   const change = (next: boolean) => {if (next || !closeDisabled) onOpenChange(next);};
   const events: ContentEvents = {
-    onOpenAutoFocus: event => {returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; onOpenAutoFocus?.(event);},
+    onOpenAutoFocus: event => {
+      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      onOpenAutoFocus?.(event);
+      // A phone sheet focuses itself (never a field, which would open the keyboard), so Tab and the
+      // focus trap stay inside it; vaul would otherwise leave focus on the control behind the sheet.
+      if (mobile && kind === 'sheet' && !event.defaultPrevented) {event.preventDefault(); (event.currentTarget as HTMLElement | null)?.focus({preventScroll: true});}
+    },
     onCloseAutoFocus: event => {
       if (onCloseAutoFocus) {onCloseAutoFocus(event); return;}
       event.preventDefault();

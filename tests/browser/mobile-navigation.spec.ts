@@ -1,6 +1,8 @@
 import {test,expect, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
+// The phone tab bar (decision 2026-11-06): four tabs in a glass pill with a 44px track, 5px inset, 16px gutter.
+
 async function bounds(page:Page){
   return page.locator('.mobile-navigation').evaluate(node=>{
     const box=(element:Element)=>{const b=element.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}};
@@ -51,12 +53,12 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
       host.addEventListener('pointermove',event=>{pointer.x=event.clientX});
     });
     for(const safe of [null,{left:0,right:0,bottom:34},{left:12,right:20,bottom:34},{left:0,right:0,bottom:0},{left:0,right:0,bottom:34}]){
-      if(safe)await page.addStyleTag({content:`.nav-row{--nav-safe-left:${safe.left}px;--nav-safe-right:${safe.right}px;--nav-safe-bottom:${safe.bottom}px}`});
-      for(const index of [0,1,2]){
+      if(safe)await page.addStyleTag({content:`.tabbar{--nav-safe-left:${safe.left}px;--nav-safe-right:${safe.right}px;--nav-safe-bottom:${safe.bottom}px}`});
+      for(const index of [0,1,2,3]){
         await tabs.nth(index).click();const measured=await aligned(page,index);
         close(measured.pill.x-measured.viewport.left,Math.max(gutter,safe?.left??0,safe?.right??0),'safe insets are minimum clearances without an additional gutter');
         const tab=measured.tabs[index];
-        for(const content of await tabs.nth(index).locator('svg,.navigation-compact-label').all()){
+        for(const content of await tabs.nth(index).locator('svg,.navigation-label').all()){
           const box=(await content.boundingBox())!;
           expect(box.y+.08).toBeGreaterThanOrEqual(tab.y);expect(box.y+box.height).toBeLessThanOrEqual(tab.bottom+.08);
           expect(box.x+.08).toBeGreaterThanOrEqual(tab.x);expect(box.x+box.width).toBeLessThanOrEqual(tab.right+.08);
@@ -70,7 +72,7 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
       const x=measured.pill.x+measured.pill.width/2,y=measured.pill.bottom-1;
       expect(await page.evaluate(({x,y})=>!!document.elementFromPoint(x,y)?.closest('.mobile-navigation'),{x,y})).toBe(false);
       await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+30,y);await page.mouse.up();
-      await expect(nav).not.toHaveAttribute('data-sliding','true');await expect(tabs.nth(2)).toHaveAttribute('aria-selected','true');
+      await expect(nav).not.toHaveAttribute('data-sliding','true');await expect(tabs.nth(3)).toHaveAttribute('aria-selected','true');
     }
     await tabs.nth(0).click();const b=await aligned(page,0);
     const start=b.tabs[0],x=start.x+start.width*.28,y=start.y+start.height/2,direction=lang==='he'?-1:1;
@@ -82,8 +84,8 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
     const first=await bounds(page);close(first.indicator.x-b.indicator.x,direction*18,'no jump at drag initiation');
     // The pointer is captured: go far outside the pill, reverse twice, and
     // release above it. Active selection changes only on successful release.
-    for(const index of [2,0,2,1,2]){
-      const target=b.tabs[index],dx=target.x-start.x,edge=index===2?direction*20:index===0?-direction*20:0;
+    for(const index of [3,0,3,1,3]){
+      const target=b.tabs[index],dx=target.x-start.x,edge=index===3?direction*20:index===0?-direction*20:0;
       await page.mouse.move(x+dx+edge,y-350,{steps:5});
       await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));
       await expect(nav).toHaveAttribute('data-sliding','true');
@@ -93,7 +95,7 @@ for(const width of [320,375,390,430])for(const lang of ['en','he']){
       if(index!==1)close(moving.indicator.x,target.x,'edge tracking preserves equal inset');
       close(moving.indicator.y-b.pill.y,b.indicator.y-b.pill.y,'vertical excursion keeps inset');
     }
-    await page.mouse.up();await expect(tabs.nth(2)).toHaveAttribute('aria-selected','true');await aligned(page,2);
+    await page.mouse.up();await expect(tabs.nth(3)).toHaveAttribute('aria-selected','true');await aligned(page,3);
     await tabs.nth(0).click();
     for(const interruption of ['pointercancel','lostpointercapture','blur','Escape','resize']){
       const current=await bounds(page),from=current.tabs[0];

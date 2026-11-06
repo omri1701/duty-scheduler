@@ -1,4 +1,4 @@
-import {test,expect,duty} from './fixtures';
+import {test,expect,duty,openDutySheet} from './fixtures';
 import {PROJECTS} from '../../lib/supabase/environment';
 
 for(const {name,url,origin,badge} of [
@@ -16,25 +16,24 @@ for(const {name,url,origin,badge} of [
   await expect.soft(page.locator('.access-card')).toHaveScreenshot(`${name.replaceAll(' ','-')}-login.png`);
   await openApp('admin');
   if(badge)await expect(indicator).toHaveText(badge);else await expect(indicator).toHaveCount(0);
-  await expect.soft(page.locator('.topbar')).toHaveScreenshot(`${name.replaceAll(' ','-')}-workspace.png`);
+  await expect.soft(page.locator('.hdr')).toHaveScreenshot(`${name.replaceAll(' ','-')}-workspace.png`);
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   expect(overflow).toBe(false);
   if(badge==='PROD'){
-   expect(backend.calls.every(c=>c.name==='duty_load')).toBe(true);
-   await expect(page.getByRole('note')).toContainText('not database-enforced');
-   await expect(page.getByRole('button',{name:'Review plan',exact:true})).toBeDisabled();
-   const actions=page.getByRole('button',{name:'Month actions'});
-   if(await actions.isVisible()){
-    await actions.click();
-    await expect(page.getByRole('menuitem',{name:'Change month deadline'})).toHaveAttribute('aria-disabled','true');
-    await page.keyboard.press('Escape');
-   }else await expect(page.getByRole('button',{name:'Change month deadline'})).toBeDisabled();
+   // Production inspection is read-only in the app: nothing writes, every write control says so.
+   await expect(page.getByRole('note').first()).toContainText('not database-enforced');
+   await page.getByRole('tab',{name:'Schedule',exact:true}).click();
+   await expect(page.locator('.month-primary')).toBeDisabled();
+   await page.getByRole('button',{name:'Month actions',exact:true}).click();
+   await expect(page.getByRole('menuitem',{name:'Constraints deadline'})).toHaveAttribute('aria-disabled','true');
+   await page.keyboard.press('Escape');
    await expect(duty(page,'2026-11-02')).toBeDisabled();
    await page.getByRole('button',{name:'Settings'}).click();
-   await expect(page.getByRole('button',{name:'Save name'})).toBeDisabled();
+   await expect(page.getByRole('textbox',{name:'Display name'})).toBeDisabled();
    await page.keyboard.press('Escape');
-   await page.getByRole('tab',{name:'Team & fairness'}).click();
+   await page.getByRole('tab',{name:'Team',exact:true}).click();
    await expect(page.getByRole('button',{name:'Approve',exact:true})).toBeDisabled();
+   expect(backend.calls.filter(c=>!['duty_load','duty_balance','duty_notification_settings','duty_calendar_status'].includes(c.name))).toEqual([]);
   }
  });
 }
@@ -46,7 +45,9 @@ test('local password form authenticates and opens the real workspace controller'
  await page.getByLabel('Password',{exact:true}).fill('synthetic-password');
  await page.getByRole('button',{name:'Sign in locally'}).click();
  await expect(page.getByRole('tab',{name:'Schedule',exact:true})).toBeVisible();
- await expect.poll(()=>backend.calls.map(c=>c.name)).toEqual(['duty_load','duty_generation_context']);
+ await expect.poll(()=>backend.calls.map(c=>c.name).filter(n=>['duty_load','duty_generation_context'].includes(n))).toEqual(['duty_load','duty_generation_context']);
+ // A signed-in admin can open a duty.
+ await openDutySheet(page,'2026-11-02');
 });
 
 test('unknown and mismatched project configuration cannot offer login or enter the workspace',async({page,openApp,backend})=>{

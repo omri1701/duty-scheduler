@@ -121,8 +121,9 @@ for (const lang of ['en', 'he'] as const) {
     if (info.project.name === 'mobile') {
       const row = page.locator(`[data-member="${ids.b}"] .swipe-content`);
       const box = (await row.boundingBox())!;
-      const x = box.x + box.width * .6, y = box.y + box.height / 2;
-      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x - 30, y, {steps: 3}); await page.mouse.move(x - 80, y, {steps: 5}); await page.mouse.up();
+      // The action sits at the inline end, so the row is dragged toward the inline start.
+      const dir = lang === 'he' ? 1 : -1, x = box.x + box.width * .6, y = box.y + box.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dir * 30, y, {steps: 3}); await page.mouse.move(x + dir * 80, y, {steps: 5}); await page.mouse.up();
       await expect(page.locator(`[data-member="${ids.b}"]`)).toHaveClass(/swipe-open/);
       await both(page, `team-swipe-${lang}`);
       await page.locator(`[data-member="${ids.b}"] .swipe-action`).click();

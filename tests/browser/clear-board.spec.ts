@@ -136,8 +136,8 @@ test(`Clear board confirm rests full red, hover only deepens it, disabled stays 
   await clearBoard(page);
   const confirm = page.getByRole('alertdialog').getByRole('button', {name: 'Clear board', exact: true});
   const look = () => confirm.evaluate(x => [getComputedStyle(x).backgroundColor, getComputedStyle(x).opacity]);
-  // --danger at rest (#d7372b light, #ff6b5e dark): full opacity, never a shade that reads as disabled.
-  const rest = scheme === 'light' ? 'rgb(215, 55, 43)' : 'rgb(255, 107, 94)';
+  // --danger at rest (#c0291f light, #ff6b5e dark; the light shade passes 4.5:1 on white): full opacity, never a shade that reads as disabled.
+  const rest = scheme === 'light' ? 'rgb(192, 41, 31)' : 'rgb(255, 107, 94)';
   await expect.poll(look).toEqual([rest, '1']);
   await confirm.hover();
   await expect.poll(async () => {const [colour, opacity] = await look(); return colour !== rest && opacity === '1';}, 'hover deepens the red').toBe(true);

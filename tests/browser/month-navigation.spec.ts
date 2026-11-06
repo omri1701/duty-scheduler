@@ -1,4 +1,5 @@
 import {test,expect,seed,MONTH,ids,NOW, switchLanguage} from './fixtures';
+import type {Page} from '@playwright/test';
 import {monthNext} from '../../lib/rota/engine';
 import {assertMonthNavigation,traverseMonths} from './month-navigation';
 import {zoomContext,setBrowserZoom} from './zoom-context.mjs';
@@ -22,26 +23,39 @@ function navigationSnapshot(identity:'admin'|'a'='admin') {
   }
   return initial;
 }
+// Schedule, Availability and Team carry the month; Home does not (decision 2026-11-06).
+const monthTabs=[1,2,3];
+/** Completed requests moved from the calendar's list to the activity bell (decision 2026-11-06). */
+async function expectCompletedRequests(page:Page) {
+  await page.locator('[data-bell]').click();
+  const list=page.locator('.bell-list');
+  await expect(list).toContainText('Swap approved');
+  await expect(list).toContainText('Swap cancelled');
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden();
+}
+const allowed=(name:string,identity:'admin'|'a')=>['duty_load','duty_set_language','duty_notification_settings','duty_calendar_status','duty_balance'].includes(name)||(identity==='admin'&&name==='duty_generation_context');
 
 for(const identity of ['admin','a'] as const) test(`month navigation survives empty, draft and published months for ${identity}`,async({page,backend,openApp})=>{
   test.setTimeout(120_000);
   backend.raw=navigationSnapshot(identity);
   await openApp(identity);
-  await expect(page.locator('.swap-requests')).toBeVisible();
+  await expectCompletedRequests(page);
   for(const language of ['en','he']) {
     if(language==='he')await switchLanguage(page, 'he');
     await expect(page.locator('.app-shell')).toHaveAttribute('dir',language==='he'?'rtl':'ltr');
-    for(let tab=0;tab<3;tab++) {
-      await page.locator('[data-slot=tabs-trigger]').nth(tab).click();
+    for(const tab of monthTabs) {
+      await page.getByRole('tab').nth(tab).click();
       // One deep round trip; the other tab/language passes cover the seeded months, New Year and an empty month.
-      await traverseMonths(page,language==='en'&&tab===0?24:4);
+      await traverseMonths(page,language==='en'&&tab===1?24:4);
     }
   }
   await page.reload();
   await expect(page.locator('.app-shell:not(.startup-skeleton)')).toBeVisible();
+  await page.getByRole('tab').nth(1).click();
   await assertMonthNavigation(page);
   await traverseMonths(page,1);
-  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_notification_settings'||call.name==='duty_calendar_status'||call.name==='duty_balance'||(identity==='admin'&&call.name==='duty_generation_context')),'navigation only loads the workspace, the Team balance and manager allocation facts (and Settings reads and saves a language change)').toBe(true);
+  expect(backend.calls.every(call=>allowed(call.name,identity)),'navigation only loads the workspace, the balance and manager allocation facts (and Settings reads and saves a language change)').toBe(true);
 });
 
 test('month navigation remains usable after actual browser zoom with visible completed requests',async({backend,openApp},info)=>{
@@ -51,6 +65,8 @@ test('month navigation remains usable after actual browser zoom with visible com
   const context=await zoomContext();
   try {
     const page=await context.newPage();await openApp('admin',page);
+    await expectCompletedRequests(page);
+    await page.getByRole('tab',{name:'Schedule',exact:true}).click();
     for(const zoom of [1.25,1.5,2]) {
       expect(await setBrowserZoom(context,page,zoom)).toBe(zoom);
       await expect.poll(()=>page.evaluate(()=>devicePixelRatio)).toBe(zoom);
@@ -61,5 +77,5 @@ test('month navigation remains usable after actual browser zoom with visible com
       }
     }
   } finally {await context.close();}
-  expect(backend.calls.every(call=>call.name==='duty_load'||call.name==='duty_set_language'||call.name==='duty_notification_settings'||call.name==='duty_calendar_status'||call.name==='duty_generation_context')).toBe(true);
+  expect(backend.calls.every(call=>allowed(call.name,'admin'))).toBe(true);
 });

@@ -15,8 +15,9 @@ for (const width of [320, 375, 390, 430]) for (const lang of ['en', 'he'] as con
     await page.setViewportSize({width, height: 844});
     await openApp();
     if (lang === 'he') await switchLanguage(page, 'he');
-    await page.getByRole('tab').nth(1).click();
+    await page.getByRole('tab', {name: lang === 'en' ? 'Availability' : 'אילוצים', exact: true}).click();
     const header = page.locator('.availability-tools'), hint = header.locator('.gesture-hint');
+    // No idle hint (decision 2026-11-06): the status line is blank until a selection.
     const instructions = await hint.innerText();
     const positions = () => page.locator('.availability-tools,.mobile-availability-weekdays,.availability-grid').evaluateAll(els => els.map(el => {
       const {x,y,width,height} = el.getBoundingClientRect(); return {x,y,width,height};
@@ -45,20 +46,21 @@ for (const width of [320, 375, 390, 430]) for (const lang of ['en', 'he'] as con
         Object.defineProperty(window.visualViewport!, 'height', {configurable: true, value: innerHeight - 300});
         window.visualViewport!.dispatchEvent(new Event('resize'));
       });
+      // The bottom sheet rises above the keyboard and spans the screen edge to edge.
       await expect.poll(async () => {
         const b = (await sheet.boundingBox())!; return b.y + b.height;
       }).toBeLessThanOrEqual(544);
       const box = (await sheet.boundingBox())!;
-      expect(box.x).toBe(12); expect(box.width).toBe(width - 24);
+      expect(box.x).toBe(0); expect(box.width).toBe(width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
       await page.evaluate(() => {
         delete (window.visualViewport as unknown as {height?: number}).height;
         window.visualViewport!.dispatchEvent(new Event('resize'));
       });
       // Every dismissal discards local edits without writing.
-      if (from === '09') await sheet.getByRole('button', {name: 'Close', exact: true}).click();
+      if (from === '09') await sheet.getByRole('button', {name: lang === 'en' ? 'Close' : 'סגירה', exact: true}).click();
       else if (from === to) await page.keyboard.press('Escape');
-      else await page.locator('[data-slot=dialog-overlay]').click({position: {x: 5, y: 5}});
+      else await page.locator('.sheet-overlay').click({position: {x: 5, y: 5}});
       await expect(sheet).toBeHidden();
       await expect(page.locator('.date-selected')).toHaveCount(0);
       expect(await positions()).toEqual(original);
@@ -77,7 +79,7 @@ test('bulk notes warn, allow confirmation cancellation, and replace deliberately
   test.skip(info.project.name !== 'mobile', 'Touch range.');
   backend.raw.constraints.push(...['05', '07'].map((d, i) => ({member_id: ids.admin, day: `2026-11-${d}`, kind: 'no' as const, note: `Original note ${i}`})));
   const original = structuredClone(backend.raw.constraints);
-  await openApp(); await page.getByRole('tab').nth(1).click();
+  await openApp(); await page.getByRole('tab', {name: 'Availability', exact: true}).click();
   const target = await hold(page, '05', '09');
   await touchEvent(page, 'touchmove', target.x, target.y);
   await touchEvent(page, 'touchend', target.x, target.y);

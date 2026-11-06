@@ -1,16 +1,7 @@
 import {test,expect,ids,duty,touchEvent,NOW, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
-test('native select cloning loses the live role selection',async({page})=>{
- const result=await page.evaluate(()=>{
-  const select=document.createElement('select');
-  select.add(new Option('Admin','admin'));select.add(new Option('Engineer','engineer'));
-  select.value='engineer';
-  const clone=select.cloneNode(true) as HTMLSelectElement;
-  return{source:select.value,clone:clone.value};
- });
- expect(result).toEqual({source:'engineer',clone:'admin'});
-});
+// Removed: the native <select> cloning check; team rows no longer carry a role <select> (the role lives in the member sheet).
 
 for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engineer and inactive row in ${lang}`,async({page,openApp,backend},info)=>{
  backend.raw.members.find(m=>m.id===ids.e)!.active=false;
@@ -80,6 +71,7 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  if(availability)backend.raw.constraints.push({member_id:ids.a,day:'2026-11-07',kind:'no',note:'Weekend vacation'});
  const published=structuredClone(backend.raw.assignments.filter(d=>d.publication_id!==null));
  await openApp();if(lang==='he')await switchLanguage(page, 'he');
+ await page.getByRole('tab',{name:lang==='en'?'Schedule':'לוח',exact:true}).click();
  const mobile=info.project.name==='mobile',dialog=page.getByRole('dialog'),confirm=dialog.locator('button').filter({hasText:lang==='en'?'Confirm swap':'אישור החלפה'});
  await propose(page,mobile);
  await expect(dialog).toContainText(lang==='en'?'Alex Atlas 2 weekends in November':'Alex Atlas 2 סופי שבוע בחודש נובמבר');

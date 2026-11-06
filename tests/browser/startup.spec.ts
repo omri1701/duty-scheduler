@@ -5,19 +5,21 @@ function gate() {
   const wait = new Promise<void>(resolve => {release = resolve;});
   return {wait, release};
 }
+// The signed-in workspace (decision 2026-11-06) opens on Home; its avatar button is the private mark.
+const PRIVATE = '.app-shell:not(.startup-skeleton) .home,.admin-avatar';
 
 async function watchPrivateMounts(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     Object.assign(window, {privateMounts: 0,accessMounts:0});
     new MutationObserver(() => {
-      if (document.querySelector('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')) (window as unknown as {privateMounts:number}).privateMounts++;
+      if (document.querySelector('.app-shell:not(.startup-skeleton) .home,.admin-avatar')) (window as unknown as {privateMounts:number}).privateMounts++;
       if (document.querySelector('.access-card')) (window as unknown as {accessMounts:number}).accessMounts++;
     }).observe(document, {childList:true,subtree:true});
   });
 }
 
 for (const phase of ['config', 'auth', 'snapshot'] as const) {
-  test(`public shell while ${phase} is slow, then immediate verified calendar`, async ({page,openApp,backend}, info) => {
+  test(`public shell while ${phase} is slow, then immediate verified home`, async ({page,openApp,backend}, info) => {
     const held=gate();
     if (phase==='config') backend.configGate=held.wait;
     if (phase==='auth') backend.authGate=held.wait;
@@ -30,27 +32,28 @@ for (const phase of ['config', 'auth', 'snapshot'] as const) {
     try {
       await expect(shell).toBeVisible();
       await expect(shell).toHaveAttribute('aria-busy','true');
-      await expect(shell.getByRole('status')).toHaveText('Loading calendar\u2026');
+      await expect(shell.getByRole('status')).toHaveText('Loading…');
       await expect(shell.locator('[inert][aria-hidden=true]')).toHaveCount(1);
       await expect(shell.locator('button:not(:disabled),a,input,[tabindex]:not([tabindex="-1"])')).toHaveCount(0);
       await expect(shell).not.toContainText(/Avery|Atlas|Synthetic vacation|Holiday coverage|example.invalid/);
-      await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')).toHaveCount(0);
+      await expect(page.locator(PRIVATE)).toHaveCount(0);
       expect(await page.evaluate(()=>(window as unknown as {privateMounts:number}).privateMounts)).toBe(0);
       expect(backend.calls.filter(c=>c.name==='duty_generation_context')).toHaveLength(0);
       await page.keyboard.press('Tab');
       expect(await shell.evaluate(node=>node.contains(document.activeElement))).toBe(false);
-      const before=await page.locator('.topbar').boundingBox();
-      const navBefore=await page.locator('.nav-row').boundingBox();
+      // The shell reserves the header and the tab bar at their final sizes: nothing shifts when Home arrives.
+      const before=await page.locator('.hdr').boundingBox();
+      const navBefore=await page.locator('.tabbar').boundingBox();
       if (phase==='auth') await info.attach('startup-shell',{body:await page.screenshot(),contentType:'image/png'});
       held.release();
       await expect(page.getByRole('button',{name:'Settings'})).toBeVisible();
       await expect(shell).toHaveCount(0);
       expect(await page.evaluate(()=>(window as unknown as {accessMounts:number}).accessMounts)).toBe(0);
-      expect(await page.locator('.topbar').boundingBox()).toEqual(before);
-      if (info.project.name==='mobile') expect(await page.locator('.nav-row').boundingBox()).toEqual(navBefore);
-      // The verified manager reads allocation/cutoff facts after bootstrap.
-      await expect.poll(()=>backend.calls.map(c=>c.name)).toEqual(['duty_load','duty_generation_context']);
-      expect(backend.calls[1]).toMatchObject({user:ids.admin,params:{p_month:MONTH,p_revision:backend.raw.revision}});
+      expect(await page.locator('.hdr').boundingBox()).toEqual(before);
+      if (info.project.name==='mobile') expect(await page.locator('.tabbar').boundingBox()).toEqual(navBefore);
+      // The verified manager reads allocation/cutoff facts after bootstrap; Home's balance is a read too.
+      await expect.poll(()=>backend.calls.map(c=>c.name).filter(n=>n!=='duty_balance')).toEqual(['duty_load','duty_generation_context']);
+      expect(backend.calls.find(c=>c.name==='duty_generation_context')).toMatchObject({user:ids.admin,params:{p_month:MONTH,p_revision:backend.raw.revision}});
       expect(requests.sort()).toEqual(['/api/config','/auth/v1/user','/rest/v1/rpc/duty_generation_context','/rest/v1/rpc/duty_load']);
     } finally {held.release();}
   });
@@ -74,7 +77,7 @@ test('failed verification discards an already returned private snapshot without 
   } finally {held.release();}
   await expect(page.getByRole('main').getByRole('alert')).toHaveText('Synthetic session expired');
   await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();
-  await expect(page.locator('.startup-skeleton,.calendar-grid,.admin-avatar')).toHaveCount(0);
+  await expect(page.locator('.startup-skeleton,.app-shell .home,.admin-avatar')).toHaveCount(0);
   expect(await page.evaluate(()=>(window as unknown as {privateMounts:number}).privateMounts)).toBe(0);
   expect(backend.calls.map(c=>c.name)).toEqual(['duty_load']);
 });
@@ -87,7 +90,7 @@ test('Google PKCE return keeps the public shell until verification succeeds',asy
   try {
     expect((await exchange).postDataJSON()).toMatchObject({auth_code:'synthetic-oauth-code',code_verifier:'synthetic-verifier'});
     await expect(page.locator('.startup-skeleton')).toBeVisible();
-    await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')).toHaveCount(0);
+    await expect(page.locator(PRIVATE)).toHaveCount(0);
     expect(await page.evaluate(()=>(window as unknown as {accessMounts:number}).accessMounts)).toBe(0);
   } finally {held.release();}
   await expect(page.getByRole('button',{name:'Settings'})).toBeVisible();
@@ -103,14 +106,14 @@ test('configuration failure exits the shell with a usable access screen', async 
   await page.reload();
   try {await expect(page.locator('.startup-skeleton')).toBeVisible();} finally {held.release();}
   await expect(page.getByRole('main').getByRole('alert')).toContainText('not configured');
-  await expect(page.locator('.startup-skeleton,.calendar-grid')).toHaveCount(0);
+  await expect(page.locator('.startup-skeleton,.app-shell .home')).toHaveCount(0);
 });
 
 for (const identity of ['signed-out','pending','rejected','inactive'] as const) {
   test(`fast ${identity} response never mounts a workspace`,async({page,openApp})=>{
     await watchPrivateMounts(page);
     await openApp(identity);
-    await expect(page.locator('.startup-skeleton,.calendar-grid,.admin-avatar')).toHaveCount(0);
+    await expect(page.locator('.startup-skeleton,.app-shell .home,.admin-avatar')).toHaveCount(0);
     expect(await page.evaluate(()=>(window as unknown as {privateMounts:number}).privateMounts)).toBe(0);
   });
 }
@@ -134,10 +137,10 @@ test('Hebrew account switching clears private UI before re-verification',async({
   },ids.pending);
   try {
     await expect(page.locator('.startup-skeleton')).toHaveAttribute('dir','rtl');
-    await expect(page.getByRole('status')).toHaveText('\u05d8\u05d5\u05e2\u05df \u05d0\u05ea \u05d4\u05dc\u05d5\u05d7\u2026');
-    await expect(page.locator('.app-shell:not(.startup-skeleton) .calendar-grid,.admin-avatar')).toHaveCount(0);
+    await expect(page.getByRole('status')).toHaveText('טוען…');
+    await expect(page.locator(PRIVATE)).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('Avery Admin');
   } finally {held.release();}
-  await expect(page.getByRole('heading',{name:'\u05de\u05de\u05ea\u05d9\u05df \u05dc\u05d0\u05d9\u05e9\u05d5\u05e8'})).toBeVisible();
-  await expect(page.locator('.startup-skeleton,.calendar-grid')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'ממתין לאישור'})).toBeVisible();
+  await expect(page.locator('.startup-skeleton,.app-shell .home')).toHaveCount(0);
 });

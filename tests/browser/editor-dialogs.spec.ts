@@ -1,11 +1,20 @@
-import {test,expect,duty,ids, switchLanguage} from './fixtures';
+import {test,expect,duty,ids,openDutySheet, switchLanguage} from './fixtures';
 import type {Page,Locator} from '@playwright/test';
 
-async function centered(page:Page,dialog:Locator){
+/** Every editor is a Sheet (decision 2026-11-06): a bottom sheet on phones, a side panel on PC. It never
+ * leaves the viewport and never widens the page. */
+async function fits(page:Page,dialog:Locator){
  const box=(await dialog.boundingBox())!,viewport=page.viewportSize()!;
- expect(Math.abs(box.x+box.width/2-viewport.width/2)).toBeLessThan(1);
- expect(Math.abs(box.y+box.height/2-viewport.height/2)).toBeLessThan(1);
- expect(box.x).toBeGreaterThanOrEqual(12);expect(box.y).toBeGreaterThan(0);
+ expect(box.x).toBeGreaterThanOrEqual(0);expect(box.y).toBeGreaterThanOrEqual(0);
+ expect(box.x+box.width).toBeLessThanOrEqual(viewport.width+.5);expect(box.y+box.height).toBeLessThanOrEqual(viewport.height+.5);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+}
+const schedule=(page:Page)=>page.getByRole('tab',{name:'Schedule',exact:true}).click();
+/** The duty sheet's Edit opens the editor. */
+async function editDuty(page:Page,day:string){
+ const sheet=await openDutySheet(page,day);
+ await sheet.getByRole('button',{name:/^(Edit|עריכה)$/}).click();
+ await expect(page.locator('.duty-dialog')).toBeVisible();
 }
 
 for(const lang of ['en','he'] as const)for(const weekend of [
@@ -18,14 +27,16 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  }
  const original=backend.raw.assignments.find(row=>row.day===weekend.friday&&row.publication_id===null)!;
  await openApp();
+ await schedule(page);
  for(let i=0;i<weekend.previous;i++)await page.getByRole('button',{name:'Previous month',exact:true}).click();
  if(lang==='he')await switchLanguage(page, 'he');
- await duty(page,weekend.friday).click();
- const dialog=page.getByRole('dialog'),description=dialog.locator('[data-slot="dialog-description"]');
+ await editDuty(page,weekend.friday);
+ const dialog=page.locator('.duty-dialog'),description=dialog.locator('.sheet-description');
  await expect(dialog).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
  await expect(description).toHaveText(weekend[lang]);
  await expect(dialog.getByRole('combobox',{name:lang==='en'?'Friday primary engineer':'מהנדס ראשי ביום שישי',exact:true})).toBeVisible();
  await expect(dialog.getByRole('combobox',{name:lang==='en'?'Saturday engineer':'מהנדס ביום שבת',exact:true})).toBeVisible();
+ await fits(page,dialog);
  await dialog.screenshot({path:info.outputPath(`weekend-${lang}.png`)});
  await dialog.getByRole('button',{name:lang==='en'?'Save assignment':'שמירת השיבוץ',exact:true}).click();
  await expect(dialog).toBeHidden();
@@ -42,11 +53,12 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  }
 });
 
-test('duty modal dismisses local edits, keeps nested selects open, restores focus and locks pending saves',async({page,openApp,backend},info)=>{
+test('duty editor dismisses local edits, keeps nested selects open, restores focus and locks pending saves',async({page,openApp,backend},info)=>{
  await openApp();
+ await schedule(page);
  const cell=duty(page,'2026-11-02'),dialog=page.getByRole('dialog',{name:'Edit duty',exact:true});
  for(const dismissal of ['outside','escape','close']){
-  await cell.click();await centered(page,dialog);
+  await editDuty(page,'2026-11-02');await fits(page,dialog);
   await page.getByRole('combobox',{name:'Primary engineer',exact:true}).click();
   // Radix temporarily hides the dialog from the accessibility tree while its
   // modal select owns focus; the editor must remain visually mounted.
@@ -59,7 +71,7 @@ test('duty modal dismisses local edits, keeps nested selects open, restores focu
   await expect(dialog).toBeHidden();await expect(cell).toBeFocused();
   expect(backend.calls.filter(c=>c.name==='duty_save_schedule')).toHaveLength(0);
  }
- await cell.click();await expect(page.getByRole('combobox',{name:'Primary engineer',exact:true})).toContainText('Alex Atlas');
+ await editDuty(page,'2026-11-02');await expect(page.getByRole('combobox',{name:'Primary engineer',exact:true})).toContainText('Alex Atlas');
  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve});
  await page.route('**/rest/v1/rpc/duty_save_schedule',async route=>{await gate;await route.fallback()});
  const request=page.waitForRequest('**/rest/v1/rpc/duty_save_schedule');
@@ -73,12 +85,12 @@ test('duty modal dismisses local edits, keeps nested selects open, restores focu
  await page.screenshot({path:info.outputPath('duty-dismissed.png')});
 });
 
-test('availability is centered, supports every dismissal, and discards unsaved notes without writes',async({page,openApp,backend})=>{
+test('availability fits the screen, supports every dismissal, and discards unsaved notes without writes',async({page,openApp,backend})=>{
  backend.raw.months[0].current_publication_id=null;
- await openApp('a');await page.getByRole('tab').nth(1).click();
+ await openApp('a');await page.getByRole('tab',{name:'Availability',exact:true}).click();
  const cell=page.locator('.availability-day[data-gesture-key="2026-11-04"]');
  for(const dismissal of ['outside','escape','close']){
-  await cell.click();const dialog=page.getByRole('dialog');await centered(page,dialog);
+  await cell.click();const dialog=page.getByRole('dialog');await fits(page,dialog);
   await expect(page.getByLabel('Description (optional)')).toHaveValue('Synthetic vacation');
   await page.getByLabel('Description (optional)').fill('Unsaved local changes');
   if(dismissal==='outside')await page.mouse.click(5,5);
@@ -92,7 +104,7 @@ test('availability is centered, supports every dismissal, and discards unsaved n
 
 test('bulk blank description clears notes only after confirmation and reconfirms changed data',async({page,openApp,backend},info)=>{
  backend.raw.constraints.push({member_id:ids.admin,day:'2026-11-05',kind:'no',note:'Existing note'});
- await openApp();await page.getByRole('tab').nth(1).click();
+ await openApp();await page.getByRole('tab',{name:'Availability',exact:true}).click();
  const first=page.locator('.availability-day[data-gesture-key="2026-11-05"]'),last=page.locator('.availability-day[data-gesture-key="2026-11-09"]');
  const a=(await first.boundingBox())!,b=(await last.boundingBox())!;
  await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();
