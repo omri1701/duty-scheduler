@@ -1075,9 +1075,13 @@ No arbitrary weighted sum of calendar coverage, points and spacing is allowed.
 | 3b | Fewest back-to-back pairs | Minimize unapproved back-to-back pairs inside the month (section 10.1). |
 | 4 | Maximum minimum spacing | Maximize the shortest applicable end-to-start gap for any engineer. |
 | 5 | Weekend rotation across months | At the proved minimum gap, give this month's weekends to the members with the fewest weekend turns in the current rotation cycle (section 11.3): minimize the sum of the turn counts of the members who receive a weekend, counted once per weekend a member receives (an extra weekend costs the turns again). |
+| 5t | No Thursday with a weekend | Minimize members who have both a Thursday duty and a weekend duty (either half of a split weekend) in the month; each such member counts one. Allowed only when nothing else works (decision 2026-11-06, priority confirmed by the owner: spacing, weekend turns, this rule, then the wave). Measured over 24 months: 31–37% → 3–19% of weekend holders; same-weekday repeats rose (Thursday is one weekday fewer for them) and the first weekday cycle takes one more month. |
+| 5a | Weekend wave | Keep each member's place in the weekend order within two places of the last cycle (section 11.3a): a weekend outside the member's band costs 100 plus its distance from the band, an overdue member left without a weekend costs their first later place, and a weekend in a new or rejoining member's first month costs 1000. |
 | 6 | Weekday variety | Minimize same-weekday repeats: for each member and Sunday–Thursday weekday, every duty beyond the first on that weekday counts one. Weekend halves never count. |
+| 6a | No weekday staircase | Per member, every step beyond the first in one direction counts one: forward is two consecutive duties starting 8 or 15 days apart (Sunday → the next Monday), back is 6 or 13 days. The nearest neighbouring-month duty counts as a consecutive duty, and a neighbouring month's own step next to this month counts as the first one (section 11.3b). |
 | 7 | Weekday rotation across months | Give each Sunday–Thursday duty to a member who has not covered that weekday in the current weekday cycle (section 11.4): minimize the sum, over assigned weekday duties, of the member's count for that weekday. |
 | 8 | Preferred dates | Prefer available “preferred” dates among equal higher outcomes. |
+| 8a | New weekend predecessor | Minimize weekends taken right after the same member as the member's last weekend (section 11.3a). |
 | 9 | Seed | Seeded alternatives among schedules equal on every level above. |
 | 10 | Overall gap distribution | Tie-breaker only: improve the remaining smallest gaps in order (the full sorted-gap leximin) among schedules equal on every level above, including the seed. |
 
@@ -1199,6 +1203,91 @@ the database records `weekends_from`, the month after every month generated or p
 so far, and their duties in earlier months are ignored, so a weekday-only stretch never
 makes them due first. The state is a soft objective only: the checked
 database save does not revalidate it.
+
+### 11.3a Weekend wave
+
+*Decision 2026-11-06.* The turn counts alone let each cycle repeat the previous
+order, so members always followed the same person. The wave keeps each round
+similar to the last but lightly and randomly shuffled. A clock counts every
+weekend duty of the published months (a whole weekend or either half of a split
+one) as one **tick**; a month missing from the history still counts its
+weekends, and tick 0 is the generated month's first weekend duty. With N weekend
+members, a member whose last weekend was at tick L has the band
+`L + N − 2 … L + N + 2` (`weekendWave`, `WAVE_SPREAD = 2`): with 12 members, 10–14
+weekends apart. Inside the band the cost is zero and the seed chooses; outside it
+a weekend costs `100 + distance` (`waveCost`), so the fewest members leave their
+band and each by the fewest places: a blocked member takes the nearest free
+place and everyone else keeps theirs. Generate plans one month at a time, so a
+member whose band has already ended (blocked earlier) and who gets no weekend
+this month costs their first possible later place, tick T (the month's number of
+weekend duties): otherwise each month would defer them for free and the wave
+would drift. The level sits directly below the turn counts, which still decide
+who is due.
+
+A new member (no duty in a team with history) or one rejoining weekends
+(`weekendsFrom` is the generated month) waits out that month: any weekend costs
+1000. Afterwards they have no band and take a seeded place in the next cycle,
+never automatically first or last. A band more than a full cycle overdue (a long
+absence) is dropped the same way.
+
+Each member also records `after`, who held the tick right before their last
+weekend (and the wave records who held the last tick before the month). Taking
+the tick right after the same person again counts one at level 8a, below
+preferred dates, so it never costs spacing, weekday variety or a preferred date.
+Like the turn counts, the wave is a soft objective derived from published months
+with no new table; the checked database save does not revalidate it.
+
+*Measured trade-off (24 consecutive generated months, 12 and 8 members, a newcomer,
+split weekends, with and without availability blocks):* below the proved minimum
+gap the wave raises gaps within N ± 2 from 33–51% to 61–84% of turns (12 members:
+2–35 → 2–22 weekends apart). The minimum gap often fixes who can take which
+weekend, so the rest leaves the band, and the seed and the predecessor level
+rarely have room left: repeated predecessors stayed at 8–19% (6–15% before).
+Weekday variety pays for the stable weekend phase: the cross-month weekday
+rotation cost rose in all four runs (for example 453 → 668) and same-weekday
+repeats in three. Coverage, points, the minimum gap and speed were unchanged.
+Placing the wave above the minimum gap instead kept 86–95% in the band and
+weekday variety level, at 0.4–2 days less minimum gap per month; below weekday
+variety it reached 49–66%. The `quality` list in `lib/scheduling/solver/model.ts`
+and `compareQuality` in `problem.ts` fix the order.
+
+### 11.3b Weekday staircases
+
+*Decision 2026-11-06.* With the minimum gap maximized and no weekday twice, the
+weekday rotation favoured a new weekday each time, so steady gaps of 8 (or 15)
+days stepped each member one weekday forward per week (Sunday 31, Monday 8,
+Tuesday 16, Wednesday 24): the month looked planned. Level 6a, directly below
+same-weekday repeats and above the cross-month weekday rotation, allows each
+member at most one step forward and one back. Steps are measured start to start on
+the spacing gaps, which are exactly the arcs of the proved minimum-gap flow, so the
+level adds one counter column per member and direction and never touches the
+minimum gap: it is solved only after that gap is proved and fixed. The member's
+nearest duty in the previous and next month counts, and their own step between
+their two duties nearest the month counts as a first step, so a staircase across
+the month boundary is caught too. Remaining gap choices are left to the seed.
+
+*Measured (24 consecutive months; before → after):* staircase runs, meaning two
+consecutive steps in the same direction among a member's consecutive gaps, fell
+from 15.7% to 8.4% with 12 members (18.5% to 14.0% without availability blocks)
+and from 7.8% to 2.9% with 8 members (5.7% to 2.4%). The minimum gap of each month is
+unchanged by construction. The cost is speed: the gap-count tie-breakers after the
+seed get harder, so the slowest months rose from about 10 s to 20–24 s with 8
+members, and one of 96 simulated months reached the 30 s budget in those
+tie-breakers (a best-found label; everything through the seed was proved). A
+stricter rule, each gap length only once per member, took 27 s to prove for one
+six-member month and was dropped.
+
+The gap counts after the seed only break ties the seed left. Once the seed is
+proved, one feasibility check with a no-good row against the incumbent assignment
+(every proved level still fixed) shows whether any other schedule ties. Usually none
+does, and then every gap-count level is proved at once ("Unique seeded optimum");
+otherwise they run as before. This keeps months whose Thursday or staircase rules
+force repeats (a six-member November took over 30 s) at about their earlier time.
+
+Stages count as proved when the dual bound is at least `value − 1 + 1e-6` (all
+stage objectives are integral). The native relative gap is no longer required:
+HiGHS closes on objective integrality with a bound such as 15.17 for 16, and the
+continuous counter columns leave noise such as 1.999999995 for 2.
 
 ### 11.4 Weekday rotation state
 

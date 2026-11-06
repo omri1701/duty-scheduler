@@ -10,14 +10,52 @@ export type Problem = {targets: number[]; duties: Duty[]; spacing?: boolean; bou
   rotation?: number[];
   /** Sunday–Thursday duties already taken on each weekday (0–4) in the current cycle, per engineer. */
   weekdays?: number[][];
+  /** Weekend wave cost of an engineer taking a weekend duty (positive costs only). */
+  wave?: {engineer: number; duty: number; cost: number}[];
+  /** Weekend wave cost of an engineer taking no weekend this month: an overdue member's
+   * cheapest later place (positive costs only). */
+  waveAbsent?: {engineer: number; cost: number}[];
+  /** Same predecessor as last cycle: the engineer on the duty, right after `after` (or, without
+   * `after`, after the previous month's last weekend holder), counts one. */
+  follows?: {engineer: number; duty: number; after?: {engineer: number; duty: number}}[];
   exceptions?: {consecutive?: [number, number][]; boundary?: {duty: number; boundary: string}[];
     weekends?: {engineer: number; weekends: number[]}[]}};
 /** Ordered objective facts: coverage, special, units, extra weekends, unapproved
- * back-to-back pairs, the minimum gap, weekend rotation cost, same-weekday repeats,
- * cross-month weekday rotation cost, the preferred-date count, then (below the seed)
+ * back-to-back pairs, the minimum gap, weekend rotation cost, weekend wave cost, same-weekday
+ * repeats, cross-month weekday rotation cost, the preferred-date count, repeated weekend
+ * predecessors, then (below the seed)
  * the whole ascending gap vector. Back-to-back duties (gap 0) are not spacing gaps. */
 export type Metrics = {coverage: number; special: number; units: number; deficits: number[]; gaps: number[];
-  rotation: number; preferred: number; repeats: number; weekdays: number; extraWeekends: number; adjacent: number};
+  rotation: number; preferred: number; repeats: number; weekdays: number; extraWeekends: number; adjacent: number;
+  wave: number; follows: number; patterns: number;
+  /** Members with both a Thursday and a weekend this month (decision 2026-11-06). */
+  thursdays: number};
+
+/** Start-to-start days of a spacing gap (minutes; DST shifts round away). */
+export const spanDays = (from: number, to: number) => Math.round((to - from) / 1440);
+/** Weekday step of a spacing gap, start to start: forward (+1) is 8 or 15 days (Sunday to the
+ * next Monday, one or two weeks on), back (-1) is 6 or 13 days; anything else is 0. */
+export const step = (days: number) => days === 8 || days === 15 ? 1 : days === 6 || days === 13 ? -1 : 0;
+/** Weekday staircases in one member's month (decision 2026-11-06): every step beyond the first
+ * in one direction counts one. `carried` holds the directions of the neighbouring months' own
+ * steps (their two duties nearest this month), which count as a first step already taken, so
+ * a run across the month boundary counts too. */
+export function patternCount(spans: number[], carried: number[] = []) {
+  let count = 0;
+  for (const direction of [1, -1]) {
+    const steps = spans.filter(s => step(s) === direction).length;
+    if (steps) count += steps - 1 + Number(carried.includes(direction));
+  }
+  return count;
+}
+/** Directions of a member's own steps in the neighbouring months, next to this month: between
+ * their last two duties before it and their first two after it. */
+export function carriedSteps(p: Problem, e: number) {
+  const bindings = (p.boundaries ?? []).filter(b => b.engineer === e);
+  const before = bindings.filter(b => b.end <= p.duties[0].start).sort((a, b) => a.end - b.end).slice(-2);
+  const after = bindings.filter(b => b.start >= p.duties.at(-1)!.end).sort((a, b) => a.start - b.start).slice(0, 2);
+  return [before, after].flatMap(([a, b]) => a && b && b.start > a.end ? [step(spanDays(a.start, b.start))] : []).filter(Boolean);
+}
 
 export function approvedPair(p: Problem, i: number, j: number) {
   return p.exceptions?.consecutive?.some(([a, b]) => a === i && b === j) ?? false;
@@ -73,6 +111,25 @@ export function checkProblem(p: Problem) {
   if (p.rotation !== undefined && (p.rotation.length !== p.targets.length || !p.rotation.every(integer))) throw Error('Invalid rotation state');
   if (p.weekdays !== undefined && (p.weekdays.length !== p.targets.length ||
     !p.weekdays.every(w => Array.isArray(w) && w.length === 5 && w.every(integer)))) throw Error('Invalid weekday rotation state');
+  const waves = new Set<string>();
+  for (const w of p.wave ?? []) {
+    if (!index(w.duty) || p.duties[w.duty].weekend === undefined || !p.duties[w.duty].eligible.includes(w.engineer) ||
+      !integer(w.cost) || !w.cost || w.cost > 1e6 || waves.has(`${w.duty}:${w.engineer}`)) throw Error('Invalid weekend wave');
+    waves.add(`${w.duty}:${w.engineer}`);
+  }
+  const absent = new Set<number>();
+  for (const w of p.waveAbsent ?? []) {
+    if (!engineer(w.engineer) || absent.has(w.engineer) || !integer(w.cost) || !w.cost || w.cost > 1e6) throw Error('Invalid weekend wave');
+    absent.add(w.engineer);
+  }
+  const follows = new Set<string>();
+  for (const f of p.follows ?? []) {
+    const key = `${f.duty}:${f.engineer}`;
+    if (!index(f.duty) || p.duties[f.duty].weekend === undefined || !p.duties[f.duty].eligible.includes(f.engineer) || follows.has(key) ||
+      (f.after && (!index(f.after.duty) || f.after.duty >= f.duty || p.duties[f.after.duty].weekend === undefined ||
+        !p.duties[f.after.duty].eligible.includes(f.after.engineer)))) throw Error('Invalid weekend predecessor');
+    follows.add(key);
+  }
   const total = p.targets.reduce((a, b) => a + b, 0);
   if (!Number.isSafeInteger(total) || total > 1e9 || total !== p.duties.reduce((a, d) => a + d.units, 0)) throw Error('Unbalanced/oversized targets');
   const preferences = new Set<string>();
@@ -150,21 +207,33 @@ export function validateAssignment(p: Problem, assignment: (number | null)[]): M
     }
     preferred += p.preferences?.find(v => v.duty === i && v.engineer === e)?.weight ?? 0;
   });
-  let rotation = 0, repeats = 0, extraWeekends = 0;
+  let rotation = 0, repeats = 0, extraWeekends = 0, patterns = 0, thursdays = 0;
+  const wave = (p.wave ?? []).reduce((n, w) => n + (assignment[w.duty] === w.engineer ? w.cost : 0), 0) +
+    (p.waveAbsent ?? []).reduce((n, w) => n + (assignment.some((e, i) => e === w.engineer && p.duties[i].weekend !== undefined) ? 0 : w.cost), 0);
+  const follows = (p.follows ?? []).filter(f => assignment[f.duty] === f.engineer &&
+    (!f.after || assignment[f.after.duty] === f.after.engineer)).length;
   for (let e = 0; e < used.length; e++) {
     // Each weekend costs the member's turns this cycle, as in the model (extra weekends cost again).
     rotation += weekends[e].size * (p.rotation?.[e] ?? 0);
+    // A Thursday and a weekend (either half) in one month: one per member, however many.
+    if (weekends[e].size && selected[e].some(i => p.duties[i].weekday === 4)) thursdays++;
     for (const n of weekdays[e].values()) repeats += Math.max(0, n - 1);
     extraWeekends += extraWeekendCost(weekends[e].size, weekendAllowance(p, e));
     if (!selected[e].length) continue; // No external-anchor-to-anchor gap.
     // Only an approved locked handover touches a boundary; like an approved pair it is no gap.
     const {before, after} = anchors(p, e);
-    if (before && p.duties[selected[e][0]].start > before.end) gaps.push(p.duties[selected[e][0]].start - before.end);
-    if (after && after.start > p.duties[selected[e].at(-1)!].end) gaps.push(after.start - p.duties[selected[e].at(-1)!].end);
+    const own = selected[e].map(i => p.duties[i]), first = own[0], last = own.at(-1)!;
+    if (before && first.start > before.end) gaps.push(first.start - before.end);
+    if (after && after.start > last.end) gaps.push(after.start - last.end);
+    // Only with spacing: the same spacing gaps, start to start.
+    if (p.spacing) patterns += patternCount([
+      ...(before && first.start > before.end ? [spanDays(before.start, first.start)] : []),
+      ...own.slice(1).flatMap((d, k) => d.start > own[k].end ? [spanDays(own[k].start, d.start)] : []),
+      ...(after && after.start > last.end ? [spanDays(last.start, after.start)] : [])], carriedSteps(p, e));
   }
   return {coverage, special, units: used.reduce((a, b) => a + b, 0),
     deficits: used.map((n, e) => p.targets[e] - n), gaps: gaps.sort((a, b) => a - b), rotation, preferred, repeats, weekdays: weekdayCost,
-    extraWeekends, adjacent};
+    extraWeekends, adjacent, wave, follows, patterns, thursdays};
 }
 
 export function decodeAssignment(p: Problem, values: Record<string, number>) {
@@ -193,12 +262,13 @@ const lexicographic = (av: number[], bv: number[]) => {
   return 0;
 };
 /** The quality levels above the seeded tie, lower is better: coverage, special, units,
- * extra weekends, back-to-back pairs, minimum gap, weekend rotation, repeats, weekday
- * rotation, preferred. */
+ * extra weekends, back-to-back pairs, minimum gap, weekend rotation, Thursday with a weekend,
+ * weekend wave, repeats,
+ * weekday staircases, weekday rotation, preferred, repeated weekend predecessors. */
 export function compareQuality(a: Metrics, b: Metrics, spacing = true) {
   const head = (m: Metrics) => [-m.coverage, -m.special, -m.units, m.extraWeekends, m.adjacent,
     ...(spacing ? [-(m.gaps[0] ?? Infinity)] : []),
-    m.rotation, m.repeats, m.weekdays, -m.preferred];
+    m.rotation, m.thursdays, m.wave, m.repeats, m.patterns, m.weekdays, -m.preferred, m.follows];
   return lexicographic(head(a), head(b));
 }
 /** The sorted-gap leximin below the seed; missing gaps pad with infinity. */

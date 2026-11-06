@@ -18,6 +18,13 @@ export type Approval = {reason: string} & (
   {rule: 'boundary'; dutyId: string; neighborId: string} |
   {rule: 'weekends'; engineer: string; weekends: string[]}
 );
+/** One member's place in the cross-month weekend wave (see rotation.ts). Ticks count every
+ * weekend duty, a whole weekend or either half, and tick 0 is this month's first one.
+ * `from`/`to`: the band the member's next weekend should fall in. `after`: who held the tick
+ * right before the member's last weekend. `hold`: a new or rejoining member's first month. */
+export type WaveMember = {from?: number; to?: number; after?: string; hold?: boolean};
+/** `previous`: who held the last weekend tick before this month. */
+export type WeekendWave = {members: Record<string, WaveMember>; previous?: string};
 /** Confirmed points, never a proposal. No prior unlocked primaries are imported. */
 export type GenerationInput = {
   month: string; sourceRevision: string; calendar: Calendar; members: Member[];
@@ -31,6 +38,8 @@ export type GenerationInput = {
   weekendRotation?: Record<string, number>;
   /** Sunday–Thursday duties per weekday (index 0–4) per member in the current cycle (see rotation.ts); absent members count 0. */
   weekdayRotation?: Record<string, number[]>;
+  /** Cross-month weekend wave per member (see rotation.ts); absent members have no band. */
+  weekendWave?: WeekendWave;
 };
 export type CanonicalDuty = {
   id: string; ownerMonth: string; startDate: string; endDate: string; dates: string[];
