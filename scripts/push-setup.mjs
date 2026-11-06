@@ -1,26 +1,24 @@
 #!/usr/bin/env node
 // Web push setup (decision 2026-11-06).
-//   pnpm push:setup local   Sets up push on the LOCAL Supabase stack: keys and the shared secret in
-//                           .env.local (gitignored; kept when present), pg_net/pg_cron when absent, the
-//                           Vault secrets and the 15-minute job. Idempotent; never touches app data.
+//   pnpm push:setup local   Sets up push on the app's isolated LOCAL stack (the one pnpm start:local
+//                           and pnpm local:reset use): keys and the shared secret in .env.local
+//                           (gitignored; kept when present), pg_net/pg_cron when absent, the Vault
+//                           secrets and the 15-minute job. Idempotent; never touches app data. After
+//                           that, every pnpm start:local / local:reset re-applies it by itself.
 //                           Options: --container supabase_db_<name>, --url <dispatch URL>.
 //   pnpm push:setup dev     Touches nothing. Prints paste-ready steps for the hosted Development
 //   pnpm push:setup prod    or Production project with freshly generated values. Option: --bypass <secret>.
-import {spawnSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import webpush from 'web-push';
+import {LOCAL_CONTAINER} from './local-supabase.mjs';
+import {LOCAL_DISPATCH_URL, applyLocalPush, readEnvFile, setupSql} from './push-local.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const [mode, ...rest] = process.argv.slice(2);
-const options = {};
-for (let i = 0; i < rest.length; i += 2) {
-  if (!/^--(container|url|bypass)$/.test(rest[i]) || rest[i + 1] === undefined) fail(`Unknown option ${rest[i]}`);
-  options[rest[i].slice(2)] = rest[i + 1];
-}
-if (!['local', 'dev', 'prod'].includes(mode)) fail('Usage: pnpm push:setup local|dev|prod');
+/** push:setup local defaults to the same database container as pnpm start:local. */
+export const DEFAULT_LOCAL_CONTAINER = LOCAL_CONTAINER;
 
 const HOSTED = {
   dev: {name: 'Development', vercel: 'Preview', url: 'https://duty-scheduler-dev.vercel.app/api/push/dispatch', ref: 'qhndiuahuxczujxxitsm', protected: true},
@@ -29,33 +27,13 @@ const HOSTED = {
 const CHECK = `select jobname, schedule, active from cron.job where jobname = 'duty-push-tick';
 select name from vault.secrets where name like 'duty_push_%' order by name;
 select status, count(*) from public.duty_push_deliveries group by status;`;
-
-function fail(message) {console.error(message); process.exit(1);}
-const quote = value => `'${String(value).replaceAll("'", "''")}'`;
 const secret = () => randomBytes(36).toString('base64url');
 
-/** supabase/admin/push-scheduler.sql filled in: the operator script, without its header. */
-function setupSql({url, pushSecret, bypass}) {
-  let sql = readFileSync(path.join(root, 'supabase/admin/push-scheduler.sql'), 'utf8').replaceAll('\r\n', '\n');
-  sql = sql.slice(sql.indexOf('create extension'));
-  const fill = (placeholder, value) => {
-    if (!sql.includes(`'${placeholder}'`)) fail(`push-scheduler.sql has no ${placeholder}`);
-    sql = sql.replace(`'${placeholder}'`, () => quote(value));
-  };
-  fill('<DISPATCH_URL>', url);
-  fill('<PUSH_SECRET>', pushSecret);
-  if (bypass !== undefined) {
-    sql = sql.replace("-- select pg_temp.duty_secret('duty_push_bypass'", "select pg_temp.duty_secret('duty_push_bypass'");
-    if (bypass !== null) fill('<BYPASS_SECRET>', bypass);
-  }
-  return sql;
-}
-
-if (mode === 'local') {
+function local(options) {
   // 1. Server-only keys in the gitignored local env file (existing values are kept).
   const envPath = path.join(root, '.env.local');
   const text = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
-  const current = Object.fromEntries(text.split(/\r?\n/).map(line => line.match(/^([A-Z_]+)=(.*)$/)).filter(Boolean).map(m => [m[1], m[2]]));
+  const current = readEnvFile(envPath);
   const added = {};
   if (!current.VAPID_PUBLIC_KEY || !current.VAPID_PRIVATE_KEY) {
     const keys = webpush.generateVAPIDKeys();
@@ -68,26 +46,16 @@ if (mode === 'local') {
     while (kept.length && kept.at(-1) === '') kept.pop();
     writeFileSync(envPath, [...kept, ...(kept.length ? [''] : []), '# Web push, LOCAL only (pnpm push:setup local)', ...Object.entries(added).map(([k, v]) => `${k}=${v}`), ''].join('\n'));
   }
-  const pushSecret = added.DUTY_PUSH_SECRET ?? current.DUTY_PUSH_SECRET;
   console.log(Object.keys(added).length ? `1. .env.local: added ${Object.keys(added).join(', ')}.` : '1. .env.local: keys already present, kept.');
 
-  // 2. The local database container only (no hosted connection exists here).
-  const projectId = readFileSync(path.join(root, 'supabase/config.toml'), 'utf8').match(/^project_id\s*=\s*"([\w-]+)"/m)?.[1];
-  const container = options.container ?? `supabase_db_${projectId}`;
-  if (!/^supabase_db_[\w-]+$/.test(container)) fail('Only a local Supabase database container is accepted.');
-  const psql = (sql, flags = []) => spawnSync('docker', ['exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', ...flags], {input: sql, encoding: 'utf8'});
-  const ready = psql("select to_regprocedure('duty_private.push_tick()') is not null", ['-At']);
-  if (ready.status !== 0) fail(`Local database ${container} is not running. Start the local stack first.\n${ready.stderr}`);
-  if (ready.stdout.trim() !== 't') fail(`Local database ${container} does not have the push migrations yet. Apply the migrations first.`);
-
-  // 3. Extensions when absent, Vault secrets and the job: idempotent, no application data.
-  const url = options.url ?? 'http://host.docker.internal:5173/api/push/dispatch';
-  const run = psql(setupSql({url, pushSecret}));
-  if (run.status !== 0) fail(`Setup failed on ${container}:\n${run.stderr}`);
-  const job = psql("select schedule from cron.job where jobname='duty-push-tick'", ['-At']).stdout.trim();
+  // 2. Extensions when absent, Vault secrets and the job on the LOCAL database container.
+  const container = options.container ?? DEFAULT_LOCAL_CONTAINER, url = options.url ?? LOCAL_DISPATCH_URL;
+  const job = applyLocalPush({container, url, pushSecret: added.DUTY_PUSH_SECRET ?? current.DUTY_PUSH_SECRET});
   console.log(`2. ${container}: pg_net and pg_cron enabled, Vault secrets set, job duty-push-tick (${job}) → ${url}.`);
-  console.log('3. Restart `pnpm dev` so the app reads the keys, then Settings → Enable notifications → Send a test.');
-} else {
+  console.log('3. Restart pnpm start:local so the app reads the keys (it re-applies this setup after every start and local:reset), then Settings → Enable notifications → Send a test.');
+}
+
+function hosted(mode, options) {
   const target = HOSTED[mode];
   const keys = webpush.generateVAPIDKeys(), pushSecret = secret();
   const bypass = target.protected ? (options.bypass ?? null) : undefined;
@@ -115,4 +83,17 @@ ${target.protected ? 5 : 4}. Check (read-only, same SQL Editor):
 ${CHECK}
 
    Then in the app: Settings → Enable notifications → Send a test (arrives within seconds).`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const [mode, ...rest] = process.argv.slice(2), options = {};
+    for (let i = 0; i < rest.length; i += 2) {
+      if (!/^--(container|url|bypass)$/.test(rest[i]) || rest[i + 1] === undefined) throw Error(`Unknown option ${rest[i]}`);
+      options[rest[i].slice(2)] = rest[i + 1];
+    }
+    if (mode === 'local') local(options);
+    else if (mode === 'dev' || mode === 'prod') hosted(mode, options);
+    else throw Error('Usage: pnpm push:setup local|dev|prod');
+  } catch (error) {console.error(error.message); process.exitCode = 1;}
 }

@@ -6,8 +6,11 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {createClient} from '@supabase/supabase-js';
 import {LOCAL_API_URL,connectionTarget,validatePublicKey} from '../lib/supabase/environment.ts';
+import {applyLocalPush,hasPushKeys,readEnvFile} from './push-local.mjs';
 
-const root=resolve(import.meta.dirname,'..'),directory=resolve(root,'work/local-supabase'),container='supabase_db_duty-scheduler-app';
+/** The isolated LOCAL stack's database container (pnpm start:local, local:setup, local:reset). */
+export const LOCAL_CONTAINER='supabase_db_duty-scheduler-app';
+const root=resolve(import.meta.dirname,'..'),directory=resolve(root,'work/local-supabase'),container=LOCAL_CONTAINER;
 const STALE_STACK='The LOCAL stack still uses old ports 58320–58324. Stop it once (data is kept): pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler-app, then rerun.';
 export const LOCAL_PASSWORD='Duty-local-only-1701!';
 export const LOCAL_ACCOUNTS=[['admin@duty.local','Local Admin'],['engineer@duty.local','Local Engineer'],['pending@duty.local','Local Pending']];
@@ -104,6 +107,13 @@ export async function prepareLocal() {
     await user.client.auth.signOut({scope:'local'});
   }
   console.log('LOCAL authentication, checked onboarding, workspace loading and denied table writes verified.');
+  // Web push survives local:reset (which drops Vault and pg_cron): once pnpm push:setup local has put
+  // the keys in .env.local, every setup re-applies the secrets and the job. Never fails the start.
+  const push=readEnvFile(resolve(root,'.env.local'));
+  if(hasPushKeys(push)){
+    try{applyLocalPush({container,pushSecret:push.DUTY_PUSH_SECRET});console.log('LOCAL web push: Vault secrets and the 15-minute job applied.');}
+    catch(error){console.warn(`LOCAL web push not applied: ${error.message}`);}
+  } else if(reset)console.log('LOCAL web push is off: run pnpm push:setup local once to enable it.');
   return env;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)prepareLocal().then(()=>console.log(`Local accounts: admin@duty.local, engineer@duty.local, pending@duty.local. Password: Duty-local-only-1701!${process.argv.includes('--reset')?` Temporary members: ${LOCAL_TEMPORARY_MEMBERS.join(', ')}.`:''}`)).catch(error=>{console.error(error.message);process.exitCode=1;});

@@ -136,12 +136,15 @@ none of which reads or advances the workspace revision. Reminder times are quart
 pnpm push:setup local
 ```
 
-For the shared LOCAL stack, after its migrations are applied: adds `VAPID_PUBLIC_KEY`,
+For the isolated LOCAL stack that `pnpm start:local` and `pnpm local:reset` use (database container
+`supabase_db_duty-scheduler-app`), once its migrations are applied: adds `VAPID_PUBLIC_KEY`,
 `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `DUTY_PUSH_SECRET` to the gitignored `.env.local` (existing
 values are kept), enables pg_net and pg_cron when absent, and writes the Vault secrets and the 15-minute
 job targeting `http://host.docker.internal:5173/api/push/dispatch`. It is idempotent, touches no
 application data and never connects to a hosted project (`--container` and `--url` override the
-defaults). Restart `pnpm dev` afterwards.
+defaults). Restart `pnpm start:local` afterwards. `pnpm local:reset` drops pg_cron and the Vault
+secrets with the rest of the database, so once the keys are in `.env.local` every `pnpm start:local`,
+`local:setup` and `local:reset` re-applies them by itself (a failure there only warns).
 
 ```powershell
 pnpm push:setup dev
