@@ -45,7 +45,7 @@
 .plan-reset-note{margin:0}
 .plan-reset-ask{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;padding:10px 14px;border-radius:12px;background:var(--ink);color:var(--bg);font-size:13px;line-height:1.5}
 .plan-reset-actions{display:flex;gap:4px;margin-inline-start:auto}
-.plan-reset-ask button{min-height:36px;padding:0 8px;font-weight:650;color:var(--accent);white-space:nowrap;border-radius:8px}
+.plan-reset-ask button{min-height:36px;padding:0 8px;font-weight:650;color:var(--on-ink-action);white-space:nowrap;border-radius:8px}
 .plan-reset-ask button:disabled{opacity:.5}
 
 .plan-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -88,7 +88,7 @@
 .allocation-details li strong{font-weight:600}
 .allocation-caption{font-size:12px;line-height:1.6;color:var(--ink-3)}
 .allocation-toast{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:12px;background:var(--ink);color:var(--bg);font-size:13px;line-height:1.5;box-shadow:var(--shadow-pop)}
-.allocation-toast button{flex-shrink:0;min-height:36px;padding:0 6px;font-weight:650;color:var(--accent);white-space:nowrap}
+.allocation-toast button{flex-shrink:0;min-height:36px;padding:0 6px;font-weight:650;color:var(--on-ink-action);white-space:nowrap}
 .allocation-toast button:disabled{opacity:.5}
 .allocation-progress{display:flex;gap:12px;padding:12px 0;align-items:flex-start;font-size:13px}
 .allocation-progress svg{flex-shrink:0;margin-top:3px;color:var(--brand)}

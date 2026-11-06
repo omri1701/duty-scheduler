@@ -1,6 +1,7 @@
 'use client';
 import type {ReactNode} from 'react';
-import {ChevronLeft, ChevronRight, Ellipsis} from 'lucide-react';
+import {Ellipsis} from 'lucide-react';
+import {MonthTitle} from './month-title';
 import {DropdownMenu} from 'radix-ui';
 import {Button} from '@/components/ui/button';
 import {Chip} from '@/components/ui/chip';
@@ -11,17 +12,14 @@ export type PrimaryAction = {label: string; onClick: () => void; disabled?: bool
 
 /** The month heading with its chevrons, the status chip, one primary action and a ⋯ menu for
  * rare actions (decision 2026-11-06). Everyone sees the heading; the actions are the admin's. */
-export function MonthBar({label, status, t, onChange, primary, menu, loading = false, children}: {
-  label: string; status?: {text: string; tone: 'ok' | 'neutral' | 'warn'}; t: Translate; onChange?: (offset: number) => void;
+export function MonthBar({month, label, status, t, onChange, primary, menu, loading = false, children}: {
+  month: string; label: string; status?: {text: string; tone: 'ok' | 'neutral' | 'warn'}; t: Translate; onChange?: (offset: number) => void;
   primary?: PrimaryAction; menu?: MenuItem[]; loading?: boolean; children?: ReactNode;
 }) {
-  const rtl = t('ltr', 'rtl') === 'rtl', Prev = rtl ? ChevronRight : ChevronLeft, Next = rtl ? ChevronLeft : ChevronRight;
+  const rtl = t('ltr', 'rtl') === 'rtl';
   return <div className="month-bar">
-    <div className="month-title">
-      <Button variant="ghost" size="icon" disabled={loading} aria-label={t('Previous month', 'חודש קודם')} onClick={() => onChange?.(-1)}><Prev/></Button>
-      <h2>{label}{status && <Chip tone={status.tone} size="sm" className="month-status">{status.text}</Chip>}</h2>
-      <Button variant="ghost" size="icon" disabled={loading} aria-label={t('Next month', 'חודש הבא')} onClick={() => onChange?.(1)}><Next/></Button>
-    </div>
+    <MonthTitle month={month} label={label} t={t} onChange={onChange} loading={loading}
+      status={status && <Chip tone={status.tone} size="sm" className="month-status">{status.text}</Chip>}/>
     {(primary || menu?.length || children) && <div className="month-actions">
       {children}
       {primary && <Button className="month-primary" variant={primary.variant ?? 'default'} disabled={primary.disabled || primary.busy} title={primary.reason} aria-label={primary.label} onClick={primary.onClick}>

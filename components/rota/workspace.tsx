@@ -284,7 +284,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   const openSchedule = (m: string) => {if (m !== month) goToMonth(m); setTab('schedule');};
   return <>
     <AppToaster/>
-    <AppShell lang={lang} t={t} tab={tab} setTab={next => {setTab(next); if (next !== 'schedule') {setPickingFrom(null); setSheetDuty(null);}}} disabled={!!remote.saving}
+    <AppShell lang={lang} t={t} tab={tab} onRefresh={() => remote.refresh()} setTab={next => {setTab(next); if (next !== 'schedule') {setPickingFrom(null); setSheetDuty(null);}}} disabled={!!remote.saving}
       badge={<>{remote.offline && <Chip tone="warn" size="sm" className="offline-pill" role="status"><WifiOff/>{t('Offline', 'לא מקוון')}</Chip>}{remote.environment?.badge ? <EnvironmentBadge environment={remote.environment}/> : null}</>}
       bell={<ActivityBell raw={remote.snapshot!} me={meId} admin={isManager} lang={lang} onOpenMonth={openSchedule}/>}
       avatar={<button type="button" className="avatar-button admin-avatar" data-settings-button onClick={() => setSettingsOpen(true)} aria-label={t('Settings', 'הגדרות')} title={t('Settings', 'הגדרות')}>
@@ -310,7 +310,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
               }}/>
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>
-            <MonthBar label={monthLabel} status={status} t={t} onChange={changeMonth} primary={primary} menu={menu}>
+            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={changeMonth} primary={primary} menu={menu}>
               {reopened && <Segmented label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
                 options={[{value: 'draft', label: t('Draft', 'טיוטה')}, {value: 'published', label: t('Published', 'פורסם')}]}/>}
             </MonthBar>
@@ -329,18 +329,19 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
               constraintsClosed={constraintsClosed || remote.readOnly} deadline={monthDetails.deadline} t={t} saveConstraints={saveConstraints}/>
           </TabsContent>
           <TabsContent value="team">
-            <WorkspaceTeam remote={remote} state={state} metrics={metrics} monthLabel={monthLabel} onMonth={changeMonth} meId={meId} isManager={isManager} lang={lang} t={t} update={update}/>
+            <WorkspaceTeam remote={remote} state={state} metrics={metrics} month={month} monthLabel={monthLabel} onMonth={changeMonth} meId={meId} isManager={isManager} lang={lang} t={t} update={update}/>
           </TabsContent>
         </div>
       </fieldset>
     </AppShell>
     {swaps.dialogs}
     <Welcome open={welcome} onClose={() => setWelcome(false)} lang={lang} t={t}/>
-    <SwapRequestDialog key={month} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/>
+    {/* Sibling keys must differ: both dialogs reset when the month changes, and React needs one unique key per child. */}
+    <SwapRequestDialog key={`swap-request-${month}`} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/>
     <DutySheet duty={sheetDuty} state={calendarState} lang={lang} t={t} meId={meId} open={!!sheetDuty} onClose={() => setSheetDuty(null)} actions={sheetActions(sheetDuty)} published={requesting && !!publication}/>
     <SettingsScreen remote={remote} open={settingsOpen} onOpenChange={setSettingsOpen} lang={lang} setLang={setLang} onExport={isManager ? exportBackup : undefined}/>
     {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} monthLabel={monthLabel} lang={lang} t={t}/>}
-    {isManager && <PublicationHistory key={month} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
+    {isManager && <PublicationHistory key={`history-${month}`} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
     {selected && <DutyEditor key={selected.id} state={state} duty={selected} month={month} lang={lang} onClose={() => setSelected(null)} saving={remote.saving}
       onMonth={(m) => {goToMonth(m); setSelected(null);}} onSave={draft.editor.save} onRemoveSpecial={draft.editor.removeSpecial}/>}
     {publishedEditRow && <PublishedDutyEditor key={publishedEditRow.day} remote={remote} row={publishedEditRow} lang={lang} onClose={() => setPublishedEdit(null)}

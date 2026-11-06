@@ -47,25 +47,28 @@ for (const width of [320, 390, 430, 768, 1440]) for (const lang of ['en', 'he'] 
   });
 }
 
-test('pulse affects only placeholder content and is disabled by reduced motion', async ({page, openApp, backend}) => {
+test('the shimmer moves only over placeholders and is disabled by reduced motion', async ({page, openApp, backend}) => {
   let release!: () => void; backend.authGate = new Promise<void>(resolve => {release = resolve;});
   await openApp('admin', page, {waitForReady: false});
   try {
     await expect(page.locator('.startup-skeleton .skel').first()).toBeVisible();
     await page.emulateMedia({reducedMotion: 'no-preference'});
-    const animations = await page.locator('.startup-skeleton').evaluate(el => el.getAnimations({subtree: true}).map(animation => ({name: (animation as CSSAnimation).animationName, placeholder: ((animation.effect as KeyframeEffect).target as Element).classList.contains('skel'), duration: animation.effect!.getTiming().duration, frames: (animation.effect as KeyframeEffect).getKeyframes()})));
+    // Owner review 2026-11-07: a highlight sweeps over each placeholder (its ::after, transform only).
+    const animations = await page.locator('.startup-skeleton').evaluate(el => el.getAnimations({subtree: true}).map(animation => {
+      const effect = animation.effect as KeyframeEffect;
+      return {name: (animation as CSSAnimation).animationName, pseudo: effect.pseudoElement, placeholder: (effect.target as Element).classList.contains('skel'),
+        frames: effect.getKeyframes().map(frame => Object.keys(frame).filter(key => !['offset', 'computedOffset', 'easing', 'composite'].includes(key)))};
+    }));
     expect(animations.length).toBeGreaterThan(5);
-    expect(animations.every(a => a.duration === 2000 && a.name === 'placeholder-pulse' && a.placeholder)).toBe(true);
-    expect(animations.every(a => a.frames.every(frame => !('transform' in frame) && !('width' in frame) && !('height' in frame)))).toBe(true);
+    expect(animations.every(a => a.name === 'placeholder-shimmer' && a.pseudo === '::after' && a.placeholder)).toBe(true);
+    expect(animations.every(a => a.frames.every(keys => keys.every(key => key === 'transform')))).toBe(true);
     const pulse = page.locator('.startup-skeleton .skel').first();
     const bounds = await pulse.boundingBox();
-    const opacity = await pulse.evaluate(el => getComputedStyle(el).opacity);
     await page.waitForTimeout(500);
-    expect(await pulse.evaluate(el => getComputedStyle(el).opacity)).not.toBe(opacity);
     expect(await pulse.boundingBox()).toEqual(bounds);
     await page.emulateMedia({reducedMotion: 'reduce'});
     expect(await page.locator('.startup-skeleton').evaluate(el => el.getAnimations({subtree: true}).length)).toBe(0);
   } finally {release();}
   await expect(page.locator('.startup-skeleton')).toHaveCount(0);
-  expect(await page.evaluate(() => document.getAnimations().filter(a => (a as CSSAnimation).animationName === 'placeholder-pulse').length)).toBe(0);
+  expect(await page.evaluate(() => document.getAnimations().filter(a => (a as CSSAnimation).animationName === 'placeholder-shimmer').length)).toBe(0);
 });

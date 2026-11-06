@@ -21,8 +21,12 @@ export function useTheme(): {preference: ThemePreference; theme: Theme; setPrefe
   const [pref, theme] = value.split(':') as [ThemePreference, Theme];
   useEffect(() => {applyTheme(current());}, []);
   const setPreference = useCallback((next: ThemePreference) => {
-    preference = next; savePreference(next); applyTheme(next);
-    listeners.forEach(l => l());
+    preference = next; savePreference(next);
+    const apply = () => {applyTheme(next); listeners.forEach(l => l());};
+    // A short cross-fade between themes where the browser can (globals.css ::view-transition).
+    const doc = document as Document & {startViewTransition?: (update: () => void) => unknown};
+    if (doc.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) doc.startViewTransition(apply);
+    else apply();
   }, []);
   return {preference: pref, theme, setPreference};
 }

@@ -4,8 +4,10 @@
 export type ThemePreference = 'auto' | 'light' | 'dark';
 export type Theme = 'light' | 'dark';
 export const THEME_KEY = 'duty-theme';
+/** The PC sidebar collapsed to icons, remembered per device (owner review 2026-11-07). */
+export const SIDEBAR_KEY = 'duty-sidebar';
 
-export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';if(localStorage.getItem('${SIDEBAR_KEY}')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}})();`;
 
 export function readPreference(): ThemePreference {
   try {

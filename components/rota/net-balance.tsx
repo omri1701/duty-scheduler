@@ -1,5 +1,6 @@
 'use client';
 import {useState} from 'react';
+import {useCountUp} from '@/components/ui/count-up';
 import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
 import {shortDate} from '@/lib/date-format';
 import {calendarMonthLabel} from '@/lib/rota/calendar-dates';
@@ -47,11 +48,19 @@ export function NetBalance({memberId,memberName,balance,name,lang}:{memberId:str
     aria-label={`${t('Net balance','מאזן נטו')} ${memberName} ${signedPoints(units)}`}
     onClick={e=>{e.preventDefault();e.stopPropagation();setOpen(true)}} onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)}
     onPointerEnter={e=>{if(e.pointerType==='mouse')setOpen(true)}} onPointerLeave={e=>{if(e.pointerType==='mouse')setOpen(false)}}>
-    <strong dir="ltr">{signedPoints(units)}</strong><span>{t('net','נטו')}</span>
+    <NetValue units={units}/><span>{t('net','נטו')}</span>
    </button></PopoverTrigger>
    <PopoverContent className="net-popover" dir={lang==='he'?'rtl':'ltr'} onOpenAutoFocus={e=>e.preventDefault()} onCloseAutoFocus={e=>e.preventDefault()}>
     <NetBreakdown memberId={memberId} balance={balance} name={name} lang={lang}/>
    </PopoverContent>
   </Popover>
  </div>;
+}
+
+/** The number counts to a new value and flashes once; the first value just appears. */
+function NetValue({units}:{units:number}){
+ const shown=Math.round(useCountUp(units,450));
+ const [seen,setSeen]=useState(units),[changes,setChanges]=useState(0);
+ if(seen!==units){setSeen(units);setChanges(n=>n+1)}
+ return <strong key={changes} dir="ltr" className={changes?'value-changed':undefined}>{signedPoints(shown)}</strong>;
 }

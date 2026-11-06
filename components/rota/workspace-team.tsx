@@ -1,7 +1,8 @@
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {toast} from 'sonner';
-import {ChevronLeft, ChevronRight, UserPlus, Users} from 'lucide-react';
+import {UserPlus, Users} from 'lucide-react';
 import {TemporaryMemberDialog} from './temporary-member-dialog';
+import {MonthTitle} from './month-title';
 import {MemberSheet} from './member-sheet';
 import type {Member} from '@/lib/supabase/snapshot';
 import {Button} from '@/components/ui/button';
@@ -11,7 +12,7 @@ import {EmptyState} from '@/components/ui/empty-state';
 import {CountUp} from '@/components/ui/count-up';
 import {TeamList} from '@/components/rota/team-list';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
-import type {Balance} from '@/lib/supabase/balance';
+import {useBalance} from '@/hooks/use-balance';
 import {addDays, dayOf, type State} from '@/lib/rota/engine';
 import type {WorkspaceMetrics} from '@/lib/rota/workspace-data';
 import type {Language, Translate, UpdateDraft} from './workspace-types';
@@ -19,23 +20,14 @@ import {userMessage} from '@/lib/messages';
 
 /** The Team tab (decision 2026-11-06): this month's coverage, the ordered team with points and
  * the live balance, a member sheet, and join requests for admins. */
-export function WorkspaceTeam({remote, state, metrics, monthLabel, onMonth, meId, isManager, lang, t, update}: {
-  remote: TeamWorkspace; state: State; metrics: WorkspaceMetrics; monthLabel: string; onMonth: (offset: number) => void; meId: string; isManager: boolean; lang: Language; t: Translate; update: UpdateDraft;
+export function WorkspaceTeam({remote, state, metrics, month, monthLabel, onMonth, meId, isManager, lang, t, update}: {
+  remote: TeamWorkspace; state: State; metrics: WorkspaceMetrics; month: string; monthLabel: string; onMonth: (offset: number) => void; meId: string; isManager: boolean; lang: Language; t: Translate; update: UpdateDraft;
 }) {
   const {active, monthTotals, historyTotals, owned, assigned} = metrics;
   const [editing, setEditing] = useState<Member | null | undefined>(undefined), [selected, setSelected] = useState<string | null>(null);
   const temporaryMembers = remote.snapshot?.members.filter(m => m.is_temporary) ?? [];
-  const [balance, setBalance] = useState<{revision: number; value: Balance | null} | null>(null);
-  const revision = remote.snapshot?.revision, load = remote.balance;
-  useEffect(() => {
-    if (revision == null) return;
-    let alive = true;
-    // Every published change advances the revision. An older database without the read RPC simply shows no number.
-    load().then(value => {if (alive) setBalance({revision, value});}, () => {if (alive) setBalance({revision, value: null});});
-    return () => {alive = false;};
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated each render; revision is the trigger.
-  }, [revision]);
-  const rtl = lang === 'he', Prev = rtl ? ChevronRight : ChevronLeft, Next = rtl ? ChevronLeft : ChevronRight;
+  // The last known nets stay on screen while a newer revision loads (hooks/use-balance.ts).
+  const balance = useBalance(remote) ?? null;
   const points = owned.reduce((v, b) => v + b.points, 0);
   const pending = remote.snapshot?.members.filter((m) => m.status === 'pending') ?? [];
   const noWeekendIds = remote.snapshot?.members.filter((m) => m.no_weekends).map((m) => m.id) ?? [];
@@ -48,11 +40,7 @@ export function WorkspaceTeam({remote, state, metrics, monthLabel, onMonth, meId
   return <>
     <section className="team-screen">
       <div className="month-bar">
-        <div className="month-title">
-          <Button variant="ghost" size="icon" aria-label={t('Previous month', 'חודש קודם')} onClick={() => onMonth(-1)}><Prev/></Button>
-          <h2>{monthLabel}</h2>
-          <Button variant="ghost" size="icon" aria-label={t('Next month', 'חודש הבא')} onClick={() => onMonth(1)}><Next/></Button>
-        </div>
+        <MonthTitle month={month} label={monthLabel} t={t} onChange={onMonth}/>
       </div>
       <Card tone="brand" className="coverage-card">
         <div className="coverage-number"><CountUp value={assigned} decimals={0}/><span>/ {owned.length}</span></div>
@@ -66,7 +54,7 @@ export function WorkspaceTeam({remote, state, metrics, monthLabel, onMonth, meId
       <Card inset className="team-card">
         <TeamList
           temporaryIds={temporaryMembers.map(m => m.id)}
-          balance={balance?.value ?? null}
+          balance={balance}
           name={id => remote.snapshot?.members.find(m => m.id === id)?.name ?? t('Former teammate', 'חבר צוות לשעבר')}
           roles={remote.snapshot?.roles ?? []}
           noWeekendIds={noWeekendIds}
@@ -97,7 +85,7 @@ export function WorkspaceTeam({remote, state, metrics, monthLabel, onMonth, meId
     </section>
     <MemberSheet member={member} open={!!member} onClose={() => setSelected(null)} lang={lang} t={t} selfId={meId} admin={isManager && !remote.readOnly} saving={!!remote.saving}
       roles={remote.snapshot?.roles ?? []} temporary={!!member && temporaryMembers.some(m => m.id === member.id)} noWeekends={!!member && noWeekendIds.includes(member.id)}
-      monthPoints={member ? monthTotals[member.id] ?? 0 : 0} allPoints={member ? historyTotals[member.id] ?? 0 : 0} balance={balance?.value ?? null}
+      monthPoints={member ? monthTotals[member.id] ?? 0 : 0} allPoints={member ? historyTotals[member.id] ?? 0 : 0} balance={balance}
       name={id => remote.snapshot?.members.find(m => m.id === id)?.name ?? t('Former teammate', 'חבר צוות לשעבר')} team={state.team}
       onRole={role => {if (member) remote.setRole(member.id, role).catch(fail);}}
       onNoWeekends={value => {

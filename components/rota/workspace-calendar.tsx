@@ -22,7 +22,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
   pickingFrom?: string | null;
   notices?: ReactNode;
 }) {
-  const {keyboardSource, dragFrom, dragOver, swapSourceDays, publishedDuty, requestTarget, swapHint, swapBlock, dragContainer, ignoreDragClick, selectCalendarDuty} = interactions;
+  const {keyboardSource, dragFrom, dragOver, pendingDrop, swapSourceDays, publishedDuty, requestTarget, swapHint, swapBlock, dragContainer, ignoreDragClick, selectCalendarDuty} = interactions;
   const mobile = useMobileLayout();
   // Display only: adjacent duties of one member read as a single bar.
   const streaks = streakCells(calendarBlocks, calendarState.assignments);
@@ -43,7 +43,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
         interactive = !!b && ownerMonth(b) === month,
         cell = b ? streaks[b.id] : undefined;
       // While a swap is chosen, a day the server would refuse is greyed with its reason.
-      const swapFrom = requesting ? keyboardSource ?? dragFrom : null,
+      const swapFrom = requesting ? keyboardSource ?? dragFrom ?? pendingDrop?.from ?? null : null,
         blocked = swapFrom && b && interactive && b.id !== swapFrom ? swapHint(swapFrom, b.id) : null,
         swapState = swapFrom && b && interactive && b.id !== swapFrom ? swapBlock(swapFrom, b.id) : undefined;
       const name = p ? nickname(p.id) : '', long = name.length > 7;
@@ -82,8 +82,9 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
             markedWeeks.has(week(d)) ? 'marks-week' : '',
             combined && b?.specialDates?.includes(b.start) ? 'holiday-friday' : '',
             combined && b?.specialDates?.includes(addDays(b!.start, 1)) ? 'holiday-saturday' : '',
-            dragFrom === b?.id || keyboardSource === b?.id || pickingFrom === b?.id ? 'drag-source' : '',
-            (dragOver === b?.id && dragFrom !== b?.id) || (keyboardSource && b && requestTarget(keyboardSource, b.id)) ? 'drag-target' : '',
+            dragFrom === b?.id || keyboardSource === b?.id || pickingFrom === b?.id || pendingDrop?.from === b?.id ? 'drag-source' : '',
+            (dragOver === b?.id && dragFrom !== b?.id && !(swapState && swapState !== 'pending')) || (keyboardSource && b && requestTarget(keyboardSource, b.id)) || pendingDrop?.to === b?.id ? 'drag-target' : '',
+            pendingDrop?.to === b?.id || (dragOver === b?.id && swapState === 'pending') ? 'checking' : '',
             (requesting ? b && swapSourceDays.has(b.id) : draft && a?.primary) ? 'can-swap' : '',
             blocked ? 'swap-blocked' : '',
           ].join(' ')}

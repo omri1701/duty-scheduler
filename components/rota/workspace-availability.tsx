@@ -1,6 +1,6 @@
-import {ChevronLeft, ChevronRight, Lock} from 'lucide-react';
+import {Lock} from 'lucide-react';
+import {MonthTitle} from './month-title';
 import {Select, SelectTrigger, SelectValue, SelectContent, SelectItem} from '@/components/ui/select';
-import {Button} from '@/components/ui/button';
 import {Chip} from '@/components/ui/chip';
 import {AvailabilityEditor} from '@/components/rota/availability-editor';
 import type {State} from '@/lib/rota/engine';
@@ -14,16 +14,12 @@ export function WorkspaceAvailability({state, month, monthLabel, onMonth, person
   saveConstraints: (days: string[], kind: 'no' | 'prefer' | 'clear', note: string) => Promise<boolean>;
 }) {
   const active = state.team.filter((p) => p.active);
-  const rtl = lang === 'he', Prev = rtl ? ChevronRight : ChevronLeft, Next = rtl ? ChevronLeft : ChevronRight;
   const mine = state.constraints[person] ?? {};
   const counts = Object.values(mine).reduce((n, kind) => ({...n, [kind]: (n[kind] ?? 0) + 1}), {} as Record<string, number>);
   return <section className="availability-screen">
     <div className="month-bar">
-      <div className="month-title">
-        <Button variant="ghost" size="icon" aria-label={t('Previous month', 'חודש קודם')} onClick={() => onMonth(-1)}><Prev/></Button>
-        <h2>{monthLabel}{constraintsClosed ? <Chip tone="neutral" size="sm" className="month-status"><Lock/>{t('Closed', 'סגור')}</Chip> : <Chip tone="brand" size="sm" className="month-status">{t(`Due ${shortDate(deadline, lang)}`, `עד ${shortDate(deadline, lang)}`)}</Chip>}</h2>
-        <Button variant="ghost" size="icon" aria-label={t('Next month', 'חודש הבא')} onClick={() => onMonth(1)}><Next/></Button>
-      </div>
+      <MonthTitle month={month} label={monthLabel} t={t} onChange={onMonth}
+        status={constraintsClosed ? <Chip tone="neutral" size="sm" className="month-status"><Lock/>{t('Closed', 'סגור')}</Chip> : <Chip tone="brand" size="sm" className="month-status">{t(`Due ${shortDate(deadline, lang)}`, `עד ${shortDate(deadline, lang)}`)}</Chip>}/>
       {isManager && <div className="month-actions">
         <Select value={person} onValueChange={setPerson}>
           <SelectTrigger aria-label={t('Engineer', 'מהנדס')} className="picker"><SelectValue/></SelectTrigger>

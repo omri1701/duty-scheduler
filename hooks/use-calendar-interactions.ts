@@ -47,6 +47,9 @@ export function useCalendarInteractions({
   const [dragFrom, setDragFrom] = useState<string | null>(null),
     [dragOver, setDragOver] = useState<string | null>(null);
   const dragSource = useRef<string | null>(null), dragHover = useRef<string | null>(null);
+  // A published drop on a target whose availability is still being read: completed (or explained)
+  // as soon as the answer arrives, so the very first drag works (owner review 2026-11-07).
+  const [pendingDrop, setPendingDrop] = useState<{ from: string; to: string } | null>(null);
   const publishedDuties = publishedSwapDuties(remote.snapshot!, month, today);
   // Engineers offer their own duty; admins may also propose a swap between any two members.
   const swapSourceDays = new Set(
@@ -57,7 +60,7 @@ export function useCalendarInteractions({
     swapSourceDays.has(from) && eligibleSwapTarget(publishedDuty(from), publishedDuty(to));
   // While a swap is being chosen, each eligible target's availability is read once (who and
   // which date, never the note) so a day the server would refuse is greyed before the pick.
-  const source = requesting ? keyboardSource ?? dragFrom : null;
+  const source = requesting ? keyboardSource ?? dragFrom ?? pendingDrop?.from ?? null : null;
   const conflicts = useTargetConflicts(remote, source ? publishedDuty(source)?.id : undefined,
     source ? publishedDuties.filter((d) => eligible(source, d.day)).map((d) => d.id) : []);
   /** Why `to` can't be picked from `from`: null when it can, 'pending' until its availability
@@ -144,13 +147,17 @@ export function useCalendarInteractions({
         return false;
       }
       setKeyboardSource(null);
+      setPendingDrop(null);
       dragSource.current = key;
       dragHover.current = null;
       setDragFrom(key);
     },
     onMove: (key) => {
       dragHover.current = key;
-      const valid = duties.some(b => b.id === key && ownerMonth(b) === month) && !!dragSource.current && (requesting ? requestTarget(dragSource.current, key) : !mobile || draftTarget(dragSource.current, key));
+      // A published target still being checked is taken; the drop waits for its answer.
+      const valid = duties.some(b => b.id === key && ownerMonth(b) === month) && !!dragSource.current && (requesting
+        ? requestTarget(dragSource.current, key) || swapBlock(dragSource.current, key) === 'pending'
+        : !mobile || draftTarget(dragSource.current, key));
       setDragOver(valid ? key : null);
       return valid;
     },
@@ -162,6 +169,7 @@ export function useCalendarInteractions({
       setDragOver(null);
       // A drop on a greyed day (the gesture reports no valid target) says why.
       if (source && requesting && !key && hovered && hovered !== source && explainBlock(source, hovered)) return;
+      if (source && key && requesting && swapBlock(source, key) === 'pending') { setPendingDrop({ from: source, to: key }); return; }
       if (source && key && duties.some(b => b.id === key && ownerMonth(b) === month) && (requesting || !mobile || draftTarget(source, key))) finishCalendarSwap(source, key);
     },
     onCancel: () => {
@@ -171,7 +179,35 @@ export function useCalendarInteractions({
       setDragOver(null);
     },
   });
+  // The pending drop resolves when its target's availability arrives: the request opens, or a
+  // refused target says why. A month change, Escape or a new gesture drops it.
+  const dropBlock = pendingDrop ? swapBlock(pendingDrop.from, pendingDrop.to) : 'pending';
+  const [refusedDrop, setRefusedDrop] = useState<{ text: string } | null>(null), toldDrop = useRef<object | null>(null);
+  if (pendingDrop && dropBlock !== 'pending') {
+    const { from, to } = pendingDrop;
+    setPendingDrop(null);
+    if (dropBlock === null) finishCalendarSwap(from, to);
+    else if (dropBlock) setRefusedDrop({ text: blockText(dropBlock, from) });
+  }
+  useEffect(() => {
+    if (!refusedDrop || toldDrop.current === refusedDrop) return;
+    toldDrop.current = refusedDrop;
+    toast.info(refusedDrop.text, { id: 'swap-block' });
+  }, [refusedDrop]);
+  const [dropMonth, setDropMonth] = useState(month);
+  if (dropMonth !== month) { setDropMonth(month); setPendingDrop(null); }
+  // Escape anywhere ends a published swap pick (a second tap on the duty does too).
+  useEffect(() => {
+    if (!keyboardSource && !pendingDrop) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.querySelector('[role=dialog],[role=alertdialog]')) return;
+      setKeyboardSource(null); setPendingDrop(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [keyboardSource, pendingDrop]);
   function resetSelection() {
+    setPendingDrop(null);
     dragSource.current = null;
     setDragFrom(null);
     setDragOver(null);
@@ -179,6 +215,7 @@ export function useCalendarInteractions({
     setRequestSelection(null);
   }
   function cancelKeyboard() {
+    setPendingDrop(null);
     setKeyboardSource(null);
     setDragFrom(null);
     setDragOver(null);
@@ -190,6 +227,7 @@ export function useCalendarInteractions({
     setKeyboardSource,
     dragFrom,
     dragOver,
+    pendingDrop,
     swapSourceDays,
     publishedDuty,
     requestTarget,
