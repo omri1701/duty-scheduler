@@ -1,5 +1,5 @@
 'use client';
-import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
+import {Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {BellRing, BellOff} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
@@ -24,7 +24,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   // after a short pause (hour and minute together), shows "Saved", and puts the time back on failure.
   const [openTime, setOpenTime] = useState<TimeKey | null>(null), [savedTime, setSavedTime] = useState<TimeKey | null>(null);
   const settingsRef = useRef<NotificationState | null>(null), timeBase = useRef<NotificationState | null>(null), timeTimer = useRef(0), timeSeq = useRef(0);
-  useEffect(() => {settingsRef.current = settings;});
+  useLayoutEffect(() => {settingsRef.current = settings;});
   useEffect(() => () => window.clearTimeout(timeTimer.current), []);
   useEffect(() => {
     if (!savedTime) return;

@@ -11,7 +11,9 @@ type WheelProps = {values: readonly number[]; value: number; label: string; page
 function Wheel({values, value, label, page, onSettle}: WheelProps) {
   const ref = useRef<HTMLDivElement>(null), index = Math.max(0, values.indexOf(value));
   const latest = useRef({value, onSettle});
-  useEffect(() => {latest.current = {value, onSettle};});
+  // Before any scroll event can be delivered: a scroll that only shows the saved value
+  // (e.g. after a failed save) must never read as a new choice.
+  useLayoutEffect(() => {latest.current = {value, onSettle};});
   const smooth = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Fade and shrink each item by its distance from the centre (in rows, capped).

@@ -208,6 +208,10 @@ test('Hebrew wheels stay left to right; a failed save puts the time back and say
   await expect(hour).toHaveAttribute('aria-valuenow', '18');
   await expect.poll(() => hour.evaluate(el => el.scrollTop)).toBe(18 * 44);
   expect(backend.notificationSettings.get(ids.a)?.eveningTime ?? '18:00').toBe('18:00');
+  // Scrolling back to the saved time is not a new choice: no second save, and the message stays.
+  await page.waitForTimeout(1200);
+  expect(backend.calls.filter(c => c.name === 'duty_set_notification_settings')).toHaveLength(1);
+  await expect(sheet.getByRole('alert')).toContainText('השעה לא נשמרה ולכן חזרה ל־18:00.');
 });
 
 test('signing out in settings forgets this device first', async ({page, openApp, backend}) => {
