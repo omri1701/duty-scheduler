@@ -1,6 +1,7 @@
 'use client';
 import {useMemo, useState} from 'react';
-import {ArrowLeftRight, Bell, CalendarDays, Inbox, PenLine, UserPlus} from 'lucide-react';
+import {ArrowLeftRight, Bell, CalendarDays, Inbox, PenLine, UserPlus, X} from 'lucide-react';
+import {SwipeRow} from '@/components/ui/swipe-row';
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {EmptyState} from '@/components/ui/empty-state';
 import type {Snapshot} from '@/lib/supabase/snapshot';
@@ -9,7 +10,7 @@ import {shortDate} from '@/lib/date-format';
 import type {Language, Translate} from './workspace-types';
 
 type Event = {id: string; at: string; icon: 'published' | 'edited' | 'swap' | 'member'; text: string; month?: string};
-const SEEN_KEY = 'duty-activity-seen';
+const SEEN_KEY = 'duty-activity-seen', DISMISSED_KEY = 'duty-activity-dismissed';
 
 /** Recent events, derived from the snapshot (decision 2026-11-06): publications, new versions
  * (published duty edits and swaps), answered swap requests and, for admins, sign-ups. */
@@ -39,11 +40,24 @@ export function recentActivity(raw: Snapshot, me: string, admin: boolean, lang: 
 }
 
 function readSeen() {try {return localStorage.getItem(SEEN_KEY) ?? '';} catch {return '';}}
+function readDismissed(): string[] {try {const v = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];} catch {return [];}}
 
 export function ActivityBell({raw, me, admin, lang, onOpenMonth}: {raw: Snapshot; me: string; admin: boolean; lang: Language; onOpenMonth: (month: string) => void}) {
   const t: Translate = (en, he) => lang === 'he' ? he : en;
-  const events = useMemo(() => recentActivity(raw, me, admin, lang), [raw, me, admin, lang]);
+  // A swipe dismisses an item on this device (owner round 2); the row flies off, then the gap closes.
+  const [dismissed, setDismissed] = useState(readDismissed), [closing, setClosing] = useState<string[]>([]), [openSwipe, setOpenSwipe] = useState<string | null>(null);
+  const all = useMemo(() => recentActivity(raw, me, admin, lang), [raw, me, admin, lang]);
+  const events = all.filter(e => !dismissed.includes(e.id));
   const [seen, setSeen] = useState(readSeen), [open, setOpen] = useState(false);
+  const dismiss = (id: string) => {
+    setClosing(c => [...c, id]);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.setTimeout(() => {
+      setDismissed(d => {const next = [...d, id].slice(-200); try {localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));} catch {} return next;});
+      setClosing(c => c.filter(x => x !== id));
+    }, reduce ? 0 : 240);
+    return true;
+  };
   const unread = events.filter(e => e.at > seen).length;
   const when = (at: string) => at === '9999' ? t('Now', 'עכשיו') : new Date(at).toLocaleDateString(lang === 'en' ? 'en-GB' : 'he-IL', {day: 'numeric', month: 'short', timeZone: 'Asia/Jerusalem'});
   const icons = {published: <CalendarDays/>, edited: <PenLine/>, swap: <ArrowLeftRight/>, member: <UserPlus/>};
@@ -59,13 +73,18 @@ export function ActivityBell({raw, me, admin, lang, onOpenMonth}: {raw: Snapshot
     </PopoverTrigger>
     <PopoverContent className="bell-menu" align="end" sideOffset={8} collisionPadding={12} dir={lang === 'he' ? 'rtl' : 'ltr'}>
       <h3 className="bell-title">{t('Activity', 'פעילות')}</h3>
-      {events.length ? <ul className="bell-list">{events.map(e => <li key={e.id}>
-        <button type="button" className="bell-item" disabled={!e.month} onClick={() => {if (e.month) {onOpenMonth(e.month); setOpen(false);}}}>
-          <span className="row-icon" data-tone={e.icon === 'member' ? 'warn' : e.icon === 'swap' ? 'info' : 'brand'}>{icons[e.icon]}</span>
-          <span className="bell-text">{e.text}</span>
-          <time className="bell-when">{when(e.at)}</time>
-        </button>
-      </li>)}</ul> : <EmptyState icon={<Inbox/>}>{t('Nothing yet', 'אין פעילות עדיין')}</EmptyState>}
+      {events.length ? <ul className="bell-list">{events.map(e => {
+        const clear = {label: t('Dismiss', 'הסרה'), icon: <X/>, tone: 'neutral' as const, onSelect: () => dismiss(e.id)};
+        return <li key={e.id} data-closing={closing.includes(e.id) || undefined}><div className="bell-slot">
+          <SwipeRow id={e.id} rtl={lang === 'he'} openId={openSwipe} onOpen={setOpenSwipe} action={clear} leading={clear}>
+            <button type="button" className="bell-item" disabled={!e.month} onClick={() => {if (e.month) {onOpenMonth(e.month); setOpen(false);}}}>
+              <span className="row-icon" data-tone={e.icon === 'member' ? 'warn' : e.icon === 'swap' ? 'info' : 'brand'}>{icons[e.icon]}</span>
+              <span className="bell-text">{e.text}</span>
+              <time className="bell-when">{when(e.at)}</time>
+            </button>
+          </SwipeRow>
+        </div></li>;
+      })}</ul> : <EmptyState icon={<Inbox/>}>{t('Nothing yet', 'אין פעילות עדיין')}</EmptyState>}
     </PopoverContent>
   </Popover>;
 }

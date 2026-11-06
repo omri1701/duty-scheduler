@@ -10,7 +10,7 @@
  --danger: #c0291f; --danger-soft: #fde7e4; --warn: #8f5200; --warn-soft: #fff1dc; --ok: #1f7a45; --ok-soft: #e3f4e9; --info: #2b66c9; --info-soft: #e6effc;
  --cal-weekend: #eceff4; --cal-special: #fff3d6; --cal-today: var(--brand);
  --radius-s: 10px; --radius: 14px; --radius-l: 20px; --radius-xl: 28px;
- --shadow-card: 0 1px 2px rgba(16,24,40,.04), 0 2px 10px rgba(16,24,40,.05); --shadow-pop: 0 12px 40px rgba(16,24,40,.16); --shadow-sheet: 0 -10px 40px rgba(16,24,40,.18); --shadow-bar: 0 6px 24px rgba(16,24,40,.14); --shadow-hero: 0 1px 2px rgba(16,24,40,.08), 0 10px 22px -10px rgba(16,24,40,.32);
+ --shadow-card: 0 1px 2px rgba(16,24,40,.04), 0 2px 10px rgba(16,24,40,.05); --shadow-pop: 0 12px 40px rgba(16,24,40,.16); --shadow-sheet: 0 -10px 40px rgba(16,24,40,.18); --shadow-bar: 0 6px 24px rgba(16,24,40,.14); --hero-glow-mix: 62%; --shadow-hero: 0 12px 26px -12px color-mix(in srgb,var(--hero-glow,var(--brand)) var(--hero-glow-mix),transparent), 0 1px 2px rgba(16,24,40,.06);
  --glass: rgba(255,255,255,.72); --glass-line: rgba(255,255,255,.6); --glass-thumb: rgba(23,96,79,.12);
  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Hebrew", "Noto Sans", sans-serif;
  --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.25,1.15); --dur: 240ms;
@@ -29,7 +29,7 @@
  --brand: #3fb08c; --brand-strong: #5cc6a3; --brand-soft: #16302a; --brand-ink: #c9f2e0; --on-brand: #06201a; --brand-tint: #1f3d33; --lime: #c7ef7a; --on-ink-action: #17604f; --hover: #38383d; --shimmer: rgba(255,255,255,.07); --cell: #2a2a2d; --cell-ink: #e4e5e8;
  --danger: #ff6b5e; --danger-soft: #3a1d1a; --warn: #f0b35a; --warn-soft: #3a2c14; --ok: #5fd08f; --ok-soft: #153224; --info: #7fb0ff; --info-soft: #182a45;
  --cal-weekend: #26262a; --cal-special: #332b17; --cal-today: var(--brand);
- --shadow-card: 0 1px 2px rgba(0,0,0,.4), 0 2px 10px rgba(0,0,0,.3); --shadow-pop: 0 12px 40px rgba(0,0,0,.6); --shadow-sheet: 0 -10px 40px rgba(0,0,0,.6); --shadow-bar: 0 6px 24px rgba(0,0,0,.5); --shadow-hero: 0 1px 2px rgba(0,0,0,.5), 0 10px 22px -10px rgba(0,0,0,.7);
+ --shadow-card: 0 1px 2px rgba(0,0,0,.4), 0 2px 10px rgba(0,0,0,.3); --shadow-pop: 0 12px 40px rgba(0,0,0,.6); --shadow-sheet: 0 -10px 40px rgba(0,0,0,.6); --shadow-bar: 0 6px 24px rgba(0,0,0,.5); --hero-glow-mix: 42%; --shadow-hero: 0 12px 26px -12px color-mix(in srgb,var(--hero-glow,#2f8f72) var(--hero-glow-mix),transparent), 0 1px 2px rgba(0,0,0,.4);
  --glass: rgba(28,28,30,.7); --glass-line: rgba(255,255,255,.08); --glass-thumb: rgba(255,255,255,.1);
 }
 
@@ -286,6 +286,8 @@ textarea{resize:vertical;min-height:76px}
 /* Full page (Settings on phones): slides in from the inline end, closes with the back button or an edge swipe. */
 .sheet-page{inset:0;border-radius:0;animation:page-in 280ms var(--ease);background:var(--bg)}
 .sheet-page[data-state=closed]{animation:page-out 220ms var(--ease) forwards}
+.sheet-page{touch-action:pan-y pinch-zoom}
+.sheet-page[data-swiped][data-state=closed]{animation:none}
 [dir=rtl].sheet-page{animation-name:page-in-rtl}[dir=rtl].sheet-page[data-state=closed]{animation-name:page-out-rtl}
 .sheet-page-head{align-items:center;padding:calc(8px + env(safe-area-inset-top)) 12px 6px;background:var(--bg)}
 .sheet-page-head .sheet-title{font-size:20px}
@@ -322,7 +324,8 @@ textarea{resize:vertical;min-height:76px}
 .hero{position:relative;display:flex;flex-direction:column;gap:12px;min-height:188px;padding:20px 22px;border-radius:var(--radius-xl);background:linear-gradient(135deg,var(--brand) 0%,var(--brand-strong) 100%);color:#fff;box-shadow:var(--shadow-hero);overflow:hidden;animation:fade-up 320ms var(--ease) both}
 :root[data-theme=dark] .hero{background:linear-gradient(135deg,#1c5a49 0%,#123f34 100%)}
 .hero::after{content:"";position:absolute;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.07);inset-inline-end:-70px;top:-90px;pointer-events:none}
-.hero[data-when=later]{background:linear-gradient(135deg,#24605a 0%,#1a4a42 100%)}
+.hero[data-when=later]{background:linear-gradient(135deg,#24605a 0%,#1a4a42 100%);--hero-glow:#24605a}
+:root[data-theme=dark] .hero[data-when=later]{--hero-glow:#2f8a7f}
 .hero-when{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
 [dir=rtl] .hero-when{letter-spacing:0;text-transform:none;font-size:14px}
 .hero-date{text-transform:none;letter-spacing:0;font-weight:600;opacity:1}
@@ -345,7 +348,7 @@ textarea{resize:vertical;min-height:76px}
 .hero-dots button.on span{background:var(--brand);width:16px}
 .hero-dots button:hover:not(.on) span{background:var(--ink-4)}
 .hero-dots button:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
-.hero-next{display:none}
+
 .balance-card{display:flex;align-items:center;gap:14px;padding:14px 16px}
 .balance-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .balance-body strong{font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -359,15 +362,6 @@ textarea{resize:vertical;min-height:76px}
  .hero{min-height:200px}
  .hero-arrow{display:inline-flex!important}
  .hero-arrow:disabled{opacity:.3}
- .hero-next{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:2px 0 0;padding:0;list-style:none}
- .hero-mini{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:12px 14px;border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-card);text-align:start;transition:transform 160ms var(--ease),box-shadow 160ms var(--ease)}
- .hero-mini:hover{transform:translateY(-2px);box-shadow:var(--shadow-card),0 8px 18px -10px rgba(16,24,40,.25)}
- .hero-mini:active{transform:scale(.98)}
- .hero-mini:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
- .hero-mini-when{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--brand)}
- [dir=rtl] .hero-mini-when{letter-spacing:0;text-transform:none;font-size:12px}
- .hero-mini strong{font-size:16px;font-weight:700;color:var(--ink)}
- .hero-mini-kind{font-size:13px;color:var(--ink-3)}
 }
 
 /* ---------- month bar, notes, slide ---------- */
@@ -385,13 +379,8 @@ textarea{resize:vertical;min-height:76px}
 .note-line[data-tone=danger]{background:var(--danger-soft);color:var(--danger)}
 .note-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;margin:8px 0 12px;border-radius:14px;background:var(--danger-soft);color:var(--danger);font-size:14px}
 .month-stage{position:relative;overflow:hidden;margin:0 -2px;padding:2px}
-.month-slide{animation:none}
 @media(prefers-reduced-motion:no-preference){
- .month-slide.slide-next{animation:slide-next 260ms var(--ease)}
- .month-slide.slide-prev{animation:slide-prev 260ms var(--ease)}
- [dir=rtl] .month-slide.slide-next{animation-name:slide-prev}
- [dir=rtl] .month-slide.slide-prev{animation-name:slide-next}
-}
+ [dir=rtl] [dir=rtl]}
 @keyframes slide-next{from{transform:translateX(36px);opacity:0}}@keyframes slide-prev{from{transform:translateX(-36px);opacity:0}}
 @media(max-width:600px){
  .month-bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:4px 0 10px;flex-direction:column;align-items:stretch;gap:8px}
@@ -625,6 +614,18 @@ textarea{resize:vertical;min-height:76px}
 .swipe-action{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:96px;height:100%;font-size:12px;font-weight:600;color:#fff;background:var(--ink-3)}
 .swipe-action svg{width:20px;height:20px}
 .swipe-action[data-tone=danger]{background:var(--danger)}.swipe-action[data-tone=ok]{background:var(--ok)}
+.swipe-action[data-tone=brand]{background:var(--brand);color:var(--on-brand)}
+:root[data-theme=dark] .swipe-action[data-tone=ok],:root[data-theme=dark] .swipe-action[data-tone=danger]{color:#06140e}
+.swipe-actions-start{inset-inline-start:0;inset-inline-end:auto}
+/* Only the side being revealed shows, so a card's two colours never peek at once. */
+.swipe:not([data-swipe-side=start]) .swipe-actions-start,.swipe:not([data-swipe-side=end]) .swipe-actions:not(.swipe-actions-start){visibility:hidden}
+.swipe-action svg{transition:transform 200ms var(--spring)}
+.swipe-dragging .swipe-action svg{transform:scale(1.12)}
+/* Home swap cards swipe as a whole card. */
+.swap-swipe{border-radius:var(--radius-l);box-shadow:var(--shadow-card)}
+.swap-swipe .swipe-content{background:none;border-radius:var(--radius-l)}
+.swap-swipe .swap-card{box-shadow:none}
+.swap-swipe .swipe-action{width:112px;font-size:13px}
 .member-hero{display:flex;align-items:center;gap:20px;padding:4px 0 6px}
 .member-stats{display:flex;gap:22px}
 .member-stats div{display:flex;flex-direction:column;gap:2px}
@@ -889,3 +890,45 @@ textarea{resize:vertical;min-height:76px}
 @keyframes value-flash{from{transform:scale(1.25);opacity:.4}}
 /* Theme switches cross-fade (hooks/use-theme.ts wraps the change in a view transition). */
 ::view-transition-old(root),::view-transition-new(root){animation-duration:240ms;animation-timing-function:ease}
+
+/* Bell items swipe away; the list then closes the gap (owner round 2). */
+.bell-list>li{display:grid;grid-template-rows:1fr;transition:grid-template-rows 220ms var(--ease),opacity 220ms ease}
+.bell-list>li[data-closing]{grid-template-rows:0fr;opacity:0}
+.bell-slot{min-height:0;overflow:hidden}
+.bell-list .swipe-content{background:var(--surface)}
+.bell-list .swipe-action{width:84px}
+
+/* PC sidebar (owner round 2): a fixed panel whose width animates alone. Icons keep one position in
+   both states, labels clip and fade, and the page's margin snaps once (at the start when opening,
+   at the end when folding), so the content never moves mid-animation. */
+@media(min-width:601px){
+ .side{position:fixed;top:0;inset-inline-start:0;z-index:25;padding:20px 12px;overflow:hidden}
+ .app-main{margin-inline-start:72px}
+ .side-brand{justify-content:flex-start;padding-inline:9px}
+ .side-item,.side-toggle{justify-content:flex-start;padding:0 13px}
+ .side-foot{text-align:start;padding-inline:0}
+}
+@media(min-width:601px) and (max-width:899px){.side{overflow:visible}}
+@media(min-width:900px){
+ .side{width:232px;padding:20px 12px}
+ .app-main{margin-inline-start:232px;transition:margin-inline-start 0s}
+ :root[data-sidebar=collapsed] .side{width:72px;padding:20px 12px;overflow:visible}
+ :root[data-sidebar=collapsed] .app-main{margin-inline-start:72px;transition:margin-inline-start 0s 260ms}
+ :root[data-sidebar=collapsed] .side-brand{justify-content:flex-start;padding-inline:9px}
+ :root[data-sidebar=collapsed] .side-item,:root[data-sidebar=collapsed] .side-toggle{justify-content:flex-start;padding:0 13px}
+ .side-item .navigation-label,.side-toggle .navigation-label,.side-brand .wordmark-name{white-space:nowrap}
+}
+
+/* The month stage (month-stage.tsx): the calendar follows the finger; the neighbour peeks in. */
+.month-stage{touch-action:pan-y pinch-zoom}
+.month-pane{will-change:transform}
+.month-peek{position:absolute;inset:2px 2px auto;pointer-events:none;will-change:transform,filter,opacity}
+.month-preview{background:var(--surface);border-radius:var(--radius-l);box-shadow:var(--shadow-card);overflow:hidden}
+.month-preview-head{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:10px 0;font-size:12px;font-weight:600;color:var(--ink-3);text-align:center;border-bottom:1px solid var(--line)}
+.month-preview-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.month-preview-day{display:flex;flex-direction:column;gap:6px;min-height:var(--calendar-cell-min-height,108px);padding:8px;border-inline-end:1px solid var(--line);border-bottom:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink-2)}
+.month-preview-day:nth-child(7n){border-inline-end:0}
+.month-preview-day.weekend{background:var(--cal-weekend)}
+.month-preview-day.outside{color:var(--ink-4)}
+.month-preview-day i{font-style:normal;font-size:12px;padding:5px 4px;border-radius:9px;text-align:center;background:var(--member-bg);color:var(--member-ink);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@media(max-width:600px){.month-preview-day{min-height:72px;padding:6px 3px;font-size:13px;align-items:center}.month-preview-day i{font-size:11px;width:100%}}

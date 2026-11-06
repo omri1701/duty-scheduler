@@ -141,18 +141,6 @@ function DutyCarousel({duties, today, lang, t, name, onSwap, onSchedule}: {dutie
         aria-label={t(`Duty ${i + 1} of ${shown.length}`, `תורנות ${i + 1} מתוך ${shown.length}`)} onClick={() => go(i)}><span/></button>)}</div>
       <Button variant="ghost" size="icon-sm" className="hero-arrow" aria-label={t('Next duty', 'התורנות הבאה')} disabled={page === shown.length - 1} onClick={() => go(page + 1)}><Next/></Button>
     </div>}
-    {/* PC: the other upcoming duties as small cards; a click brings one into the big card. */}
-    {shown.length > 1 && <ul className="hero-next" aria-label={t('Up next', 'בהמשך')}>
-      {shown.map((d, i) => {
-        if (i === page) return null;
-        const when = dutyWhen(d.row.day, today, lang);
-        return <li key={d.row.id}><button type="button" className="hero-mini" onClick={() => go(i)}>
-          <span className="hero-mini-when">{when.label}</span>
-          <strong>{when.date}</strong>
-          <span className="hero-mini-kind">{d.role === 'cover' ? t('Emergency cover', 'כיסוי חירום') : d.kind === 'holiday' ? (d.row.title || t('Holiday', 'חג')) : d.kind === 'weekend' ? t('Weekend', 'סוף שבוע') : t('Weekday', 'יום חול')}</span>
-        </button></li>;
-      })}
-    </ul>}
   </div>;
 }
 

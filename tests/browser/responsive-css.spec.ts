@@ -29,7 +29,8 @@ for (const width of [1440, 390, 320]) {
       // Phones get the floating glass tab bar; PCs a sticky sidebar (decision 2026-11-06).
       const nav = page.locator(phone ? '.tabbar' : '.side');
       await expect(nav).toBeVisible();
-      await expect(nav).toHaveCSS('position', phone ? 'fixed' : 'sticky');
+      // Both are fixed: the PC sidebar resizes on its own when it folds (owner round 2).
+      await expect(nav).toHaveCSS('position', 'fixed');
       await expect(page.locator('.mobile-navigation')).toHaveCount(phone ? 1 : 0);
       await expect(page.locator('.side')).toHaveCount(phone ? 0 : 1);
       await expect(nav.getByRole('tab')).toHaveCount(4);

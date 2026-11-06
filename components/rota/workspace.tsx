@@ -16,6 +16,7 @@ import {Chip} from '@/components/ui/chip';
 import {WifiOff} from 'lucide-react';
 import {ActivityBell} from './activity-bell';
 import {MonthBar, type MenuItem, type PrimaryAction} from './month-bar';
+import {MonthStage, type MonthStageHandle} from './month-stage';
 import {DutySheet, type DutySheetActions} from './duty-sheet';
 import {DayDetails} from './day-details';
 import {DutyEditor} from '@/components/rota/duty-editor';
@@ -27,7 +28,7 @@ import {currentSubscription, describe} from '@/lib/push/browser';
 import {PublicationHistory} from '@/components/rota/publication-history';
 import {SwapRequestDialog, useSwapActions} from '@/components/rota/swap-requests';
 import {WorkspaceAvailability} from './workspace-availability';
-import {WorkspaceCalendar} from './workspace-calendar';
+import {WorkspaceCalendar, MonthPreview} from './workspace-calendar';
 import {WorkspaceTeam} from './workspace-team';
 import {DraftSwapDialog, SpecialDutyDialog, MonthSettingsDialog, PublishDialog, CancelDraftDialog, ClearBoardDialog} from './workspace-dialogs';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
@@ -67,7 +68,6 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   // A notification opens the screen it links to (`/?tab=…&month=…`, decision 2026-11-06).
   const [link] = useState(() => typeof window === 'undefined' ? {} : deepLink(window.location.search));
   const [month, setMonth] = useState(() => link.month ?? initialCalendarMonth()), [tab, setTab] = useState<string>(link.tab ?? 'home');
-  const [slide, setSlide] = useState<'next' | 'prev' | null>(null);
   const [welcome, setWelcome] = useState(() => typeof window !== 'undefined' && !welcomeSeen());
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -157,8 +157,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   });
   const publishedEditRow = publishedEdit ? editablePublishedDuty(remote.snapshot!, month, today, publishedEdit) : undefined;
   const {requestSelection, setRequestSelection} = interactions;
-  function goToMonth(m: string, direction?: 'next' | 'prev') {
-    setSlide(direction ?? null);
+  function goToMonth(m: string) {
     setMonth(m);
     draft.resetSpecialDates(m);
     interactions.resetSelection();
@@ -167,7 +166,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     draft.swap.setSelection(null);
     setPublishOpen(false); setCancelDraftMonth(null); draft.clear.setOpen(false);
   }
-  function changeMonth(n: number) {goToMonth(monthNext(month, n), n > 0 ? 'next' : 'prev');}
+  function changeMonth(n: number) {goToMonth(monthNext(month, n));}
   // Escape ends an admin's draft swap pick, like the keyboard swap.
   useEffect(() => {
     if (!pickingFrom) return;
@@ -221,7 +220,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
       setPickingFrom(null);
       return;
     }
-    if (mobile) {setSelectedDay(d); return;}
+    // Phones: a second tap on the selected day clears it (owner round 2).
+    if (mobile) {setSelectedDay(selectedDay === d ? null : d); return;}
     setSheetDuty(b);
   }
   const sheetActions = (b: Duty | null): DutySheetActions => {
@@ -271,7 +271,9 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
     : publication ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
   const selectedDuty = selectedDay ? calendarBlocks.find(b => b.start <= selectedDay && selectedDay < b.end) : undefined;
-  const swipe = useMonthSwipe(changeMonth, lang === 'he');
+  // The chevrons and the heading drag play the calendar's month transition (month-stage.tsx).
+  const stage = useRef<MonthStageHandle>(null);
+  const navigateMonth = (n: number) => {if (stage.current) stage.current.go(n); else changeMonth(n);};
   const swaps = useSwapActions(remote, lang);
   const notices: ReactNode = <>
     {isManager && viewingDraft && generationClosed && monthDetails.status === 'draft' && <p className="note-line">{closedReason}</p>}
@@ -310,17 +312,15 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
               }}/>
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>
-            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={changeMonth} primary={primary} menu={menu}>
+            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={navigateMonth} primary={primary} menu={menu}>
               {reopened && <Segmented label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
                 options={[{value: 'draft', label: t('Draft', 'טיוטה')}, {value: 'published', label: t('Published', 'פורסם')}]}/>}
             </MonthBar>
-            <div className="month-stage" {...swipe}>
-              <div key={month} className={'month-slide' + (slide ? ` slide-${slide}` : '')} onAnimationEnd={() => setSlide(null)}>
+            <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={changeMonth} preview={m => <MonthPreview month={m} state={calendarState} lang={lang}/>}>
                 <WorkspaceCalendar state={state} calendarState={calendarState} calendarBlocks={calendarBlocks} dateCells={dateCells} today={today} month={month} lang={lang} t={t} fmt={fmt}
                   nickname={nickname} meId={meId} readOnly={remote.readOnly} requesting={requesting} interactions={interactions} onSelect={selectDay}
                   selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices}/>
-              </div>
-            </div>
+            </MonthStage>
             {mobile && selectedDay && <DayDetails date={selectedDay} duty={selectedDuty && ownerMonth(selectedDuty) === month ? selectedDuty : undefined} state={calendarState} lang={lang} t={t} meId={meId}
               interactive={!remote.readOnly} onOpen={b => setSheetDuty(b)}/>}
           </TabsContent>
@@ -366,17 +366,3 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
 
 /** A quick horizontal swipe on the calendar changes the month (the hold-and-drag swap starts
  * only after a long press, so the two never meet). Mirrored in Hebrew. */
-function useMonthSwipe(changeMonth: (offset: number) => void, rtl: boolean) {
-  const start = useRef<{x: number; y: number; id: number; t: number} | null>(null);
-  return {
-    onPointerDown: (e: React.PointerEvent) => {if (e.pointerType === 'touch' && e.isPrimary) start.current = {x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now()};},
-    onPointerUp: (e: React.PointerEvent) => {
-      const s = start.current; start.current = null;
-      if (!s || s.id !== e.pointerId || performance.now() - s.t > 450) return;
-      const dx = e.clientX - s.x, dy = e.clientY - s.y;
-      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      changeMonth((dx < 0) !== rtl ? 1 : -1);
-    },
-    onPointerCancel: () => {start.current = null;},
-  };
-}

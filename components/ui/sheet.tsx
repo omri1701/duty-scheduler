@@ -105,21 +105,43 @@ export function Sheet({open, onOpenChange, title, description, children, footer,
   </DialogPrimitive.Root>;
 }
 
-/** A swipe from the leading edge closes a page, like a native back gesture. */
+/** A swipe from the leading edge closes a page like a native back gesture: the page follows the
+ * finger, then slides out (past a third, or a quick flick) or springs back. */
 function edgeSwipe(close: () => void, rtl: boolean) {
-  let start: {x: number; y: number; id: number} | null = null;
+  let start: {x: number; y: number; id: number; t: number; live: boolean} | null = null;
+  const sign = rtl ? -1 : 1;
+  const place = (el: HTMLElement, dx: number, animate: boolean) => {
+    el.style.transition = animate ? 'transform 220ms cubic-bezier(.2,.8,.2,1)' : 'none';
+    el.style.transform = dx ? `translateX(${dx}px)` : '';
+  };
   return {
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
       if (e.pointerType !== 'touch' || !e.isPrimary) return;
-      const width = e.currentTarget.clientWidth, fromEdge = rtl ? width - e.clientX : e.clientX;
-      start = fromEdge <= 28 ? {x: e.clientX, y: e.clientY, id: e.pointerId} : null;
+      const box = e.currentTarget.getBoundingClientRect(), fromEdge = rtl ? box.right - e.clientX : e.clientX - box.left;
+      start = fromEdge <= 28 ? {x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now(), live: false} : null;
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+      const s = start;
+      if (!s || s.id !== e.pointerId) return;
+      const dx = (e.clientX - s.x) * sign, dy = Math.abs(e.clientY - s.y);
+      if (!s.live) {
+        if (dy > 10 && dy > dx) {start = null; return;}
+        if (dx < 8) return;
+        s.live = true; e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      place(e.currentTarget, Math.max(0, dx) * sign, false);
     },
     onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
       const s = start; start = null;
-      if (!s || s.id !== e.pointerId) return;
-      const dx = (e.clientX - s.x) * (rtl ? -1 : 1), dy = Math.abs(e.clientY - s.y);
-      if (dx > 70 && dx > dy * 1.5) close();
+      if (!s || s.id !== e.pointerId || !s.live) return;
+      const el = e.currentTarget, dx = (e.clientX - s.x) * sign, speed = dx / Math.max(1, performance.now() - s.t);
+      if (dx > el.clientWidth / 3 || (dx > 40 && speed > .6)) {
+        // Finish the slide from where the finger left it; the closing keyframes are skipped.
+        el.dataset.swiped = 'true';
+        place(el, el.clientWidth * sign, true);
+        window.setTimeout(close, 200);
+      } else place(el, 0, true);
     },
-    onPointerCancel: () => {start = null;},
+    onPointerCancel: (e: React.PointerEvent<HTMLElement>) => {if (start?.live) place(e.currentTarget, 0, true); start = null;},
   };
 }

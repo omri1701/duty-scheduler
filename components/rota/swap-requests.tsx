@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState,type ReactNode} from 'react';
-import {ArrowLeftRight,Copy} from 'lucide-react';
+import {ArrowLeftRight,Check,Copy,ShieldCheck,X} from 'lucide-react';
+import {SwipeRow,type SwipeAction} from '@/components/ui/swipe-row';
 import {Button} from '@/components/ui/button';
 import {Sheet} from '@/components/ui/sheet';
 import {Chip,type ChipTone} from '@/components/ui/chip';
@@ -71,9 +72,10 @@ export function useSwapActions(remote:TeamWorkspace,lang:'en'|'he'){
   return act(()=>remote.resolveSwap(r.id,'accept'),last?t('Accepted · waiting for an admin','התקבל · ממתין למנהל'):t('Accepted · waiting for the other engineer','התקבל · ממתין למהנדס השני'));
  }
  // Availability is rechecked at consent; a conflict can be accepted, then needs an admin override.
- async function startAccept(r:SwapRequest){
+ async function startAccept(r:SwapRequest):Promise<boolean>{
   const {source:from,target:to}=swapDuties(raw,r),conflicts=from&&to?await remote.swapAvailability(from.id,to.id).catch(()=>[]):[];
-  if(conflicts.length)setConsent({request:r,conflicts});else await accept(r);
+  if(conflicts.length){setConsent({request:r,conflicts});return false}
+  return accept(r);
  }
  async function copySummary(){
   try{await navigator.clipboard.writeText(summary);toast.success(t('Copied','הועתק'))}
@@ -102,7 +104,7 @@ export function useSwapActions(remote:TeamWorkspace,lang:'en'|'he'){
   requests:visibleSwapRequests(raw.swapRequests??[],me,remote.isAdmin,temporary),
   startAccept,
   decline:(r:SwapRequest)=>act(()=>remote.resolveSwap(r.id,'decline'),t('Declined','סורב')),
-  openApprove:(r:SwapRequest)=>{setReview(r);setOverride(false);setReason('')},
+  openApprove:(r:SwapRequest)=>{setReview(r);setOverride(false);setReason('');return false},
   reject:(r:SwapRequest)=>act(()=>remote.resolveSwap(r.id,'reject'),t('Rejected','נדחה')),
   cancel:(r:SwapRequest)=>act(()=>remote.resolveSwap(r.id,'cancel'),t('Request cancelled','הבקשה בוטלה')),
  };
@@ -118,7 +120,17 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
  const duties=incoming?swapDuties(raw,r):null,refused=duties?.source&&duties.target?swapProblem(raw,r.month,duties.source,duties.target,false):null;
  const status:[string,ChipTone]={awaiting_engineer:[t('Waiting for an answer','ממתינה לתשובה'),'info'],awaiting_admin:[t('Waiting for an admin','ממתינה למנהל'),'warn'],approved:[t('Approved','אושרה'),'ok'],declined:[t('Declined','סורבה'),'danger'],rejected:[t('Rejected','נדחתה'),'danger'],cancelled:[t('Cancelled','בוטלה'),'neutral'],invalidated:[t('No longer applies','כבר לא תקפה'),'neutral']}[r.status] as [string,ChipTone];
  const you=(id:string)=>id===me?t('You','את/ה'):name(id).split(' ')[0];
- return <article className={'swap-card '+(incoming?'incoming':admin?'admin-review':'outgoing')} data-swap-card={r.id}>
+ // Swipe toward the inline end to accept (approve), toward the start to decline (reject, cancel);
+ // the same actions as the buttons, which stay for keyboard and screen readers.
+ const [openSwipe,setOpenSwipe]=useState<string|null>(null);
+ const off=remote.readOnly||!pending;
+ const leading:SwipeAction|undefined=off?undefined:incoming&&!refused?{label:t('Accept','קבלה'),icon:<Check/>,tone:'ok',onSelect:()=>swaps.startAccept(r)}
+  :admin?{label:t('Approve','אישור'),icon:<ShieldCheck/>,tone:'brand',onSelect:()=>swaps.openApprove(r)}:undefined;
+ const trailing:SwipeAction|undefined=off?undefined:incoming?{label:t('Decline','סירוב'),icon:<X/>,tone:'danger',onSelect:()=>swaps.decline(r)}
+  :admin?{label:t('Reject','דחייה'),icon:<X/>,tone:'danger',onSelect:()=>swaps.reject(r)}
+  :swapStarter(r)===me?{label:t('Cancel','ביטול'),icon:<X/>,tone:'danger',onSelect:()=>swaps.cancel(r)}:undefined;
+ return <SwipeRow id={r.id} className="swap-swipe" rtl={lang==='he'} openId={openSwipe} onOpen={setOpenSwipe} leading={leading} action={trailing} ignore="button,a,[data-no-swipe]">
+ <article className={'swap-card '+(incoming?'incoming':admin?'admin-review':'outgoing')} data-swap-card={r.id}>
   <div className="swap-card-head">
    <span className="swap-card-icon" data-tone={incoming?'info':admin?'warn':'neutral'}><ArrowLeftRight/></span>
    <div className="swap-card-text">
@@ -139,7 +151,8 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
    {admin&&<><Button size="sm" disabled={remote.readOnly} onClick={()=>swaps.openApprove(r)}>{t('Approve','אישור')}</Button><Button size="sm" variant="secondary" disabled={remote.readOnly} onClick={()=>swaps.reject(r)}>{t('Reject','דחייה')}</Button></>}
    {swapStarter(r)===me&&<Button size="sm" variant="ghost" disabled={remote.readOnly} onClick={()=>swaps.cancel(r)}>{t('Cancel request','ביטול הבקשה')}</Button>}
   </div>}
- </article>;
+ </article>
+ </SwipeRow>;
 }
 
 /** The confirmation of a swap chosen in the calendar (two duties), for members and admins. */

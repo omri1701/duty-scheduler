@@ -1,5 +1,5 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment} from './calendar-presentation';
-import {calendarCells} from '@/lib/rota/calendar-dates';
+import {calendarCells, calendarDates} from '@/lib/rota/calendar-dates';
 import {streakCells} from '@/lib/rota/streaks';
 import {LockKeyhole} from 'lucide-react';
 import {addDays, dayOf, ownerMonth, type State, type Duty} from '@/lib/rota/engine';
@@ -110,4 +110,21 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
       );
     })}
   </CalendarSurface>;
+}
+
+/** The neighbouring month while it slides in (month-stage.tsx): dates and who is on duty, in
+ * member colours; blurred while it arrives, so it carries no controls. */
+export function MonthPreview({month, state, lang}: {month: string; state: State; lang: 'en' | 'he'}) {
+  const days = calendarDates(month);
+  const weekdays = lang === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+  return <div className="calendar-panel month-preview">
+    <div className="month-preview-head">{weekdays.map(d => <span key={d}>{d}</span>)}</div>
+    <div className="month-preview-grid">{days.map(d => {
+      const inside = d.slice(0, 7) === month, person = state.team.find(p => p.id === state.assignments[d]?.primary);
+      return <div key={d} className={'month-preview-day' + (inside ? '' : ' outside') + (dayOf(d) >= 5 ? ' weekend' : '')}>
+        <span>{Number(d.slice(-2))}</span>
+        {inside && person && <i className="member-tint" style={memberStyle(person.color)}>{person.name.split(/\s+/)[0]}</i>}
+      </div>;
+    })}</div>
+  </div>;
 }
