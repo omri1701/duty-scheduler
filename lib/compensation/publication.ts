@@ -72,6 +72,36 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
   };
   const effects: {debtorId: string; creditorId: string; units: number}[] = [];
   const permanent = (after?.intents ?? []).filter(i => i.kind === 'permanent' && !s.intents.has(i.id));
+  // Deleting the live version back to an earlier one is its exact undo (decision 2026-11-06).
+  // Capacity an intent of the removed version moved returns without an ordinary debt, each
+  // Temporary leg of it is reversed, and a repayment it cancelled by a Permanent move counts
+  // as done again. Only events that say so: earlier deletions replay as they were recorded.
+  const reverted = new Map<string, [number, number][]>(), given = new Map<string, [number, number][]>();
+  if (op.revert !== undefined) {
+    if (op.revert !== true || op.mode !== 'delete' || !after || !before) fail('invalid-publication-deletion');
+    const kept = new Set(after.intents.map(i => i.id));
+    for (const intent of [...before.intents].sort((a, b) => compareId(a.id, b.id))) {
+      if (kept.has(intent.id)) continue;
+      let amount = 0;
+      for (const slice of intent.capacity) {
+        const a = old.get(slice.date), b = next.get(slice.date);
+        if (!a || !b || a.primaryId !== intent.toId || b.primaryId !== intent.fromId) continue;
+        const hi = Math.min(slice.offset + slice.units, a.units, b.units);
+        if (hi <= slice.offset) continue;
+        for (const map of intent.kind === 'permanent' && !intent.route ? [reverted, given] : [reverted])
+          map.set(slice.date, [...(map.get(slice.date) ?? []), [slice.offset, hi]]);
+        amount += hi - slice.offset;
+      }
+      if (amount) for (const leg of intent.route ?? [intent]) if (leg.kind === 'temporary')
+        effects.push({debtorId: leg.toId, creditorId: leg.fromId, units: amount});
+    }
+    for (const r of [...after.reservations].sort((a, b) => compareId(a.id, b.id))) {
+      if (before.reservations.some(o => o.id === r.id) || s.contributions.get(r.id)?.status !== 'cancelled') continue;
+      const end = r.capacity.offset + r.capacity.units, units = (given.get(r.capacity.date) ?? [])
+        .reduce((sum, [lo, hi]) => sum + Math.max(0, Math.min(hi, end) - Math.max(lo, r.capacity.offset)), 0);
+      if (units) effects.push({debtorId: r.claim.creditorId, creditorId: r.claim.debtorId, units});
+    }
+  }
   // Classify cancelled repayment before ordinary replacement/weighted-swap deltas.
   for (const oldPlan of [...(before?.reservations ?? [])].sort((a, b) => compareId(a.id, b.id))) {
     const c = s.contributions.get(oldPlan.id)!;
@@ -91,8 +121,8 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
     if (b && a.primaryId !== b.primaryId) {
       const shared = Math.max(0, Math.min(a.units, b.units, c.capacity.offset + c.capacity.units) - c.capacity.offset);
       if (shared) {
-        const exemptions: [number, number][] = permanent.flatMap(i => i.capacity.filter(p => p.date === c.capacity.date)
-          .map(p => [p.offset, p.offset + p.units] as [number, number]));
+        const exemptions: [number, number][] = [...permanent.flatMap(i => i.capacity.filter(p => p.date === c.capacity.date)
+          .map(p => [p.offset, p.offset + p.units] as [number, number])), ...reverted.get(c.capacity.date) ?? []];
         const chargeable = gaps(c.capacity.offset, c.capacity.offset + shared, exemptions);
         for (const [lo, hi] of chargeable) exclude({date: c.capacity.date, offset: lo, units: hi - lo});
         const amount = chargeable.reduce((sum, [lo, hi]) => sum + hi - lo, 0);
@@ -100,6 +130,8 @@ export function transition(s: State, event: CompensationEvent, op: Extract<Compe
       }
     }
   }
+  // Returned capacity owes nothing; a cancelled repayment above was exempt over it too.
+  for (const [date, ranges] of reverted) for (const [lo, hi] of ranges) exclude({date, offset: lo, units: hi - lo});
   const appliedIntents: {id: string; fromId: string; toId: string; units: number}[] = [];
   const intentIds = new Set<string>();
   const routeBudgets = new Map<string, {transfer: unknown; used: number}>();

@@ -56,6 +56,8 @@ export class Backend {
   balance: Balance | null = null;
   /** Versions a re-plan reversed, served by duty_replanned_versions. */
   replanned: string[] = [];
+  /** duty_edit_returns: who a Permanent edit would give the duty back to (H1). */
+  editReturns: string[] = [];
   googleEnabled = false;
   allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
   generationNow = Date.parse(NOW);
@@ -120,6 +122,10 @@ export class Backend {
       const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
       // Mirrors the database scope: members receive only their own row and relationships.
       return canManage(this.raw, user) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+    }
+    if (name === 'duty_edit_returns') {
+      expect(canManage(this.raw, user)).toBe(true);
+      return this.editReturns;
     }
     if (name === 'duty_swap_availability') {
       // Mirrors duty_private.swap_availability: parties or admins, who and when, never the note.

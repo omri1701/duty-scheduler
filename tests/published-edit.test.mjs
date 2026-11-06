@@ -83,3 +83,10 @@ test('the summary states dates, engineers, points, kind and who owes whom, in En
  assert.match(hebrew,/^מאזן: Alex Atlas חייב\/ת ל־Blair Birch 1.5 נקודות$/m);
  assert.doesNotMatch(hebrew,/Temporary|Balance/);
 });
+
+test('a Permanent edit back to who held the duty before a Temporary change says it undoes that change (H1)',()=>{
+ const edit={primary:'a',extra:0,saturdayExtra:0,kind:'permanent',overrideReason:''},held=row('2026-11-03','2026-11-04',0,0,'b');
+ assert.match(editSummary(held,edit,name,'en',true),/Type: Permanent\nBalance: Alex Atlas gets the duty back: the earlier Temporary change is undone and its debt cancels$/);
+ assert.match(editSummary(held,edit,name,'he',true),/Alex Atlas מקבל\/ת את התורנות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו$/);
+ assert.match(editSummary(held,edit,name,'en'),/Balance: No debt$/);
+});

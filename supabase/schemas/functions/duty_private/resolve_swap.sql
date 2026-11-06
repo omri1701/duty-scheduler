@@ -71,8 +71,13 @@ begin
     and c.member_id in (case when d.id=a.id then r.other_id else r.requester_id end,d.secondary_id)
    ) else d.manager_override end,d.title,d.extra_points,d.saturday_extra_points,d.locked
   from public.duty_assignments d where d.publication_id=current_publication;
+  -- A weighted swap moves points between the two engineers: the copied plan's targets
+  -- follow it, so a reopened copy of this version still matches its plan (2026-11-06).
   insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)
-  select month,publication,allocation_id,allocation,
+  select month,publication,allocation_id,case when jsonb_typeof(allocation->'targetsUnits')='object' and a.points<>b.points then
+    jsonb_set(jsonb_set(allocation,array['targetsUnits',r.requester_id::text],to_jsonb(coalesce((allocation->'targetsUnits'->>r.requester_id::text)::bigint,0)-(a.points*2)::bigint+(b.points*2)::bigint)),
+     array['targetsUnits',r.other_id::text],to_jsonb(coalesce((allocation->'targetsUnits'->>r.other_id::text)::bigint,0)-(b.points*2)::bigint+(a.points*2)::bigint))
+   else allocation end,
    (select coalesce(jsonb_agg(case when l->>'dutyId'=a.day::text then jsonb_set(l,'{engineer}',to_jsonb(r.other_id::text)) when l->>'dutyId'=b.day::text then jsonb_set(l,'{engineer}',to_jsonb(r.requester_id::text)) else l end),'[]') from jsonb_array_elements(locks) l),
    (select coalesce(jsonb_agg(v),'[]') from jsonb_array_elements(approvals) v where
     not (v->>'rule' in ('availability','boundary') and v->>'dutyId' in (a.day::text,b.day::text))

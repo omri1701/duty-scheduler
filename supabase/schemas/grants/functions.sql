@@ -209,6 +209,12 @@ GRANT EXECUTE ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid)
 REVOKE ALL ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) TO authenticated;
 
+REVOKE ALL ON FUNCTION duty_private.edit_returns(p_publication uuid, p_day date) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_returns(p_publication uuid, p_day date) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_returns(p_publication uuid, p_day date) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_returns(p_publication uuid, p_day date) TO authenticated;
+
 REVOKE ALL ON FUNCTION duty_private.replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION duty_private.replanned_versions(text) TO authenticated;
 

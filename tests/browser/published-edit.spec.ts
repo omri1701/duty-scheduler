@@ -163,3 +163,23 @@ test('an admin swaps any two members from the editor, or by dragging one duty on
   await drag(page, info.project.name === 'mobile', '2026-11-03', '2026-11-05');
   await expect(page.getByRole('dialog', {name: 'Propose swap'})).toBeVisible();
 });
+
+test('Permanent back to whoever held the duty before a Temporary change says it undoes that change (H1)', async ({page, openApp, backend}, info) => {
+  // The server's answer for this duty: Casey held it before a Temporary change still in effect.
+  backend.editReturns = [ids.c];
+  await openApp();
+  await duty(page, '2026-11-03').click();
+  const dialog = page.getByRole('dialog', {name: 'Edit duty'});
+  await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
+  await page.getByRole('option', {name: 'Alex Atlas', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Permanent', exact: true}).click();
+  await expect(dialog).toContainText('No debt. Alex Atlas takes this duty for good.');
+  await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
+  await page.getByRole('option', {name: 'Casey Cedar', exact: true}).click();
+  await expect(dialog).toContainText('Casey Cedar gets the duty back: this undoes the Temporary change, so its debt cancels.');
+  await info.attach(`published-edit-return-${info.project.name}`, {body: await page.screenshot(), contentType: 'image/png'});
+  await dialog.getByRole('button', {name: 'Review change'}).click();
+  await expect(page.getByRole('dialog', {name: 'Review and copy'}).getByLabel('Summary')).toHaveValue(
+    /\nType: Permanent\nBalance: Casey Cedar gets the duty back: the earlier Temporary change is undone and its debt cancels$/);
+  expect(backend.calls.filter(c => c.name === 'duty_edit_returns').map(c => c.params)).toEqual([{p_publication: '20000000-0000-4000-8000-000000000010', p_day: '2026-11-03'}]);
+});

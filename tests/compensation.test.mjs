@@ -244,6 +244,44 @@ test('permanent replacement of repayment capacity cancels the plan without a new
   assert.equal(reconcile(h, end('2026-11-04')).net.a, -2); invariant(h);
 });
 
+test('deleting back to an earlier version is its exact undo: Permanent moves, routed legs and cancelled repayments (2026-11-06)', () => {
+  const moved = (id, kind, fromId, toId, route) => ({id, kind, fromId, toId,
+    capacity: [{date: '2026-11-02', offset: 0, units: 2}], ...(route ? {route} : {})});
+  const known = (h, id) => replay(h).events.find(e => e.operation.kind === 'publication' && e.operation.after?.id === id).operation.after;
+  const revert = (h, from, to, extra = {revert: true}) => send(h, {kind: 'publication', month: '2026-11', beforeId: from,
+    after: known(h, to), mode: 'delete', ...extra}, `revert/${from}`);
+  const final = h => Object.fromEntries(Object.entries(reconcile(h, end('2026-11-04')).net).filter(([, n]) => n));
+  for (const kind of ['temporary', 'permanent']) {
+    let h = publish(setup(), publication('v1', '2026-11', [duty('2026-11-02', 'a')]));
+    h = publish(h, publication('v2', '2026-11', [duty('2026-11-02', 'b')], [], [moved('edit', kind, 'a', 'b')]), 'v1');
+    assert.deepEqual(final(h), kind === 'temporary' ? {a: -2, b: 2} : {});
+    assert.deepEqual(final(revert(h, 'v2', 'v1')), {}, kind); invariant(revert(h, 'v2', 'v1'));
+    // A deletion recorded before the decision replays as it was booked.
+    assert.deepEqual(final(revert(h, 'v2', 'v1', {})), kind === 'temporary' ? {} : {a: 2, b: -2});
+  }
+  // A routed edit booked before the decision: its Temporary return leg is reversed too.
+  let h = publish(publish(setup(), publication('v1', '2026-11', [duty('2026-11-02', 'a')])),
+    publication('v2', '2026-11', [duty('2026-11-02', 'b')]), 'v1');
+  h = publish(h, publication('v3', '2026-11', [duty('2026-11-02', 'c')], [], [moved('edit', 'temporary', 'b', 'c', [
+    {fromId: 'b', toId: 'a', kind: 'temporary', transferIds: ['return'], counterparts: [{id: 'return', fromId: 'b', toId: 'a', units: 2, kind: 'temporary'}]},
+    {fromId: 'a', toId: 'c', kind: 'permanent', transferIds: ['gift'], counterparts: [{id: 'gift', fromId: 'a', toId: 'c', units: 2, kind: 'permanent'}]}])]), 'v2');
+  assert.deepEqual(final(h), {});
+  assert.deepEqual(final(revert(h, 'v3', 'v2')), {a: -2, b: 2}, 'back to the swap-like version: a owes b again');
+  // A repayment the removed version cancelled counts as done again; a Temporary move nets the same way.
+  for (const kind of ['temporary', 'permanent']) {
+    h = owe(setup(), 'a', 'b', 2, 'debt');
+    h = publish(h, publication('v1', '2026-11', [duty('2026-11-02', 'a')], [plan('r', '2026-11-02', claims(h)[0], 2)]));
+    h = publish(h, publication('v2', '2026-11', [duty('2026-11-02', 'c')], [], kind === 'permanent' ? [moved('volunteer', 'permanent', 'a', 'c')] : []), 'v1');
+    assert.deepEqual(final(h), kind === 'permanent' ? {a: -2, b: 2} : {a: -2, c: 2});
+    assert.deepEqual(final(revert(h, 'v2', 'v1')), {}, kind); invariant(revert(h, 'v2', 'v1'));
+  }
+  // Only a deletion back to an earlier version can say so.
+  h = publish(setup(), publication('v1', '2026-11', [duty('2026-11-02', 'a')]));
+  assert.throws(() => send(h, {kind: 'publication', month: '2026-11', beforeId: 'v1', after: null, mode: 'delete', revert: true}, 'x'), /invalid-publication-deletion/);
+  h = publish(h, publication('v2', '2026-11', [duty('2026-11-02', 'b')]), 'v1');
+  assert.throws(() => send(h, {kind: 'publication', month: '2026-11', beforeId: 'v2', after: publication('v3', '2026-11', [duty('2026-11-02', 'a')]), revert: true}, 'y'), /invalid-publication-deletion/);
+});
+
 test('uneven-month credit is an ordinary routed temporary intent: one half-point lot, settled by a later reserved repayment', () => {
   const counterpart = {id: 'uneven/a/c', fromId: 'a', toId: 'c', units: 1, kind: 'temporary'};
   const credit = {id: 'allocation/x/intent/0', kind: 'temporary', fromId: 'a', toId: 'c', capacity: [{date: '2026-11-02', offset: 0, units: 1}],

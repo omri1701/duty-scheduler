@@ -663,14 +663,21 @@ the new engineer; approvals for the changed dates or the two engineers' weekends
 dropped). Accounting is recorded in the same transaction before the pointer moves.
 **Temporary** keeps the ordinary publication transition: the old engineer owes the
 new one each date's shared units (a published repayment on that duty routes through
-its creditor as for any replacement). **Permanent** gives the duty for good from its
-owner: the server walks the month's recorded publications back past Temporary moves
-(edits, swaps, a plan's temporary intent on that date) to the last permanent holder.
-When the holder is the owner, the permanent intent `edit/<publication>` covers exactly
-the shared units, so no debt. Returning the duty to its owner is the ordinary
-transition, which cancels the earlier Temporary debt. Giving it to a third engineer
-routes the holder's return (Temporary) and the owner's permanent gift in that one
-intent, so no debt stays behind for work nobody does. `compensation_publication`
+its creditor as for any replacement). **Permanent** means the engineer being replaced,
+whoever holds the duty now, gives it away for good (decision 2026-11-06): the permanent
+intent `edit/<publication>` from that holder covers exactly the shared units, so no
+debt for anyone. Earlier swaps, Temporary edits and the plan's own Temporary changes keep
+their own balances (a swapped duty stays swapped; its holder just does one duty fewer),
+and a published repayment on the duty is cancelled, so its debt stays. One exception (H1):
+giving the duty back to someone who held it before a Temporary change still in effect is
+that change's undo, so its debt cancels; it is booked as a Temporary `edit/<publication>`
+intent. `duty_private.edit_returns` finds those engineers by replaying the duty's versions
+(a Temporary edit adds its previous holder, a return drops the undone changes, a swap,
+Permanent edit or plan starts again); the manager-only read `duty_edit_returns` gives Edit
+duty the same answer, so its text and summary say what is booked. Migration
+`20261106104700_ledger_current_holder_exact_undo.sql` replaced the earlier owner walk,
+which routed a Temporary "return" to the last permanent holder and so made a swap partner
+owe the old owner; events it already recorded replay unchanged. `compensation_publication`
 gained an optional server-built `edit` argument for this; existing callers are
 unchanged. The ledger event's manager-only reason records the kind and any override
 reason; `duty_balance` never returns it.
@@ -684,8 +691,15 @@ later month that already repays a debt keeps its version. Editing the duty back 
 repayment (no double charge). Plan the month on a reopened edited month plans without that
 month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
 plan replaces the edit with the plan. Migration `20261105134826_published_edit_lifecycle.sql`
-adds these lifecycle rules. Regressions: `supabase/tests/published-edit.sql` and
-`supabase/tests/published-edit-lifecycle.mjs` (empty disposable LOCAL, rolled back).
+adds these lifecycle rules. Deleting the live version is that version's exact undo, a
+Permanent edit included (no debt comes back). A weighted swap moves the copied plan's targets
+like an edit, and Plan the month on a month whose points an edit changed takes the new plan's
+ordinary baseline once the stored one no longer fits those points. Regressions: `supabase/tests/published-edit.sql`,
+`supabase/tests/published-edit-lifecycle.mjs` and the generator-based
+`supabase/tests/ledger-hunt.mjs` (empty disposable LOCAL, rolled back): random publish, swap,
+Temporary/Permanent edit, undo, reopen, delete and re-plan sequences over two months, checked
+after every step against a model whose only causes are Temporary replacements and planned
+repayments, with Plan the month starting from the other month only and SQL equal to the core.
 
 ### Empty local Supabase database (PowerShell)
 

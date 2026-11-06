@@ -6,6 +6,7 @@ declare op jsonb:=e->'operation'; before_pub jsonb:=s->'publications'->(op->>'mo
  r jsonb; c jsonb; intent jsonb; cap jsonb; previous jsonb; temporary jsonb:='[]'::jsonb; applied jsonb:='[]'::jsonb; effects jsonb:='[]'::jsonb;
  route jsonb; leg jsonb; trail jsonb; t jsonb; route_index integer; leg_index integer; budget jsonb; route_budgets jsonb:='{}';
  key text; day text; amount bigint; shared bigint; off bigint; cell bigint; idx integer:=0; unchanged boolean; exempt boolean;
+ reverted jsonb:='{}'::jsonb; given jsonb:='{}'::jsonb; cells jsonb;
 begin
  if (before_pub->>'id') is distinct from (op->>'beforeId') or (after_pub is not null and after_pub->>'month'<>op->>'month') then raise exception 'stale-publication'; end if;
  select x->'operation'->'after' into known from jsonb_array_elements(s->'events') x where x->'operation'->>'kind'='publication' and x->'operation'->'after'->>'id'=after_pub->>'id' limit 1;
@@ -26,6 +27,37 @@ begin
   if b->>'primaryId'<>r->'claim'->>'debtorId' then raise exception 'reservation-primary-mismatch'; end if;
   proposed:=proposed||jsonb_build_object(key,r);
  end loop;
+ -- Deleting the live version back to an earlier one is its exact undo (decision 2026-11-06).
+ -- Capacity an intent of the removed version moved returns without an ordinary debt, each
+ -- Temporary leg of it is reversed, and a repayment it cancelled by a Permanent move counts
+ -- as done again. Only events that say so: earlier deletions replay as they were recorded.
+ -- Same as lib/compensation/publication.ts.
+ if op ? 'revert' then
+  if op->'revert'<>'true'::jsonb or coalesce(op->>'mode','')<>'delete' or after_pub is null or before_pub is null then raise exception 'invalid-publication-deletion'; end if;
+  for intent in select value from jsonb_array_elements(coalesce(before_pub->'intents','[]')) order by value->>'id' COLLATE "C" loop
+   if exists(select 1 from jsonb_array_elements(after_pub->'intents') i where i->>'id'=intent->>'id') then continue; end if;
+   amount:=0;
+   for cap in select value from jsonb_array_elements(intent->'capacity') loop
+    day:=cap->>'date'; a:=old_atoms->day; b:=new_atoms->day;
+    if a is null or b is null or a->>'primaryId'<>intent->>'toId' or b->>'primaryId'<>intent->>'fromId' then continue; end if;
+    select coalesce(jsonb_agg(i),'[]') into cells from generate_series((cap->>'offset')::bigint,least((cap->>'offset')::bigint+(cap->>'units')::bigint,(a->>'units')::bigint,(b->>'units')::bigint)-1) i;
+    reverted:=reverted||jsonb_build_object(day,coalesce(reverted->day,'[]')||cells);
+    if intent->>'kind'='permanent' and intent->'route' is null then given:=given||jsonb_build_object(day,coalesce(given->day,'[]')||cells); end if;
+    amount:=amount+jsonb_array_length(cells);
+   end loop;
+   if amount>0 then
+    for leg in select value from jsonb_array_elements(coalesce(intent->'route',jsonb_build_array(intent))) with ordinality o(value,n) order by n loop
+     if leg->>'kind'='temporary' then effects:=effects||jsonb_build_array(jsonb_build_object('debtorId',leg->'toId','creditorId',leg->'fromId','units',amount)); end if;
+    end loop;
+   end if;
+  end loop;
+  for r in select value from jsonb_array_elements(after_pub->'reservations') order by value->>'id' COLLATE "C" loop
+   if exists(select 1 from jsonb_array_elements(before_pub->'reservations') o where o->>'id'=r->>'id') or s->'contributions'->(r->>'id')->>'status' is distinct from 'cancelled' then continue; end if;
+   select count(*) into amount from jsonb_array_elements(coalesce(given->(r->'capacity'->>'date'),'[]')) g
+    where (g#>>'{}')::bigint>=(r->'capacity'->>'offset')::bigint and (g#>>'{}')::bigint<(r->'capacity'->>'offset')::bigint+(r->'capacity'->>'units')::bigint;
+   if amount>0 then effects:=effects||jsonb_build_array(jsonb_build_object('debtorId',r->'claim'->'creditorId','creditorId',r->'claim'->'debtorId','units',amount)); end if;
+  end loop;
+ end if;
  for r in select value from jsonb_array_elements(coalesce(before_pub->'reservations','[]')) order by value->>'id' COLLATE "C" loop
   key:=r->>'id'; c:=s->'contributions'->key; cap:=c->'capacity'; day:=cap->>'date'; a:=old_atoms->day; b:=new_atoms->day;
   if proposed ? key and proposed->key<>r then raise exception 'contribution-lineage-changed'; end if;
@@ -43,11 +75,18 @@ begin
   if b is not null and a->>'primaryId'<>b->>'primaryId' then
    off:=(cap->>'offset')::bigint; shared:=greatest(0,least((a->>'units')::bigint,(b->>'units')::bigint,off+(cap->>'units')::bigint)-off); amount:=0;
    for cell in select generate_series(off,off+shared-1) loop
-    select exists(select 1 from jsonb_array_elements(coalesce(after_pub->'intents','[]')) i,jsonb_array_elements(i->'capacity') p where i->>'kind'='permanent' and not (s->'intents' ? (i->>'id')) and p->>'date'=day and cell>=(p->>'offset')::bigint and cell<(p->>'offset')::bigint+(p->>'units')::bigint) into exempt;
+    select exists(select 1 from jsonb_array_elements(coalesce(after_pub->'intents','[]')) i,jsonb_array_elements(i->'capacity') p where i->>'kind'='permanent' and not (s->'intents' ? (i->>'id')) and p->>'date'=day and cell>=(p->>'offset')::bigint and cell<(p->>'offset')::bigint+(p->>'units')::bigint)
+     or coalesce(reverted->day,'[]') @> jsonb_build_array(cell) into exempt;
     if not exempt then excluded:=duty_private.compensation_exclude(excluded,jsonb_build_object('date',day,'offset',cell,'units',1)); amount:=amount+1; end if;
    end loop;
    if amount>0 and c->'claim'->>'creditorId'<>b->>'primaryId' then effects:=effects||jsonb_build_array(jsonb_build_object('debtorId',c->'claim'->'creditorId','creditorId',b->'primaryId','units',amount)); end if;
   end if;
+ end loop;
+ -- Returned capacity owes nothing; a cancelled repayment above was exempt over it too.
+ for day,cells in select * from jsonb_each(reverted) order by key loop
+  for cell in select (x#>>'{}')::bigint from jsonb_array_elements(cells) x loop
+   excluded:=duty_private.compensation_exclude(excluded,jsonb_build_object('date',day,'offset',cell,'units',1));
+  end loop;
  end loop;
  for intent in select value from jsonb_array_elements(coalesce(after_pub->'intents','[]')) order by value->>'id' COLLATE "C" loop
   key:=intent->>'id';
