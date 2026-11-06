@@ -265,6 +265,12 @@ export class Backend {
       expect(member).toBeTruthy(); member.no_weekends = p.p_no_weekends as boolean;
     } else if (name === 'duty_rename_self') {
       this.raw.members.find(m => m.id === user)!.name = p.p_name as string;
+    } else if (name === 'duty_set_color') {
+      // Mirrors duty_private.set_color: the caller's own row, a #rrggbb value, a revision bump.
+      expect(String(p.p_color)).toMatch(/^#[0-9a-f]{6}$/);
+      const member = this.raw.members.find(m => m.id === user)!;
+      expect(member.status).toBe('approved');
+      member.color = p.p_color as string;
     } else if (name === 'duty_review_member') {
       expect(admin).toBe(true);
       this.raw.members.find(m => m.id === p.p_member)!.status = p.p_status as string;

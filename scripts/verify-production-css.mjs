@@ -51,9 +51,9 @@ export async function verifyProductionCss(directory = '.next') {
   assertCssSources(stylesheets, await currentCssHash());
   // These belong to the shared custom stylesheet, independently of utility discovery.
   // Checking the files linked by HTML catches stale output as well as omitted assets.
-  for (const selector of ['.mobile-navigation', '.mobile-nav-selection', '.mobile-availability-legend',
+  for (const selector of ['.mobile-navigation', '.mobile-nav-selection', '.tabbar', '.side',
     '.mobile-availability-weekdays', '.calendar-grid', '.availability-grid', '.team-grip', '.editor-dialog',
-    '.desktop-month-tools', '.workflow-actions', '.month-toolbar-container', '.mobile-action-menu']) {
+    '.month-bar', '.sheet', '.menu', '.hero']) {
     assert(css.includes(selector), `Production CSS is missing ${selector}`);
   }
   assert(/@media\s*\(max-width:\s*600px\)/.test(css), 'Production CSS is missing the phone breakpoint');

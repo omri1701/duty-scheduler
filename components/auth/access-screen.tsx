@@ -4,6 +4,7 @@ import {Button} from '@/components/ui/button';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {StartupSkeleton} from './startup-skeleton';
+import {Wordmark} from '@/components/brand/logo';
 export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'en'|'he';setLang:(lang:'en'|'he')=>void}){
  const t=(en:string,he:string)=>lang==='en'?en:he;
  const [email,setEmail]=useState('admin@duty.local'),[password,setPassword]=useState(''),[returnUrl,setReturnUrl]=useState('');
@@ -11,7 +12,7 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
  const pending=!!remote.user,rejected=remote.me?.status==='rejected',inactive=remote.me?.status==='approved'&&!remote.me.active,local=remote.environment?.target==='local';
  if(remote.loading)return <StartupSkeleton lang={lang} environment={remote.environment}/>;
  return <main className="access-page" dir={lang==='he'?'rtl':'ltr'}><section className="access-card">
-  <div className="access-top"><span className="brand"><span className="brand-symbol">d<span>·</span></span> duty</span><EnvironmentBadge environment={remote.environment}/><Button variant="ghost" onClick={()=>setLang(lang==='en'?'he':'en')}>{lang==='en'?'עברית':'English'}</Button></div>
+  <div className="access-top"><Wordmark size={28}/><EnvironmentBadge environment={remote.environment}/><Button variant="ghost" onClick={()=>setLang(lang==='en'?'he':'en')}>{lang==='en'?'עברית':'English'}</Button></div>
   <InspectionWarning environment={remote.environment} lang={lang}/>
   <h1>{pending?rejected?t('Request declined','הבקשה נדחתה'):inactive?t('Membership inactive','החברות אינה פעילה'):t('Waiting for approval','ממתין לאישור'):t('Your team’s duty calendar','לוח התורנויות של הצוות')}</h1>
   <p>{pending?t('Your manager must approve your membership before you can enter the team workspace.','המנהל צריך לאשר את חברותך לפני הכניסה לסביבת הצוות.'):local?t('Sign in with an isolated local test account.','התחברות עם חשבון בדיקה מקומי מבודד.'):t('Sign in with Google to request access.','יש להתחבר עם גוגל כדי לבקש גישה.')}</p>

@@ -86,6 +86,7 @@ export function useTeamWorkspace(){
   save:(s:State,publish?:string,month?:string,reviewedLocks?:string[])=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s,month??publish,!!publish,reviewedLocks),p_publish:publish??null}).then(()=>{}),
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),
+  setColor:(color:string)=>workspace.mutate('duty_set_color',{p_color:color}).then(()=>{}),
   personal,
 
   setRole:(person:string,role:string)=>workspace.mutate('duty_set_role',{p_member:person,p_role:role}).then(()=>{}),

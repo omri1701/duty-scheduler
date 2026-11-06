@@ -277,7 +277,7 @@ distinct callbacks and separate clients; keep localhost confined to Development.
 | Table | Purpose |
 |---|---|
 | `auth.users` (Supabase-owned) | Verified login identities; not application-managed sample users. |
-| `duty_members` | Profile, role FK, approval-status FK, active flag, seniority order and color. Deactivation retains history. |
+| `duty_members` | Profile, role FK, approval-status FK, active flag, seniority order and color (each member's own, through `duty_set_color`; admins through the team rows of `duty_save_schedule`). Deactivation retains history. |
 | `duty_workspace` | One revision counter for atomic saves and stale-edit detection. |
 | `duty_months` | Deadline, status FK, generated flag, current publication FK and monotonic version sequence. |
 | `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
