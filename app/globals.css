@@ -64,7 +64,7 @@ textarea{resize:vertical;min-height:76px}
 .wordmark-context{font-weight:400;font-size:13px;color:var(--ink-3);letter-spacing:0}
 
 /* ---------- shell ---------- */
-.app-shell{min-height:100dvh;display:flex;flex-direction:column}
+.app-shell{min-height:100dvh;display:flex;flex-direction:column;gap:8px}
 .app-shell-inner{display:contents}
 .app-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));min-height:56px}
@@ -463,6 +463,7 @@ textarea{resize:vertical;min-height:76px}
  .date-line{justify-content:center;min-height:20px;gap:2px;flex-wrap:wrap}
  .day-number{font-size:13px;line-height:20px;text-align:center}
  .weekend-dates .weekend-end{padding:0}
+ .combined-weekend .weekend-dates{grid-template-columns:repeat(2,calc(50% - var(--calendar-day-inset) - .5px));column-gap:calc(1px + 2*var(--calendar-day-inset))}
  .assignment-chip{font-size:11px;min-height:26px;padding:4px 3px;border-radius:7px;white-space:normal}
  .assignment-chip .pill-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
  .assignment-chip small{display:none}
@@ -769,6 +770,7 @@ textarea{resize:vertical;min-height:76px}
 .startup-skeleton{pointer-events:none;user-select:none}
 .startup-skeleton .side-nav{display:flex;flex-direction:column;gap:4px}
 .startup-skeleton .hero-skeleton{gap:10px;justify-content:center;animation:none}
+.skel-text{display:inline;vertical-align:baseline;border-radius:6px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 
 /* ---------- motion ---------- */
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}.hero-track{scroll-snap-type:none}}

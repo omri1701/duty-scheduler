@@ -103,5 +103,6 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  expect(saved.primary_id).toBe(ids.a);expect(saved.manager_override).toBe(true);
  expect(backend.raw.assignments.filter(d=>d.publication_id!==null)).toEqual(published);
  expect(backend.calls.filter(c=>c.name==='duty_save_schedule')).toHaveLength(1);
- await page.reload();await expect(duty(page,'2026-11-06')).toHaveAccessibleName(/Alex Atlas/);
+ // The fixture does not persist the language, so the reloaded app is English again.
+ await page.reload();await page.getByRole('tab',{name:/^(Schedule|לוח)$/}).click();await expect(duty(page,'2026-11-06')).toHaveAccessibleName(/Alex Atlas/);
 });

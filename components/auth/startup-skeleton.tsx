@@ -32,7 +32,7 @@ export function StartupSkeleton({lang, environment}: {lang: 'en' | 'he'; environ
         <div className="main-wrap">
           <InspectionWarning environment={environment} lang={lang}/>
           <div className="home">
-            <header className="home-head"><p className="home-date"><Skeleton width={160} height={14}/></p><h1 className="home-greeting"><Skeleton width={220} height={26}/></h1></header>
+            <header className="home-head"><p className="home-date"><span className="skel skel-text">{' '.repeat(44)}</span></p><h1 className="home-greeting"><span className="skel skel-text">{' '.repeat(30)}</span></h1></header>
             <Card className="hero hero-skeleton"><Skeleton width={90} height={14}/><Skeleton width={200} height={28}/><Skeleton width={240} height={24}/><Skeleton width={150} height={44}/></Card>
             <Skeleton width={120} height={12}/>
             <Card className="balance-card"><Skeleton width={40} height={40} round/><div className="balance-body"><Skeleton width={72} height={28}/><Skeleton width={110} height={14}/></div></Card>
