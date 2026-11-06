@@ -73,6 +73,8 @@ export class Backend {
   /** Personal calendar feeds by member, as duty_calendar_status returns them; resets counts tokens made. */
   calendars = new Map<string, {createdAt: string; language: 'en' | 'he'}>();
   calendarResets = 0;
+  /** Shows the first-sign-in welcome cards (normally marked seen so specs start on Home). */
+  showWelcome = false;
   /** Served by /api/config when set; absent means notifications aren't set up. */
   vapidPublicKey?: string;
   /** Personal settings and devices (duty_notification_settings, duty_push_subscriptions). */
@@ -400,11 +402,12 @@ export const test = base.extend<Fixtures>({
       const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome}) => {
         localStorage.clear();
+        if (!showWelcome) localStorage.setItem('duty-welcome-seen', '1');
         if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
         if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn});
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}
@@ -455,8 +458,21 @@ export const duty = (page: Page, day: string) => page.locator(`button[data-date=
 export async function targetReady(page: Page, day: string) {
   await expect(duty(page, day)).toHaveAttribute('data-swap-state', /^(ok|blocked)$/);
 }
+/** Opens the duty sheet for a day on the Schedule tab: Enter opens it on PC; phones show the day's details first. */
+export async function openDutySheet(page: Page, day: string) {
+  const he = await page.locator('html').getAttribute('lang') === 'he';
+  const tab = page.getByRole('tab', {name: he ? 'לוח' : 'Schedule', exact: true});
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+  await duty(page, day).focus(); await page.keyboard.press('Enter');
+  const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
+  await expect(sheet.or(details)).toBeVisible();
+  if (!await sheet.isVisible()) await details.click();
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
 export async function keyboardRequest(page: Page) {
-  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  await (await openDutySheet(page, '2026-11-02')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(duty(page, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
   await targetReady(page, '2026-11-03');
   await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -512,8 +528,9 @@ export async function signOutFromSettings(page: Page) {
   await page.getByRole('dialog').getByRole('button', {name: 'Sign out', exact: true}).click();
 }
 
+/** A ⋯ menu action (decision 2026-11-06), in either language; falls back to a plain button. */
 export async function monthAction(page: Page, name: string) {
-  const menu = page.getByRole('button', {name: 'Month actions', exact: true});
+  const menu = page.getByRole('button', {name: /^(Month actions|פעולות לחודש)$/});
   if (await menu.isVisible()) {
     await menu.click();
     await page.getByRole('menuitem', {name, exact: true}).click();

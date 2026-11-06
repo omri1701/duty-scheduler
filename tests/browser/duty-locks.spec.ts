@@ -1,4 +1,9 @@
-import {test, expect, duty, ids, MONTH, switchLanguage} from './fixtures';
+import type {Page} from '@playwright/test';
+import {test, expect, duty, ids, MONTH, switchLanguage, openDutySheet, monthAction} from './fixtures';
+
+// Cell → duty sheet → Edit opens the draft editor (decision 2026-11-06).
+const edit = async (page: Page, day: string) => (await openDutySheet(page, day)).getByRole('button', {name: /^(Edit|עריכה)$/}).click();
+const schedule = (page: Page) => page.getByRole('tab', {name: 'Schedule', exact: true}).click();
 
 test('lock edits save atomically with a new primary; dismissals discard both lock and unlock', async ({page, backend, openApp}) => {
   backend.raw.assignments.find(d => d.day === '2026-11-02' && !d.publication_id)!.manager_override = true;
@@ -6,7 +11,7 @@ test('lock edits save atomically with a new primary; dismissals discard both loc
   const cell = duty(page, '2026-11-02'), dialog = page.getByRole('dialog', {name: 'Edit duty', exact: true});
   const before = structuredClone(backend.raw.assignments);
   for (const dismissal of ['close', 'escape', 'outside']) {
-    await cell.click();
+    await edit(page, '2026-11-02');
     await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
     await expect(dialog.getByRole('button', {name: 'Unlock duty', exact: true})).toHaveAttribute('aria-pressed', 'true');
     if (dismissal === 'close') await dialog.getByRole('button', {name: 'Close', exact: true}).click();
@@ -17,7 +22,7 @@ test('lock edits save atomically with a new primary; dismissals discard both loc
     await expect(cell.getByRole('img', {name: 'Locked duty'})).toHaveCount(0);
   }
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule')).toHaveLength(0);
-  await cell.click();
+  await edit(page, '2026-11-02');
   await dialog.getByRole('combobox', {name: 'Primary engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Drew Dale', exact: true}).click();
   await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
@@ -28,17 +33,17 @@ test('lock edits save atomically with a new primary; dismissals discard both loc
   const save = backend.calls.find(c => c.name === 'duty_save_schedule')!;
   expect(save.params.p_state).toMatchObject({lock_edits: ['2026-11-02']});
   expect(backend.raw.assignments.filter(d => d.day !== '2026-11-02' || d.publication_id)).toEqual(before.filter(d => d.day !== '2026-11-02' || d.publication_id).map(d => d.publication_id ? d : {...d, locked: false}));
-  await page.reload();
+  await page.reload(); await schedule(page);
   await expect(cell.getByRole('img', {name: 'Locked duty'})).toBeVisible();
-  await cell.click();
+  await edit(page, '2026-11-02');
   await dialog.getByRole('button', {name: 'Unlock duty', exact: true}).click();
   await page.keyboard.press('Escape');
-  await cell.click();
+  await edit(page, '2026-11-02');
   await expect(dialog.getByRole('button', {name: 'Unlock duty', exact: true})).toHaveAttribute('aria-pressed', 'true');
   await dialog.getByRole('button', {name: 'Unlock duty', exact: true}).click();
   await dialog.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(dialog).toBeHidden();
-  await page.reload();
+  await page.reload(); await schedule(page);
   await expect(cell.getByRole('img', {name: 'Locked duty'})).toHaveCount(0);
 });
 
@@ -48,7 +53,7 @@ test('lock-only save retains the existing override and failed saves keep the loc
   backend.raw.assignments.find(d => d.day === original.day && !!d.publication_id)!.locked = true;
   await openApp();
   const cell = duty(page, original.day), dialog = page.getByRole('dialog');
-  await cell.click(); await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
+  await edit(page, original.day); await dialog.getByRole('button', {name: 'Lock duty', exact: true}).click();
   backend.failNextSave = true;
   await dialog.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByText('The schedule changed in another tab or by someone else, so it was refreshed. Check it, then try again.', {exact: true})).toBeVisible();
@@ -58,7 +63,7 @@ test('lock-only save retains the existing override and failed saves keep the loc
   await dialog.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(dialog).toBeHidden();
   expect(backend.raw.assignments.find(d => d.id === original.id)).toMatchObject({locked: true, manager_override: true, secondary_id: original.secondary_id});
-  await page.getByRole('button', {name: 'Published', exact: true}).click();
+  await page.getByRole('radio', {name: 'Published', exact: true}).click();
   await expect(page.getByRole('img', {name: 'Locked duty'})).toHaveCount(0);
 });
 
@@ -66,7 +71,7 @@ test('weekend lock covers both saved primaries and preserves emergency cover in 
   const before = structuredClone(backend.raw.assignments.find(d => d.day === '2026-11-06' && !d.publication_id)!);
   await openApp();
   await switchLanguage(page, 'he');
-  await duty(page, '2026-11-06').click();
+  await edit(page, '2026-11-06');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await dialog.getByRole('button', {name: 'נעילת תורנות', exact: true}).click();
@@ -75,7 +80,7 @@ test('weekend lock covers both saved primaries and preserves emergency cover in 
   await expect(dialog).toBeHidden();
   expect(backend.raw.assignments.find(d => d.day === before.day && !d.publication_id)).toMatchObject({...before, locked: true});
   await expect(duty(page, before.day).getByRole('img', {name: 'תורנות נעולה'})).toBeVisible();
-  await duty(page, before.day).click();
+  await edit(page, before.day);
   await dialog.getByRole('combobox', {name: 'מהנדס ביום שבת', exact: true}).click();
   await page.getByRole('option', {name: 'Drew Dale', exact: true}).click();
   if (await dialog.getByRole('checkbox').isVisible()) await dialog.getByRole('checkbox').check();
@@ -94,12 +99,16 @@ test('saved locks survive reloads and repeated real generations; unlocking relea
   backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
   backend.raw.members.forEach((m, i) => {if (i >= 6) m.active = false;});
   await openApp();
-  await duty(page, '2026-11-02').click();
+  await edit(page, '2026-11-02');
   await page.getByRole('button', {name: 'Lock duty', exact: true}).click();
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   async function generate() {
-    await page.getByRole('button', {name: /^(Generate month|Review plan)$/}).click();
+    // The primary action until generated (or for review); otherwise in the ⋯ menu.
+    await schedule(page);
+    const primary = page.locator('.month-primary');
+    if (/^(Plan the month|Review plan)$/.test(await primary.getAttribute('aria-label') ?? '')) await primary.click();
+    else await monthAction(page, 'Plan the month');
     await expect(page.getByText('Explicit locks & exceptions', {exact: false})).toHaveCount(0);
     const confirm = page.getByRole('button', {name: 'Confirm & generate', exact: true});
     await expect(confirm).toBeEnabled({timeout: 30_000});
@@ -112,7 +121,7 @@ test('saved locks survive reloads and repeated real generations; unlocking relea
     await expect(duty(page, '2026-11-02').getByRole('img', {name: 'Locked duty'})).toBeVisible();
     expect(backend.allocations.get(MONTH)!.locks).toEqual([{dutyId: '2026-11-02', engineer: ids.admin}]);
   }
-  await duty(page, '2026-11-02').click();
+  await edit(page, '2026-11-02');
   await page.getByRole('button', {name: 'Unlock duty', exact: true}).click();
   await page.getByRole('button', {name: 'Save assignment', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {webkit,devices,expect} from '@playwright/test';
 import {createClient} from '@supabase/supabase-js';
-import {assertToolbar,assertMonthMenu} from '../tests/browser/toolbar-assertions.ts';
+import {assertMonthBar,assertMonthMenu} from '../tests/browser/month-bar-assertions.ts';
 import {traverseMonths} from '../tests/browser/month-navigation.ts';
 import {zoomContext,setBrowserZoom} from '../tests/browser/zoom-context.mjs';
 import {LOCAL_PASSWORD} from './local-supabase.mjs';
@@ -36,8 +36,8 @@ async function verifyState(state) {
    for(const language of ['en','he']) {
     if(language==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
     if(width===1280&&state==='reopened')await traverseMonths(page);
-    const toolbar=await assertToolbar(page);
-    const menu=toolbar.containerWidth<960?await assertMonthMenu(page):null;
+    const toolbar=await assertMonthBar(page);
+    const menu=toolbar.width<=600?await assertMonthMenu(page):null;
     states.push({state,width,zoom,language,toolbar,menu});
     if(language==='he')await page.getByRole('button',{name:'Switch to English',exact:true}).click();
    }
@@ -49,11 +49,11 @@ async function verifyState(state) {
   const storageState=await context.storageState();
   for(const width of [375,390,430]) {
    const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});
-   const p=await phone.newPage();await p.goto(origin);await expect(p.locator('.workflow-actions')).toBeVisible();
+   const p=await phone.newPage();await p.goto(origin);await p.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(p.locator('.month-bar')).toBeVisible();
    if(state==='new')await p.getByRole('button',{name:'Next month',exact:true}).click();
    for(const language of ['en','he']) {
     if(language==='he')await p.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
-    const toolbar=await assertToolbar(p),menu=await assertMonthMenu(p,true);
+    const toolbar=await assertMonthBar(p),menu=await assertMonthMenu(p,true);
     states.push({state,width,language,browser:'webkit',toolbar,menu});
     await p.screenshot({path:`${out}/${state}-${width}-${language}.png`,scale:'css'});
    }
@@ -65,7 +65,7 @@ try {
  await page.goto(origin);
  await page.getByLabel('Password',{exact:true}).fill(LOCAL_PASSWORD);
  await page.getByRole('button',{name:'Sign in locally',exact:true}).click();
- await expect(page.locator('.month-toolbar')).toBeVisible();
+ await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
  if(process.argv.includes('--exercise-cancel')) {
   if(await page.getByRole('button',{name:'Generate month',exact:true}).count()) {
    await page.getByRole('button',{name:'Generate month',exact:true}).click();
@@ -120,30 +120,30 @@ try {
   await page.setViewportSize({width,height:1000});
   for(const language of ['en','he']) {
    if(language==='he')await page.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
-   evidence.push({browser:'chromium',language,...await assertToolbar(page)});
+   evidence.push({browser:'chromium',language,...await assertMonthBar(page)});
    if(width===1280&&language==='en')await page.screenshot({path:`${out}/desktop-1280-en.png`,fullPage:true});
   }
   await page.getByRole('button',{name:'Switch to English',exact:true}).click();
  }
- await page.reload();await expect(page.locator('.month-toolbar')).toBeVisible();
- evidence.push({session:'normal-reload',...await assertToolbar(page)});
+ await page.reload();await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
+ evidence.push({session:'normal-reload',...await assertMonthBar(page)});
  const state=await context.storageState();
  const phoneBrowser=await webkit.launch();
  try {
   for(const width of [375,390,430]) {
    const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState:state,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});
-   const p=await phone.newPage();await p.goto(origin);await expect(p.locator('.month-toolbar')).toBeVisible();
+   const p=await phone.newPage();await p.goto(origin);await p.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(p.locator('.month-bar')).toBeVisible();
    for(const language of ['en','he']) {
     if(language==='he')await p.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
-    evidence.push({browser:'webkit',language,...await assertToolbar(p)});
+    evidence.push({browser:'webkit',language,...await assertMonthBar(p)});
     if(width===375)await p.screenshot({path:`${out}/iphone-375-${language}.png`,scale:'css'});
    }
    await phone.close();
   }
  } finally {await phoneBrowser.close();}
  const fresh=await browser.newContext({storageState:state,viewport:{width:1280,height:1000}});
- const freshPage=await fresh.newPage();await freshPage.goto(origin);await expect(freshPage.locator('.month-toolbar')).toBeVisible();
- evidence.push({session:'fresh-context',...await assertToolbar(freshPage)});await fresh.close();
+ const freshPage=await fresh.newPage();await freshPage.goto(origin);await freshPage.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(freshPage.locator('.month-bar')).toBeVisible();
+ evidence.push({session:'fresh-context',...await assertMonthBar(freshPage)});await fresh.close();
  assert.deepEqual(errors,[]);assert(assets.every(a=>a.status===200||a.status===304),'Asset downloads: '+JSON.stringify(assets.filter(a=>a.status!==200&&a.status!==304)));
  await writeFile(`${out}/computed.json`,JSON.stringify({target:config.url,evidence,assets},null,2));
  await writeFile(`${out}/states-and-zoom.json`,JSON.stringify({target:config.url,states},null,2));

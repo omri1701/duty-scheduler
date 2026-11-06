@@ -50,11 +50,11 @@ try {
   await page.goto(origin);
   await page.getByLabel('Password', {exact: true}).fill(LOCAL_PASSWORD);
   await page.getByRole('button', {name: 'Sign in locally', exact: true}).click();
-  await expect(page.locator('.month-toolbar')).toBeVisible();
+  await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
   for (let i = 0; i < offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
   await expect(page.locator('.month-title h2')).toHaveText(calendarMonthLabel(month, 'en'));
   async function reloadMonth() {
-    await page.reload(); await expect(page.locator('.month-toolbar')).toBeVisible();
+    await page.reload(); await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
     for (let i = 0; i < offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
     await expect(page.locator('.month-title h2')).toHaveText(calendarMonthLabel(month, 'en'));
   }

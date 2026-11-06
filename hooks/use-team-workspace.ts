@@ -3,7 +3,7 @@ import {useEffect,useMemo,useState} from 'react';
 import type {User} from '@supabase/supabase-js';
 import {getSupabase,getEnvironment,signInWithGoogle,signInLocally,completeInspectionLogin} from '@/lib/supabase/client';
 import type {Environment} from '@/lib/supabase/environment';
-import {fromSnapshot,schedulePayload,canManage,type Snapshot} from '@/lib/supabase/snapshot';
+import {fromSnapshot,schedulePayload,canManage,readSnapshot,type Snapshot} from '@/lib/supabase/snapshot';
 import {observeSession} from '@/lib/supabase/session';
 import {createWorkspace} from '@/lib/supabase/workspace';
 import {errorMessage,type DutyClient} from '@/lib/supabase/rpc';
@@ -22,29 +22,57 @@ import {forgetCalendarLinks} from '@/lib/supabase/calendar';
 import {readNotificationState, settingsPayload, type NotificationSettings} from '@/lib/push/settings';
 import type {DeviceSubscription} from '@/lib/push/browser';
 
+// Offline (decision 2026-11-06): the last snapshot each member loaded stays on the device, so the
+// schedule is viewable without a network; every write stays disabled until the server answers.
+const SNAPSHOT_KEY=(userId:string)=>`duty-snapshot:${userId}`;
+const isNetworkError=(e:unknown)=>(typeof navigator!=='undefined'&&!navigator.onLine)||/Failed to fetch|NetworkError|Load failed|network|not configured yet/i.test(errorMessage(e,''));
+function readCachedSnapshot(userId:string):Snapshot|null{try{const raw=localStorage.getItem(SNAPSHOT_KEY(userId));return raw?readSnapshot(JSON.parse(raw)):null}catch{return null}}
+
 export function useTeamWorkspace(){
  const [environment,setEnvironment]=useState<Environment|null>(null);
  const [client,setClient]=useState<DutyClient|null>(null),[user,setUser]=useState<User|null>(null),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
  const [workspace]=useState(()=>createWorkspace({snapshot:setSnapshot,saving:setSaving,error:setError}));
+ const [online,setOnline]=useState(true),[cached,setCached]=useState<{userId:string;snapshot:Snapshot}|null>(null);
+ useEffect(()=>{
+  const sync=()=>setOnline(navigator.onLine);
+  const on=()=>{sync();workspace.refresh().catch(()=>{})};
+  sync();
+  window.addEventListener('online',on);window.addEventListener('offline',sync);
+  return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',sync)};
+ },[workspace]);
+ useEffect(()=>{
+  if(!snapshot||!user)return;
+  try{localStorage.setItem(SNAPSHOT_KEY(user.id),JSON.stringify(snapshot))}catch{}
+ },[snapshot,user]);
  useEffect(()=>{
   let alive=true,unsubscribe=()=>{};
+  // No server: the session's own user and their last snapshot, read-only.
+  async function fallback(c:DutyClient|null){
+   try{
+    const session=c?(await c.auth.getSession()).data.session:null;
+    const copy=session?readCachedSnapshot(session.user.id):null;
+    if(alive&&session&&copy){setUser(session.user);setCached({userId:session.user.id,snapshot:copy});setError('')}
+   }catch{}
+  }
   async function bootstrap(){
+   let c:DutyClient|null=null;
    try{
     const query=new URLSearchParams(window.location.search),fragment=new URLSearchParams(window.location.hash.slice(1));
     const authError=query.get('error_description')??fragment.get('error_description');
     if(authError)setError(authError);
-    const c=await getSupabase();
+    c=await getSupabase();
     if(!alive)return;
     setClient(c);
     setEnvironment(await getEnvironment());
-    unsubscribe=observeSession(c,{
+    const connected=c;
+    unsubscribe=observeSession(connected,{
      clear:()=>{workspace.clear();setUser(null);setLoading(true)},
-     prepare:s=>workspace.prepare(c,s),
-     user:async (u,initial)=>{setUser(u);await workspace.connect(c,u,initial)},
-     error:e=>setError(errorMessage(e,'Could not load the team. Please try again.')),
+     prepare:s=>workspace.prepare(connected,s),
+     user:async (u,initial)=>{setCached(null);setUser(u);await workspace.connect(connected,u,initial)},
+     error:e=>{setError(errorMessage(e,'Could not load the team. Please try again.'));if(isNetworkError(e))void fallback(connected)},
      ready:()=>setLoading(false),
     });
-   }catch(e){if(alive){setError(errorMessage(e,'Could not load the team. Please try again.'));setLoading(false)}}
+   }catch(e){if(alive){setError(errorMessage(e,'Could not load the team. Please try again.'));if(isNetworkError(e))await fallback(c);setLoading(false)}}
   }
   void bootstrap();
   return()=>{alive=false;unsubscribe();workspace.clear()};
@@ -56,7 +84,10 @@ export function useTeamWorkspace(){
   const timer=setInterval(poll,30000);
   return()=>{alive=false;clearInterval(timer)};
  },[client,user,workspace]);
- const me=snapshot?.members.find(m=>m.id===user?.id);
+ // The live snapshot, or the device's last copy for this member while the server is unreachable.
+ const offline=!snapshot&&!!user&&cached?.userId===user.id;
+ const shown=snapshot??(offline?cached!.snapshot:null);
+ const me=shown?.members.find(m=>m.id===user?.id);
  // Personal settings (decision 2026-11-06): direct checked RPCs without the workspace
  // revision, so they never conflict with schedule edits or refresh the team.
  const personal=useMemo(()=>({
@@ -66,7 +97,7 @@ export function useTeamWorkspace(){
   async saveDevice(device:DeviceSubscription){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_save_push_subscription',{p_endpoint:device.endpoint,p_p256dh:device.p256dh,p_auth:device.auth});if(error)throw error},
   async removeDevice(endpoint:string){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_delete_push_subscription',{p_endpoint:endpoint});if(error)throw error},
   }),[client,environment,user]);
- return {user,me,snapshot,loading,saving,error,environment,readOnly:environment?.readOnly??true,isAdmin:!!snapshot&&!!user&&canManage(snapshot,user.id),clearError:()=>setError(''),state:snapshot&&user?fromSnapshot(snapshot,user.id):null,
+ return {user,me,snapshot:shown,loading,saving,error:offline?'':error,environment,offline:offline||!online,readOnly:(environment?.readOnly??true)||offline,isAdmin:!!shown&&!!user&&canManage(shown,user.id),clearError:()=>setError(''),state:shown&&user?fromSnapshot(shown,user.id):null,
   refresh:()=>workspace.refresh(),
   // Display-only projection; read where it is shown, never at startup.
   balance:()=>client?readBalance(client):Promise.reject(Error('Not connected')),

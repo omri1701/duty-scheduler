@@ -1,4 +1,4 @@
-import {test, expect, duty, ids, type Backend, switchLanguage} from './fixtures';
+import {test, expect, duty, ids, type Backend, switchLanguage, monthAction} from './fixtures';
 import type {Page} from '@playwright/test';
 
 // Fixture rows exist twice: the published copy and the working draft. The draft calendar is what the admin edits.
@@ -19,10 +19,20 @@ function splitHoliday(backend: Backend, locked = false) {
 const box = async (locator: ReturnType<Page['locator']>) => (await locator.boundingBox())!;
 // The desktop week keeps Sunday on the left in Hebrew; the phone grid flips. Mirroring follows the grid.
 const gridIsRtl = (page: Page) => page.locator('.calendar-grid').evaluate(e => getComputedStyle(e).direction === 'rtl');
+// The app opens on Home; the calendar is on Schedule.
+const schedule = (page: Page) => page.getByRole('tab', {name: 'Schedule', exact: true}).click();
+// A tap opens the duty sheet (on a phone, the day's details first); its Edit opens the editor.
+async function editTapped(page: Page) {
+  const details = page.locator('[data-day-details] .day-duty');
+  await expect(page.getByRole('dialog').or(details)).toBeVisible();
+  if (await details.isVisible()) await details.click();
+  await page.getByRole('dialog').getByRole('button', {name: /^(Edit|עריכה)$/}).click();
+}
+const editDuty = async (page: Page, day: string) => {await duty(page, day).click(); await editTapped(page);};
 
 test('the holiday badge sits on the date line at normal row height and marks only the holiday dates, in English and Hebrew', async ({page, backend, openApp}) => {
   fridayOnlyHoliday(backend);
-  await openApp();
+  await openApp(); await schedule(page);
   const weekend = duty(page, '2026-11-20'), badge = weekend.locator('.tiny-badge'), dateLine = weekend.locator('.date-line');
   await expect(badge).toHaveText('+2');
   await expect(weekend).toHaveClass(/holiday-friday/);
@@ -44,9 +54,9 @@ test('the holiday badge sits on the date line at normal row height and marks onl
 test('removing the extra points works on a combined weekend and on a hand-split weekend, locked or not', async ({page, backend, openApp}) => {
   splitHoliday(backend, true);
   for (const r of rows(backend, '2026-11-20')) r.locked = true;
-  await openApp();
+  await openApp(); await schedule(page);
   // Combined holiday weekend (+2 on both dates), locked: one combined duty stays, worth one point.
-  await duty(page, '2026-11-20').click();
+  await editDuty(page, '2026-11-20');
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', {name: 'Remove extra points from this duty', exact: true}).click();
   await expect(dialog).toBeHidden();
@@ -55,8 +65,8 @@ test('removing the extra points works on a combined weekend and on a hand-split 
   await expect(duty(page, '2026-11-20').locator('.tiny-badge')).toHaveCount(0);
   await expect(duty(page, '2026-11-20')).not.toHaveClass(/special/);
   // Split weekend: the Saturday half loses only its own extra; Friday keeps +1 and the split stays.
-  await duty(page, '2026-11-28').click();
-  await expect(dialog.locator('[data-slot="dialog-description"]')).toContainText('27 Nov – 28 Nov');
+  await editDuty(page, '2026-11-28');
+  await expect(dialog.locator('.sheet-description')).toContainText('27 Nov – 28 Nov');
   await dialog.getByRole('button', {name: 'Remove extra points from this duty', exact: true}).click();
   await expect(dialog).toBeHidden();
   expect(draftRow(backend, '2026-11-28')).toMatchObject({end_day: '2026-11-29', title: '', extra_points: 0, points: 0.5, primary_id: ids.e});
@@ -67,12 +77,12 @@ test('removing the extra points works on a combined weekend and on a hand-split 
 });
 
 test('the special block dialog explains per-date extra points', async ({page, openApp}) => {
-  await openApp();
-  await page.getByRole('button', {name: 'Special block', exact: true}).click();
+  await openApp(); await schedule(page);
+  await monthAction(page, 'Special block');
   const dialog = page.getByRole('dialog');
-  await expect(dialog.locator('[data-slot="dialog-description"]')).toHaveText('Each date is a separate duty and adds the extra points; a weekend in the range stays one Friday–Sunday duty.');
+  await expect(dialog.locator('.sheet-description')).toHaveText('Each date is its own duty with the extra points; a weekend in the range stays one duty.');
   await expect(dialog.locator('.special-summary')).toContainText('2 points per weekday');
-  await expect(dialog.locator('.special-summary')).toContainText('Friday / Saturday: ½ + extra each, so a whole holiday weekend is 1 + 2 × extra.');
+  await expect(dialog.locator('.special-summary')).toContainText('Friday and Saturday: ½ + extra each.');
 });
 
 test('adjacent duties of one member render as one bar with one name, one title and one total, continuing across the row break and mirrored in RTL', async ({page, backend, openApp}) => {
@@ -81,7 +91,7 @@ test('adjacent duties of one member render as one bar with one name, one title a
   for (const day of ['2026-11-04', '2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']) for (const r of rows(backend, day)) r.primary_id = ids.b;
   for (const day of ['2026-11-03', '2026-11-10']) for (const r of rows(backend, day)) r.primary_id = ids.d;
   for (const day of ['2026-11-08', '2026-11-09']) for (const r of rows(backend, day)) {r.title = 'Holiday'; r.extra_points = 1; r.points = 2;}
-  await openApp();
+  await openApp(); await schedule(page);
   const chip = (day: string) => duty(page, day).locator('.assignment-chip');
   await expect(duty(page, '2026-11-04')).toHaveClass(/streak-start/);
   await expect(chip('2026-11-04')).toHaveText('Blair');
@@ -110,8 +120,8 @@ test('adjacent duties of one member render as one bar with one name, one title a
     expect(weekend.x).toBeGreaterThanOrEqual(weekendCell.x - 1); expect(weekend.x + weekend.width).toBeLessThanOrEqual(weekendCell.x + weekendCell.width + 1);
   }
   // Tapping a date inside the bar still edits that date's duty.
-  await duty(page, '2026-11-05').click();
-  await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('5 בנוב׳');
+  await editDuty(page, '2026-11-05');
+  await expect(page.getByRole('dialog').locator('.sheet-description')).toContainText('5 בנוב׳');
   await expect(page.getByRole('dialog').getByRole('combobox', {name: 'מהנדס ראשי', exact: true})).toBeVisible();
 });
 
@@ -124,7 +134,7 @@ const centre = (b: {x: number; width: number}) => b.x + b.width / 2;
 
 test('each row of a streak is one level bar with no join, its name centred once across the row', async ({page, backend, openApp}) => {
   crossingStreak(backend);
-  await openApp();
+  await openApp(); await schedule(page);
   const chip = (day: string) => duty(page, day).locator('.assignment-chip'), label = (day: string) => duty(page, day).locator('.streak-label');
   await expect(label('2026-11-05')).toHaveText('Blair');
   await expect(label('2026-11-08')).toHaveText('Blair');
@@ -153,14 +163,14 @@ test('each row of a streak is one level bar with no join, its name centred once 
   }
   // The centred name lets taps through: tapping it over the Friday column edits the weekend, not Thursday.
   const name = await box(label('2026-11-05'));
-  await page.mouse.click(centre(name), name.y + name.height / 2);
-  await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('6 בנוב׳');
+  await page.mouse.click(centre(name), name.y + name.height / 2); await editTapped(page);
+  await expect(page.getByRole('dialog').locator('.sheet-description')).toContainText('6 בנוב׳');
 });
 
 test('the lock, the dates and the +extra never overlap on a locked holiday weekend, weekday or split weekend', async ({page, backend, openApp}, info) => {
   splitHoliday(backend, true);
   for (const day of ['2026-11-12', '2026-11-20']) for (const r of rows(backend, day)) r.locked = true;
-  await openApp();
+  await openApp(); await schedule(page);
   const overlap = (a: {x: number; y: number; width: number; height: number}, b: typeof a) =>
     a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
   for (const lang of ['en', 'he'] as const) {
@@ -197,7 +207,7 @@ test('weekend bars centre the name: plain, locked holiday, a weekend ending a st
   for (const r of rows(backend, '2026-11-20')) r.locked = true;
   // Someone else on Thursday 26, so the split Friday stands alone.
   for (const r of rows(backend, '2026-11-26')) r.primary_id = ids.a;
-  await openApp();
+  await openApp(); await schedule(page);
   for (const lang of ['en', 'he'] as const) {
     if (lang === 'he') await switchLanguage(page, 'he');
     for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
@@ -217,7 +227,7 @@ test('single-day pills centre the name too: plain, with a second member, "(you)"
   for (const r of rows(backend, '2026-11-12')) r.locked = true;
   // Tuesday 17 is the signed-in admin's, between two other members, so it stays a single day.
   for (const [day, id] of [['2026-11-16', ids.a], ['2026-11-17', ids.admin], ['2026-11-18', ids.b]]) for (const r of rows(backend, day)) r.primary_id = id;
-  await openApp();
+  await openApp(); await schedule(page);
   await expect(duty(page, '2026-11-17').locator('.assignment-chip small')).toContainText('(you)');
   for (const lang of ['en', 'he'] as const) {
     if (lang === 'he') await switchLanguage(page, 'he');

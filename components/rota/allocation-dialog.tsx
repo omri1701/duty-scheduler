@@ -151,7 +151,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
               onDragEnd={() => {setDragging(null); setOver(null);}}
               onKeyDown={e => {if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); if (canGive(r.id)) setGiving(r.id);}}}
               onContextMenu={e => {e.preventDefault(); endPress(); if (canGive(r.id)) setGiving(r.id);}}
-              onPointerDown={e => {if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
+              onPointerDown={e => {e.stopPropagation(); if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
               onPointerMove={e => {if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress();}}
               onPointerUp={endPress} onPointerCancel={endPress}>
               <Avatar name={name(r.id)} color={member(r.id)?.color} size={32}/>

@@ -36,11 +36,11 @@ The application uses native Next.js 16 App Router, React 19, TypeScript and Radi
 
 ## Temporary members
 
-Admins can use **Team & fairness → Add Temporary Member**, enter only a name,
+Admins can use **Team → Add temporary**, enter only a name,
 and repeat for each engineer. Temporary members are approved active engineers in
 the existing team, labeled **Temporary**, with no email or sign-in account. Admins
-can use **Edit name**, reorder seniority with the existing drag/arrow-key controls,
-and toggle **Active**. Use **Availability → Engineer** to enter their constraints
+rename them from the member sheet, reorder seniority with the existing drag/arrow-key controls,
+and toggle **Active** (in the sheet, or with a swipe on the row). Use **Availability → Engineer** to enter their constraints
 and private notes, then select November and **Generate month** to review the
 allocation and **Confirm & generate**. Accepted generation saves automatically;
 reload to verify it before separately publishing.
@@ -149,22 +149,68 @@ It needs no Workers adapter. Preserve production OAuth settings; configure the
 development origin and exact trailing-slash redirect independently using
 [Supabase setup](docs/SUPABASE_SETUP.md). Configuration is read at request time.
 
+## Interface
+
+The redesign (decision 2026-11-06) is Apple-clean: one token set in light and dark
+(`app/globals.css`; **Auto / Light / Dark** per device in Settings, resolved before the
+first paint by `lib/theme/theme.ts`), the system font, soft cards, and a small design system
+in `components/ui` (Card, Sheet, ListRow, Chip, Avatar, Segmented, Switch, EmptyState,
+Skeleton, CountUp, SwipeRow, Toaster). The product name and the "d." mark live only in
+`lib/brand.ts` and `components/brand/logo.tsx`; `scripts/render-icons.mjs` renders the PWA
+icons and iOS startup screens from them. Member colours come from the 20-colour palette in
+`lib/theme/palette.ts` (the 15 older stored values map onto it); each member picks their own
+in Settings (`duty_set_color`, own row, taken colours greyed) and an admin can change anyone's
+in the member sheet.
+
+Four tabs: **Home · Schedule · Availability · Team**. Phones show a floating glass tab bar
+(tap, or slide a finger along it); PC shows a sidebar. The header holds the activity bell
+(publications, new versions, swap answers, sign-ups; a badge counts what is new since the
+last look) and the avatar, which opens Settings. Sheets are bottom sheets on phones (swipe
+down closes) and side panels on PC; Settings is a full page on phones (edge swipe or Back
+closes). All motion respects Reduce Motion. On the first sign-in on a device three welcome
+cards appear once. The service worker (`public/sw.js`) caches the app shell and the member's
+last snapshot stays on the device, so the schedule is viewable offline with an **Offline**
+pill and every write disabled.
+
+**Home** greets the member and shows the next duties as cards ("Today", "Tomorrow", or
+"In 4 days" with the date; type, points, cover; swipe for the following ones; **Ask to swap**
+starts the swap in Schedule), then only what needs them: constraints due (→ Availability),
+swap requests to answer with Accept / Decline (Approve / Reject for admins) inline, their
+balance, and for admins a short to-do (members to approve, swaps to approve, a draft to
+publish). **Schedule** is the calendar only: names in member colours, the member's own duties
+ringed, today marked, a holiday tinted; the week runs left to right on PC even in Hebrew and
+mirrors on phones. On a phone a tap on a day shows its duty under the grid and a tap on that
+opens the duty sheet; on PC the tap opens the sheet directly. The sheet shows the facts and
+**Swap** (then the calendar greys the days the server would refuse, with the reason) and, for
+admins, **Edit**. Hold-and-drag still proposes a swap, swiping the calendar changes the month
+with a slide, and Escape cancels a pick. Admins get one state-driven primary action
+(**Plan the month → Review plan / Publish → Reopen**) and a ⋯ menu (Plan the month, Versions,
+Constraints deadline, Special block, Clear board, Cancel draft); a reopened month adds a
+Draft / Published switch. **Availability** is the grid with a due chip and, for admins, the
+member picker. **Team** shows this month's coverage, the ordered team (hold the grip to
+reorder, Up/Down on the keyboard), points and the live net balance; a tap opens the member
+sheet (points, balance, and for admins role, No weekends, Active and colour), a swipe on a
+row reveals Deactivate / Activate (works with a mouse too; a long swipe triggers it), and
+deactivated members slide into a collapsed Inactive group. Join requests stay in Team.
+**Plan the month** keeps the pie and the − / + counters, larger and animated. **Settings**:
+profile, Appearance (theme, colour), Language, Notifications (switches and the reminder
+wheels), Calendar, Export backup for admins, Sign out.
+
 ## Browser and visual regression baseline
 
-Phones up to 600px use floating bottom tabs and compact monthly calendars.
-The month actions menu contains Versions and the deadline setting; Generate
-and Publish stay visible.
-The month heading is centered independently of manager actions. Published months
-show Whole team / My duties; engineers see no filter on an unpublished month.
-Managers reopen a published month to edit a draft, with independent Draft / Published
-and My duties controls. Special Block appears only in Draft. Cancel Draft requires
-confirmation and atomically deletes the working draft, returning to the current publication without creating a version or copying working rows.
+The old toolbar and filter rules are gone with the redesign; `tests/browser/redesign.spec.ts`
+captures every screen in both languages and themes for the review gallery, which opens a
+viewer stepping through all captures (← →, Esc).
+Managers reopen a published month to edit a draft. Special block, Clear board and Cancel draft
+live in the ⋯ menu of a draft. Cancel Draft requires confirmation and atomically deletes the
+working draft, returning to the current publication without creating a version or copying
+working rows.
 Before the month starts, Plan the month can change a reopened published month's points:
 it plans from the ledger without that month's own debts, and publishing replaces them
 (audited corrections, then the new plan). A month a later month already repays from
 says so and takes no point edits; change the later month first.
-Managers use direct swaps in Draft. In Published, a tap (or Enter) on a duty starting today or later opens
-Edit duty. Its "Swap with another duty…" button, then a tap on the second duty, proposes a swap
+Managers use direct swaps in Draft. In Published, Edit in the duty sheet (or Enter on a
+duty starting today or later) opens Edit duty for admins. Its "Swap with another duty…" button, then a tap on the second duty, proposes a swap
 between any two members; dragging one duty onto another (long-press on a phone) proposes it directly.
 Engineers keep the request workflow for their own duties.
 Schedule and Constraints share the same visible Sunday–Saturday rows. When the
@@ -175,22 +221,20 @@ select it individually or in a range and save its actual date; existing date-bas
 publication/deadline checks still apply. All other adjacent-month dates retain
 their assignments in faded, read-only cells. Editing or generating the owning
 month does not reopen the adjacent month.
-Availability and duty editors use the same centered, scrollable Radix modal shell
-as Special Duty on phones and desktop. Outside clicks, Escape and Close
-discard unsaved edits; pending saves block dismissal. Focus returns to the calendar.
+Availability and duty editors use the same Sheet (a bottom sheet on phones, a panel on PC).
+Outside clicks, Escape, a swipe down and Close discard unsaved edits; pending saves block
+dismissal. Focus returns to the calendar.
 Availability notes appear in the editor and accessible date labels; only dates
-with notes have a tiny corner dot. One fixed instruction line shows the unique
-selected-day count during selection and editing, with no calendar movement.
+with notes have a tiny corner dot. One fixed line shows the unique selected-day count during selection and editing (and
+nothing when idle), with no calendar movement.
 The modal title shows the actual localized date or chronological date range.
 Range edits apply to every selected date. Replacing conflicting availability or
 notes requires explicit confirmation; a blank shared description warns that old
 notes will be cleared. Removing notes also requires confirmation. Canceling the
 confirmation keeps the editor and existing data; confirmed replacement uses the
 existing atomic RPC. Single-date editing prefills existing descriptions.
-The floating glass navigation supports tapping and horizontal finger sliding.
-Its shared CSS tracks keep equal inner insets and concentric corners in all three
-positions. The shared 54px pill has 44px tab targets and 5px inner padding, with
-16px outer margins where safe areas allow. Both sides use the larger horizontal
+The floating glass navigation supports tapping and horizontal finger sliding across its four tabs.
+The pill has 44px tab targets and 5px inner padding, with 16px outer margins where safe areas allow. Both sides use the larger horizontal
 inset to preserve symmetry. Only the non-interactive background padding may
 extend into the bottom safe area; tab targets stay entirely above it. A 34px
 bottom inset therefore gives a 29px physical pill gap, rather than 16px. The
@@ -300,18 +344,12 @@ desktop. Linux and Windows keep separate visual references.
 Behavior assertions use roles/labels; date keys identify gesture targets because
 their accessible names change with assignment and language.
 
-`responsive-css.spec.ts` checks loaded CSS/JS assets, floating phone and desktop
-navigation, hidden phone-only labels and seven-column calendar geometry at 1440,
-390 and 320px in English and Hebrew RTL. It retains captures without updating
-visual references. `toolbar-runtime.spec.ts` additionally verifies the CSS source
-fingerprint, computed toolbar displays, visible labels, row alignment, centering,
-touch heights and overflow at desktop and iPhone WebKit widths in both languages.
-The toolbar uses its container width: direct tools fit from 960px of content;
-narrower containers show the styled ellipsis menu and a separate month row.
-Workflow buttons have natural content widths, with narrower padding only when a
-reopened draft needs it. `toolbar-zoom.spec.ts` uses isolated Chromium tab zoom
-(100/125/150/200%), including the menu background, border, shadow, collision,
-stacking and Escape/focus behavior, in New/Published/Reopened states and RTL.
+`responsive-css.spec.ts` checks loaded CSS/JS assets, the phone tab bar and the PC sidebar,
+and seven-column calendar geometry at 1440, 390 and 320px in English and Hebrew RTL. It
+retains captures without updating visual references. `month-bar.spec.ts` verifies the CSS source
+fingerprint and the month bar (one primary action, the ⋯ menu, centering and touch heights) at
+desktop and iPhone WebKit widths in both languages, and the ⋯ menu under Chromium tab zoom
+(100/150/200%) in New/Published/Reopened states and RTL.
 For the real LOCAL app with Auth/PostgREST and no backend interception, use
 `pnpm test:runtime:local` after `pnpm start:local`; see [the LOCAL verification
 procedure](docs/SUPABASE_SETUP.md#unmerged-migrations-in-local-development).
@@ -418,11 +456,11 @@ them. CI must compare committed images, never regenerate them automatically.
 - Desktop drag or long-touch drag swaps primary engineers with a review before applying. Emergency cover stays on its dates. Availability conflicts and increased weekend counts above one require explicit manager approval in the draft swap dialog, which lists each affected engineer and resulting weekend count. One confirmation can approve both exceptions; approved assignments retain override metadata. Published swap requests keep their existing consent and approval rules.
 - Manual weekend editor: separate Friday and Saturday engineer fields. Its displayed range labels Friday–Saturday, including cross-month weekends; the actual duty period still ends Sunday at 09:00. Saturday follows Friday until explicitly changed; both days save atomically. Identical owners, emergency cover and lock states automatically recombine into a single Friday–Sunday cell.
 - Edit Duty has a small Lock/Unlock toggle beside Close. Save commits the lock with the chosen primary; closing without Save discards both edits. The weekend toggle applies to both saved primaries. Locked draft cells show a lock icon, and their primaries survive reloads and repeated regeneration. Unlock and Save to allow reassignment. Generate has no separate lock/exception panel; conflicting locks must be corrected or unlocked in the calendar, and existing exact exception approvals remain scoped to their original assignments.
-- Clear board (admins, draft view only; beside Special block above the calendar, on the filters' row: when the labels would push the pair onto a row of its own, as on iPhones, both become 44px icon buttons whose full text stays as name and tooltip; its red confirm button rests at full strength everywhere, only slightly darker on desktop hover) removes every unlocked assignment the month owns, for a fresh start. It confirms first ("Clear N unlocked duties? Locked duties stay."), saves through the same revision-checked schedule save, and keeps locked duties, constraints, special/holiday dates, the Plan the month targets, other months and published versions. The month goes back to Generate month. The success toast offers Undo for 10 seconds, which puts back only duties that are still empty; leaving the month or its draft withdraws the offer. It is hidden on a published month and on the Published view of a reopened draft, and disabled, with the reason as its tooltip, when nothing is left to clear or while Generate runs.
+- Clear board (admins, draft view only, in the ⋯ menu; its red confirm button rests at full strength everywhere) removes every unlocked assignment the month owns, for a fresh start. It confirms first ("Clear N unlocked duties? Locked duties stay."), saves through the same revision-checked schedule save, and keeps locked duties, constraints, special/holiday dates, the Plan the month targets, other months and published versions. The month goes back to Generate month. The success toast offers Undo for 10 seconds, which puts back only duties that are still empty; leaving the month or its draft withdraws the offer. It is hidden on a published month and on the Published view of a reopened draft, and disabled, with the reason as its tooltip, when nothing is left to clear or while Generate runs.
 - Availability popup with unavailable/preferred choices, optional description, and a one-action removal. Tap one day or hold and drag for a consecutive range. Closing with X, Escape, or an outside tap clears the selection; the removal action appears only when selected dates have a saved constraint or note. Descriptions appear on calendar dates.
 - Drag team members to set seniority (senior first, newest last). Keyboard users can focus a drag handle and use Up/Down. Monthly and all-month point counters remain visible on phones.
-- Team net balance: each Team row shows the compensation balance projected from published schedules (positive: owed relief; negative: owes work; half points allowed). Published temporary transfers and scheduled repayments count immediately; working drafts never do. Admins see every row; engineers see only their own. Hover, tap or focus the number for one line per open relationship (counterpart, points and source, including the half point owed for an uneven monthly split; a lone half point that no whole duty can repay says it is waiting for the second half). Half-point debts are never rounded, forgiven or expired, and they net across people: if A owes B half a point and C owes A half a point, C owes B and A is clear. It refreshes with every published change; the internal ledger still settles only worked duties.
-- Settings (the profile button; a full-screen sheet on phones): display name, language (the only language switch in the signed-in app; the sign-in and waiting screens keep their own), notifications, Calendar (subscribe to my calendar) and Sign out. The language is saved on the member (`duty_set_language`, own row only, no workspace revision) in the background whenever it changes, and becomes the default on sign-in and on a new device.
+- Team net balance: each Team row shows the compensation balance projected from published schedules (positive: owed relief; negative: owes work; half points allowed), and Home shows the member's own. Published temporary transfers and scheduled repayments count immediately; working drafts never do. Admins see every row; engineers see only their own. Hover, tap or focus the number (or open the member sheet) for one line per open relationship (counterpart, points and source, including the half point owed for an uneven monthly split; a lone half point that no whole duty can repay says it is waiting for the second half). Half-point debts are never rounded, forgiven or expired, and they net across people: if A owes B half a point and C owes A half a point, C owes B and A is clear. It refreshes with every published change; the internal ledger still settles only worked duties.
+- Settings (the avatar; a full page on phones, a panel on PC): display name, Appearance (Auto / Light / Dark per device, the member's own colour), language (the only language switch in the signed-in app; the sign-in and waiting screens keep their own), notifications, Calendar (subscribe to my calendar), Export backup for admins and Sign out. The language is saved on the member (`duty_set_language`, own row only, no workspace revision) in the background whenever it changes, and becomes the default on sign-in and on a new device.
 - Web push notifications (install Duty as a Home Screen app; iPhone needs iOS 16.4+ and the Home Screen app, Android works in Chrome): *Enable notifications* asks for permission, subscribes this device with the server's VAPID key and registers it (`duty_save_push_subscription`, known push services only, up to ten devices each). Each member switches kinds on or off and sets reminder times (Israel time): constraint deadline (10:00 three days before to everyone; 10:00 the day before only to members with no constraints for that month), a month published, swap requests (only the people involved; admins when it waits for approval), an admin changing your published duty, the evening before your duty (18:00) and the morning of it (08:30), and, for admins, a new member waiting. Texts are in the member's language and carry only dates, never notes or swap explanations; each opens its tab and month. The database records each notification once (unique key), Event alerts are handed to pg_net when their change commits; Supabase pg_cron runs `duty_private.push_tick()` every 15 minutes for deadlines and reminders (reminder times are quarter hours), and pg_net posts due deliveries to the protected `/api/push/dispatch`, which signs them with VAPID. `pnpm push:setup local|dev|prod` sets it up. Signing out forgets this device. See [web push setup](docs/SUPABASE_SETUP.md#web-push-notifications).
 - Distinct pastel engineer colors with contrasting text, compact dates, and no repeated duty times. Seven-column calendars, English/Hebrew RTL, local saving, JSON backup export, and an editable monthly constraint deadline.
 
@@ -458,6 +496,6 @@ Application Generate uses the [allocation planner](docs/ALLOCATION_PLANNER.md),
 
 The workspace uses Supabase. The demo route and browser-local fallback have been removed; fictional fixtures remain in automated tests and isolated development environments only. Production is reserved for approved users and real schedules. The first signed-in account needs explicit admin approval. Live hosting and Google OAuth settings must be verified separately; repository tests do not prove real sign-in. See [the deployment runbook](docs/DEPLOYMENT.md).
 
-Next: PWA/Web Push with scheduled delivery, full action audit logs and backup restoration. Publication does not send notifications yet.
+Next: full action audit logs and backup restoration.
 
 No external AI service is involved in scheduling. A read-only `read_duty_month` WebMCP tool is registered when the browser supports it; ordinary browsers do not need it. Real-device browser QA and WebMCP execution were not performed under this task's preview permissions. Scheduling, batch updates, swap rules and native gesture event handling are covered by automated regression checks; type checking and the production build are additional validation gates.

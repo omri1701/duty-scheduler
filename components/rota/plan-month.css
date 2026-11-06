@@ -94,7 +94,7 @@
 .allocation-progress svg{flex-shrink:0;margin-top:3px;color:var(--brand)}
 .allocation-progress strong{font-weight:600}
 .allocation-progress small{display:block;color:var(--ink-3);margin-top:5px;line-height:1.6}
-.allocation-footer{display:flex;justify-content:space-between;gap:14px;align-items:center}
+.allocation-footer{display:flex;justify-content:space-between;gap:10px 14px;align-items:center;flex-wrap:wrap;min-width:0}
 .allocation-footer>div{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .allocation-footer strong{font-weight:700}
 .allocation-footer button{min-height:44px}
@@ -118,7 +118,8 @@
   .plan-row{padding-inline-end:8px}
   .plan-adjust button{width:40px;height:40px}
   .plan-points{min-width:40px}
-  .plan-actions{gap:6px}
-  .allocation-footer button{padding-inline:12px}
+  .plan-actions{gap:6px;flex:1;justify-content:flex-end;min-width:0}
+  .plan-actions>button{min-width:0;padding-inline:10px}
+  .allocation-footer button{padding-inline:10px;font-size:14px}
 }
 @media(prefers-reduced-motion:reduce){.plan-pie>svg,.plan-pie-detail,.plan-chip{animation:none}}

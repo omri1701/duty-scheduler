@@ -3,8 +3,11 @@ import {useEffect,useRef,useState} from 'react';
 import {useTeamWorkspace} from '@/hooks/use-team-workspace';
 import {RotaWorkspace} from '@/components/rota/workspace';
 import {AccessScreen} from '@/components/auth/access-screen';
+import {useTheme} from '@/hooks/use-theme';
 export default function Home(){
  const remote=useTeamWorkspace(),[lang,setLanguage]=useState<'en'|'he'>('en');
+ // Keeps data-theme in step with the device on every screen (lib/theme/theme.ts).
+ useTheme();
  // The member's saved language is the default on sign-in and on a new device
  // (decision 2026-11-06), applied once per account unless they already chose here.
  const applied=useRef<string|null>(null),chosen=useRef(false),saved=remote.me?.language,userId=remote.user?.id;

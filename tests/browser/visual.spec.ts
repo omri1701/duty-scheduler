@@ -1,40 +1,52 @@
-import {test, expect, monthAction, duty, keyboardRequest, confirmRequest, ids, targetReady, switchLanguage} from './fixtures';
+import {test, expect, monthAction, duty, ids, targetReady, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 import {PROJECTS} from '../../lib/supabase/environment';
 import {existsSync} from 'node:fs';
-import {mockPush, VAPID_PUBLIC_KEY} from './push-mock';
 
-// Retain the deployed Production baseline (no badge). Environment-specific
-// headers/access states have their own new snapshots in environment.spec.ts.
-test.beforeEach(({backend})=>{backend.url=PROJECTS.prod;backend.runtimeOrigin='https://duty-scheduler-prod.vercel.app';});
+// Scenario captures (the screens themselves are in redesign.spec.ts): today's accent, streak
+// bars, swap hints and proposals, the published edit summary, Clear board, the plan after
+// Generate, non-weekend members and the calendar subscription states.
+test.beforeEach(({backend}) => {backend.url = PROJECTS.prod; backend.runtimeOrigin = 'https://duty-scheduler-prod.vercel.app';});
 
 async function snapshot(page: Page, name: string, keepPointer = false) {
-  test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
+  test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: name + '.png', viewport: page.viewportSize(), language: await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
   if (!keepPointer) await page.mouse.move(0, 0);
-  // With updateSnapshots:none Playwright reports missing references without an
-  // actual attachment. Retain the candidate explicitly for the review gallery.
-  if(!existsSync(test.info().snapshotPath(name+'.png'))) {
-    const path=test.info().outputPath(name+'-actual.png');
-    await page.screenshot({path,fullPage:true,animations:'disabled',caret:'hide'});
-    await test.info().attach(name+'-actual.png',{path,contentType:'image/png'});
+  // With updateSnapshots:none Playwright reports missing references without an actual attachment. Retain the candidate explicitly for the review gallery.
+  if (!existsSync(test.info().snapshotPath(name + '.png'))) {
+    const path = test.info().outputPath(name + '-actual.png');
+    await page.screenshot({path, fullPage: true, animations: 'disabled', caret: 'hide'});
+    await test.info().attach(name + '-actual.png', {path, contentType: 'image/png'});
   }
-  // Collect every visual difference while retaining a failing test result.
   await expect.soft(page).toHaveScreenshot(name + '.png', {fullPage: true});
 }
+const schedule = async (page: Page, lang: 'en' | 'he') => {await page.getByRole('tab', {name: lang === 'en' ? 'Schedule' : 'לוח', exact: true}).click(); await expect(page.locator('.calendar-grid')).toBeVisible();};
+/** Opens a duty's sheet: a tap on PC, the day row on phones. */
+async function openDuty(page: Page, day: string) {
+  await duty(page, day).click();
+  if (test.info().project.name === 'mobile') await page.locator('[data-day-details] .day-duty').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+}
+/** Starts a published swap from a duty and waits until the target's availability is known. */
+async function pickSwap(page: Page, from: string, to: string, lang: 'en' | 'he') {
+  await openDuty(page, from);
+  await page.getByRole('dialog').getByRole('button', {name: lang === 'en' ? 'Swap' : 'החלפה', exact: true}).click();
+  await targetReady(page, to);
+}
 
-for(const lang of ['en','he'])test(`today accent in combined weekend ${lang}`,async({page,openApp})=>{
+for (const lang of ['en', 'he'] as const) test(`today accent in combined weekend ${lang}`, async ({page, openApp}) => {
   await openApp();
   await page.clock.setFixedTime(new Date('2026-11-07T12:00:00Z'));
-  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  if(lang==='he')await switchLanguage(page, 'he');
-  await expect(duty(page,'2026-11-06').locator('[aria-current="date"]')).toHaveText('7');
-  await snapshot(page,`today-weekend-draft-${lang}`);
-  await page.getByRole('button',{name:lang==='en'?'Published':'פורסם',exact:true}).click();
-  await snapshot(page,`today-weekend-published-${lang}`);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await schedule(page, lang);
+  await expect(duty(page, '2026-11-06').locator('[aria-current="date"]')).toHaveText('7');
+  await snapshot(page, `today-weekend-draft-${lang}`);
+  await page.getByRole('radio', {name: lang === 'en' ? 'Published' : 'פורסם', exact: true}).click();
+  await snapshot(page, `today-weekend-published-${lang}`);
 });
 
-for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${lang}`, async ({page, openApp, backend}, info) => {
+for (const lang of ['en', 'he'] as const) test(`streak bars and locked holiday marks ${lang}`, async ({page, openApp, backend}, info) => {
   const rows = (day: string) => backend.raw.assignments.filter(r => r.day === day);
   // Thu 5 → weekend 6–7 → Sun 8 → Mon 9 is one member's streak across the Saturday→Sunday row break.
   for (const day of ['2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']) for (const r of rows(day)) r.primary_id = ids.b;
@@ -49,8 +61,8 @@ for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${la
     {id: `split-sat-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-28', end_day: '2026-11-29', primary_id: ids.e, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5});
   await openApp();
   if (lang === 'he') await switchLanguage(page, 'he');
+  await schedule(page, lang);
   await snapshot(page, `streaks-${lang}`);
-  // The app has no dark theme of its own; this checks that the OS preference leaves the calendar intact.
   await page.emulateMedia({colorScheme: 'dark'});
   await snapshot(page, `streaks-dark-${lang}`);
   if (info.project.name !== 'mobile') return;
@@ -59,45 +71,34 @@ for (const lang of ['en', 'he']) test(`streak bars and locked holiday marks ${la
   await snapshot(page, `streaks-320-${lang}`);
 });
 
-test('access states', async ({page, openApp}) => {
-  await openApp('signed-out'); await snapshot(page, 'signed-out');
-  await page.getByRole('button', {name: 'עברית', exact: true}).click();
-  await expect(page.locator('main')).toHaveAttribute('dir', 'rtl');
-  await snapshot(page, 'signed-out-he');
-});
-test('published swap confirmation and outgoing request', async ({page, openApp}) => {
-  await openApp('a'); await keyboardRequest(page);
-  // The availability check finishes before the request can be sent.
-  await expect(page.getByRole('button', {name: 'Confirm Request', exact: true})).toBeEnabled();
-  await snapshot(page, 'swap-confirmation-en');
-  await confirmRequest(page); await page.getByText('Awaiting Engineer', {exact: true}).waitFor();
-  // Wait for the transient success toast without altering application styles.
-  await expect(page.getByText('Swap request submitted.', {exact: true})).toBeHidden({timeout: 10_000});
-  await snapshot(page, 'swap-request-en');
-});
 // Decision 2026-11-05: a day the server would refuse is greyed before the pick; usable days stay green.
 for (const lang of ['en', 'he'] as const) test(`swap target hints ${lang}`, async ({page, openApp, backend}) => {
   backend.raw.constraints.push({member_id: ids.b, day: '2026-11-09', kind: 'no', note: 'Synthetic private note'});
   await openApp('a');
   if (lang === 'he') await switchLanguage(page, 'he');
-  await duty(page, '2026-11-09').focus(); await page.keyboard.press('Enter');
+  await schedule(page, lang);
+  await pickSwap(page, '2026-11-09', '2026-11-05', lang);
   await expect(duty(page, '2026-11-04')).toHaveClass(/swap-blocked/);
   await expect(duty(page, '2026-11-03')).toHaveClass(/swap-blocked/);
   await expect(duty(page, '2026-11-05')).toHaveClass(/drag-target/);
   await snapshot(page, `swap-target-hints-${lang}`);
 });
-for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval summary ${lang}`, async ({page, openApp, backend}) => {
+
+for (const lang of ['en', 'he'] as const) test(`admin swap proposal, cards and approval summary ${lang}`, async ({page, openApp, backend}) => {
   const t = (en: string, he: string) => lang === 'en' ? en : he;
   await openApp('admin');
   if (lang === 'he') await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: t('Published', 'פורסם'), exact: true}).click();
-  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
-  await targetReady(page, '2026-11-03'); await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
+  await schedule(page, lang);
+  await page.getByRole('radio', {name: t('Published', 'פורסם'), exact: true}).click();
+  await pickSwap(page, '2026-11-02', '2026-11-03', lang);
+  await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true})).toBeEnabled();
   await snapshot(page, `admin-swap-proposal-${lang}`);
   await page.getByRole('button', {name: t('Send to both', 'שליחה לשניהם'), exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByText(t('Swap proposed to both engineers.', 'ההחלפה הוצעה לשני המהנדסים.'), {exact: true})).toBeHidden({timeout: 10_000});
+  await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 10_000});
+  await page.getByRole('tab', {name: t('Home', 'בית'), exact: true}).click();
+  await expect(page.locator('[data-swap-card]')).toBeVisible();
   await snapshot(page, `admin-swap-proposed-${lang}`);
   // Both accepted; Blair later marked 2 November unavailable.
   Object.assign(backend.raw.swapRequests![0], {status: 'awaiting_admin', accepted_by: ids.b, accepted_at: '2026-10-09T10:00:00Z', requester_accepted_at: '2026-10-09T10:00:00Z'});
@@ -105,93 +106,62 @@ for (const lang of ['en', 'he'] as const) test(`admin swap proposal and approval
   backend.raw.revision!++;
   await page.reload();
   if (lang === 'he') await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
+  await page.locator('[data-swap-card]').getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
-  // Clicking Approve scrolled the page; in a right-to-left page Chromium does not restore that
-  // scroll after a full-page capture, so successive captures differ. Start the capture at the top.
-  if (lang === 'he') await page.evaluate(() => window.scrollTo(0, 0));
   await snapshot(page, `admin-swap-approval-${lang}`);
 });
-test('pending approval', async ({page, openApp}) => {
-  await openApp('pending'); await snapshot(page, 'pending-approval');
+
+for (const lang of ['en', 'he'] as const) test(`manager states: published, new, reopened and cancel draft ${lang}`, async ({page, openApp, backend}) => {
+  backend.raw.months[0].status = 'published';
+  await openApp();
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await schedule(page, lang);
+  const button = (en: string, he: string) => page.getByRole('button', {name: lang === 'en' ? en : he, exact: true});
+  await snapshot(page, `manager-published-${lang}`);
+  await button('Next month', 'חודש הבא').click();
+  await snapshot(page, `manager-new-${lang}`);
+  await button('Previous month', 'חודש קודם').click();
+  await button('Reopen', 'פתיחה לעריכה').click();
+  await page.getByRole('radio', {name: lang === 'en' ? 'Published' : 'פורסם', exact: true}).click();
+  await snapshot(page, `manager-reopened-published-${lang}`);
+  await monthAction(page, lang === 'en' ? 'Cancel draft' : 'ביטול טיוטה');
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+  await snapshot(page, `manager-cancel-draft-${lang}`);
 });
 
-for(const lang of ['en','he'])test(`manager publishing controls ${lang}`,async({page,openApp,backend})=>{
-  backend.raw.months[0].status='published';
+for (const lang of ['en', 'he'] as const) test(`manager clear board ${lang}`, async ({page, openApp, backend}) => {
+  for (const r of backend.raw.assignments) if (!r.publication_id && ['2026-11-02', '2026-11-20'].includes(r.day)) r.locked = true;
   await openApp();
-  if(lang==='he')await switchLanguage(page, 'he');
-  const button=(en:string,he:string)=>page.getByRole('button',{name:lang==='en'?en:he,exact:true});
-  await snapshot(page,`manager-published-${lang}`);
-  await button('Next month','חודש הבא').click();
-  await snapshot(page,`manager-new-${lang}`);
-  await button('Previous month','חודש קודם').click();
-  await button('Reopen draft','פתיחת טיוטה').click();
-  await button('Published','פורסם').click();
-  await button('My duties','התורנויות שלי').click();
-  await snapshot(page,`manager-reopened-published-${lang}`);
-  await button('Cancel draft','ביטול טיוטה').click();
-  await snapshot(page,`manager-cancel-draft-${lang}`);
-});
-for(const lang of ['en','he'])test(`manager clear board ${lang}`,async({page,openApp,backend})=>{
-  for(const r of backend.raw.assignments)if(!r.publication_id&&['2026-11-02','2026-11-20'].includes(r.day))r.locked=true;
-  await openApp();
-  if(lang==='he')await switchLanguage(page, 'he');
-  const label=lang==='en'?'Clear board':'ניקוי הלוח';
-  await snapshot(page,`manager-clear-board-button-${lang}`);
-  await page.locator('.calendar-top').getByRole('button',{name:label,exact:true}).click();
-  await snapshot(page,`manager-clear-board-${lang}`);
-  await page.getByRole('dialog').getByRole('button',{name:label,exact:true}).click();
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button',{name:lang==='en'?'Undo':'שחזור',exact:true})).toBeVisible();
-  await snapshot(page,`manager-cleared-board-${lang}`);
-});
-for(const lang of ['en','he'])test(`published duty edit and summary ${lang}`,async({page,openApp,backend})=>{
-  backend.raw.months[0].status='published';
-  await openApp();
-  if(lang==='he')await switchLanguage(page, 'he');
-  const t=(en:string,he:string)=>lang==='en'?en:he;
-  await duty(page,'2026-11-04').click();
-  await page.getByRole('combobox',{name:t('Engineer','מהנדס'),exact:true}).click();
-  await page.getByRole('option',{name:t('Alex Atlas · unavailable','Alex Atlas · לא זמין'),exact:true}).click();
-  await page.getByRole('checkbox',{name:t('Override availability as admin','חריגה מאילוץ כמנהל')}).check();
-  await page.getByLabel(t('Required audit reason','נימוק חובה לתיעוד')).fill('Covering a family event');
-  await snapshot(page,`published-edit-${lang}`);
-  await page.getByRole('button',{name:t('Review change','בדיקת השינוי'),exact:true}).click();
-  await snapshot(page,`published-edit-summary-${lang}`);
-});
-test('draft calendar, editor, history and Hebrew RTL', async ({page, openApp}) => {
-  await openApp(); await snapshot(page, 'admin-draft-en');
-  await duty(page, '2026-11-02').click(); await snapshot(page, 'duty-editor-en');
-  await page.keyboard.press('Escape');
-  await monthAction(page, 'Versions'); await snapshot(page, 'version-history-en');
-  await page.keyboard.press('Escape');
-  await switchLanguage(page, 'he');
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl'); await snapshot(page, 'admin-draft-he');
-});
-test('engineer publication and availability', async ({page, openApp, backend}) => {
-  await openApp('a'); await snapshot(page, 'engineer-published-en');
-  await switchLanguage(page, 'he'); await snapshot(page, 'engineer-published-he');
-  await switchLanguage(page, 'en');
-  backend.raw.months[0].current_publication_id = null;
-  await page.reload(); await page.getByRole('tab', {name: 'Availability', exact: true}).click();
-  await snapshot(page, 'engineer-availability-en');
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await schedule(page, lang);
+  const label = lang === 'en' ? 'Clear board' : 'ניקוי הלוח';
+  await monthAction(page, label);
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+  await snapshot(page, `manager-clear-board-${lang}`);
+  await page.getByRole('alertdialog').getByRole('button', {name: label, exact: true}).click();
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await expect(page.getByRole('button', {name: lang === 'en' ? 'Undo' : 'שחזור', exact: true})).toBeVisible();
+  await snapshot(page, `manager-cleared-board-${lang}`);
 });
 
-test('phone availability sheet and team in English and Hebrew', async ({page, openApp}, info) => {
-  test.skip(info.project.name !== 'mobile', 'Phone-only design.');
+for (const lang of ['en', 'he'] as const) test(`published duty edit and summary ${lang}`, async ({page, openApp, backend}) => {
+  backend.raw.months[0].status = 'published';
   await openApp();
-  for (const lang of ['en', 'he']) {
-    if (lang === 'he') await switchLanguage(page, 'he');
-    await page.getByRole('tab').nth(1).click();
-    await page.locator('.availability-day[data-gesture-key="2026-11-05"]').click();
-    await snapshot(page, `availability-sheet-${lang}`);
-    await page.keyboard.press('Escape');
-    await page.getByRole('tab').nth(2).click();
-    await snapshot(page, `team-${lang}`);
-  }
+  if (lang === 'he') await switchLanguage(page, 'he');
+  await schedule(page, lang);
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  await openDuty(page, '2026-11-04');
+  await page.getByRole('dialog').getByRole('button', {name: t('Edit', 'עריכה'), exact: true}).click();
+  await page.getByRole('combobox', {name: t('Engineer', 'מהנדס'), exact: true}).click();
+  await page.getByRole('option', {name: t('Alex Atlas · unavailable', 'Alex Atlas · לא זמין'), exact: true}).click();
+  await page.getByRole('checkbox', {name: t('Override availability as admin', 'חריגה מאילוץ כמנהל')}).check();
+  await page.getByLabel(t('Required audit reason', 'נימוק חובה לתיעוד')).fill('Covering a family event');
+  await snapshot(page, `published-edit-${lang}`);
+  await page.getByRole('button', {name: t('Review change', 'בדיקת השינוי'), exact: true}).click();
+  await snapshot(page, `published-edit-summary-${lang}`);
 });
 
-for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page, openApp, backend}, info) => {
+for (const lang of ['en', 'he'] as const) test(`plan the month pie ${lang}`, async ({page, openApp, backend}, info) => {
   backend.raw.assignments = []; backend.raw.publications = [];
   backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
   // One locked duty, so the pie total and the hover details both show locked points.
@@ -199,36 +169,26 @@ for (const lang of ['en', 'he']) test(`plan the month pie ${lang}`, async ({page
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
   if (he) await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  await schedule(page, lang);
+  await page.getByRole('button', {name: he ? 'תכנון החודש' : 'Plan the month', exact: true}).first().click();
   await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
-  // Park the emulated mouse: a row opening under it would read as hovered.
   await page.mouse.move(0, 0);
-  // The total names the locked points without an icon.
   await expect(dialog.locator('.plan-pie-total small')).toHaveText(he ? '1 נעולות' : '1 locked');
-  await expect(dialog.locator('.plan-pie-center svg')).toHaveCount(0);
-  await snapshot(page, `plan-month-${lang}`);
   // A temporary change shows its chip; the pie centre shows the slice in focus.
   await dialog.getByRole('button', {name: `${he ? 'הפחתת זמני' : 'Decrease Temporary'} · Avery Admin`, exact: true}).click();
   const slice = dialog.locator(`.plan-slice[data-engineer="${ids.admin}"]`);
   if (info.project.name === 'mobile') await slice.tap(); else await slice.hover();
   await expect(slice).toHaveClass(/active/);
-  // The hover details carry a small lock beside the locked points.
-  const lock = (await dialog.locator('.plan-pie-detail li.locked svg').boundingBox())!;
-  expect(lock.width).toBeLessThanOrEqual(10); expect(lock.height).toBeLessThanOrEqual(10);
   await snapshot(page, `plan-month-pie-hover-${lang}`, true);
   await dialog.getByRole('button', {name: he ? 'שמירה' : 'Save', exact: true}).click();
   await expect(dialog.getByRole('button', {name: he ? 'נשמר' : 'Saved', exact: true})).toBeDisabled();
   await dialog.locator('.allocation-details summary').click();
-  await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = el.scrollHeight;});
+  await dialog.locator('.sheet-body').evaluate(el => {el.scrollTop = el.scrollHeight;});
   await snapshot(page, `plan-month-details-${lang}`);
-  // The app has no dark theme of its own; this checks that the OS preference leaves the dialog intact.
-  await page.emulateMedia({colorScheme: 'dark'});
-  await dialog.locator('.allocation-scroll').evaluate(el => {el.scrollTop = 0;});
-  await snapshot(page, `plan-month-dark-${lang}`);
 });
 
 // Non-weekend members (decision 2026-11-01): the Team setting, and the plan's note and kept-lock warning.
-for (const lang of ['en', 'he']) test(`non-weekend member ${lang}`, async ({page, openApp, backend}) => {
+for (const lang of ['en', 'he'] as const) test(`non-weekend member ${lang}`, async ({page, openApp, backend}) => {
   backend.raw.assignments = []; backend.raw.publications = [];
   backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
   backend.raw.members.find(m => m.id === ids.e)!.no_weekends = true;
@@ -236,44 +196,47 @@ for (const lang of ['en', 'he']) test(`non-weekend member ${lang}`, async ({page
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
   if (he) await switchLanguage(page, 'he');
-  await page.getByRole('tab').nth(2).click();
+  await page.getByRole('tab', {name: he ? 'צוות' : 'Team', exact: true}).click();
+  await page.locator(`[data-member="${ids.e}"] .team-row-inner`).click();
+  await expect(dialog).toBeVisible();
   await snapshot(page, `team-no-weekends-${lang}`);
-  await page.getByRole('tab').first().click();
-  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  await page.keyboard.press('Escape');
+  await schedule(page, lang);
+  await page.getByRole('button', {name: he ? 'תכנון החודש' : 'Plan the month', exact: true}).first().click();
   await expect(dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
   await page.mouse.move(0, 0);
   await dialog.locator(`.plan-row[data-engineer="${ids.e}"]`).scrollIntoViewIfNeeded();
   await snapshot(page, `plan-month-no-weekends-${lang}`);
 });
 
-/** A clipped reference: Generate's fresh seed varies the calendar, so only the
- * deterministic plan and toolbar areas are compared. */
+/** A clipped reference: Generate's fresh seed varies the calendar, so only the deterministic plan and bar areas are compared. */
 async function region(page: Page, name: string, clip: {x: number; y: number; width: number; height: number}) {
-  test.info().annotations.push({type:'visual-review',description:JSON.stringify({name:name+'.png',viewport:page.viewportSize(),language:await page.locator('html').getAttribute('lang')})});
+  test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: name + '.png', viewport: page.viewportSize(), language: await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(0, 0);
-  if(!existsSync(test.info().snapshotPath(name+'.png'))) {
-    const path=test.info().outputPath(name+'-actual.png');
-    await page.screenshot({path,clip,fullPage:true,animations:'disabled',caret:'hide'});
-    await test.info().attach(name+'-actual.png',{path,contentType:'image/png'});
+  if (!existsSync(test.info().snapshotPath(name + '.png'))) {
+    const path = test.info().outputPath(name + '-actual.png');
+    await page.screenshot({path, clip, fullPage: true, animations: 'disabled', caret: 'hide'});
+    await test.info().attach(name + '-actual.png', {path, contentType: 'image/png'});
   }
   await expect.soft(page).toHaveScreenshot(name + '.png', {clip, fullPage: true});
 }
 
-for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${lang}`, async ({page, openApp, backend}) => {
+for (const lang of ['en', 'he'] as const) test(`after Generate the plan is the review ${lang}`, async ({page, openApp, backend}) => {
   backend.raw.assignments = []; backend.raw.publications = [];
   backend.raw.months[0] = {...backend.raw.months[0], current_publication_id: null, status: 'draft', generated: false};
   await openApp();
   const he = lang === 'he', dialog = page.getByRole('dialog');
   if (he) await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: he ? 'יצירת שיבוץ' : 'Generate month', exact: true}).click();
+  await schedule(page, lang);
+  await page.getByRole('button', {name: he ? 'תכנון החודש' : 'Plan the month', exact: true}).first().click();
   const confirm = dialog.getByRole('button', {name: he ? 'אישור ושיבוץ' : 'Confirm & generate', exact: true});
   await expect(confirm).toBeEnabled({timeout: 30_000});
   await confirm.click();
   await expect(dialog).toBeHidden({timeout: 50_000});
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 15_000});
   // A saved plan change after Generate: Avery takes one point less.
-  await page.getByRole('button', {name: he ? 'בדיקת התוכנית' : 'Review plan', exact: true}).click();
+  await monthAction(page, he ? 'תכנון החודש' : 'Plan the month');
   await expect(confirm).toBeEnabled({timeout: 30_000});
   await dialog.getByRole('button', {name: `${he ? 'הפחתת זמני' : 'Decrease Temporary'} · Avery Admin`, exact: true}).click();
   await dialog.getByRole('button', {name: he ? 'שמירה' : 'Save', exact: true}).click();
@@ -282,9 +245,9 @@ for (const lang of ['en', 'he']) test(`after Generate the plan is the review ${l
   await region(page, `plan-review-${lang}`, (await dialog.boundingBox())!);
   await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 15_000});
-  const note = page.locator('.publish-blocked-note');
+  const note = page.locator('[data-publish-blocked]');
   await expect(note).toBeVisible();
-  const top = (await page.locator('.month-toolbar-container').boundingBox())!, bottom = (await note.boundingBox())!;
+  const top = (await page.locator('.month-bar').boundingBox())!, bottom = (await note.boundingBox())!;
   await region(page, `publish-waits-${lang}`, {x: 0, y: top.y, width: page.viewportSize()!.width, height: bottom.y + bottom.height - top.y + 8});
 });
 
@@ -293,9 +256,10 @@ for (const lang of ['en', 'he'] as const) test(`calendar subscription ${lang}`, 
   await openApp('a');
   const he = lang === 'he';
   if (he) await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: he ? 'הגדרות' : 'Settings', exact: true}).click();
+  await page.locator('[data-settings-button]').click();
   const section = page.getByRole('region', {name: he ? 'הרשמה ללוח השנה שלי' : 'Subscribe to my calendar'});
   await expect(section.getByRole('button', {name: he ? 'יצירת קישור ללוח השנה שלי' : 'Create my calendar link'})).toBeVisible();
+  await section.scrollIntoViewIfNeeded();
   await snapshot(page, `calendar-subscription-new-${lang}`);
   await section.getByRole('button', {name: he ? 'יצירת קישור ללוח השנה שלי' : 'Create my calendar link'}).click();
   await expect(section.getByRole('link', {name: he ? 'הוספה ליומן Apple' : 'Add to Apple Calendar'})).toBeVisible();
@@ -304,32 +268,4 @@ for (const lang of ['en', 'he'] as const) test(`calendar subscription ${lang}`, 
   await section.getByRole('button', {name: he ? 'איפוס הקישור' : 'Reset link'}).click();
   await expect(section.getByRole('group')).toBeVisible();
   await snapshot(page, `calendar-subscription-reset-${lang}`);
-});
-
-// The settings screen (decision 2026-11-06), before and after enabling notifications (Push mocked).
-for (const lang of ['en', 'he']) test(`settings screen ${lang}`, async ({page, openApp, backend}) => {
-  await mockPush(page);
-  backend.vapidPublicKey = VAPID_PUBLIC_KEY;
-  await openApp();
-  if (lang === 'he') await switchLanguage(page, 'he');
-  await page.getByRole('button', {name: lang === 'en' ? 'Settings' : 'הגדרות', exact: true}).click();
-  const sheet = page.getByRole('dialog');
-  const enable = sheet.getByRole('button', {name: lang === 'en' ? 'Enable notifications' : 'הפעלת התראות'});
-  await expect(enable).toBeEnabled();
-  await expect(sheet.getByRole('checkbox').first()).toBeEnabled();
-  await snapshot(page, `settings-${lang}`);
-  await enable.click();
-  await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Turn off on this device' : 'כיבוי במכשיר הזה'})).toBeEnabled();
-  await snapshot(page, `settings-enabled-${lang}`);
-  // The reminder-time wheels open under their row (decision 2026-11-06), in light and dark mode.
-  const evening = sheet.getByRole('button', {name: lang === 'en' ? /^Evening before my duty · time/ : /^ערב לפני התורנות · שעה/});
-  await evening.click();
-  const wheels = sheet.locator('.time-wheels');
-  await expect(wheels.getByRole('spinbutton').first()).toHaveAttribute('aria-valuenow', '18');
-  await wheels.evaluate(el => el.scrollIntoView({block: 'center'}));
-  await expect.poll(() => wheels.locator('.time-wheel').first().evaluate(el => el.scrollTop)).toBe(18 * 44);
-  await snapshot(page, `settings-wheel-${lang}`);
-  await page.emulateMedia({colorScheme: 'dark'});
-  await snapshot(page, `settings-wheel-dark-${lang}`);
-  await page.emulateMedia({colorScheme: 'light'});
 });

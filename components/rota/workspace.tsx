@@ -11,6 +11,9 @@ import {TabsContent} from '@/components/ui/tabs';
 import {AppToaster} from '@/components/ui/toast';
 import {AppShell} from '@/components/shell/app-shell';
 import {HomeScreen} from '@/components/home/home-screen';
+import {Welcome, welcomeSeen} from '@/components/home/welcome';
+import {Chip} from '@/components/ui/chip';
+import {WifiOff} from 'lucide-react';
 import {ActivityBell} from './activity-bell';
 import {MonthBar, type MenuItem, type PrimaryAction} from './month-bar';
 import {DutySheet, type DutySheetActions} from './duty-sheet';
@@ -22,7 +25,7 @@ import {SettingsScreen} from '@/components/rota/settings-screen';
 import {deepLink} from '@/lib/push/settings';
 import {currentSubscription, describe} from '@/lib/push/browser';
 import {PublicationHistory} from '@/components/rota/publication-history';
-import {SwapRequests} from '@/components/rota/swap-requests';
+import {SwapRequestDialog, useSwapActions} from '@/components/rota/swap-requests';
 import {WorkspaceAvailability} from './workspace-availability';
 import {WorkspaceCalendar} from './workspace-calendar';
 import {WorkspaceTeam} from './workspace-team';
@@ -65,6 +68,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   const [link] = useState(() => typeof window === 'undefined' ? {} : deepLink(window.location.search));
   const [month, setMonth] = useState(() => link.month ?? initialCalendarMonth()), [tab, setTab] = useState<string>(link.tab ?? 'home');
   const [slide, setSlide] = useState<'next' | 'prev' | null>(null);
+  const [welcome, setWelcome] = useState(() => typeof window !== 'undefined' && !welcomeSeen());
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has('tab') || url.searchParams.has('month')) {
@@ -79,6 +83,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
       if (next.tab) setTab(next.tab);
     };
     navigator.serviceWorker?.addEventListener('message', open);
+    // The offline shell (public/sw.js); push subscribes through the same registration.
+    navigator.serviceWorker?.register('/sw.js', {scope: '/'}).catch(() => {});
     // A device that already receives notifications belongs to whoever is signed in now.
     if (!remote.readOnly && typeof Notification !== 'undefined' && Notification.permission === 'granted')
       void currentSubscription().then(subscription => subscription && remote.personal.saveDevice(describe(subscription))).catch(() => {});
@@ -266,6 +272,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     : publication ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
   const selectedDuty = selectedDay ? calendarBlocks.find(b => b.start <= selectedDay && selectedDay < b.end) : undefined;
   const swipe = useMonthSwipe(changeMonth, lang === 'he');
+  const swaps = useSwapActions(remote, lang);
   const notices: ReactNode = <>
     {isManager && viewingDraft && generationClosed && monthDetails.status === 'draft' && <p className="note-line">{closedReason}</p>}
     {isManager && viewingDraft && !remote.readOnly && !!publishBlockers.length && <p className="note-line" role="note" data-publish-blocked>
@@ -278,9 +285,9 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   return <>
     <AppToaster/>
     <AppShell lang={lang} t={t} tab={tab} setTab={next => {setTab(next); if (next !== 'schedule') {setPickingFrom(null); setSheetDuty(null);}}} disabled={!!remote.saving}
-      badge={remote.environment?.badge ? <EnvironmentBadge environment={remote.environment}/> : undefined}
+      badge={<>{remote.offline && <Chip tone="warn" size="sm" className="offline-pill" role="status"><WifiOff/>{t('Offline', 'לא מקוון')}</Chip>}{remote.environment?.badge ? <EnvironmentBadge environment={remote.environment}/> : null}</>}
       bell={<ActivityBell raw={remote.snapshot!} me={meId} admin={isManager} lang={lang} onOpenMonth={openSchedule}/>}
-      avatar={<button type="button" className="avatar-button" data-settings-button onClick={() => setSettingsOpen(true)} aria-label={t('Settings', 'הגדרות')} title={t('Settings', 'הגדרות')}>
+      avatar={<button type="button" className="avatar-button admin-avatar" data-settings-button onClick={() => setSettingsOpen(true)} aria-label={t('Settings', 'הגדרות')} title={t('Settings', 'הגדרות')}>
         <Avatar name={remote.me?.name ?? ''} color={remote.me?.color} size={36}/>
       </button>}
       status={remote.saving ? <span className="side-status" role="status">{t('Saving…', 'שומר…')}</span> : undefined}>
@@ -292,7 +299,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
       <fieldset disabled={!!remote?.saving} className="workspace-controls">
         <div>
           <TabsContent value="home">
-            <HomeScreen remote={remote} today={today} lang={lang} t={t} onSchedule={openSchedule} onAvailability={m => {if (m !== month) goToMonth(m); setTab('availability');}} onTeam={() => setTab('team')}
+            <HomeScreen remote={remote} swaps={swaps} today={today} lang={lang} t={t} onSchedule={openSchedule} onAvailability={m => {if (m !== month) goToMonth(m); setTab('availability');}} onTeam={() => setTab('team')}
               onSwap={(m, day) => {
                 if (m !== month) goToMonth(m);
                 const details = state.months[m];
@@ -304,7 +311,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>
             <MonthBar label={monthLabel} status={status} t={t} onChange={changeMonth} primary={primary} menu={menu}>
-              {reopened && <Segmented size="sm" label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
+              {reopened && <Segmented label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
                 options={[{value: 'draft', label: t('Draft', 'טיוטה')}, {value: 'published', label: t('Published', 'פורסם')}]}/>}
             </MonthBar>
             <div className="month-stage" {...swipe}>
@@ -325,9 +332,11 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
             <WorkspaceTeam remote={remote} state={state} metrics={metrics} monthLabel={monthLabel} onMonth={changeMonth} meId={meId} isManager={isManager} lang={lang} t={t} update={update}/>
           </TabsContent>
         </div>
-        {tab === 'schedule' && <SwapRequests key={month} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/>}
       </fieldset>
     </AppShell>
+    {swaps.dialogs}
+    <Welcome open={welcome} onClose={() => setWelcome(false)} lang={lang} t={t}/>
+    <SwapRequestDialog key={month} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/>
     <DutySheet duty={sheetDuty} state={calendarState} lang={lang} t={t} meId={meId} open={!!sheetDuty} onClose={() => setSheetDuty(null)} actions={sheetActions(sheetDuty)} published={requesting && !!publication}/>
     <SettingsScreen remote={remote} open={settingsOpen} onOpenChange={setSettingsOpen} lang={lang} setLang={setLang} onExport={isManager ? exportBackup : undefined}/>
     {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} monthLabel={monthLabel} lang={lang} t={t}/>}

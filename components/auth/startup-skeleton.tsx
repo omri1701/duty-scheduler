@@ -25,7 +25,7 @@ export function StartupSkeleton({lang, environment}: {lang: 'en' | 'he'; environ
       <div className="app-main">
         <header className="hdr">
           {mobile ? <span className="hdr-brand" aria-label={APP_NAME}><Logo size={30}/></span> : <span className="hdr-spacer"/>}
-          <div className="hdr-actions"><EnvironmentBadge environment={environment}/><Skeleton width={36} height={36} round/><Skeleton width={36} height={36} round/></div>
+          <div className="hdr-actions"><EnvironmentBadge environment={environment}/><Skeleton width={44} height={44} round/><Skeleton width={44} height={44} round/></div>
         </header>
         <div className="main-wrap">
           <InspectionWarning environment={environment} lang={lang}/>

@@ -13,11 +13,13 @@ import type {Balance} from '@/lib/supabase/balance';
 import {addDays, calendarMonthLabel} from '@/lib/rota/calendar-dates';
 import {shortDate} from '@/lib/date-format';
 import type {Language, Translate} from '@/components/rota/workspace-types';
-import {constraintsDue, dutyWhen, greeting, myUpcomingDuties, waitingSwaps, type MyDuty} from './home-data';
+import {constraintsDue, dutyWhen, greeting, myUpcomingDuties, type MyDuty} from './home-data';
+import {SwapCard, type SwapActions} from '@/components/rota/swap-requests';
+import {swapNeedsAction} from '@/lib/supabase/swaps';
 
 /** The first tab (decision 2026-11-06): greeting, the next duties, and only what needs the member now. */
-export function HomeScreen({remote, today, lang, t, onSchedule, onAvailability, onTeam, onSwap}: {
-  remote: TeamWorkspace; today: string; lang: Language; t: Translate;
+export function HomeScreen({remote, swaps, today, lang, t, onSchedule, onAvailability, onTeam, onSwap}: {
+  remote: TeamWorkspace; swaps: SwapActions; today: string; lang: Language; t: Translate;
   onSchedule: (month: string) => void; onAvailability: (month: string) => void; onTeam: () => void;
   /** Starts a swap for the member's own published duty on that day. */
   onSwap: (month: string, day: string) => void;
@@ -26,7 +28,10 @@ export function HomeScreen({remote, today, lang, t, onSchedule, onAvailability, 
   const name = (id: string | null) => raw.members.find(m => m.id === id)?.name ?? '';
   const first = (remote.me?.name ?? '').trim().split(/\s+/)[0] || '';
   const duties = myUpcomingDuties(raw, me, today);
-  const due = constraintsDue(raw, today, admin), swaps = waitingSwaps(raw, me, admin);
+  const due = constraintsDue(raw, today, admin);
+  // Requests that wait for the member (or the admin), then the member's own open ones.
+  const toAnswer = swaps.requests.filter(r => swapNeedsAction(r, me, admin, swaps.temporary));
+  const mine = swaps.requests.filter(r => !toAnswer.includes(r) && ['awaiting_engineer', 'awaiting_admin'].includes(r.status));
   const pending = admin ? raw.members.filter(m => m.status === 'pending').length : 0;
   const approvals = admin ? (raw.swapRequests ?? []).filter(r => r.status === 'awaiting_admin').length : 0;
   const drafts = admin ? raw.months.filter(m => m.status === 'draft' && m.generated && m.month >= today.slice(0, 7)) : [];
@@ -53,10 +58,14 @@ export function HomeScreen({remote, today, lang, t, onSchedule, onAvailability, 
       <ListRow lead={<span className="row-icon" data-tone="brand"><CalendarCheck/></span>} title={t(`Constraints for ${calendarMonthLabel(due.month, lang)}`, `אילוצים ל${calendarMonthLabel(due.month, lang)}`)}
         subtitle={t(`Due ${shortDate(due.deadline, lang)}`, `עד ${shortDate(due.deadline, lang)}`)} trail={<span className="row-action">{t('Enter now', 'להזין')}</span>} chevron onClick={() => onAvailability(due.month)}/>
     </Card>}
-    {swaps.length > 0 && <Card inset>
-      <ListRow lead={<span className="row-icon" data-tone="info"><ArrowLeftRight/></span>} title={swaps.length === 1 ? t('A swap request waits for you', 'בקשת החלפה ממתינה לך') : t(`${swaps.length} swap requests wait for you`, `${swaps.length} בקשות החלפה ממתינות לך`)}
-        subtitle={swaps.slice(0, 2).map(r => `${name(r.requester_id)} ↔ ${name(r.other_id)}`).join(' · ')} chevron onClick={() => onSchedule(swaps[0].month)}/>
-    </Card>}
+    {toAnswer.length > 0 && <>
+      <SectionTitle>{t('Swaps to answer', 'החלפות לטיפול')}</SectionTitle>
+      <div className="swap-cards">{toAnswer.map(r => <SwapCard key={r.id} r={r} swaps={swaps} remote={remote} lang={lang}/>)}</div>
+    </>}
+    {mine.length > 0 && <>
+      <SectionTitle>{t('Your swaps', 'ההחלפות שלך')}</SectionTitle>
+      <div className="swap-cards">{mine.map(r => <SwapCard key={r.id} r={r} swaps={swaps} remote={remote} lang={lang}/>)}</div>
+    </>}
     <SectionTitle>{t('Your balance', 'המאזן שלך')}</SectionTitle>
     <Card className="balance-card">
       <span className="row-icon" data-tone="neutral"><Scale/></span>

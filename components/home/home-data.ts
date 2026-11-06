@@ -1,5 +1,4 @@
-import type {DutyRow, Snapshot, SwapRequest} from '@/lib/supabase/snapshot';
-import {swapNeedsAction, visibleSwapRequests} from '@/lib/supabase/swaps';
+import type {DutyRow, Snapshot} from '@/lib/supabase/snapshot';
 import {addDays, dayOf} from '@/lib/rota/calendar-dates';
 
 export type MyDuty = {row: DutyRow; month: string; role: 'primary' | 'cover'; kind: 'weekday' | 'weekend' | 'holiday'};
@@ -35,12 +34,6 @@ export function greeting(now: Date, lang: 'en' | 'he') {
   if (hour >= 12 && hour < 17) return lang === 'en' ? 'Good afternoon' : 'צהריים טובים';
   if (hour >= 17 && hour < 22) return lang === 'en' ? 'Good evening' : 'ערב טוב';
   return lang === 'en' ? 'Hello' : 'שלום';
-}
-
-/** Swap requests that wait for the member's answer (or, for admins, their approval). */
-export function waitingSwaps(raw: Snapshot, me: string, admin: boolean): SwapRequest[] {
-  const temporary = new Set(raw.members.filter(m => m.is_temporary).map(m => m.id));
-  return visibleSwapRequests(raw.swapRequests ?? [], me, admin, temporary).filter(r => swapNeedsAction(r, me, admin, temporary));
 }
 
 /** The next month whose constraints are still open for the member. */

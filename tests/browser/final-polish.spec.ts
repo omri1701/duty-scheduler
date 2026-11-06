@@ -18,16 +18,15 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await page.emulateMedia({reducedMotion:'no-preference'});await openApp();
  if(lang==='he')await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
- for(const id of [ids.admin,ids.a,ids.e]){
+ await page.getByRole('tab').nth(3).click();
+ // Inactive rows sit in the collapsed Inactive group and have no grip: only active rows drag.
+ for(const id of [ids.admin,ids.a]){
   const row=page.locator(`.gesture-grid [data-gesture-key="${id}"]`),handle=row.locator('.team-grip');
   const expected=await row.evaluate(el=>({
-   role:(el.querySelector('select') as HTMLSelectElement).selectedOptions[0].textContent,
    name:el.querySelector('.team-name')!.textContent,
    points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
    avatar:el.querySelector('.avatar')!.getAttribute('style'),
    rank:el.querySelector('.team-grip span')!.textContent,
-   active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
   }));
   // Admin rows carry the No weekends toggle: on a phone the last row can start below the fold.
   await handle.scrollIntoViewIfNeeded();
@@ -38,35 +37,26 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
   await expect(ghost.locator('select,input,textarea')).toHaveCount(0);
   expect(await ghost.evaluate(el=>(el as HTMLElement).inert)).toBe(true);
   await expect(ghost).toHaveAttribute('aria-hidden','true');
-  expect(await ghost.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(id === ids.e ? .45 : 1);
-  const roleAlignment=await ghost.locator('.drag-control-value').evaluate(el=>{
-   const range=document.createRange();range.selectNodeContents(el);
-   const text=range.getBoundingClientRect(),box=el.getBoundingClientRect();
-   return Math.abs(text.y+text.height/2-(box.y+box.height/2));
-  });
-  expect(roleAlignment).toBeLessThanOrEqual(2);
+  expect(await ghost.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
   for(const offset of [15,-15,30]){
    if(mobile)await touchEvent(page,'touchmove',x,y+offset);else await page.mouse.move(x,y+offset);
    const actual=await ghost.evaluate(el=>({
-    role:el.querySelector('.team-role .drag-control-value')!.textContent,
     name:el.querySelector('.team-name')!.textContent,
     points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
     avatar:el.querySelector('.avatar')!.getAttribute('style'),
     rank:el.querySelector('.team-grip span')!.textContent,
-    active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
    }));
    expect(actual).toEqual(expected);
   }
   await page.screenshot({path:info.outputPath(`preview-${id}.png`)});
-  // Observe every animation frame through release; no transient first-option label.
+  // Observe every animation frame through release; no transient label.
   const frames=ghost.evaluate(async el=>{
    const labels=[];
-   while(el.isConnected){labels.push(el.querySelector('.team-role .drag-control-value')!.textContent);await new Promise<void>(r=>requestAnimationFrame(()=>r()))}
+   while(el.isConnected){labels.push(el.querySelector('.team-name')!.textContent);await new Promise<void>(r=>requestAnimationFrame(()=>r()))}
    return labels;
   });
   if(mobile)await touchEvent(page,'touchend',x,y+30);else await page.mouse.up();
-  expect((await frames).every(label=>label===expected.role)).toBe(true);
-  await expect(row.locator('select')).toHaveValue(id===ids.admin?'admin':'engineer');
+  expect((await frames).every(label=>label===expected.name)).toBe(true);
   expect(backend.raw.members).toEqual(original);
   await page.clock.setFixedTime(new Date(Date.parse(NOW)+1000));
  }

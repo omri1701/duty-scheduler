@@ -1,41 +1,63 @@
-import {test,expect,ids,MONTH,duty, switchLanguage} from './fixtures';
+import {test,expect,ids,MONTH,duty, switchLanguage, monthAction} from './fixtures';
+import type {Page} from '@playwright/test';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {canonicalDuties} from '../../lib/scheduling/calendar';
 
 // Non-weekend members (decision 2026-11-01): a standing admin setting in Team, a default
 // +1 Permanent in Plan the month, never a weekend from Generate, and a locked weekend kept.
 const name=(backend:{raw:{members:{id:string;name:string}[]}},id:string)=>backend.raw.members.find(m=>m.id===id)!.name;
+// The app opens on Home: the calendar is on Schedule, the member settings in Team's member sheet.
+const he=(page:Page)=>page.locator('html').getAttribute('lang').then(l=>l==='he');
+const tab=async(page:Page,en:string,hebrew:string)=>page.getByRole('tab',{name:await he(page)?hebrew:en,exact:true}).click();
+const openMember=async(page:Page,id:string)=>{await tab(page,'Team','צוות');await page.locator(`.team-row[data-member="${id}"] .team-row-inner`).click();};
+// A tap opens the duty sheet (on a phone, the day's details first); its Edit opens the editor.
+async function editDuty(page:Page,day:string){
+ await tab(page,'Schedule','לוח');await duty(page,day).click();
+ const details=page.locator('[data-day-details] .day-duty');
+ await expect(page.getByRole('dialog').or(details)).toBeVisible();
+ if(await details.isVisible())await details.click();
+ await page.getByRole('dialog').getByRole('button',{name:/^(Edit|עריכה)$/}).click();
+}
+// Plan the month is the month bar's primary until the month is generated, else in the ⋯ menu.
+async function clickPlan(page:Page){
+ await tab(page,'Schedule','לוח');
+ const label=await he(page)?'תכנון החודש':'Plan the month',primary=page.locator('.month-primary');
+ await expect(primary).toBeVisible();
+ if(await primary.getAttribute('aria-label')===label)await primary.click();else await monthAction(page,label);
+}
 
 for(const lang of ['en','he'] as const)test(`admin marks a member as non-weekend in Team ${lang}`,async({page,openApp,backend})=>{
- const he=lang==='he',label=he?'ללא סופי שבוע':'No weekends';
+ const he=lang==='he',label=he?'ללא סופי שבוע':'No weekends',chip=he?'ללא סופ״ש':'No weekends';
  await openApp();
  if(he)await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
- const row=page.locator(`.gesture-grid [data-gesture-key="${ids.e}"]`),toggle=row.getByRole('checkbox',{name:`${label} ${name(backend,ids.e)}`,exact:true});
+ await openMember(page,ids.e);
+ const row=page.locator(`.team-row[data-member="${ids.e}"]`),toggle=page.getByRole('dialog').getByRole('switch',{name:`${label} ${name(backend,ids.e)}`,exact:true});
  await expect(toggle).toBeVisible();await expect(toggle).not.toBeChecked();
- await expect(row.locator('.team-name small')).not.toContainText(label);
+ await expect(row.locator('.team-name')).not.toContainText(chip);
  await toggle.click();
  await expect(toggle).toBeChecked();
- await expect(row.locator('.team-name small')).toContainText(label);
+ await expect(row.locator('.team-name')).toContainText(chip);
  expect(backend.raw.members.find(m=>m.id===ids.e)!.no_weekends).toBe(true);
  expect(backend.calls.filter(c=>c.name==='duty_set_no_weekends').map(c=>c.params.p_no_weekends)).toEqual([true]);
  // It is a standing setting: it survives a reload, and only another click clears it.
  await page.reload();
  if(he)await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
+ await openMember(page,ids.e);
  await expect(toggle).toBeChecked();
  await toggle.click();await expect(toggle).not.toBeChecked();
  expect(backend.raw.members.find(m=>m.id===ids.e)!.no_weekends).toBe(false);
- // The Active checkbox is a separate control.
- await expect(row.locator('.active-checkbox').getByRole('checkbox')).toBeChecked();
+ // The Active switch is a separate control.
+ await expect(page.getByRole('dialog').getByRole('switch',{name:`${he?'פעיל':'Active'} ${name(backend,ids.e)}`,exact:true})).toBeChecked();
 });
 
 test('engineers see the setting but cannot change it',async({page,openApp,backend})=>{
  backend.raw.members.find(m=>m.id===ids.e)!.no_weekends=true;
- await openApp('b');await page.getByRole('tab').nth(2).click();
- const row=page.locator(`.gesture-grid [data-gesture-key="${ids.e}"]`);
- await expect(row.locator('.team-name small')).toContainText('No weekends');
- await expect(row.locator('.weekend-checkbox')).toBeHidden();
+ await openApp('b');await tab(page,'Team','צוות');
+ const row=page.locator(`.team-row[data-member="${ids.e}"]`);
+ await expect(row.locator('.team-name')).toContainText('No weekends');
+ await openMember(page,ids.e);
+ await expect(page.getByRole('dialog')).toContainText('No weekends');
+ await expect(page.getByRole('switch')).toHaveCount(0);
 });
 
 async function openPlan(page:import('@playwright/test').Page,backend:import('./fixtures').Backend,openApp:(identity?:'admin')=>Promise<unknown>,lang:'en'|'he'){
@@ -47,7 +69,7 @@ async function openPlan(page:import('@playwright/test').Page,backend:import('./f
  await openApp();
  const he=lang==='he',dialog=page.getByRole('dialog');
  if(he)await switchLanguage(page, 'he');
- await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
+ await clickPlan(page);
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  return {dialog,row:dialog.locator(`.plan-row[data-engineer="${ids.e}"]`)};
 }
@@ -88,7 +110,7 @@ for(const lang of ['en','he'] as const)test(`Plan the month says before Generate
   participants.forEach((m,i)=>{m.no_weekends=i>=takers;});
   await page.reload();
   if(he)await switchLanguage(page, 'he');
-  await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
+  await clickPlan(page);
   await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
   await expect(dialog.getByRole('note').filter({hasText:takers?(he?'רק חבר אחד כאן עושה סופי שבוע':'Only one member here takes weekends'):(he?'אף אחד כאן לא עושה סופי שבוע':'No one here takes weekends')})).toBeVisible();
  }
@@ -101,7 +123,7 @@ for(const lang of ['en','he'] as const)test(`Plan the month says when the weeken
  participants.forEach((m,i)=>{m.no_weekends=i>=1;});
  await page.reload();
  if(he)await switchLanguage(page, 'he');
- await page.getByRole('button',{name:he?'יצירת שיבוץ':'Generate month',exact:true}).click();
+ await clickPlan(page);
  await expect(dialog.getByRole('button',{name:he?'אישור ושיבוץ':'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  const taker=participants[0].name,left=await dialog.locator('.allocation-row-note').filter({hasText:new RegExp(`^${he?'ללא סופי שבוע':'No weekends'}$`)}).count();
  expect(left).toBeGreaterThan(1);
@@ -154,7 +176,7 @@ for(const lang of ['en','he'] as const)test(`clearing a weekend in the editor ke
  const he=lang==='he';
  await openApp();
  if(he)await switchLanguage(page, 'he');
- await duty(page,'2026-11-06').click();
+ await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog');
  await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
  await page.getByRole('option',{name:he?'ללא שיבוץ':'Leave unassigned',exact:true}).click();
@@ -175,7 +197,7 @@ for(const lang of ['en','he'] as const)test(`placing a No weekends member on a w
  backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
  await openApp();
  if(he)await switchLanguage(page, 'he');
- await duty(page,'2026-11-06').click();
+ await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog'),save=dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true});
  await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
  const option=page.getByRole('option',{name:new RegExp(`^${who}`)});
@@ -192,7 +214,7 @@ for(const lang of ['en','he'] as const)test(`placing a No weekends member on a w
  const state=backend.calls.filter(c=>c.name==='duty_save_schedule').at(-1)!.params.p_state as {duties:{day:string;end_day:string;primary_id:string|null;manager_override:boolean}[]};
  expect(state.duties.find(d=>d.day==='2026-11-06')).toMatchObject({end_day:'2026-11-08',primary_id:ids.e,manager_override:true});
  // Reopening the same weekend asks nothing more: they are already there.
- await duty(page,'2026-11-06').click();
+ await editDuty(page,'2026-11-06');
  await expect(dialog.locator('.warning-note')).toHaveCount(0);
  await expect(save).toBeEnabled();
 });
@@ -205,7 +227,7 @@ for(const lang of ['en','he'] as const)test(`a published weekend edit to a No we
  backend.raw.assignments.filter(r=>r.day==='2026-11-06').forEach(r=>{r.primary_id=ids.a;});
  await openApp();
  if(he)await switchLanguage(page, 'he');
- await duty(page,'2026-11-06').click();
+ await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog'),review=dialog.getByRole('button',{name:he?'בדיקת השינוי':'Review change',exact:true});
  await dialog.getByRole('combobox',{name:he?'מהנדס':'Engineer',exact:true}).click();
  await page.getByRole('option',{name:new RegExp(`^${who}`)}).click();

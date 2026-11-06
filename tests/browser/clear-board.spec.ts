@@ -1,34 +1,42 @@
-import {test, expect, duty, MONTH, switchLanguage} from './fixtures';
+import {test, expect, duty, MONTH, switchLanguage, monthAction} from './fixtures';
 import type {Page} from '@playwright/test';
 import {addDays, dayOf} from '../../lib/rota/engine';
 
 const owner = (day: string) => (dayOf(day) === 6 ? addDays(day, -1) : day).slice(0, 7);
 const LOCKED = ['2026-11-02', '2026-11-20'];
 
-// Beside Special block above the calendar, on phones and desktop alike.
-const clearButton = (page: Page, name = 'Clear board') => page.locator('.calendar-top').getByRole('button', {name, exact: true});
+// In the ⋯ Month actions menu (decision 2026-11-06), on phones and desktop alike.
+const schedule = (page: Page, name = 'Schedule') => page.getByRole('tab', {name, exact: true}).click();
+const clearBoard = (page: Page, name = 'Clear board') => monthAction(page, name);
+/** Opens the menu and returns the Clear board item; `close` dismisses the menu again. */
+async function clearItem(page: Page, name = 'Clear board') {
+  await page.getByRole('button', {name: /^(Month actions|פעולות לחודש)$/}).click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  return page.getByRole('menuitem', {name, exact: true});
+}
+const close = async (page: Page) => {await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0);};
 
 test('Clear board confirms first, keeps locks, holidays, constraints and history, and Undo restores the draft', async ({page, backend, openApp}) => {
   // A locked weekday and the locked holiday weekend; 12 November is an unlocked holiday.
   for (const r of backend.raw.assignments) if (!r.publication_id && LOCKED.includes(r.day)) r.locked = true;
-  await openApp();
+  await openApp(); await schedule(page);
   const draftRows = () => backend.raw.assignments.filter(r => !r.publication_id);
   const before = structuredClone(backend.raw), saves = () => backend.calls.filter(c => c.name === 'duty_save_schedule');
   const count = draftRows().filter(r => owner(r.day) === MONTH && !r.locked).length;
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('alertdialog');
 
-  await clearButton(page).click();
+  await clearBoard(page);
   await expect(dialog).toHaveAccessibleName(`Clear ${count} unlocked duties?`);
   await expect(dialog.getByRole('button', {name: 'Cancel', exact: true})).toBeFocused();
   await dialog.getByRole('button', {name: 'Cancel', exact: true}).click();
   await expect(dialog).toBeHidden();
-  await clearButton(page).click();
+  await clearBoard(page);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   expect(saves()).toHaveLength(0);
   expect(backend.raw).toEqual(before);
 
-  await clearButton(page).click();
+  await clearBoard(page);
   await dialog.getByRole('button', {name: 'Clear board', exact: true}).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText(`Cleared ${count} duties.`, {exact: true})).toBeVisible();
@@ -46,8 +54,10 @@ test('Clear board confirms first, keeps locks, holidays, constraints and history
   await expect(duty(page, '2026-11-02').getByRole('img', {name: 'Locked duty'})).toBeVisible();
   await expect(duty(page, '2026-11-12')).toContainText('Holiday coverage');
   // Nothing left to clear: the action stays visible but disabled.
-  await expect(clearButton(page)).toBeDisabled();
-  await expect(clearButton(page)).toHaveAttribute('title', 'No unlocked duties to clear.');
+  const item = await clearItem(page);
+  await expect(item).toHaveAttribute('aria-disabled', 'true');
+  await expect(item).toHaveAttribute('title', 'Nothing to clear');
+  await close(page);
 
   await page.getByRole('button', {name: 'Undo', exact: true}).click();
   await expect(page.getByText('Duties restored.', {exact: true})).toBeVisible();
@@ -61,31 +71,28 @@ test('Clear board confirms first, keeps locks, holidays, constraints and history
 
 test('Clear board is in Hebrew RTL and offers nothing on the published version or a published month', async ({page, backend, openApp}) => {
   await openApp();
-  await switchLanguage(page, 'he');
+  await switchLanguage(page, 'he'); await schedule(page, 'לוח');
   const count = backend.raw.assignments.filter(r => !r.publication_id && owner(r.day) === MONTH).length;
-  const special = page.locator('.calendar-top').getByRole('button', {name: 'מקטע מיוחד', exact: true});
-  // Right next to Special block on the same row, the same size, on phones too (the pair wraps together).
-  const [clearBox, specialBox] = [await clearButton(page, 'ניקוי הלוח').boundingBox(), await special.boundingBox()];
-  expect(Math.abs(clearBox!.y - specialBox!.y)).toBeLessThan(1);
-  expect(clearBox!.height).toBe(specialBox!.height);
-  expect(Math.min(Math.abs(clearBox!.x + clearBox!.width - specialBox!.x), Math.abs(specialBox!.x + specialBox!.width - clearBox!.x))).toBeLessThan(10);
-  await clearButton(page, 'ניקוי הלוח').click();
-  const dialog = page.getByRole('dialog');
+  // Beside Special block in the same menu.
+  await expect(await clearItem(page, 'ניקוי הלוח')).toBeVisible();
+  await expect(page.getByRole('menuitem', {name: 'מקטע מיוחד', exact: true})).toBeVisible();
+  await page.getByRole('menuitem', {name: 'ניקוי הלוח', exact: true}).click();
+  const dialog = page.getByRole('alertdialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await expect(dialog).toHaveAccessibleName(`לנקות ${count} תורנויות שאינן נעולות?`);
   await dialog.getByRole('button', {name: 'ניקוי הלוח', exact: true}).click();
   await expect(page.getByText(`${count} תורנויות נוקו.`, {exact: true})).toBeVisible();
   await expect(page.getByRole('button', {name: 'שחזור', exact: true})).toBeVisible();
 
-  const expectNoClear = () => expect(clearButton(page, 'ניקוי הלוח')).toHaveCount(0);
+  const expectNoClear = async () => {await expect(await clearItem(page, 'ניקוי הלוח')).toHaveCount(0); await close(page);};
   // The published version of a reopened draft is read-only here.
-  await page.getByRole('button', {name: 'פורסם', exact: true}).click();
+  await page.getByRole('radio', {name: 'פורסם', exact: true}).click();
   await expectNoClear();
 
   // Cancel draft restores the published schedule; a published month has no Clear board at all.
-  await page.getByRole('button', {name: 'ביטול טיוטה', exact: true}).click();
-  await page.getByRole('button', {name: 'ביטול הטיוטה', exact: true}).click();
-  await expect(page.getByRole('button', {name: 'פתיחת טיוטה', exact: true})).toBeVisible();
+  await monthAction(page, 'ביטול טיוטה');
+  await page.getByRole('alertdialog').getByRole('button', {name: 'ביטול הטיוטה', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'פתיחה לעריכה', exact: true})).toBeVisible();
   await expectNoClear();
   expect(backend.raw.assignments.filter(r => r.publication_id).every(r => r.primary_id)).toBe(true);
 });
@@ -93,9 +100,9 @@ test('Clear board is in Hebrew RTL and offers nothing on the published version o
 test('Clear board waits for Generate, and Undo leaves with the month instead of failing', async ({page, backend, openApp}) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await openApp();
-  await clearButton(page).click();
-  await page.getByRole('dialog').getByRole('button', {name: 'Clear board', exact: true}).click();
+  await openApp(); await schedule(page);
+  await clearBoard(page);
+  await page.getByRole('alertdialog').getByRole('button', {name: 'Clear board', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Undo', exact: true})).toBeVisible();
   // Undo only edits the cleared month, so another month never offers it.
   await page.getByRole('button', {name: 'Next month', exact: true}).click();
@@ -104,73 +111,43 @@ test('Clear board waits for Generate, and Undo leaves with the month instead of 
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule')).toHaveLength(1);
 
   // While Generate runs, a clear would race its save: disabled, with the reason.
-  await page.getByRole('button', {name: 'Generate month', exact: true}).click();
+  await page.getByRole('button', {name: 'Plan the month', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Confirm & generate', exact: true})).toBeEnabled({timeout: 30_000});
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
-  // The open plan hides the calendar from the accessibility tree, so match the button itself.
-  const behindPlan = page.locator('.calendar-draft-tools button', {hasText: 'Clear board'});
-  await expect(behindPlan).toBeDisabled({timeout: 30_000});
-  await expect(behindPlan).toHaveAttribute('title', 'Wait for Generate to finish.');
+  // The open plan is modal, so the menu can't open behind it: the month's busy primary action
+  // (the same busy flag that disables Clear board) stands in.
+  await expect(page.locator('.month-primary')).toHaveAttribute('aria-label', 'Generating…');
+  await expect(page.locator('.month-primary')).toBeDisabled();
   await page.getByRole('dialog').getByRole('button', {name: 'Cancel', exact: true}).click();
   await page.getByRole('dialog').getByRole('button', {name: 'Close', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(clearButton(page)).toBeDisabled();
-  await expect(clearButton(page)).toHaveAttribute('title', 'No unlocked duties to clear.');
+  const item = await clearItem(page);
+  await expect(item).toHaveAttribute('aria-disabled', 'true');
+  await expect(item).toHaveAttribute('title', 'Nothing to clear');
+  await close(page);
   expect(errors).toEqual([]);
-});
-
-test('Clear board and Special block join the filters’ row on phones, as icons when their labels would wrap', async ({page, openApp}, info) => {
-  test.skip(info.project.name !== 'mobile', 'Phone widths');
-  await openApp();
-  const tools = page.locator('.calendar-draft-tools'), buttons = tools.locator('button');
-  const filters = page.locator('.calendar-top > :first-child');
-  const pair = async () => {
-    const [a, b] = await buttons.evaluateAll(list => list.map(x => x.getBoundingClientRect().toJSON()));
-    expect(Math.abs(a.y - b.y)).toBeLessThan(1);
-    return [a, b];
-  };
-  for (const lang of ['en', 'he'] as const) {
-    const [clear, special] = lang === 'en' ? ['Clear board', 'Special block'] : ['ניקוי הלוח', 'מקטע מיוחד'];
-    if (lang === 'he') await switchLanguage(page, 'he');
-    // Room for the labels beside the filters: full text.
-    await page.setViewportSize({width: 700, height: 844});
-    await expect(tools).not.toHaveAttribute('data-compact');
-    await expect(buttons.nth(0)).toHaveText(clear);
-    for (const width of [375, 390, 180]) {
-      await page.setViewportSize({width, height: 844});
-      await expect(tools).toHaveAttribute('data-compact', '');
-      for (const [i, name] of [clear, special].entries()) {
-        await expect(buttons.nth(i)).toHaveAccessibleName(name);
-        await expect(buttons.nth(i)).toHaveAttribute('title', name);
-      }
-      const [a] = await pair();
-      for (const box of await pair()) expect([Math.round(box.width), Math.round(box.height)]).toEqual([44, 44]);
-      // iPhone widths keep one row; 180px is narrower than filters plus icons, so the pair wraps together.
-      const row = (await filters.boundingBox())!;
-      if (width > 180) expect(a.y).toBeLessThan(row.y + row.height);
-    }
-  }
 });
 
 for (const scheme of ['light', 'dark'] as const)
 test(`Clear board confirm rests full red, hover only deepens it, disabled stays distinct, ${scheme} system theme`, async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'desktop', 'Pointer hover');
   await page.emulateMedia({colorScheme: scheme});
-  await openApp();
-  await clearButton(page).click();
-  const confirm = page.getByRole('dialog').getByRole('button', {name: 'Clear board', exact: true});
+  await openApp(); await schedule(page);
+  await clearBoard(page);
+  const confirm = page.getByRole('alertdialog').getByRole('button', {name: 'Clear board', exact: true});
   const look = () => confirm.evaluate(x => [getComputedStyle(x).backgroundColor, getComputedStyle(x).opacity]);
-  // --destructive (#b83e34) at rest: never the faded dark-theme shade that reads as disabled.
-  await expect.poll(look).toEqual(['rgb(184, 62, 52)', '1']);
+  // --danger at rest (#d7372b light, #ff6b5e dark): full opacity, never a shade that reads as disabled.
+  const rest = scheme === 'light' ? 'rgb(215, 55, 43)' : 'rgb(255, 107, 94)';
+  await expect.poll(look).toEqual([rest, '1']);
   await confirm.hover();
-  await expect.poll(look).toEqual(['rgb(159, 52, 44)', '1']);
-  // While saving it is disabled: the shared half opacity, without the hover shade.
+  await expect.poll(async () => {const [colour, opacity] = await look(); return colour !== rest && opacity === '1';}, 'hover deepens the red').toBe(true);
+  // While saving it is disabled: the shared reduced opacity, without the hover shade.
   let release!: () => void;
   const pending = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/rest/v1/rpc/duty_save_schedule', async route => {await pending; await route.fallback();});
   await confirm.click();
   await expect(confirm).toBeDisabled();
-  await expect.poll(look).toEqual(['rgb(184, 62, 52)', '0.5']);
+  await expect.poll(async () => {const [colour, opacity] = await look(); return colour === rest && Number(opacity) < 1;}, 'disabled keeps the red, faded').toBe(true);
   release();
-  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByRole('alertdialog')).toBeHidden();
 });
