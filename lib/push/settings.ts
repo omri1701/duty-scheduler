@@ -10,7 +10,6 @@ export type Switch = typeof SWITCHES[number];
 
 // Reminder times are quarter hours: the scheduler runs every 15 minutes (decision 2026-11-06).
 export const validTime = (value: unknown): value is string => typeof value === 'string' && /^([01]\d|2[0-3]):(00|15|30|45)$/.test(value);
-export const QUARTER_HOURS: readonly string[] = Array.from({length: 96}, (_, i) => `${String(Math.floor(i / 4)).padStart(2, '0')}:${String(i % 4 * 15).padStart(2, '0')}`);
 
 /** Validates the RPC's JSON; throws a user-facing message when it isn't that shape. */
 export function readNotificationState(value: unknown): NotificationState {

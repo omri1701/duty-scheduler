@@ -78,6 +78,8 @@ export class Backend {
   /** Personal settings and devices (duty_notification_settings, duty_push_subscriptions). */
   notificationSettings = new Map<string, NotificationSettings>();
   devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
+  /** The next N duty_set_notification_settings calls fail (nothing saved). */
+  failNotificationSettings = 0;
   /** Languages saved through duty_set_language. Served back by duty_load only when
    * persistLanguage is set, so older specs that switch language and reload keep English. */
   languages = new Map<string, 'en' | 'he'>();
@@ -140,6 +142,7 @@ export class Backend {
     const settingsState = () => ({...(this.notificationSettings.get(user) ?? DEFAULT_SETTINGS), devices: this.devices.filter(d => d.member === user).length});
     if (name === 'duty_notification_settings') return settingsState();
     if (name === 'duty_set_notification_settings') {
+      if (this.failNotificationSettings > 0) {this.failNotificationSettings--; throw Error('Synthetic stale notification settings: not saved.');}
       const next = p.p_settings as NotificationSettings;
       expect(Object.keys(next).sort()).toEqual([...SWITCHES, 'eveningTime', 'morningTime'].sort());
       expect(SWITCHES.every(key => typeof next[key] === 'boolean') && validTime(next.eveningTime) && validTime(next.morningTime)).toBe(true);

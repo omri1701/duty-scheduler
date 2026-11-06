@@ -50,6 +50,7 @@ export const SPEC_MAP = {
   'components/rota/settings-calendar.tsx': [...settings, 'calendar-subscription'],
   'components/rota/settings-notifications.tsx': settings,
   'components/rota/settings-screen.tsx': settings,
+  'components/rota/time-wheel.tsx': settings,
   'components/rota/swap-requests.tsx': ['swaps', 'calendar-controls'],
   'components/rota/team-list.tsx': team,
   'components/rota/temporary-member-dialog.tsx': team,

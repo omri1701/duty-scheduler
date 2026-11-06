@@ -318,4 +318,15 @@ for (const lang of ['en', 'he']) test(`settings screen ${lang}`, async ({page, o
   await enable.click();
   await expect(sheet.getByRole('button', {name: lang === 'en' ? 'Turn off on this device' : 'כיבוי במכשיר הזה'})).toBeEnabled();
   await snapshot(page, `settings-enabled-${lang}`);
+  // The reminder-time wheels open under their row (decision 2026-11-06), in light and dark mode.
+  const evening = sheet.getByRole('button', {name: lang === 'en' ? /^Evening before my duty · time/ : /^ערב לפני התורנות · שעה/});
+  await evening.click();
+  const wheels = sheet.locator('.time-wheels');
+  await expect(wheels.getByRole('spinbutton').first()).toHaveAttribute('aria-valuenow', '18');
+  await wheels.evaluate(el => el.scrollIntoView({block: 'center'}));
+  await expect.poll(() => wheels.locator('.time-wheel').first().evaluate(el => el.scrollTop)).toBe(18 * 44);
+  await snapshot(page, `settings-wheel-${lang}`);
+  await page.emulateMedia({colorScheme: 'dark'});
+  await snapshot(page, `settings-wheel-dark-${lang}`);
+  await page.emulateMedia({colorScheme: 'light'});
 });

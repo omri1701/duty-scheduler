@@ -114,28 +114,67 @@ for (const [name, setup, reason] of [
   await expect.poll(() => backend.notificationSettings.get(ids.a)?.swaps).toBe(false);
 });
 
-test('switches and reminder times save for the member; admins also see new members', async ({page, openApp, backend}) => {
+test('switches and reminder-time wheels save for the member; admins also see new members', async ({page, openApp, backend}) => {
   await openApp('a');
   await page.getByRole('button', {name: 'Settings', exact: true}).click();
   let sheet = settings(page);
   await expect(sheet.getByRole('checkbox', {name: /New member waiting/})).toHaveCount(0);
-  const morning = sheet.getByRole('checkbox', {name: /Morning of my duty/}), morningTime = sheet.getByLabel('Morning of my duty · time');
-  await expect(morning).toBeChecked();
-  await expect(morningTime).toHaveValue('08:30');
-  await morning.click();
-  await expect.poll(() => backend.notificationSettings.get(ids.a)?.morning).toBe(false);
-  await expect(morningTime).toBeDisabled();
-  const evening = sheet.getByLabel('Evening before my duty · time');
-  // Quarter hours only: the clock runs every 15 minutes.
-  await expect(evening.locator('option')).toHaveCount(96);
-  await expect(evening.locator('option[value="20:10"]')).toHaveCount(0);
-  await evening.selectOption('20:15');
+  const evening = sheet.getByRole('button', {name: /^Evening before my duty · time/}), morning = sheet.getByRole('button', {name: /^Morning of my duty · time/});
+  await expect(evening).toHaveText('18:00');
+  await expect(morning).toHaveText('08:30');
+  // Tapping a row opens its wheels under it; only one is open at a time.
+  await evening.click();
+  await expect(evening).toHaveAttribute('aria-expanded', 'true');
+  const wheels = sheet.getByRole('group', {name: 'Evening before my duty · time'});
+  await expect(wheels).toHaveAttribute('dir', 'ltr');
+  const hour = wheels.getByRole('spinbutton', {name: 'Hour · Evening before my duty'}), minute = wheels.getByRole('spinbutton', {name: 'Minutes · Evening before my duty'});
+  await expect(hour).toHaveAttribute('aria-valuenow', '18');
+  await expect(minute).toHaveAttribute('aria-valuenow', '0');
+  // The wheels offer every hour and only the quarter hours the 15-minute clock keeps.
+  await expect(hour.locator('.time-wheel-item')).toHaveCount(24);
+  await expect(minute.locator('.time-wheel-item')).toHaveText(['00', '15', '30', '45']);
+  // Clicking an item scrolls it to the centre; it saves once the wheel settles, then says so.
+  await hour.locator('.time-wheel-item', {hasText: /^20$/}).click();
+  await expect.poll(() => backend.notificationSettings.get(ids.a)?.eveningTime).toBe('20:00');
+  await expect(sheet.getByRole('status').filter({hasText: 'Saved'})).toBeVisible();
+  await expect(evening).toHaveText('20:00');
+  await expect(hour).toHaveAttribute('aria-valuenow', '20');
+  // Keyboard: Up steps a wheel, End jumps to its last item.
+  await minute.focus();
+  await page.keyboard.press('ArrowUp');
   await expect.poll(() => backend.notificationSettings.get(ids.a)?.eveningTime).toBe('20:15');
+  await page.keyboard.press('End');
+  await expect.poll(() => backend.notificationSettings.get(ids.a)?.eveningTime).toBe('20:45');
+  // A touch-like flick: native scrolling that snaps to a row.
+  await hour.evaluate(el => el.scrollTo({top: 21 * 44 + 10}));
+  await expect.poll(() => backend.notificationSettings.get(ids.a)?.eveningTime).toBe('21:45');
+  await expect.poll(() => hour.evaluate(el => el.scrollTop)).toBe(21 * 44);
+  // A mouse wheel moves it too.
+  await hour.hover();
+  await page.mouse.wheel(0, 120);
+  await expect.poll(() => Number(backend.notificationSettings.get(ids.a)?.eveningTime.slice(0, 2))).toBeGreaterThan(21);
+  // Opening another row closes this one; Esc closes the wheels but not the sheet.
+  await morning.click();
+  await expect(evening).toHaveAttribute('aria-expanded', 'false');
+  await expect(sheet.getByRole('group', {name: 'Evening before my duty · time'})).toHaveCount(0);
+  await expect(sheet.getByRole('group', {name: 'Morning of my duty · time'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet.getByRole('group', {name: 'Morning of my duty · time'})).toHaveCount(0);
+  await expect(sheet).toBeVisible();
+  await expect(morning).toBeFocused();
+  // Tapping the open row again closes it; a switched-off reminder has no time to pick.
+  await morning.click();
+  await morning.click();
+  await expect(morning).toHaveAttribute('aria-expanded', 'false');
+  await sheet.getByRole('checkbox', {name: /Morning of my duty/}).click();
+  await expect.poll(() => backend.notificationSettings.get(ids.a)?.morning).toBe(false);
+  await expect(morning).toBeDisabled();
   // Reopening reads the saved choices back.
+  const savedEvening = backend.notificationSettings.get(ids.a)!.eveningTime;
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name: 'Settings', exact: true}).click();
   sheet = settings(page);
-  await expect(sheet.getByLabel('Evening before my duty · time')).toHaveValue('20:15');
+  await expect(sheet.getByRole('button', {name: /^Evening before my duty · time/})).toHaveText(savedEvening);
   await expect(sheet.getByRole('checkbox', {name: /Morning of my duty/})).not.toBeChecked();
   expect(backend.calls.filter(c => c.name === 'duty_set_notification_settings').every(c => c.user === ids.a && !('p_revision' in c.params))).toBe(true);
   await page.keyboard.press('Escape');
@@ -144,6 +183,31 @@ test('switches and reminder times save for the member; admins also see new membe
   await page.getByRole('button', {name: 'Settings', exact: true}).click();
   await settings(page).getByRole('checkbox', {name: /New member waiting/}).click();
   await expect.poll(() => backend.notificationSettings.get(ids.admin)?.members).toBe(false);
+});
+
+test('Hebrew wheels stay left to right; a failed save puts the time back and says so', async ({page, openApp, backend}) => {
+  await openApp('a');
+  await switchLanguage(page, 'he');
+  await page.getByRole('button', {name: 'הגדרות', exact: true}).click();
+  const sheet = settings(page);
+  await expect(sheet).toHaveAttribute('dir', 'rtl');
+  const evening = sheet.getByRole('button', {name: /^ערב לפני התורנות · שעה/});
+  await evening.click();
+  const wheels = sheet.getByRole('group', {name: 'ערב לפני התורנות · שעה'});
+  await expect(wheels).toHaveAttribute('dir', 'ltr');
+  const hour = wheels.getByRole('spinbutton', {name: 'שעה · ערב לפני התורנות'});
+  await expect(wheels.getByRole('spinbutton', {name: 'דקות · ערב לפני התורנות'})).toBeVisible();
+  // Hours on the left, minutes on the right, even in Hebrew.
+  const [h, m] = await Promise.all([hour.boundingBox(), wheels.getByRole('spinbutton', {name: 'דקות · ערב לפני התורנות'}).boundingBox()]);
+  expect(h!.x).toBeLessThan(m!.x);
+  backend.failNotificationSettings = 1;
+  await hour.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(sheet.getByRole('alert')).toContainText('השעה לא נשמרה ולכן חזרה ל־18:00.');
+  await expect(evening).toHaveText('18:00');
+  await expect(hour).toHaveAttribute('aria-valuenow', '18');
+  await expect.poll(() => hour.evaluate(el => el.scrollTop)).toBe(18 * 44);
+  expect(backend.notificationSettings.get(ids.a)?.eveningTime ?? '18:00').toBe('18:00');
 });
 
 test('signing out in settings forgets this device first', async ({page, openApp, backend}) => {

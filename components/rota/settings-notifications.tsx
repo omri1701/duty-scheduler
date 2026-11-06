@@ -1,13 +1,16 @@
 'use client';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
 import {BellRing, BellOff} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {getVapidPublicKey} from '@/lib/supabase/client';
 import {currentSubscription, describe, disablePush, enablePush, pushStatus, type PushStatus} from '@/lib/push/browser';
-import {QUARTER_HOURS, type NotificationSettings, type NotificationState, type Switch} from '@/lib/push/settings';
+import type {NotificationSettings, NotificationState, Switch} from '@/lib/push/settings';
+import {TimeWheels} from './time-wheel';
 import {userMessage} from '@/lib/messages';
+
+type TimeKey = 'eveningTime' | 'morningTime';
 
 /** Notifications in the settings screen (decision 2026-11-06): this device's web push
  * subscription and the member's own switches and reminder times (Israel time). */
@@ -17,6 +20,28 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   const [settings, setSettings] = useState<NotificationState | null>(null);
   const [loadError, setLoadError] = useState(''), [error, setError] = useState(''), [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'enable' | 'disable' | 'save'>('');
+  // Reminder times (decision 2026-11-06): one row's wheels open at a time; a settled wheel saves
+  // after a short pause (hour and minute together), shows "Saved", and puts the time back on failure.
+  const [openTime, setOpenTime] = useState<TimeKey | null>(null), [savedTime, setSavedTime] = useState<TimeKey | null>(null);
+  const settingsRef = useRef<NotificationState | null>(null), timeBase = useRef<NotificationState | null>(null), timeTimer = useRef(0), timeSeq = useRef(0);
+  useEffect(() => {settingsRef.current = settings;});
+  useEffect(() => () => window.clearTimeout(timeTimer.current), []);
+  useEffect(() => {
+    if (!savedTime) return;
+    const timer = window.setTimeout(() => setSavedTime(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [savedTime]);
+  // Esc closes the open wheels; the settings sheet stays open (settings-screen.tsx).
+  useEffect(() => {
+    if (!openTime) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpenTime(null);
+      document.getElementById(`settings-${openTime}-button`)?.focus();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [openTime]);
   const readOnly = remote.readOnly, personal = remote.personal, vapid = useRef<string | null>(null);
   const [wasOpen, setWasOpen] = useState(false);
   // Each opening starts without the last visit's messages.
@@ -55,6 +80,29 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
       setSettings(saved);
     } catch (e) {setSettings(previous); setError(say(e));}
     finally {setBusy('');}
+  }
+  function queueTime(key: TimeKey, value: string) {
+    const current = settingsRef.current;
+    if (!current || current[key] === value) return;
+    if (!timeBase.current) timeBase.current = current;
+    const next = {...current, [key]: value};
+    settingsRef.current = next; setSettings(next); setSavedTime(null); setError(''); setNote('');
+    const seq = ++timeSeq.current;
+    window.clearTimeout(timeTimer.current);
+    timeTimer.current = window.setTimeout(async () => {
+      const base = timeBase.current ?? current;
+      timeBase.current = null;
+      setBusy('save');
+      try {
+        const saved = await personal.saveNotificationSettings(next);
+        if (seq === timeSeq.current) {setSettings(saved); setSavedTime(key);}
+      } catch (e) {
+        if (seq === timeSeq.current) {
+          setSettings(base);
+          setError(t(`The time wasn’t saved, so it is back to ${base[key]}.`, `השעה לא נשמרה ולכן חזרה ל־${base[key]}.`) + ' ' + say(e));
+        }
+      } finally {setBusy('');}
+    }, 600);
   }
   async function enable() {
     if (!vapid.current) return;
@@ -116,19 +164,26 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     {loadError && <p className="warning-note" role="alert">{loadError} <Button variant="ghost" size="sm" onClick={() => void load()}>{t('Try again', 'ניסיון נוסף')}</Button></p>}
     {!readOnly && <fieldset className="settings-switches" disabled={!settings}>
       <legend>{t('Notify me about', 'להודיע לי על')}</legend>
-      {rows.map(row => <div className="settings-switch" key={row.key}>
-        <label className="check-label">
-          <Checkbox disabled={locked} checked={settings?.[row.key] ?? false} onCheckedChange={value => void save({[row.key]: value === true})}/>
-          <span><strong>{row.label}</strong><small>{row.help}{row.time && ':'}</small></span>
-        </label>
-        {/* 15-minute steps: the scheduler runs every quarter hour (decision 2026-11-06). */}
-        {row.time && <select className="settings-time" dir="ltr" aria-label={`${row.label} · ${t('time', 'שעה')}`}
-          disabled={locked || !settings?.[row.key]} value={settings?.[row.time] ?? ''}
-          onChange={e => void save({[row.time!]: e.target.value})}>
-          {!settings && <option value=""/>}
-          {QUARTER_HOURS.map(time => <option key={time} value={time}>{time}</option>)}
-        </select>}
-      </div>)}
+      {rows.map(row => {
+        const time = row.time, on = !!settings?.[row.key], expanded = !!time && openTime === time && on;
+        return <Fragment key={row.key}>
+          <div className="settings-switch">
+            <label className="check-label">
+              <Checkbox disabled={locked} checked={on} onCheckedChange={value => void save({[row.key]: value === true})}/>
+              <span><strong>{row.label}</strong><small>{row.help}{time && ':'}</small></span>
+            </label>
+            {time && <div className="settings-time-cell">
+              {savedTime === time && <span className="settings-saved" role="status">{t('Saved', 'נשמר')}</span>}
+              {/* Quarter hours: the scheduler runs every 15 minutes (decision 2026-11-06). */}
+              <button type="button" id={`settings-${time}-button`} className="settings-time" dir="ltr" disabled={!settings || !on}
+                aria-label={`${row.label} · ${t('time', 'שעה')} ${settings?.[time] ?? ''}`} aria-expanded={expanded} aria-controls={`settings-${time}-wheels`}
+                onClick={() => setOpenTime(expanded ? null : time)}>{settings?.[time] ?? '––:––'}</button>
+            </div>}
+          </div>
+          {time && expanded && settings && <TimeWheels id={`settings-${time}-wheels`} value={settings[time]} onChange={value => queueTime(time, value)}
+            labels={{group: `${row.label} · ${t('time', 'שעה')}`, hour: `${t('Hour', 'שעה')} · ${row.label}`, minute: `${t('Minutes', 'דקות')} · ${row.label}`}}/>}
+        </Fragment>;
+      })}
       <p className="muted-copy">{t('Times are Israel time. These choices apply to all your devices.', 'השעות לפי שעון ישראל. הבחירות חלות על כל המכשירים שלך.')}</p>
     </fieldset>}
     {error && <p className="warning-note" role="alert">{error}</p>}

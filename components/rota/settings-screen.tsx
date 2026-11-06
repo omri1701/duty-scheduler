@@ -37,7 +37,9 @@ export function SettingsScreen({remote, open, onOpenChange, lang, setLang}: {rem
     <DialogContent className="settings-sheet" dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={leaving}
       // Focus the sheet itself, not the name field: on a phone that would open the keyboard.
       onOpenAutoFocus={event => {event.preventDefault(); (event.currentTarget as HTMLElement | null)?.focus();}}
-      onCloseAutoFocus={event => {event.preventDefault(); document.querySelector<HTMLButtonElement>('[data-settings-button]')?.focus();}}>
+      onCloseAutoFocus={event => {event.preventDefault(); document.querySelector<HTMLButtonElement>('[data-settings-button]')?.focus();}}
+      // Esc first closes an open reminder-time picker (settings-notifications.tsx), not the sheet.
+      onEscapeKeyDown={event => {if (document.querySelector('.settings-sheet .time-wheels')) event.preventDefault();}}>
       <DialogHeader><DialogTitle>{t('Settings', 'הגדרות')}</DialogTitle><DialogDescription>{remote.me?.email}</DialogDescription></DialogHeader>
       <section className="settings-section" aria-labelledby="settings-profile-title">
         <h3 id="settings-profile-title">{t('Profile', 'פרופיל')}</h3>
