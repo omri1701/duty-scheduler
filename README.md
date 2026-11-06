@@ -247,7 +247,8 @@ Quality CI runs this same command with two workers per runner, a single retry, p
 caching and failure traces/reports. Checks are tiered by the PR diff:
 
 - PRs always run unit tests, `tsc`, lint and the build. Mapped UI/library changes
-  add only their browser specs plus `baseline` and `visual` (about 4 minutes).
+  add only their browser specs plus `baseline` and `visual`, run through the same eight
+  duration-balanced browser shards (shards with no selected tests pass at once).
 - PRs touching `supabase/**`, `lib/supabase/**` or SQL also run the disposable
   database job in parallel (about 5 minutes).
 - Unknown or global paths (package/lockfile, configs, `app/globals.css`, shared

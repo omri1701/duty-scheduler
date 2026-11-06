@@ -1,6 +1,7 @@
 // Deterministic, duration-balanced browser shards. Playwright's own --shard keeps heavy
 // spec files together, so CI selects tests by file:line instead (every line goes to
-// exactly one shard). Usage: node scripts/browser-shard.mjs <shard> <total>
+// exactly one shard). Usage: node scripts/browser-shard.mjs <shard> <total> [tests/browser/x.spec.ts ...]
+//        (optional spec files limit the run to those files; output is empty for an empty shard)
 //        node scripts/browser-shard.mjs --update <playwright-json-report>   (refresh weights)
 import {spawnSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
@@ -45,6 +46,17 @@ export function assign(list, total) {
   return shards;
 }
 
+const SPEC = /^tests\/browser\/[A-Za-z0-9_-]+\.spec\.ts$/;
+
+// Keys (file:line) of one shard. With a spec filter only those files take part, still balanced
+// by duration across all shards; a shard may end up empty.
+export function shardKeys(tests, weights, shard, total, specs = []) {
+  for (const spec of specs) if (!SPEC.test(spec)) throw Error(`Invalid spec path: ${spec}`);
+  const wanted = new Set(specs);
+  const scoped = wanted.size ? tests.filter(test => wanted.has(`tests/browser/${test.file}`)) : tests;
+  return assign(units(scoped, weights), total)[shard - 1].keys.sort();
+}
+
 function listTests() {
   const result = spawnSync('pnpm', ['exec', 'playwright', 'test', '--list', '--reporter=json'], {cwd: root, encoding: 'utf8', maxBuffer: 1 << 28, shell: process.platform === 'win32', env: {...process.env, DUTY_E2E_URL: process.env.DUTY_E2E_URL ?? 'http://127.0.0.1:1'}});
   if (result.status !== 0) throw Error(`playwright --list failed: ${result.stderr}`);
@@ -63,7 +75,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const shard = Number(process.argv[2]), total = Number(process.argv[3]);
     if (!Number.isInteger(shard) || !Number.isInteger(total) || shard < 1 || shard > total) throw Error('Usage: browser-shard.mjs <shard> <total>');
     const weights = JSON.parse(readFileSync(weightsPath, 'utf8'));
-    const chosen = assign(units(listTests(), weights), total)[shard - 1].keys.sort();
-    console.log(chosen.map(key => `tests/browser/${key}`).join('\n'));
+    const chosen = shardKeys(listTests(), weights, shard, total, process.argv.slice(4));
+    if (chosen.length) console.log(chosen.map(key => `tests/browser/${key}`).join('\n')); // Empty output = nothing to run.
   }
 }
