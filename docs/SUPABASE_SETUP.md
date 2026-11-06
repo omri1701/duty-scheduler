@@ -78,6 +78,33 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 node supabase/tests/generation.mjs supabase_db_duty-scheduler
 ```
 
+## Personal calendar feed
+
+Migration `20261106013149_calendar_feed.sql` adds `duty_calendar_feeds` (one row per member:
+SHA-256 `token_hash`, `language`, `created_at`; RLS lets a member read only their own row; no
+client writes) and four checked RPCs. `duty_calendar_reset(p_language)` creates or replaces the
+caller's token (approved active members only, no workspace revision: it is personal) and returns
+the raw 64-hex token once; `duty_calendar_status()` and `duty_calendar_language(p_language)` read
+and update the caller's own row. `duty_calendar_feed(p_token)` is the **only** application
+function the anonymous role may execute: the `/api/calendar/<token>.ics` route handler calls it
+with the publishable key, never a service-role key. It hashes the token itself (a stored hash
+opens nothing) and returns only that member's own current published duties (primary or emergency
+cover, 92 days back to 400 days ahead of today in Israel, never constraints, notes, names or
+member IDs), or NULL for an unknown, reset, inactive, declined or temporary member. For that,
+`anon` gets USAGE on `duty_private`; `tests/schema.sql` fails if `anon` can execute any other
+application function. Focused checks (empty disposable LOCAL database only):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/calendar-feed.sql
+node --test tests/calendar-feed.test.mjs
+```
+
+The route answers `private, max-age=60` with an ETag (304 when unchanged) and asks calendar apps to refresh every 15 minutes (Apple honours it; Google refreshes on its own schedule), `no-store` 404s,
+a per-instance limit of 30 requests per feed per 5 minutes (429) and 503 when the database is
+unreachable. Hosted feeds need the deployment to be reachable without Vercel Authentication:
+calendar servers cannot pass it, so a protected Development deployment cannot serve feeds.
+
 ## Unmerged migrations in local development
 
 `pnpm start:dev` connects to hosted **DEV**; it does not apply branch migrations there.

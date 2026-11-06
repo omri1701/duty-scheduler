@@ -35,12 +35,15 @@ export type Functions = {
   duty_edit_returns: Operation<{p_publication: string; p_day: string}, unknown>;
   duty_resolve_swap: Operation<Revision & {p_request: string; p_action: 'accept' | 'decline' | 'approve' | 'reject' | 'cancel'; p_override_reason: string}, string>;
   duty_review_member: Operation<Revision & {p_member: string; p_status: 'approved' | 'rejected'}>;
+  duty_calendar_status: Operation<Record<string, never>, unknown>;
+  duty_calendar_reset: Operation<{p_language: 'en' | 'he'}, unknown>;
+  duty_calendar_language: Operation<{p_language: 'en' | 'he'}>;
   duty_edit_published_duty: Operation<Revision & {p_publication: string; p_day: string; p_primary: string; p_extra_points: number;
     p_saturday_extra_points: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number}>;
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;
-export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_swap_availability' | 'duty_edit_returns' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation'>;
+export type MutationName = Exclude<keyof Functions, 'duty_load' | 'duty_balance' | 'duty_replanned_versions' | 'duty_swap_availability' | 'duty_edit_returns' | 'duty_join' | 'duty_generation_context' | 'duty_confirm_allocation' | 'duty_save_generation' | 'duty_calendar_status' | 'duty_calendar_reset' | 'duty_calendar_language'>;
 export type MutationArgs<N extends MutationName> = Omit<Functions[N]['Args'], 'p_revision'>;
 
 export function errorMessage(error: unknown, fallback: string): string {

@@ -226,3 +226,31 @@ GRANT EXECUTE ON FUNCTION duty_private.set_no_weekends(uuid, boolean, bigint) TO
 
 REVOKE ALL ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) TO authenticated;
+
+-- Personal calendar feed (decision 2026-11-06). The feed lookup is the only application
+-- function the anonymous role may execute: calendar apps cannot sign in, so the route
+-- handler calls it with the publishable key and the URL's raw token. The rest are the
+-- caller's own create/reset, status and language, for signed-in approved members.
+REVOKE ALL ON FUNCTION duty_private.calendar_feed(p_token text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_feed(p_token text) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_feed(p_token text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_feed(p_token text) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_reset(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_reset(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_reset(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_reset(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_status() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_status() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_status() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_status() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_language(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_language(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_language(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_language(p_language text) TO authenticated;

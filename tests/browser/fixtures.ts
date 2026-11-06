@@ -68,6 +68,9 @@ export class Backend {
   sourcePublication: string | null = null;
   replanBlocked: string | null | undefined = undefined;
   oauthRequests: URL[] = [];
+  /** Personal calendar feeds by member, as duty_calendar_status returns them; resets counts tokens made. */
+  calendars = new Map<string, {createdAt: string; language: 'en' | 'he'}>();
+  calendarResets = 0;
   generationEnvelope(month: string) {
     const state = fromSnapshot(this.raw, ids.admin);
     const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
@@ -135,6 +138,18 @@ export class Backend {
       const inside = (d: DutyRow, day: string) => day >= d.day && day < d.end_day;
       return this.raw.constraints.filter(c => c.kind === 'no' && (([b.primary_id, a.secondary_id].includes(c.member_id) && inside(a, c.day)) ||
         ([a.primary_id, b.secondary_id].includes(c.member_id) && inside(b, c.day)))).map(c => ({member: manager || [a.primary_id, b.primary_id].includes(c.member_id) ? c.member_id : null, day: c.day}));
+    }
+    if (name === 'duty_calendar_status' || name === 'duty_calendar_reset' || name === 'duty_calendar_language') {
+      // Mirrors duty_private.calendar_*: own feed only, approved active members, never the hash.
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('calendar-member-required');
+      if (name === 'duty_calendar_status') return this.calendars.get(user) ?? null;
+      expect(['en', 'he']).toContain(p.p_language);
+      const language = p.p_language as 'en' | 'he';
+      if (name === 'duty_calendar_language') {const feed = this.calendars.get(user); if (feed) feed.language = language; return null;}
+      const createdAt = new Date(Date.parse(NOW) + ++this.calendarResets * 1000).toISOString();
+      this.calendars.set(user, {createdAt, language});
+      return {token: this.calendarResets.toString(16).padStart(64, 'c'), createdAt, language};
     }
     expect(p.p_revision).toBe(this.raw.revision);
     const admin = canManage(this.raw, user);
