@@ -17,6 +17,7 @@ import {balance as readBalance} from '@/lib/supabase/balance';
 import type {PublishedEdit} from '@/lib/supabase/published-edit';
 import {swapAvailability} from '@/lib/supabase/swaps';
 import {replannedVersions} from '@/lib/supabase/versions';
+import {forgetCalendarLinks} from '@/lib/supabase/calendar';
 
 export function useTeamWorkspace(){
  const [environment,setEnvironment]=useState<Environment|null>(null);
@@ -69,7 +70,7 @@ export function useTeamWorkspace(){
   async signIn(){try{setError('');await signInWithGoogle()}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async signInLocal(email:string,password:string){try{setError('');await signInLocally(email,password)}catch(e){setError(errorMessage(e,'Could not sign in. Please try again.'))}},
   async completeInspection(returnUrl:string){try{setError('');await completeInspectionLogin(returnUrl)}catch{setError('Could not complete inspection login. Start Google sign-in again.')}},
-  async signOut(){if(client){try{const {error}=await signOutSafely(client);if(error)setError(error.message)}catch(e){setError(errorMessage(e,'Could not sign out. Please try again.'))}}},
+  async signOut(){forgetCalendarLinks();if(client){try{const {error}=await signOutSafely(client);if(error)setError(error.message)}catch(e){setError(errorMessage(e,'Could not sign out. Please try again.'))}}},
   save:(s:State,publish?:string,month?:string,reviewedLocks?:string[])=>workspace.mutate('duty_save_schedule',{p_state:schedulePayload(s,month??publish,!!publish,reviewedLocks),p_publish:publish??null}).then(()=>{}),
   constraints:(person:string,days:string[],kind:string,note:string)=>workspace.mutate('duty_set_constraints',{p_member:person,p_days:days,p_kind:kind,p_note:note}).then(()=>{}),
   rename:(name:string)=>workspace.mutate('duty_rename_self',{p_name:name}).then(()=>{}),
