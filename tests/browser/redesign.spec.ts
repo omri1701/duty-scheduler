@@ -261,22 +261,26 @@ for (const lang of ['en', 'he'] as const) {
     await expect(page.getByRole('dialog', {name: t('Publish?', 'לפרסם?')})).toBeVisible();
     await both(page, `publish-${lang}`);
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
     await monthAction(page, t('Cancel draft', 'ביטול טיוטה'));
     await expect(page.getByRole('alertdialog')).toBeVisible();
     await both(page, `cancel-draft-${lang}`);
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('alertdialog')).toBeHidden();
     await monthAction(page, t('Constraints deadline', 'מועד אחרון לאילוצים'));
     await expect(page.getByRole('dialog')).toBeVisible();
     await both(page, `deadline-${lang}`);
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
     await monthAction(page, t('Versions', 'גרסאות'));
     await page.getByRole('dialog').getByRole('button', {name: t('Delete version', 'מחיקת גרסה'), exact: true}).click();
     await expect(page.getByRole('dialog').getByRole('button', {name: t('Confirm', 'אישור'), exact: true})).toBeVisible();
     await both(page, `versions-delete-${lang}`);
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
     await tab(page, t('Team', 'צוות')).click();
     await page.getByRole('button', {name: t('Add temporary', 'הוספת זמני'), exact: true}).click();
-    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(page.getByRole('dialog', {name: t('Add temporary member', 'הוספת חבר זמני')})).toBeVisible();
     await both(page, `temporary-member-${lang}`);
   });
 

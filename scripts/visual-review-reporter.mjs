@@ -46,6 +46,8 @@ export default class VisualReviewReporter {
     this.finalStatuses.set(test.id,result.status);
     try {
       const project=test.parent.project(),snapshots=join(this.root,'tests','browser','snapshots');
+      // No reference may exist yet (every screen changed): the directory is created, never assumed.
+      mkdirSync(snapshots,{recursive:true});
       inside(this.root,snapshots);
       for(const actual of result.attachments.filter(a=>a.name.endsWith('-actual.png')&&a.path)){
         const name=actual.name.replace(/-actual\.png$/,'.png');
