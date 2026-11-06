@@ -199,8 +199,8 @@ textarea{resize:vertical;min-height:76px}
 .skel *{visibility:hidden}
 /* Placeholders shimmer: a soft highlight sweeps across (transform only); geometry never changes. */
 .skel{position:relative;overflow:hidden}
-.skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--shimmer) 50%,transparent);pointer-events:none}
-@media(prefers-reduced-motion:no-preference){.skel::after{animation:placeholder-shimmer 1.4s ease-in-out infinite}@keyframes placeholder-shimmer{to{transform:translateX(100%)}}}
+.skel:not(.skel-text)::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--shimmer) 50%,transparent);pointer-events:none}
+@media(prefers-reduced-motion:no-preference){.skel:not(.skel-text)::after{animation:placeholder-shimmer 1.4s ease-in-out infinite}@keyframes placeholder-shimmer{to{transform:translateX(100%)}}}
 .switch{position:relative;width:51px;height:31px;border-radius:999px;background:var(--line-strong);transition:background var(--dur) var(--ease);flex-shrink:0}
 .switch[data-state=checked]{background:var(--ok)}
 .switch:disabled{opacity:.5}
@@ -634,7 +634,9 @@ textarea{resize:vertical;min-height:76px}
 .order-buttons{display:none}
 @media(max-width:600px){
  .team-row-inner{gap:8px;padding:10px 12px 10px 2px;min-height:64px}
- .team-grip,.team-rank{min-width:34px}
+ .team-rank{min-width:34px}
+ /* A 44px touch target that still takes only 34px of the row. */
+ .team-grip{min-width:44px;margin-inline:-5px}
  .team-points{min-width:38px}
  .team-points strong{font-size:15px}
  .team-points span{font-size:9.5px}
@@ -840,7 +842,7 @@ textarea{resize:vertical;min-height:76px}
  .side-toggle:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
  .side-toggle svg{width:20px;height:20px;flex-shrink:0;transition:transform 260ms var(--ease)}
  [dir=rtl] .side-toggle svg{transform:rotate(180deg)}
- :root:not([data-sidebar=collapsed]) .side-item .navigation-label,:root:not([data-sidebar=collapsed]) .side-toggle .navigation-label{animation:label-in 220ms 60ms var(--ease) both}
+ :root:not([data-sidebar=collapsed]) .app-shell:not(.startup-skeleton) .side-item .navigation-label,:root:not([data-sidebar=collapsed]) .side-toggle .navigation-label{animation:label-in 220ms 60ms var(--ease) both}
  :root[data-sidebar=collapsed] .side{width:72px;padding:20px 12px}
  :root[data-sidebar=collapsed] .side-brand{justify-content:center;padding-inline:0}
  :root[data-sidebar=collapsed] .side-brand .wordmark-name{display:none}
@@ -874,7 +876,7 @@ textarea{resize:vertical;min-height:76px}
 @keyframes fly-off{to{transform:translateX(110%) rotate(3deg);opacity:0}}@keyframes fly-off-rtl{to{transform:translateX(-110%) rotate(-3deg);opacity:0}}
 @media(prefers-reduced-motion:no-preference){
  [data-slot=tabs-content][data-state=active]{animation:tab-in 200ms var(--ease)}
- .home>*,.team-list>.team-row:not(.mobile-drag-preview),.team-list>.team-group,.swap-cards>.swap-slot:not([data-leaving]),.bell-list>li,.settings-sheet .sheet-body>*{animation:fade-up 280ms var(--ease) both}
+ .app-shell:not(.startup-skeleton) .home>*,.team-list>.team-row:not(.mobile-drag-preview),.team-list>.team-group,.swap-cards>.swap-slot:not([data-leaving]),.bell-list>li,.settings-sheet .sheet-body>*{animation:fade-up 280ms var(--ease) both}
  .home>:nth-child(2),.team-list>:nth-child(2),.swap-cards>:nth-child(2),.bell-list>:nth-child(2),.settings-sheet .sheet-body>:nth-child(2){animation-delay:30ms}
  .home>:nth-child(3),.team-list>:nth-child(3),.swap-cards>:nth-child(3),.bell-list>:nth-child(3),.settings-sheet .sheet-body>:nth-child(3){animation-delay:60ms}
  .home>:nth-child(4),.team-list>:nth-child(4),.swap-cards>:nth-child(4),.bell-list>:nth-child(4),.settings-sheet .sheet-body>:nth-child(4){animation-delay:90ms}
