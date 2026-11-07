@@ -31,7 +31,7 @@ temporary members; its Auth FK retains deletion protection for regular accounts.
 Temporary members cannot gain an admin role, pass member authorization or sign in.
 No Auth users/identities are created.
 
-Migration `20261107113500_link_temporary_member.sql` (decision 2026-11-07) lets an admin
+Migration `20261107120214_link_temporary_member.sql` (decision 2026-11-07) lets an admin
 link a pending sign-up to a temporary member through the checked RPC
 `duty_link_temporary_member(p_pending, p_temporary, p_revision)`: manager check, revision
 check, manager recheck, both rows locked, the target must be temporary and the source a
