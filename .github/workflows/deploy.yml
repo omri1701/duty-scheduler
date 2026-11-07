@@ -55,7 +55,7 @@ jobs:
     timeout-minutes: 30
     environment:
       name: ${{ inputs.branch == 'master' && 'Production' || 'Development' }}
-      url: ${{ inputs.branch == 'master' && 'https://duty-scheduler-prod.vercel.app' || 'https://duty-scheduler-dev.vercel.app' }}
+      url: ${{ inputs.branch == 'master' && 'https://miko-prod.vercel.app' || 'https://miko-dev.vercel.app' }}
     # Hold one lock across both database and app. New pushes cannot cancel a
     # migration. A queued older SHA fails the branch-head gate before any write.
     concurrency:

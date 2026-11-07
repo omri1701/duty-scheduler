@@ -140,7 +140,7 @@ test('the sender refuses before sending: no secret, wrong secret, no VAPID keys,
     const placeholder = await call('{}', `Bearer ${'s'.repeat(40)}`);
     assert.equal(placeholder.status, 503);
     assert.match((await placeholder.json()).error, /example.invalid.*Apple/);
-    process.env.VAPID_SUBJECT = 'https://duty-scheduler-prod.vercel.app';
+    process.env.VAPID_SUBJECT = 'https://miko-prod.vercel.app';
     assert.equal((await call('not json', `Bearer ${'s'.repeat(40)}`)).status, 400);
     assert.equal((await call(JSON.stringify({messages: [message({lang: 'fr'})]}), `Bearer ${'s'.repeat(40)}`)).status, 400);
     assert.equal((await call('x'.repeat(200_001), `Bearer ${'s'.repeat(40)}`)).status, 413);
@@ -172,7 +172,7 @@ test('signing out and turning off always unsubscribe this browser, even when the
 });
 
 test('the VAPID subject must be a real mailto: address or https URL, never a placeholder', () => {
-  for (const ok of ['mailto:omri@datateam.co.il', 'https://duty-scheduler-prod.vercel.app', 'https://abc-12.ngrok-free.app', 'https://duty.example.co.il/'])
+  for (const ok of ['mailto:omri@datateam.co.il', 'https://miko-prod.vercel.app', 'https://abc-12.ngrok-free.app', 'https://duty.example.co.il/'])
     assert.equal(vapidSubjectProblem(ok), null, ok);
   for (const bad of [undefined, '', 'duty@x.com', 'mailto:duty-local@example.invalid', 'mailto:you@example.com', 'mailto:a@localhost', 'mailto:nobody',
     'https://localhost:5173', 'https://127.0.0.1', 'https://host.docker.internal', 'https://duty.test', 'https://user:pw@duty.co.il', 'http://duty.co.il'])

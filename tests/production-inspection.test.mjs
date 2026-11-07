@@ -26,7 +26,7 @@ test('central transport blocks GET and POST mutations, table writes and Auth onb
 });
 
 test('inspection sign-out preserves unrelated Production refresh sessions',async()=>{
- for(const [origin,scope] of [['http://localhost:5173','local'],['https://duty-scheduler-prod.vercel.app','global']]){
+ for(const [origin,scope] of [['http://localhost:5173','local'],['https://miko-prod.vercel.app','global']]){
   const client={auth:{signOut:async options=>{assert.deepEqual(options,{scope});return {error:null}}}};
   registerEnvironment(client,resolveEnvironment(PROJECTS.prod,origin));
   await signOutSafely(client);
@@ -36,7 +36,7 @@ test('inspection sign-out preserves unrelated Production refresh sessions',async
 });
 
 test('deployed Production and Development retain checked writes',async()=>{
- for(const [url,origin] of [[PROJECTS.prod,'https://duty-scheduler-prod.vercel.app'],[PROJECTS.dev,'http://localhost:5173']]){
+ for(const [url,origin] of [[PROJECTS.prod,'https://miko-prod.vercel.app'],[PROJECTS.dev,'http://localhost:5173']]){
   let sent=0;
   await guardedFetch(url,resolveEnvironment(url,origin),async()=>{sent++;return new Response('{}')})(url+'/rest/v1/rpc/duty_join',{method:'POST'});
   assert.equal(sent,1);

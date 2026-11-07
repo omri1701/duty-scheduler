@@ -6,11 +6,10 @@ export const PROJECTS = {
 } as const;
 // LOCAL Docker API, kept below Windows' dynamic/excluded port range.
 export const LOCAL_API_URL = 'http://127.0.0.1:48321';
-// Hosted origins per environment. MiKo domains (2026-11-07) join the old ones, which keep working;
-// Production is miko.vercel.app, or miko-prod.vercel.app if that name was taken.
+// Hosted origins per environment: only the MiKo domains (2026-11-07); the old duty-scheduler-* hosts are gone.
 export const HOSTED_ORIGINS = {
-  dev: ['https://duty-scheduler-dev.vercel.app', 'https://miko-dev.vercel.app'],
-  prod: ['https://duty-scheduler-prod.vercel.app', 'https://miko.vercel.app', 'https://miko-prod.vercel.app'],
+  dev: ['https://miko-dev.vercel.app'],
+  prod: ['https://miko-prod.vercel.app'],
 } as const;
 export type Target = 'local' | 'dev' | 'prod';
 export type Environment = {target: Target; badge: 'LOCAL' | 'DEV' | 'PROD' | null; readOnly: boolean; storageKey: string};

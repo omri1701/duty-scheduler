@@ -16,9 +16,9 @@ async function shot(locator:Locator,name:string){
 for(const {name,url,origin,badge} of [
  {name:'localhost LOCAL',url:'http://127.0.0.1:48321',origin:'http://localhost:8787',badge:'LOCAL'},
  {name:'localhost DEV',url:PROJECTS.dev,origin:'http://localhost:8787',badge:'DEV'},
- {name:'deployed DEV',url:PROJECTS.dev,origin:'https://duty-scheduler-dev.vercel.app',badge:'DEV'},
+ {name:'deployed DEV',url:PROJECTS.dev,origin:'https://miko-dev.vercel.app',badge:'DEV'},
  {name:'localhost PROD',url:PROJECTS.prod,origin:'http://localhost:8787',badge:'PROD'},
- {name:'deployed PROD',url:PROJECTS.prod,origin:'https://duty-scheduler-prod.vercel.app',badge:null},
+ {name:'deployed PROD',url:PROJECTS.prod,origin:'https://miko-prod.vercel.app',badge:null},
 ]){
  test(`${name}: login and workspace indicator`,async({page,backend,openApp})=>{
   backend.url=url;backend.runtimeOrigin=origin;

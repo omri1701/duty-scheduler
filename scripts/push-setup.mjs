@@ -22,15 +22,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_LOCAL_CONTAINER = LOCAL_CONTAINER;
 
 const HOSTED = {
-  dev: {name: 'Development', vercel: 'Preview', url: 'https://duty-scheduler-dev.vercel.app/api/push/dispatch', ref: 'qhndiuahuxczujxxitsm', protected: true},
-  prod: {name: 'Production', vercel: 'Production', url: 'https://duty-scheduler-prod.vercel.app/api/push/dispatch', ref: 'hpszwgnwxtxyxpcaivgj', protected: false},
+  dev: {name: 'Development', vercel: 'Preview', url: 'https://miko-dev.vercel.app/api/push/dispatch', ref: 'qhndiuahuxczujxxitsm', protected: true},
+  prod: {name: 'Production', vercel: 'Production', url: 'https://miko-prod.vercel.app/api/push/dispatch', ref: 'hpszwgnwxtxyxpcaivgj', protected: false},
 };
 const CHECK = `select jobname, schedule, active from cron.job where jobname = 'duty-push-tick';
 select name from vault.secrets where name like 'duty_push_%' order by name;
 select status, count(*) from public.duty_push_deliveries group by status;`;
 const secret = () => randomBytes(36).toString('base64url');
 /** The app's public URL: a VAPID subject every push service accepts (Apple refuses placeholders). */
-export const APP_URL = 'https://duty-scheduler-prod.vercel.app';
+export const APP_URL = 'https://miko-prod.vercel.app';
 /** LOCAL subject: the phone tunnel origin (DUTY_DEV_ORIGIN) when it is a usable https URL, else the app's URL. */
 export function localSubject(env) {
   const origin = env.DUTY_DEV_ORIGIN?.trim();

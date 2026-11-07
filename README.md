@@ -394,7 +394,7 @@ To smoke-test an accessible deployed DEV build with the same
 synthetic accounts and intercepted backend (no real member data or writes):
 
 ```sh
-DUTY_E2E_URL=https://duty-scheduler-dev.vercel.app pnpm exec playwright test responsive-css.spec.ts --project=desktop
+DUTY_E2E_URL=https://miko-dev.vercel.app pnpm exec playwright test responsive-css.spec.ts --project=desktop
 ```
 
 A Vercel sign-in redirect fails this check; protected deployments require

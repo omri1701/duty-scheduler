@@ -6,8 +6,8 @@ globalThis.window={location:{origin:'http://localhost:5173'},open:()=>{}};
 test('explicit Google login requests account selection while preserving PKCE and environment redirects', async t => {
   for (const [url, origin, inspection] of [
     [PROJECTS.dev, 'http://localhost:5173', false],
-    [PROJECTS.dev, 'https://duty-scheduler-dev.vercel.app', false],
-    [PROJECTS.prod, 'https://duty-scheduler-prod.vercel.app', false],
+    [PROJECTS.dev, 'https://miko-dev.vercel.app', false],
+    [PROJECTS.prod, 'https://miko-prod.vercel.app', false],
     [PROJECTS.prod, 'http://localhost:5173', true],
   ]) {
     window.location.origin = origin;
@@ -33,7 +33,7 @@ test('explicit Google login requests account selection while preserving PKCE and
       assert.equal(authorize.pathname, '/auth/v1/authorize');
       assert.equal(authorize.searchParams.get('provider'), 'google');
       assert.equal(authorize.searchParams.get('prompt'), 'select_account');
-      assert.equal(authorize.searchParams.get('redirect_to'), inspection ? 'https://duty-scheduler-prod.vercel.app/' : origin + '/');
+      assert.equal(authorize.searchParams.get('redirect_to'), inspection ? 'https://miko-prod.vercel.app/' : origin + '/');
       assert.ok(authorize.searchParams.get('code_challenge'));
       assert.ok(['s256', 'plain'].includes(authorize.searchParams.get('code_challenge_method')));
       assert.equal(popup.mock.callCount(), inspection ? 1 : 0);

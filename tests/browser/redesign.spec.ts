@@ -5,7 +5,7 @@ import {existsSync} from 'node:fs';
 import {mockPush, VAPID_PUBLIC_KEY} from './push-mock';
 
 // The redesign gallery (decision 2026-11-06): every screen in light and dark, English and Hebrew.
-test.beforeEach(({backend}) => {backend.url = PROJECTS.prod; backend.runtimeOrigin = 'https://duty-scheduler-prod.vercel.app';});
+test.beforeEach(({backend}) => {backend.url = PROJECTS.prod; backend.runtimeOrigin = 'https://miko-prod.vercel.app';});
 
 /** `held`: a gesture is in progress, so the pointer stays where it is (moving it would continue the drag). */
 async function snapshot(page: Page, name: string, held = false) {
