@@ -194,6 +194,8 @@ for (const lang of ['en', 'he'] as const) {
   test(`published duty edit and swap request ${lang}`, async ({page, openApp, backend}, info) => {
     const mobile = info.project.name === 'mobile';
     backend.raw.months[0].status = 'published';
+    // Owner round 4: a Thu–Sat bar (19–21 Nov), whose name must stay readable over swap targets.
+    for (const r of backend.raw.assignments.filter(r => ['2026-11-19', '2026-11-20'].includes(r.day))) r.primary_id = ids.e;
     await openApp('admin');
     if (lang === 'he') await switchLanguage(page, 'he');
     await tab(page, t('Schedule', 'לוח')).click();

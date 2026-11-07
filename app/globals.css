@@ -444,8 +444,11 @@ textarea{resize:vertical;min-height:76px}
 .gesture-pressed{filter:brightness(.97)}
 .calendar-grid .can-swap{cursor:grab}
 /* The duty being swapped: a solid brand ring and a lifted chip, clearly the chosen one (owner review 2026-11-07). */
-.calendar-grid .drag-source{box-shadow:inset 0 0 0 3px var(--brand);background:color-mix(in srgb,var(--brand) 16%,var(--surface))!important;z-index:1}
-.calendar-grid .drag-source .assignment-chip{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--brand);transform:scale(1.04)}
+/* The picked duty (owner round 4): an ink ring, an ink-tinted cell and a ⇄ mark, unlike the green targets in either theme. */
+.calendar-grid .drag-source{box-shadow:inset 0 0 0 3px var(--ink);background:color-mix(in srgb,var(--ink) 10%,var(--surface))!important;z-index:2}
+.calendar-grid .drag-source .assignment-chip{box-shadow:0 0 0 2px var(--surface),0 0 0 4.5px var(--ink);transform:scale(1.04)}
+.swap-source-mark{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--ink);color:var(--surface)}
+.swap-source-mark svg{width:11px;height:11px;stroke-width:2.5}
 .calendar-grid .drag-target{background:var(--ok-soft)!important;box-shadow:inset 0 0 0 3px var(--ok);z-index:1}
 /* A target taken while its availability is read: the ring breathes until the answer arrives. */
 .calendar-grid .drag-target.checking{box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--ok) 55%,transparent)}
@@ -471,7 +474,9 @@ textarea{resize:vertical;min-height:76px}
 .calendar-week[dir=rtl] .calendar-grid .streak-break-after .assignment-chip::before{clip-path:polygon(100% 0,7px 0,0 50%,7px 100%,100% 100%)}
 .calendar-week[dir=rtl] .calendar-grid .streak-break-before .assignment-chip::before{clip-path:polygon(0 0,100% 0,calc(100% - 7px) 50%,100% 100%,0 100%)}
 .streak-continued{display:inline-block}.streak-continued::before{content:"\200b"}
-.calendar-grid .streak-label-cell{position:relative;z-index:1}
+/* The name of a multi-day bar overflows into the following cells: keep it above them, also when they are swap targets. */
+.calendar-grid .streak-label-cell{position:relative;z-index:2}
+.calendar-grid .streak-label-cell.drag-source{z-index:3}
 .calendar-grid .assignment-chip>.streak-label{position:absolute;inset-inline-start:0;top:50%;transform:translateY(-50%);width:calc(var(--streak-span) * (100% + var(--calendar-day-inset)) - 2 * var(--calendar-day-inset) - 1px);padding-inline:4px;text-align:center;white-space:nowrap;pointer-events:none}
 @media(min-width:1200px){.calendar-grid{--calendar-cell-min-height:120px;--calendar-day-inset:10px}.assignment-chip{font-size:14px}}
 @media(max-width:600px){
@@ -497,6 +502,8 @@ textarea{resize:vertical;min-height:76px}
  .calendar-grid .marks-week .date-line{min-height:34px;align-content:flex-start;row-gap:2px}
  .calendar-grid .marks-week .date-marks,.calendar-grid .marks-week.combined-weekend .date-marks{position:static;flex-basis:100%;grid-column:1/-1;justify-content:flex-end;height:12px;margin:0;gap:2px;padding-inline-end:1px}
  .calendar-grid .duty-lock-indicator svg{width:10px;height:10px}
+ /* The picked duty's ⇄ mark sits on the cell's corner, clear of the date and the chip. */
+ .calendar-grid .drag-source .swap-source-mark{position:absolute;top:3px;inset-inline-end:3px;width:16px;height:16px}
  .mine-chip{box-shadow:0 0 0 1.5px var(--surface),0 0 0 2.5px var(--brand)}
  [data-gesture-key]{scroll-margin-top:130px;scroll-margin-bottom:110px}
 }
