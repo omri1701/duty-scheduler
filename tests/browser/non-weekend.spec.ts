@@ -233,7 +233,8 @@ for(const lang of ['en','he'] as const)test(`a published weekend edit to a No we
  if(he)await switchLanguage(page, 'he');
  await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog'),review=dialog.getByRole('button',{name:he?'בדיקת השינוי':'Review change',exact:true});
- await dialog.getByRole('combobox',{name:he?'מהנדס':'Engineer',exact:true}).click();
+ // A published weekend opens the One weekend | Two days editor (decision 2026-11-07): one card, one picker.
+ await dialog.getByRole('combobox',{name:he?'מהנדס ראשי':'Primary engineer',exact:true}).click();
  await page.getByRole('option',{name:new RegExp(`^${who}`)}).click();
  await expect(dialog.getByRole('alert')).toContainText(he?`${who} לא עושה סופי שבוע`:`${who} doesn’t take weekends`);
  await expect(review).toBeDisabled();
