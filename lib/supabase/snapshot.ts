@@ -35,10 +35,12 @@ export function readSnapshot(value: unknown): Snapshot {
 }
 /** The signed-in user's own member row. A sign-up linked to a former temporary member owns that
  * member's id (decision 2026-11-07), so never compare a member id with the sign-in id. */
-export function findMe(raw:Snapshot,userId:string):Member|undefined{
+export function findMe(raw:Snapshot,userId:string|undefined):Member|undefined{
+ // No sign-in is nobody, even on rows without auth_user_id (an older database or a fixture).
+ if(!userId)return undefined;
  return raw.members.find(m=>m.auth_user_id===userId)??raw.members.find(m=>m.id===userId&&m.auth_user_id===undefined);
 }
-export function canManage(raw:Snapshot,userId:string){const me=findMe(raw,userId);return !!raw.roles.find(r=>r.code===me?.role)?.can_manage}
+export function canManage(raw:Snapshot,userId:string|undefined){const me=findMe(raw,userId);return !!raw.roles.find(r=>r.code===me?.role)?.can_manage}
 function rowOwner(row:DutyRow){return (dayOf(row.day)===6?addDays(row.day,-1):row.day).slice(0,7)}
 function applyRows(state:State,rows:DutyRow[]){
  const specials:Special[]=[],splits=new Set<string>();

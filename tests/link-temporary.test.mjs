@@ -23,6 +23,9 @@ test('the linked sign-in resolves to the temporary member it took over', () => {
   const legacy = snapshot([{...member('old'), auth_user_id: undefined}]);
   assert.equal(findMe(legacy, 'old')?.id, 'old');
   assert.throws(() => readSnapshot(snapshot([{...member('x'), auth_user_id: 7}])), /Invalid team data/);
+  // Signed out is nobody, also when rows carry no auth_user_id (an older database or a fixture).
+  const legacyAdmin = snapshot([{...member('old'), auth_user_id: undefined, role: 'admin'}]);
+  for (const none of [undefined, null, '']) {assert.equal(findMe(legacyAdmin, none), undefined); assert.equal(canManage(legacyAdmin, none), false);}
 });
 
 test('roles follow the merged row, not the sign-in id', () => {
