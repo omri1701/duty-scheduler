@@ -1,6 +1,6 @@
 import {test as base, expect, type Page} from '@playwright/test';
 import {addDays, blocks, dayOf, specialAt} from '../../lib/rota/engine';
-import {canManage, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {canManage, findMe, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
 import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
 import {snapshotKey} from '../../lib/scheduling/domain';
@@ -103,9 +103,10 @@ export class Backend {
         neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
         sourcePublicationId: this.sourcePublication, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
   }
-  snapshot(user: string) {
-    const raw = structuredClone(this.raw), admin = canManage(raw, user);
-    const member = raw.members.find(m => m.id === user)!;
+  snapshot(signIn: string) {
+    const raw = structuredClone(this.raw), admin = canManage(raw, signIn);
+    // A sign-up linked to a temporary member owns that member's id (decision 2026-11-07).
+    const member = findMe(raw, signIn)!, user = member?.id ?? signIn;
     // Mirrors the migrated column default; legacy rows are covered by unit tests.
     raw.assignments = raw.assignments.map(d => ({...d, locked: d.locked ?? false}));
     if (!member || member.status !== 'approved' || !member.active) return {...raw, revision: null, members: member ? [member] : [], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
@@ -119,17 +120,19 @@ export class Backend {
     raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || r.proposed_by === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
     return raw;
   }
-  rpc(name: string, p: Record<string, unknown>, user: string) {
+  rpc(name: string, p: Record<string, unknown>, signIn: string) {
+    // Every own-row RPC acts on the caller's member row, as duty_private.current_member_id() does.
+    const user = findMe(this.raw, signIn)?.id ?? signIn;
     this.calls.push({name, params: p, user});
     if (name === 'duty_join') {
-      if (!this.raw.members.some(m=>m.id===user)) {
+      if (!findMe(this.raw, signIn)) {
         const member=seed().members.find(m=>m.id===user);
         if (!member) throw Error('Unknown synthetic identity');
         this.raw.members.push({...member,name:String(p.p_name),role:'engineer',status:'pending',active:false});
       }
       return null;
     }
-    if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_load') return this.snapshot(signIn);
     // Personal RPCs (decision 2026-11-06): own rows only, no workspace revision.
     if (name === 'duty_set_language') {
       expect(['en', 'he']).toContain(p.p_language);
@@ -163,7 +166,7 @@ export class Backend {
       return null;
     }
     if (name === 'duty_replanned_versions') {
-      if (!canManage(this.raw, user)) throw Error('Admin access required');
+      if (!canManage(this.raw, signIn)) throw Error('Admin access required');
       return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
     }
     if (name === 'duty_balance') {
@@ -171,16 +174,16 @@ export class Backend {
       if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
       const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
       // Mirrors the database scope: members receive only their own row and relationships.
-      return canManage(this.raw, user) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+      return canManage(this.raw, signIn) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
     }
     if (name === 'duty_edit_returns') {
-      expect(canManage(this.raw, user)).toBe(true);
+      expect(canManage(this.raw, signIn)).toBe(true);
       return this.editReturns;
     }
     if (name === 'duty_swap_availability') {
       // Mirrors duty_private.swap_availability: parties or admins, who and when, never the note.
       const a = this.raw.assignments.find(d => d.id === p.p_from)!, b = this.raw.assignments.find(d => d.id === p.p_to)!;
-      const manager = canManage(this.raw, user);
+      const manager = canManage(this.raw, signIn);
       expect(manager || [a.primary_id, b.primary_id].includes(user)).toBe(true);
       const inside = (d: DutyRow, day: string) => day >= d.day && day < d.end_day;
       return this.raw.constraints.filter(c => c.kind === 'no' && (([b.primary_id, a.secondary_id].includes(c.member_id) && inside(a, c.day)) ||
@@ -199,7 +202,7 @@ export class Backend {
       return {token: this.calendarResets.toString(16).padStart(64, 'c'), createdAt, language};
     }
     expect(p.p_revision).toBe(this.raw.revision);
-    const admin = canManage(this.raw, user);
+    const admin = canManage(this.raw, signIn);
     if (name === 'duty_generation_context') {
       expect(admin).toBe(true); return this.generationEnvelope(String(p.p_month));
     } else if (name === 'duty_confirm_allocation') {
@@ -273,6 +276,13 @@ export class Backend {
       const member = this.raw.members.find(m => m.id === user)!;
       expect(member.status).toBe('approved');
       member.color = p.p_color as string;
+    } else if (name === 'duty_link_temporary_member') {
+      // Mirrors duty_private.link_temporary_member: the temporary row keeps its id and gains the sign-in.
+      expect(admin).toBe(true);
+      const signup = this.raw.members.find(m => m.id === p.p_pending && m.status === 'pending' && !m.is_temporary)!, temporary = this.raw.members.find(m => m.id === p.p_temporary && m.is_temporary)!;
+      expect(signup).toBeTruthy(); expect(temporary).toBeTruthy();
+      this.raw.members = this.raw.members.filter(m => m !== signup);
+      Object.assign(temporary, {is_temporary: false, auth_user_id: signup.id, email: signup.email, language: signup.language ?? temporary.language ?? null});
     } else if (name === 'duty_review_member') {
       expect(admin).toBe(true);
       this.raw.members.find(m => m.id === p.p_member)!.status = p.p_status as string;
@@ -358,6 +368,36 @@ export class Backend {
       const publication = this.publish(m.month, rows);
       this.raw.revision!++;
       return {publication, version: m.publication_sequence};
+    } else if (name === 'duty_edit_published_weekend') {
+      // One weekend or two days (decision 2026-11-07): same person joins, different people split.
+      expect(admin).toBe(true);
+      const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
+      if (!m) throw Error('Synthetic stale: This publication changed. Refresh first.');
+      const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
+      const friday = p.p_friday as string, saturday = addDays(friday, 1), covering = (day: string) => rows.find(d => d.day <= day && d.end_day > day)!;
+      const f = covering(friday), s = covering(saturday), wasJoined = f === s;
+      const halves = [{day: friday, row: f, extra: f.extra_points, to: p.p_friday_primary as string, next: p.p_friday_extra as number},
+        {day: saturday, row: s, extra: wasJoined ? f.saturday_extra_points ?? 0 : s.extra_points, to: p.p_saturday_primary as string, next: p.p_saturday_extra as number}];
+      const changed = halves.filter(h => h.to !== h.row.primary_id);
+      if (!changed.length && (halves[0].to === halves[1].to) === wasJoined && halves.every(h => h.next === h.extra)) throw Error('Nothing changed');
+      const conflict = changed.some(h => this.raw.constraints.some(c => c.member_id === h.to && c.kind === 'no' && c.day === h.day));
+      if (conflict && !String(p.p_override_reason).trim()) throw Error('Availability conflict. An admin must explicitly override with a reason.');
+      const joined = halves[0].to === halves[1].to, base = {...f, title: f.title || s.title, manager_override: conflict};
+      const next: DutyRow[] = joined
+        ? [{...base, day: friday, end_day: addDays(friday, 2), primary_id: halves[0].to, secondary_id: f.secondary_id ?? s.secondary_id, extra_points: halves[0].next, saturday_extra_points: halves[1].next, points: 1 + halves[0].next + halves[1].next}]
+        : halves.map(h => ({...base, day: h.day, end_day: addDays(h.day, 1), primary_id: h.to, secondary_id: h.row.secondary_id, extra_points: h.next, saturday_extra_points: 0, points: .5 + h.next}));
+      // Display-only stand-in for the ledger: Temporary moves each date's shared points.
+      if (p.p_kind === 'temporary') for (const h of changed) {
+        const units = Math.min(1 + 2 * h.extra, 1 + 2 * h.next), from = h.row.primary_id!;
+        const balance = this.balance ??= {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+        balance.net[from] -= units; balance.net[h.to] += units;
+        balance.lines.push({memberId: from, counterpartId: h.to, units: -units, kind: 'change', date: null, month: m.month},
+          {memberId: h.to, counterpartId: from, units, kind: 'change', date: null, month: m.month});
+      }
+      for (const r of this.raw.swapRequests ?? []) if (['awaiting_engineer', 'awaiting_admin'].includes(r.status) && [r.from_day, r.to_day].some(d => d === friday || d === saturday)) Object.assign(r, {status: 'invalidated', accepted_by: null, accepted_at: null});
+      const publication = this.publish(m.month, [...rows.filter(d => d !== f && d !== s), ...next].sort((a, b) => a.day.localeCompare(b.day)));
+      this.raw.revision!++;
+      return {publication, version: m.publication_sequence, joined};
     } else throw Error(`Unexpected RPC: ${name}`);
     this.raw.revision!++;
     return null;
@@ -378,12 +418,14 @@ export class Backend {
   }
 }
 
-type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean}) => Promise<Page>};
+/** month: the schedule month every load of the page opens on, through the `?month=` deep link (the app opens
+ * on the current month, October under NOW; the fixtures' data is November). null: the app's own default. */
+type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean; month?: string | null}) => Promise<Page>};
 export const test = base.extend<Fixtures>({
   backend: async ({}, provide) => {await provide(new Backend());},
   openApp: async ({page, backend, baseURL}, provide) => {
     const attached = new Set<Page>(), errors: string[] = [], unexpected: string[] = [];
-    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false} = {}) => {
+    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false, month = MONTH} = {}) => {
       if (!attached.has(target)) {
         attached.add(target);
         target.on('pageerror', error => errors.push(error.message));
@@ -402,12 +444,15 @@ export const test = base.extend<Fixtures>({
       const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome, month}) => {
+        // Every load, reloads included, opens the fixture month unless the URL names one.
+        const url = new URL(location.href);
+        if (month && !url.searchParams.has('month')) {url.searchParams.set('month', month); history.replaceState(history.state, '', url);}
         localStorage.clear();
         if (!showWelcome) localStorage.setItem('duty-welcome-seen', '1');
         if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
         if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome});
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome,month});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}

@@ -1,19 +1,12 @@
 'use client';
-import {useRef,useState,type ReactNode} from 'react';
+import {useRef,useState} from 'react';
 import {LockKeyhole,LockKeyholeOpen,Trash2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Checkbox} from '@/components/ui/checkbox';
-import {Chip} from '@/components/ui/chip';
-import {Avatar} from '@/components/ui/avatar';
-import {Segmented} from '@/components/ui/segmented';
 import {EditorDialog} from '@/components/rota/editor-dialog';
+import {DayCard,DayCards,DayHeading,KeepChoice,SplitJoinRow,WeekendLayoutSwitch,useWeekendLayout,type Half} from '@/components/rota/weekend-cards';
 import {Select,SelectTrigger,SelectValue,SelectContent,SelectItem} from '@/components/ui/select';
 import {addDays,blocks,noWeekendPlacements,ownerMonth,unavailable,weekendAssignments,setWeekendAssignments,weekendCounts,type State,type Duty,type Assignment} from '@/lib/rota/engine';
-
-type Half='fri'|'sat';
-/** How the editor shows a weekend (decision 2026-11-07): one card, two day cards, or one half of a
- * split weekend (a regular day card with a Join row). A weekday is always one card. */
-type Mode='one'|'two'|'half';
 
 /** Edits one duty. A weekend opens as one card with a "One weekend | Two days" switch; two days
  * edits each date like a regular day. Saving identical halves joins them (normalizeWeekends). */
@@ -29,9 +22,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  const halfPoints=(h:Half)=>halves.find(b=>b.id===(h==='fri'?friday:saturday))?.points??0.5;
  const [initialFri,initialSat]=weekend?weekendAssignments(state,friday):[state.assignments[duty.id]??{primary:''},{primary:''}];
  const [fri,setFri]=useState<Assignment>(initialFri),[sat,setSat]=useState<Assignment>(initialSat);
- const [mode,setMode]=useState<Mode>(splitHalf?'half':'one'),[choosing,setChoosing]=useState(false),[override,setOverride]=useState(false);
- // Bumped on each split so the second card replays its entrance.
- const [splitKey,setSplitKey]=useState(0),[joinKey,setJoinKey]=useState(0);
+ const layout=useWeekendLayout(splitHalf?'half':'one'),{mode,choosing}=layout,[override,setOverride]=useState(false);
  const carry=ownerMonth(duty)!==month;
  const day=(start:string):Duty=>({...duty,id:start,start,end:addDays(start,1)});
  const edits=weekend?[{block:day(friday),assignment:fri},{block:day(saturday),assignment:sat}]:[{block:duty,assignment:fri}];
@@ -55,11 +46,10 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  /** Back to one weekend: the same person just joins; different people choose who keeps it. */
  function join(){
   if(fri.primary===sat.primary){const one={...fri,secondary:fri.secondary??sat.secondary,locked:fri.locked||sat.locked};update('both',()=>({...one}))}
-  else setChoosing(true);
-  setMode('one');setJoinKey(k=>k+1);
+  layout.join(fri.primary===sat.primary);
  }
- function keep(h:Half){const kept=get(h);update('both',()=>({...kept}));setChoosing(false)}
- function setLayout(next:'one'|'two'){if(next==='two'){setChoosing(false);setMode('two');setSplitKey(k=>k+1)}else join()}
+ function keep(h:Half){const kept=get(h);update('both',()=>({...kept}));layout.kept()}
+ function setLayout(next:'one'|'two'){if(next==='two')layout.split();else join()}
  function picker(label:string,aria:string,h:Half|'both',emergency=false){
   const a=get(h==='sat'?'sat':'fri'),current=emergency?a.secondary:a.primary,block=weekend?h==='both'?duty:day(h==='fri'?friday:saturday):duty;
   return <label className="field-label">{label}<Select disabled={busy} value={current||'none'} onValueChange={v=>{const id=v==='none'?undefined:v;update(h,x=>emergency?{...x,secondary:id}:{...x,primary:id??''})}}><SelectTrigger className="picker" aria-label={aria}><SelectValue/></SelectTrigger><SelectContent><SelectItem value="none">{emergency?t('Not needed','לא נדרש'):t('Leave unassigned','ללא שיבוץ')}</SelectItem>{state.team.filter(p=>p.active||p.id===current).map(p=><SelectItem key={p.id} value={p.id}>{p.name}{unavailable(block,p.id,state.constraints).length?t(' · unavailable',' · לא זמין'):''}{skips(p.id)?t(' · no weekends',' · ללא סופי שבוע'):''}</SelectItem>)}</SelectContent></Select></label>
@@ -70,38 +60,27 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  }
  const dutyLock={lock:t('Lock duty','נעילת כוננות'),unlock:t('Unlock duty','ביטול נעילת כוננות')};
  /** A regular day's card: its date and points, the person, its lock and its emergency cover. */
- function card(h:Half|'both',heading:ReactNode,className=''){
+ function card(h:Half|'both'){
   const a=get(h==='sat'?'sat':'fri'),own=h!=='both'&&mode==='two';
   const dayName=h==='fri'?t('Friday','שישי'):t('Saturday','שבת');
   const aria=(en:string,he:string)=>own?t(`${dayName} ${en}`,`${he} ביום ${dayName}`):t(en.charAt(0).toUpperCase()+en.slice(1),he);
-  return <section className={`day-card ${className}`} data-half={h}>
-   <div className="day-card-head">{heading}{!carry&&!(h==='both'&&choosing)&&lockButton(h,own?{lock:t(`Lock ${dayName}`,`נעילת יום ${dayName}`),unlock:t(`Unlock ${dayName}`,`ביטול נעילת יום ${dayName}`)}:dutyLock)}</div>
-   {h==='both'&&choosing?<div className="keep-choice" role="group" aria-label={t('Who keeps the weekend','מי נשאר בסוף השבוע')}>
-    {(['fri','sat'] as const).map(k=>{const kept=get(k).primary,other=get(k==='fri'?'sat':'fri').primary,p=state.team.find(x=>x.id===kept),gives=halfPoints(k==='fri'?'sat':'fri');
-     return <button key={k} type="button" className="keep-option" disabled={busy} onClick={()=>keep(k)}>
-      {p?<Avatar name={p.name} color={p.color} size={32}/>:<span className="avatar avatar-empty" aria-hidden="true">—</span>}
-      <span><strong>{kept?t(`Keep ${name(kept)}`,`להשאיר את ${name(kept)}`):t('Leave open','להשאיר פנוי')}</strong><small dir="auto">{other?`${name(other)} −${gives}`:`${name(kept)} +${gives}`}</small></span>
-     </button>})}
-   </div>:<>
+  const heading=mode==='two'&&h!=='both'?dayHeading(h==='fri'?friday:saturday,halfPoints(h)):onCard;
+  return <DayCard half={h} heading={heading} action={!carry&&!(h==='both'&&choosing)&&lockButton(h,own?{lock:t(`Lock ${dayName}`,`נעילת יום ${dayName}`),unlock:t(`Unlock ${dayName}`,`ביטול נעילת יום ${dayName}`)}:dutyLock)}>
+   {h==='both'&&choosing?<KeepChoice lang={lang} disabled={busy} onKeep={keep} options={(['fri','sat'] as const).map(k=>{const kept=get(k).primary,other=get(k==='fri'?'sat':'fri').primary,p=state.team.find(x=>x.id===kept),gives=halfPoints(k==='fri'?'sat':'fri');
+    return {half:k,person:p&&{name:p.name,color:p.color},title:kept?t(`Keep ${name(kept)}`,`להשאיר את ${name(kept)}`):t('Leave open','להשאיר פנוי'),detail:other?`${name(other)} −${gives}`:`${name(kept)} +${gives}`}})}/>:<>
     {picker(t('Primary engineer','מהנדס ראשי'),aria('primary engineer','מהנדס ראשי'),h)}
     <details className="emergency-editor" open={!!a.secondary}><summary>{t('Emergency cover (optional)','כיסוי חירום (לא חובה)')}</summary><div>{picker(t('Second engineer','מהנדס נוסף'),aria('second engineer','מהנדס נוסף'),h,true)}</div></details>
    </>}
-  </section>
+  </DayCard>
  }
  const showWeekend=weekend&&mode!=='half';
- const onCard=<span className="day-card-title">{t('On duty','בכוננות')}</span>;
- const dayHeading=(d:string,p:number)=><span className="day-card-title">{dateLabel(d)}<Chip size="sm">{pts(p)}</Chip></span>;
+ const onCard=<DayHeading>{t('On duty','בכוננות')}</DayHeading>;
+ function dayHeading(d:string,p:number){return <DayHeading points={pts(p)}>{dateLabel(d)}</DayHeading>}
  return <EditorDialog onClose={close} saving={busy} lang={lang} className="duty-dialog" title={showWeekend?t('Weekend','סוף שבוע'):duty.title||t('Edit duty','עריכת כוננות')} description={showWeekend?`${range} · ${pts(halfPoints('fri')+halfPoints('sat'))}`:`${dateLabel(duty.start)} · ${pts(duty.points)}`} onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${duty.id}"]`)?.focus()}}>
  {carry?<div className="inline-note">{t('Edit this weekend in the month containing Friday.','יש לערוך את סוף השבוע בחודש שבו חל יום שישי.')}<Button onClick={()=>onMonth(ownerMonth(duty))}>{t('Open month','פתיחת החודש')}</Button></div>:<>
- {showWeekend&&<Segmented label={t('Weekend layout','מבנה סוף השבוע')} value={mode==='two'?'two':'one'} onChange={setLayout} disabled={busy} className="weekend-layout"
-  options={[{value:'one',label:t('One weekend','סוף שבוע אחד')},{value:'two',label:t('Two days','שני ימים')}]}/>}
- {mode==='half'&&<div className="split-row"><span>{t('Part of a split weekend','חלק מסוף שבוע מפוצל')}</span><Button size="sm" variant="secondary" disabled={busy} onClick={join}>{t('Join','איחוד')}</Button></div>}
- <div className="day-cards" data-mode={mode}>
-  {!weekend?card('fri',onCard):mode==='one'?<div key={joinKey} className={joinKey?'card-join-in':''}>{card('both',onCard)}</div>:mode==='half'?card(focus,onCard):<>
-   {card('fri',dayHeading(friday,halfPoints('fri')))}
-   <div key={splitKey} className="card-split-in">{card('sat',dayHeading(saturday,halfPoints('sat')))}</div>
-  </>}
- </div>
+ {showWeekend&&<WeekendLayoutSwitch lang={lang} layout={layout} disabled={busy} onChange={setLayout}/>}
+ {mode==='half'&&<SplitJoinRow lang={lang} disabled={busy} onJoin={join}/>}
+ <DayCards layout={layout} weekend={weekend} focus={focus} card={card}/>
  {duplicate&&<div className="warning-note">{t('Primary and emergency engineers must be different on each day.','המהנדס הראשי ומהנדס החירום חייבים להיות שונים בכל יום.')}</div>}
  {needsOverride&&<div className="warning-note">{!!conflicts.length&&<p>{conflicts.join(' / ')}</p>}{!!extraWeekends.length&&<p>{extraWeekends.map(name).join(', ')} · {t('This adds another weekend this month.','השיבוץ מוסיף סוף שבוע נוסף בחודש.')}</p>}{skipped.map(text=><p key={text}>{text}</p>)}<label className="check-label duty-override manager-override"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Approve these exceptions as manager','אישור החריגות כמנהל')}</label></div>}
  <div className="editor-actions"><Button disabled={duplicate||choosing||(needsOverride&&!override)||busy} onClick={()=>submit(()=>onSave(s=>change(s,needsOverride&&override),weekend?[friday,saturday]:[duty.id]))}>{t('Save assignment','שמירת השיבוץ')}</Button></div>

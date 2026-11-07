@@ -79,7 +79,7 @@ export function userMessage(raw: string, t: Translate): string {
   return message;
 }
 
-// duty_edit_published_duty's own sentences.
+// duty_edit_published_duty's and duty_edit_published_weekend's own sentences.
 const EDITS: readonly (readonly [RegExp, string, string])[] = [
   [/This publication changed\. Refresh first/, 'A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.', 'פורסמה גרסה חדשה של החודש או שנפתחה טיוטה. יש לסגור את הכוננות, לפתוח אותה שוב ואז לערוך.'],
   [/^Nothing changed$/, 'Nothing changed. Choose another engineer or other extra points.', 'לא השתנה דבר. יש לבחור מהנדס אחר או נקודות נוספות אחרות.'],
@@ -87,6 +87,7 @@ const EDITS: readonly (readonly [RegExp, string, string])[] = [
   [/Keep the override reason under 500 characters/, 'Keep the override reason under 500 characters.', 'נימוק החריגה צריך להיות קצר מ־500 תווים.'],
   [/Publish or cancel the open draft before editing published duties/, 'This month has an open draft. Publish or cancel it, then edit the published duty.', 'לחודש יש טיוטה פתוחה. יש לפרסם או לבטל אותה, ואז לערוך את הכוננות שפורסמה.'],
   [/Choose a duty in this published month/, 'Choose a duty from this published month.', 'יש לבחור כוננות מהחודש שפורסם.'],
+  [/Choose a weekend in this published month/, 'Choose a weekend from this published month.', 'יש לבחור סוף שבוע מהחודש שפורסם.'],
   [/This duty has no primary engineer/, 'This duty has no engineer, so it can’t be edited here.', 'לכוננות הזו אין מהנדס, ולכן לא ניתן לערוך אותה כאן.'],
   [/Choose an active approved engineer/, 'Choose an active team member.', 'יש לבחור חבר צוות פעיל.'],
   [/Extra points must be 0 to 20 in half points/, 'Use 0 to 20 extra points in steps of 0.5.', 'יש להזין 0 עד 20 נקודות נוספות בקפיצות של 0.5.'],
@@ -147,6 +148,7 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/Request not found|This request is no longer pending/, 'This request was already answered or cancelled.', 'הבקשה הזו כבר נענתה או בוטלה.'],
   [/Review missing allocation publication lineage/, 'This month’s plan wasn’t saved with its publication. Reopen the month and confirm its plan again.', 'התוכנית של החודש לא נשמרה עם הפרסום שלו. יש לפתוח מחדש את החודש ולאשר שוב את התוכנית.'],
   [/Temporary member required/, 'Choose a temporary member.', 'יש לבחור חבר זמני.'],
+  [/link-has-balance/, 'This sign-up already has balance entries. Approve or decline it instead.', 'להרשמה הזו כבר יש רישומים במאזן. אפשר לאשר או לדחות אותה במקום.'],
   [/The counterpart changed\. Refresh first|This publication changed\. Request a new swap/, 'The schedule changed since this request. Ask for a new swap.', 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.'],
   [/The current engineer must accept before admin review|Both engineers must accept before admin review/, 'Both engineers have to accept before an admin reviews it.', 'שני המהנדסים צריכים לאשר לפני שמנהל יבדוק.'],
   // Personal calendar feed (decision 2026-11-06).

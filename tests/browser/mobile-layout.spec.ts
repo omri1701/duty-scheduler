@@ -82,7 +82,7 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
   await openApp();
   await page.getByRole('tab', {name: 'Schedule', exact: true}).click();
   // One state-driven primary action (decision 2026-11-06) and the ⋯ menu.
-  await expect(page.locator('.month-primary')).toHaveText(/^(Review plan|Publish)$/);
+  await expect(page.locator('.month-primary')).toHaveAttribute('aria-label', /^(Review plan|Publish)$/);
   await expect(page.getByRole('button', {name: 'Month actions', exact: true})).toBeVisible();
   await monthAction(page, 'Constraints deadline');
   await expect(page.getByRole('dialog')).toBeVisible();

@@ -32,8 +32,23 @@ all existing assignment, constraint, publication and compensation references.
 The generated `auth_user_id` is the existing ID for regular members and NULL for
 temporary members; its Auth FK retains deletion protection for regular accounts.
 Temporary members cannot gain an admin role, pass member authorization or sign in.
-No Auth users/identities are created. Future account linking would need a separately
-reviewed identity migration; this feature provides no linking or claiming endpoint.
+No Auth users/identities are created.
+
+Migration `20261107153905_link_temporary_member.sql` (decision 2026-11-07) lets an admin
+link a pending sign-up to a temporary member through the checked RPC
+`duty_link_temporary_member(p_pending, p_temporary, p_revision)`: manager check, revision
+check, manager recheck, both rows locked, the target must be temporary and the source a
+pending, unlinked, non-temporary engineer, and no ledger lot may name the sign-up. Members
+can never claim a temporary member. The temporary row keeps its id (no history is rewritten)
+and sets `linked_user_id`; `auth_user_id` is generated as `COALESCE(linked_user_id, id)` for
+non-temporary rows and is unique. The sign-up's email, language and any saved notification
+settings, devices or calendar feed move to it, and the pending row is deleted. Because a
+member id no longer always equals `auth.uid()`, every own-row check (RPCs and RLS) uses
+`duty_private.current_member_id()`; never compare a member id with `auth.uid()`. The ledger
+actor and `manual/<uid>/` source keys stay sign-in ids (opaque audit text). On the client,
+`findMe` (`lib/supabase/snapshot.ts`) resolves the caller's row by `auth_user_id`.
+`supabase/tests/link-temporary.sql` covers the link, refusals, swaps moving to the person,
+the merged sign-in view, a linked admin publishing, and Decline.
 
 New members (joining or temporary) get the next of 15 default colors by member
 count. Migration `20261029222841_member_palette_15.sql` appended `#dbb677`,
@@ -821,6 +836,22 @@ ordinary baseline once the stored one no longer fits those points. Regressions: 
 Temporary/Permanent edit, undo, reopen, delete and re-plan sequences over two months, checked
 after every step against a model whose only causes are Temporary replacements and planned
 repayments, with Plan the month starting from the other month only and SQL equal to the core.
+
+Split a published weekend (migration `20261107172842_split_published_weekend.sql`, decision
+2026-11-07): the checked, admin-only RPC `duty_edit_published_weekend(p_publication, p_friday,
+p_friday_primary, p_friday_extra, p_saturday_primary, p_saturday_extra, p_kind, p_revision,
+p_override_reason)` saves one published weekend as one Friday–Sunday row (same primary) or two day
+rows (different primaries), each date's extra exactly as typed, with the same revision,
+current-publication, open-draft and availability-reason checks as `duty_edit_published_duty`, and
+only while Friday is today or later. Covers stay with their date; joining keeps the cover of a date
+that kept its engineer (else Friday's, else Saturday's), and a cover moved onto a date it marked
+unavailable needs the reason too. The ledger stays per date: Temporary is the ordinary transition,
+Permanent adds one `edit/<publication>/<date>` intent per changed date, and `edit_returns` now
+follows each date through split and joined versions, so H1 undoes a half's Temporary change and
+`duty_edit_published_duty` gives each date of a whole weekend its own intent when their histories
+differ. An approved swap that hands someone both halves joins them (`join_weekend_halves`,
+internal, refuses published versions). Pending swaps of either date are invalidated. Regression:
+`supabase/tests/published-split.sql` (empty disposable LOCAL, rolled back).
 
 ### Empty local Supabase database (PowerShell)
 

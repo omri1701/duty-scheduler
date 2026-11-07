@@ -13,7 +13,7 @@ CREATE FUNCTION duty_private.edit_published_duty(p_publication uuid, p_day date,
     AS $$
 declare d public.duty_assignments; m public.duty_months; publication uuid; next_version integer; reason text:=btrim(coalesce(p_override_reason,''),U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF');
  saturday numeric:=coalesce(p_saturday_extra_points,0); changed boolean; conflicts boolean:=false; capacity jsonb:='[]'; old_atoms jsonb; new_atoms jsonb; atom text; a jsonb;
- plan jsonb; intent jsonb; back boolean; fri public.duty_assignments; sat public.duty_assignments; edited bigint;
+ plan jsonb; intent jsonb; back boolean; backs jsonb:='[]'; fri public.duty_assignments; sat public.duty_assignments; edited bigint;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
@@ -39,7 +39,7 @@ begin
   if conflicts and reason='' then raise exception 'Availability conflict. An admin must explicitly override with a reason.'; end if;
  end if;
  update public.duty_months set publication_sequence=publication_sequence+1 where month=m.month returning publication_sequence into next_version;
- insert into public.duty_publications(month,version,published_by) values(m.month,next_version,auth.uid()) returning id into publication;
+ insert into public.duty_publications(month,version,published_by) values(m.month,next_version,duty_private.current_member_id()) returning id into publication;
  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
  select publication,x.day,x.end_day,case when x.id=d.id then p_primary else x.primary_id end,x.secondary_id,
   case when x.id=d.id and changed then exists(select 1 from public.duty_constraints c where c.kind='no' and c.day>=x.day and c.day<x.end_day and c.member_id in (p_primary,x.secondary_id))
@@ -80,19 +80,27 @@ begin
   -- good (decision 2026-11-06). A permanent intent over each date's shared units, so no
   -- debt for anyone; earlier swaps, edits and the plan's own changes keep their balances.
   -- H1: giving it back to someone who held it before a Temporary change still in effect is
-  -- that change's undo: a Temporary `edit/` intent, so the earlier debt cancels.
-  back:=duty_private.edit_returns(p_publication,d.day) ? p_primary::text;
+  -- that change's undo: a Temporary `edit/` intent, so the earlier debt cancels. Each date
+  -- of a weekend keeps its own history (decision 2026-11-07): when its two dates disagree,
+  -- each gets its own intent.
   old_atoms:=duty_private.compensation_atoms(duty_private.compensation_snapshot(p_publication));
   new_atoms:=duty_private.compensation_atoms(duty_private.compensation_snapshot(publication));
   for atom,a in select key,value from jsonb_each(old_atoms) where (value->>'date')::date>=d.day and (value->>'date')::date<d.end_day order by key loop
    capacity:=capacity||jsonb_build_array(jsonb_build_object('date',atom,'offset',0,'units',least((a->>'units')::bigint,(new_atoms->atom->>'units')::bigint)));
+   backs:=backs||to_jsonb(duty_private.edit_returns(p_publication,atom::date) ? p_primary::text);
   end loop;
-  intent:=jsonb_build_object('id','edit/'||publication,'kind',case when back then 'temporary' else 'permanent' end,'fromId',d.primary_id,'toId',p_primary,'capacity',capacity);
+  if (select count(distinct v) from jsonb_array_elements(backs) v)<=1 then
+   back:=coalesce((backs->>0)::boolean,false);
+   intent:=jsonb_build_object('id','edit/'||publication,'kind',case when back then 'temporary' else 'permanent' end,'fromId',d.primary_id,'toId',p_primary,'capacity',capacity);
+  else
+   intent:=(select jsonb_agg(jsonb_build_object('id','edit/'||publication||'/'||(c->>'date'),'kind',case when (backs->>(n::integer-1))::boolean then 'temporary' else 'permanent' end,
+    'fromId',d.primary_id,'toId',p_primary,'capacity',jsonb_build_array(c)) order by n) from jsonb_array_elements(capacity) with ordinality o(c,n));
+  end if;
  end if;
  -- Record the accounting with this edit before the pointer moves; the pointer
  -- trigger then finds the version recorded and only reconciles pending swaps.
  perform duty_private.compensation_publication(m.month,publication,NULL,false,jsonb_build_object(
-  'intents',case when intent is null then '[]'::jsonb else jsonb_build_array(intent) end,
+  'intents',case when intent is null then '[]'::jsonb when jsonb_typeof(intent)='array' then intent else jsonb_build_array(intent) end,
   'reason','Published duty edit '||d.day||' ('||p_kind||')'||case when conflicts then '. Availability override: '||reason else '' end));
  update public.duty_months set current_publication_id=publication where month=m.month;
  -- New points, or a weekend joined again, change the month's calendar; the copied plan follows it.

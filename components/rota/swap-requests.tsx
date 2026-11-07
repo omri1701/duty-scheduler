@@ -49,7 +49,7 @@ function conflictAlert(conflicts:SwapConflict[]|null,footer:string,name:(id:stri
 /** Accept, decline, approve, reject and cancel, with their consent and approval sheets. The
  * sheets render through `dialogs` once, at the workspace root; cards anywhere call the actions. */
 export function useSwapActions(remote:TeamWorkspace,lang:'en'|'he'){
- const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.user!.id;
+ const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.memberId;
  const [review,setReview]=useState<SwapRequest|null>(null),[override,setOverride]=useState(false),[reason,setReason]=useState('');
  const [consent,setConsent]=useState<{request:SwapRequest;conflicts:SwapConflict[]}|null>(null);
  const temporary=new Set(raw.members.filter(m=>m.is_temporary).map(m=>m.id));
@@ -113,7 +113,7 @@ export type SwapActions=ReturnType<typeof useSwapActions>;
 
 /** One request as a card: who, which dates, its state, and the answer it waits for from the viewer. */
 export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;remote:TeamWorkspace;lang:'en'|'he'}){
- const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.user!.id,{name,temporary}=swaps;
+ const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.memberId,{name,temporary}=swaps;
  const member=(id:string)=>raw.members.find(m=>m.id===id);
  const waiting=swapWaitingOn(r),answerFor=swapAnswerFor(r,me,remote.isAdmin,temporary),incoming=answerFor!==null,admin=remote.isAdmin&&r.status==='awaiting_admin',pending=['awaiting_engineer','awaiting_admin'].includes(r.status);
  // Consent may precede an availability override, never a second weekend.
@@ -158,7 +158,7 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
 /** The confirmation of a swap chosen in the calendar (two duties), for members and admins. */
 export function SwapRequestDialog({remote,month,lang,selection,onSelection}:{remote:TeamWorkspace;month:string;lang:'en'|'he';selection:{from:string;to:string}|null;onSelection:(value:{from:string;to:string}|null)=>void}){
  const [explanation,setExplanation]=useState('');
- const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.user!.id;
+ const t:Translate=(en,he)=>lang==='he'?he:en,raw=remote.snapshot!,me=remote.memberId;
  const duties=publishedSwapDuties(raw,month,todayIsrael()),pick=(day?:string)=>duties.find(d=>d.day===day);
  // Engineers offer their own duty. An admin may pick any two; as a party, their side is the request's side.
  let source=pick(selection?.from),target=pick(selection?.to);

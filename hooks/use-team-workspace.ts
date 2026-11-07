@@ -3,7 +3,7 @@ import {useEffect,useMemo,useState} from 'react';
 import type {User} from '@supabase/supabase-js';
 import {getSupabase,getEnvironment,signInWithGoogle,signInLocally,completeInspectionLogin} from '@/lib/supabase/client';
 import type {Environment} from '@/lib/supabase/environment';
-import {fromSnapshot,schedulePayload,canManage,readSnapshot,type Snapshot} from '@/lib/supabase/snapshot';
+import {fromSnapshot,schedulePayload,canManage,findMe,readSnapshot,type Snapshot} from '@/lib/supabase/snapshot';
 import {observeSession} from '@/lib/supabase/session';
 import {createWorkspace} from '@/lib/supabase/workspace';
 import {errorMessage,type DutyClient} from '@/lib/supabase/rpc';
@@ -14,7 +14,7 @@ import type {AllocationDraft} from '@/lib/allocation/types';
 import type {Approval, GenerationInput} from '@/lib/scheduling/types';
 import type {PrimaryAssignments} from '@/lib/scheduling/validate';
 import {balance as readBalance} from '@/lib/supabase/balance';
-import type {PublishedEdit} from '@/lib/supabase/published-edit';
+import type {PublishedEdit,WeekendEdit} from '@/lib/supabase/published-edit';
 import {swapAvailability} from '@/lib/supabase/swaps';
 import {editReturns} from '@/lib/supabase/published-edit';
 import {replannedVersions} from '@/lib/supabase/versions';
@@ -87,7 +87,7 @@ export function useTeamWorkspace(){
  // The live snapshot, or the device's last copy for this member while the server is unreachable.
  const offline=!snapshot&&!!user&&cached?.userId===user.id;
  const shown=snapshot??(offline?cached!.snapshot:null);
- const me=shown?.members.find(m=>m.id===user?.id);
+ const me=shown&&user?findMe(shown,user.id):undefined;
  // Personal settings (decision 2026-11-06): direct checked RPCs without the workspace
  // revision, so they never conflict with schedule edits or refresh the team.
  const personal=useMemo(()=>({
@@ -97,7 +97,8 @@ export function useTeamWorkspace(){
   async saveDevice(device:DeviceSubscription){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_save_push_subscription',{p_endpoint:device.endpoint,p_p256dh:device.p256dh,p_auth:device.auth});if(error)throw error},
   async removeDevice(endpoint:string){if(!client)throw Error('Not connected');const {error}=await client.rpc('duty_delete_push_subscription',{p_endpoint:endpoint});if(error)throw error},
   }),[client,environment,user]);
- return {user,me,snapshot:shown,loading,saving,error:offline?'':error,environment,offline:offline||!online,readOnly:(environment?.readOnly??true)||offline,isAdmin:!!shown&&!!user&&canManage(shown,user.id),clearError:()=>setError(''),state:shown&&user?fromSnapshot(shown,user.id):null,
+ // The caller's member id: their sign-in id, or the id of the temporary member they were linked to.
+ return {user,me,memberId:me?.id??user?.id??'',snapshot:shown,loading,saving,error:offline?'':error,environment,offline:offline||!online,readOnly:(environment?.readOnly??true)||offline,isAdmin:!!shown&&!!user&&canManage(shown,user.id),clearError:()=>setError(''),state:shown&&user?fromSnapshot(shown,user.id):null,
   refresh:()=>workspace.refresh(),
   // Display-only projection; read where it is shown, never at startup.
   balance:()=>client?readBalance(client):Promise.reject(Error('Not connected')),
@@ -134,9 +135,11 @@ export function useTeamWorkspace(){
    if(result==='invalidated')throw Error('This request was invalidated because its published duties changed or are no longer eligible.');
   },
   editPublishedDuty:(publication:string,day:string,edit:PublishedEdit)=>workspace.mutate('duty_edit_published_duty',{p_publication:publication,p_day:day,p_primary:edit.primary,p_extra_points:edit.extra,p_saturday_extra_points:edit.saturdayExtra,p_kind:edit.kind,p_override_reason:edit.overrideReason.trim()}),
+  editPublishedWeekend:(publication:string,friday:string,edit:WeekendEdit)=>workspace.mutate('duty_edit_published_weekend',{p_publication:publication,p_friday:friday,p_friday_primary:edit.fridayPrimary,p_friday_extra:edit.fridayExtra,p_saturday_primary:edit.saturdayPrimary,p_saturday_extra:edit.saturdayExtra,p_kind:edit.kind,p_override_reason:edit.overrideReason.trim()}),
   review:(person:string,status:'approved'|'rejected')=>workspace.mutate('duty_review_member',{p_member:person,p_status:status}).then(()=>{}),
   addTemporaryMember:(name:string)=>workspace.mutate('duty_add_temporary_member',{p_name:name}),
   renameTemporaryMember:(person:string,name:string)=>workspace.mutate('duty_rename_temporary_member',{p_member:person,p_name:name}).then(()=>{}),
+  linkTemporaryMember:(pending:string,temporary:string)=>workspace.mutate('duty_link_temporary_member',{p_pending:pending,p_temporary:temporary}).then(()=>{}),
  };
 }
 export type TeamWorkspace=ReturnType<typeof useTeamWorkspace>;

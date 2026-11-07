@@ -95,9 +95,8 @@ for (const lang of ['en', 'he'] as const) {
     await openApp('a');
     await page.clock.setFixedTime(new Date('2026-11-05T10:00:00Z'));
     await page.reload(); await language(page, lang);
-    // From 5 November the calendar opens on December.
+    // The fixtures open every load on November (the app's own default is the current month, decision 2026-11-07).
     await page.getByRole('tab', {name: t('Schedule', 'לוח'), exact: true}).click();
-    await page.getByRole('button', {name: t('Previous month', 'חודש קודם')}).click();
     await startSwap(page, '2026-11-10');
     await expectBlocked(page, '2026-11-03', t('This day has passed', 'הכוננות הזו כבר עברה'));
     await expectGreen(page, '2026-11-11');

@@ -202,6 +202,15 @@ GRANT EXECUTE ON FUNCTION public.duty_add_temporary_member(text, bigint) TO auth
 REVOKE ALL ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) TO authenticated;
 
+REVOKE ALL ON FUNCTION duty_private.current_member_id() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.current_member_id() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.link_temporary_member(uuid, uuid, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.link_temporary_member(uuid, uuid, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_link_temporary_member(uuid, uuid, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_link_temporary_member(uuid, uuid, bigint) TO authenticated;
+
 REVOKE ALL ON FUNCTION duty_private.balance() FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION duty_private.balance() TO authenticated;
 
@@ -213,6 +222,14 @@ GRANT EXECUTE ON FUNCTION duty_private.edit_published_duty(uuid, date, uuid, num
 
 REVOKE ALL ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.join_weekend_halves(uuid, date) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) TO authenticated;

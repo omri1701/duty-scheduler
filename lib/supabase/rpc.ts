@@ -22,6 +22,8 @@ export type Functions = {
   duty_join: Operation<{p_name: string}>;
   duty_add_temporary_member: Operation<Revision & {p_name: string}, string>;
   duty_rename_temporary_member: Operation<Revision & {p_member: string; p_name: string}>;
+  // Merges a pending sign-up into a temporary member (decision 2026-11-07); admins only, cannot be undone.
+  duty_link_temporary_member: Operation<Revision & {p_pending: string; p_temporary: string}>;
   duty_save_schedule: Operation<Revision & {p_state: ReturnType<typeof schedulePayload> & {compensation?: CompensationPublicationMetadata}; p_publish: string | null}>;
   duty_compensation: Operation<Revision & {p_operation: ManualOperation | {kind: 'reconcile'}; p_source_key: string | null; p_reason: string | null; p_fingerprint: string | null; p_cutoff: number | null}, unknown>;
   duty_set_constraints: Operation<Revision & {p_member: string; p_days: string[]; p_kind: string; p_note: string}>;
@@ -49,6 +51,8 @@ export type Functions = {
   duty_delete_push_subscription: Operation<{p_endpoint: string}>;
   duty_edit_published_duty: Operation<Revision & {p_publication: string; p_day: string; p_primary: string; p_extra_points: number;
     p_saturday_extra_points: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number}>;
+  duty_edit_published_weekend: Operation<Revision & {p_publication: string; p_friday: string; p_friday_primary: string; p_friday_extra: number;
+    p_saturday_primary: string; p_saturday_extra: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number; joined: boolean}>;
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;
