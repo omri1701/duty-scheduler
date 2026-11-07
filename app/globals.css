@@ -860,14 +860,21 @@ textarea{resize:vertical;min-height:76px}
 /* The month heading: drag or swipe it sideways to change month; the name rolls like an odometer. */
 .month-heading[data-swipe]{cursor:grab;touch-action:pan-y;-webkit-user-select:none;user-select:none}
 .month-heading[data-swipe]:active{cursor:grabbing}
-.month-roll{display:inline-grid;overflow:hidden;padding-block:2px;margin-block:-2px;transition:transform 300ms var(--spring)}
-.month-roll[data-dragging]{transition:none}
+.month-roll{position:relative;display:inline-grid;overflow:hidden;padding-block:2px;margin-block:-2px}
+/* While the name is dragged the neighbour's name slides in beside it, inside the heading's soft-edged window. */
+.month-roll:has(.month-name-peek){overflow:visible}
+.month-heading[data-sliding]{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent)}
+.month-heading .month-status{transition:opacity 160ms ease}
+.month-heading[data-sliding] .month-status{opacity:0}
 .month-name{display:block;white-space:nowrap}
+.month-name-peek{display:block;white-space:nowrap;position:absolute;inset-block-start:2px;inset-inline-start:0;pointer-events:none;will-change:transform,filter,opacity}
 @media(prefers-reduced-motion:no-preference){
  .month-name[data-dir=next]{animation:roll-up 260ms var(--ease) both}
  .month-name[data-dir=prev]{animation:roll-down 260ms var(--ease) both}
+ .month-name[data-arrive]{animation:name-arrive 300ms var(--ease) both}
 }
 @keyframes roll-up{from{transform:translateY(75%);opacity:0}}@keyframes roll-down{from{transform:translateY(-75%);opacity:0}}
+@keyframes name-arrive{from{filter:blur(6px);opacity:.45}}
 /* Motion: transform and opacity only, at most 300ms each, all off under reduced motion. */
 .assignment-chip{transition:transform 160ms var(--spring),box-shadow 160ms var(--ease)}
 .day-cell:active:not(:disabled) .assignment-chip{transform:scale(.95);transition-duration:90ms}

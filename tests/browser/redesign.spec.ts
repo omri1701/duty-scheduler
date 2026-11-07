@@ -7,10 +7,11 @@ import {mockPush, VAPID_PUBLIC_KEY} from './push-mock';
 // The redesign gallery (decision 2026-11-06): every screen in light and dark, English and Hebrew.
 test.beforeEach(({backend}) => {backend.url = PROJECTS.prod; backend.runtimeOrigin = 'https://duty-scheduler-prod.vercel.app';});
 
-async function snapshot(page: Page, name: string) {
+/** `held`: a gesture is in progress, so the pointer stays where it is (moving it would continue the drag). */
+async function snapshot(page: Page, name: string, held = false) {
   test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: name + '.png', viewport: page.viewportSize(), language: await page.locator('html').getAttribute('lang')})});
   await page.evaluate(() => document.fonts.ready);
-  await page.mouse.move(0, 0);
+  if (!held) await page.mouse.move(0, 0);
   if (!existsSync(test.info().snapshotPath(name + '.png'))) {
     const path = test.info().outputPath(name + '-actual.png');
     await page.screenshot({path, fullPage: true, animations: 'disabled', caret: 'hide'});
@@ -373,8 +374,39 @@ for (const lang of ['en', 'he'] as const) {
     } else {await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dx, y, {steps: 6});}
     await expect(page.locator('.month-peek .calendar-grid')).toBeVisible();
     // Captured light only: the gesture is held while the screenshot is taken.
-    await snapshot(page, `month-swipe-${lang}`);
-    if (cdp) {await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}); await cdp.detach();} else await page.mouse.up();
+    await snapshot(page, `month-swipe-${lang}`, true);
+    // Back to the start before lifting, so the held capture never turns into a flick.
+    if (cdp) {await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x, y}]}); await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}); await cdp.detach();} else {await page.mouse.move(x, y, {steps: 6}); await page.mouse.up();}
+    await expect(page.locator('.month-peek')).toHaveCount(0);
+    // Owner round 4: the name swipes on its own (the calendar stays still) ...
+    const hold = async (fx: number, fy: number, by: number) => {
+      const touch = mobile ? await page.context().newCDPSession(page) : null;
+      if (touch) {
+        await touch.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x: fx, y: fy}]});
+        for (let step = 1; step <= 6; step++) await touch.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: fx + by * step / 6, y: fy}]});
+      } else {await page.mouse.move(fx, fy); await page.mouse.down(); await page.mouse.move(fx + by, fy, {steps: 6});}
+      return async () => {
+        if (touch) {await touch.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: fx, y: fy}]}); await touch.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}); await touch.detach();}
+        else {await page.mouse.move(fx, fy, {steps: 6}); await page.mouse.up();}
+      };
+    };
+    const name = (await page.locator('.month-bar .month-name').boundingBox())!;
+    let release = await hold(name.x + name.width / 2, name.y + name.height / 2, (lang === 'he' ? 1 : -1) * 40);
+    await expect(page.locator('.month-name-peek')).toBeVisible();
+    await snapshot(page, `month-name-swipe-${lang}`, true);
+    await release();
+    await expect(page.locator('.month-name-peek')).toHaveCount(0);
+    // ... and a six-week month (January 2027) peeks in whole, the calendar grown to fit it.
+    await page.getByRole('button', {name: t('Next month', 'חודש הבא'), exact: true}).click();
+    await expect(page.locator('.month-bar .month-name')).toHaveText(t('December 2026', 'דצמבר 2026'));
+    await expect(page.locator('.month-peek')).toHaveCount(0);
+    release = await hold(x, y, dx);
+    await expect(page.locator('.month-peek [data-date="2027-01-31"]')).toBeVisible();
+    await snapshot(page, `month-swipe-six-weeks-${lang}`, true);
+    await release();
+    await expect(page.locator('.month-peek')).toHaveCount(0);
+    await page.getByRole('button', {name: t('Previous month', 'חודש קודם'), exact: true}).click();
+    await expect(page.locator('.month-bar .month-name')).toHaveText(t('November 2026', 'נובמבר 2026'));
     if (!mobile) return;
     await page.evaluate(() => {document.documentElement.dataset.safeArea = 'test';});
     await both(page, `safe-area-schedule-${lang}`);
