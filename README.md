@@ -161,8 +161,8 @@ The redesign (decision 2026-11-06) is Apple-clean: one token set in light and da
 first paint by `lib/theme/theme.ts`), the system font, soft cards, and a small design system
 in `components/ui` (Card, Sheet, ListRow, Chip, Avatar, Segmented, Switch, EmptyState,
 Skeleton, CountUp, SwipeRow, Toaster). The product name lives in `lib/brand.ts`; the logo is one file, `public/brand/logo.svg`
-(the company owl, traced from its PNG), drawn only by `components/brand/logo.tsx`; the name's
-font lives only in `app/wordmark-font.ts`; `scripts/render-icons.mjs` renders the favicon, PWA icons and iOS
+(the company owl, traced from its PNG), drawn only by `components/brand/logo.tsx` (the name is plain text in the app font);
+`scripts/render-icons.mjs` renders the favicon, PWA icons and iOS
 startup screens from it. The brand colours are the logo's: navy `#090442` fills (white text on it)
 and cyan `#19f2f7`, used only on navy or dark surfaces or as a glow, never as text or thin lines on
 white (`--brand`, `--brand-fg`, `--cyan`). In dark mode navy fills get a thin near-white edge and a soft
