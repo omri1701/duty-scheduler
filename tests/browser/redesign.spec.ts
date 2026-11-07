@@ -118,7 +118,7 @@ for (const lang of ['en', 'he'] as const) {
     await tab(page, t('Team', 'צוות')).click();
     await expect(page.locator('.team-list')).toBeVisible();
     await page.locator('.team-group').click();
-    await both(page, `team-${lang}`);
+    await both(page, `team-inactive-group-${lang}`);
     if (info.project.name === 'mobile') {
       const row = page.locator(`[data-member="${ids.b}"] .swipe-content`);
       const box = (await row.boundingBox())!;
@@ -203,7 +203,7 @@ for (const lang of ['en', 'he'] as const) {
     if (mobile) await page.locator('[data-day-details] .day-duty').click();
     await page.getByRole('dialog').getByRole('button', {name: t('Edit', 'עריכה'), exact: true}).click();
     await expect(page.getByRole('dialog').getByRole('button', {name: t('Review change', 'בדיקת השינוי'), exact: true})).toBeVisible();
-    await both(page, `published-edit-${lang}`);
+    await both(page, `published-edit-sheet-${lang}`);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
     await page.locator('button[data-date="2026-11-02"]').filter({has: page.locator('.date-line')}).click();
