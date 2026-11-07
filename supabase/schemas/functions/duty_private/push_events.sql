@@ -33,7 +33,7 @@ CREATE FUNCTION duty_private.push_month_events() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare actor uuid:=auth.uid(); today date:=(now() at time zone 'Asia/Jerusalem')::date; r record; v integer;
+declare actor uuid:=duty_private.current_member_id(); today date:=(now() at time zone 'Asia/Jerusalem')::date; r record; v integer;
 begin
  begin
   if old.status='draft' and new.status='published' then
@@ -78,7 +78,7 @@ CREATE FUNCTION duty_private.push_swap_events() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare actor uuid:=auth.uid(); params jsonb; url text; who uuid; side text; answered uuid; round text;
+declare actor uuid:=duty_private.current_member_id(); params jsonb; url text; who uuid; side text; answered uuid; round text;
 begin
  begin
   params:=jsonb_build_object('month',new.month,'fromDay',new.from_day,'toDay',new.to_day,'request',new.id);

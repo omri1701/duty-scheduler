@@ -631,6 +631,14 @@ textarea{resize:vertical;min-height:76px}
 .member-stats strong{font-size:26px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
 .member-stats span{font-size:12px;color:var(--ink-3)}
 .membership-request{min-height:64px}
+/* Link a sign-up to a temporary member (decision 2026-11-07). */
+.link-signup{display:flex;align-items:center;gap:12px;padding:4px 4px 2px}
+.link-signup .avatar.member-tint,.link-pair .avatar.member-tint:first-child{background:var(--cell);color:var(--cell-ink)}
+.link-choice .row-subtitle{font-variant-numeric:tabular-nums}
+.link-pair{display:flex;align-items:center;justify-content:center;gap:14px;padding:6px 0 4px}
+.link-pair-icon{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--brand-soft);color:var(--brand)}
+.link-pair-icon svg{width:18px;height:18px}
+.link-email{text-align:center;font-size:13px;color:var(--ink-3);overflow-wrap:anywhere}
 .order-buttons{display:none}
 @media(max-width:600px){
  .team-row-inner{gap:8px;padding:10px 12px 10px 2px;min-height:64px}
@@ -643,6 +651,10 @@ textarea{resize:vertical;min-height:76px}
  .team-points.total-points{display:none}
  .team-row+.team-row::before,.team-group+.team-row::before{inset-inline-start:44px}
  .membership-request .row-trail{flex-direction:column;align-items:stretch}
+ /* With Link, the three actions stack under the name on phones, in reading and Tab order. */
+ .membership-request.can-link{flex-wrap:wrap;row-gap:12px}
+ .membership-request.can-link .row-trail{flex-basis:100%}
+ .membership-request.can-link .row-buttons{flex:1;flex-direction:column;align-items:stretch;gap:8px}
 }
 
 /* ---------- settings ---------- */

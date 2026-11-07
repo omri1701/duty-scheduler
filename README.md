@@ -50,8 +50,17 @@ active admin account. Inactive members receive no new automatic allocations;
 existing assignments, constraints, IDs and compensation history remain. Existing
 assignments involving inactive members require manager review before publication.
 Temporary engineers participate in the same fairness and compensation rules as
-regular engineers. Account linking is not available; do not create replacement
-members or rename them to an email as a linking workaround.
+regular engineers.
+
+When a temporary member later signs up, link the two instead of approving a second
+member: on their join request choose **Link to a temporary member…**, pick the member
+(inactive ones are listed separately), then confirm. Linking cannot be undone. The two
+become one person: the temporary member keeps its name, colour, No weekends setting,
+seniority, active state, duties, points, nets, constraints and notes, becomes a normal
+engineer and gains the sign-in, email and language; the sign-up request disappears.
+A swap still waiting on the temporary member's answer is then answered by that person,
+not an admin; answers an admin already gave stay. **Approve** and **Decline** work as
+before. Do not create replacement members or rename them to an email as a workaround.
 
 For an unmerged branch, use `pnpm start:local` and the local admin account described
 in [Supabase setup](docs/SUPABASE_SETUP.md#temporary-members-local-development).

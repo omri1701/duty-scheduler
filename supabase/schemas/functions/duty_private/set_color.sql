@@ -7,6 +7,6 @@ CREATE FUNCTION duty_private.set_color(p_color text, p_revision bigint) RETURNS 
 begin
  perform duty_private.check_revision(p_revision);
  if p_color is null or p_color !~ '^#[0-9a-fA-F]{6}$' then raise exception 'Choose a colour from the palette'; end if;
- update public.duty_members set color=lower(p_color) where id=auth.uid();
+ update public.duty_members set color=lower(p_color) where id=duty_private.current_member_id();
  update public.duty_workspace set revision=revision+1 where id;
 end $$;
