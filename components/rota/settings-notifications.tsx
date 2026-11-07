@@ -150,7 +150,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     <SectionTitle><span id="settings-notifications-title">{t('Notifications', 'התראות')}</span></SectionTitle>
     <Card inset>
       <div className={'row settings-device ' + status}>
-        <span className="row-lead"><span className="row-icon" data-tone={status === 'on' ? 'ok' : status === 'loading' || status === 'off' ? 'neutral' : 'warn'}>{status === 'on' ? <BellRing/> : <BellOff/>}</span></span>
+        <span className="row-lead"><span className="row-icon" data-tone={status === 'on' ? 'brand' : status === 'loading' || status === 'off' ? 'neutral' : 'warn'}>{status === 'on' ? <BellRing/> : <BellOff/>}</span></span>
         <span className="row-body"><span className="row-title">{t('This device', 'המכשיר הזה')}</span><span className="row-subtitle" role="status">{readOnly ? t('Read-only inspection', 'בדיקה לקריאה בלבד') : statusText[status]}{status === 'on' && settings && settings.devices > 1 && ` · ${t(`${settings.devices} devices`, `${settings.devices} מכשירים`)}`}</span></span>
         <span className="row-trail">
           {status === 'on'

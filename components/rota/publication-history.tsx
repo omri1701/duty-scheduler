@@ -37,7 +37,7 @@ export function PublicationHistory({remote,month,open,onOpenChange,lang}:{remote
   </div>}>
   {!versions.length?<p className="muted">{t('No published versions yet.','עדיין אין גרסאות שפורסמו.')}</p>:<>
    <div className="history-versions">{versions.map(v=><button key={v.id} type="button" className={viewed?.id===v.id?'selected':''} aria-pressed={viewed?.id===v.id} onClick={()=>{setSelected(v.id);setAction(null);setError('')}}>
-    <strong>v{v.version}{v.id===current&&<Chip tone="ok" size="sm">{t('Live','מוצגת לצוות')}</Chip>}</strong><span>{when(v.published_at)}</span><small>{raw.members.find(m=>m.id===v.published_by)?.name}</small>
+    <strong>v{v.version}{v.id===current&&<Chip tone="brand" size="sm">{t('Live','מוצגת לצוות')}</Chip>}</strong><span>{when(v.published_at)}</span><small>{raw.members.find(m=>m.id===v.published_by)?.name}</small>
    </button>)}</div>
    <div className="history-calendar">
     <div className="calendar-weekdays">{(lang==='en'?['Sun','Mon','Tue','Wed','Thu','Fri','Sat']:['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳']).map(d=><span key={d}>{d}</span>)}</div>

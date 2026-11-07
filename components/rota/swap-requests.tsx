@@ -124,7 +124,7 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
  // the same actions as the buttons, which stay for keyboard and screen readers.
  const [openSwipe,setOpenSwipe]=useState<string|null>(null);
  const off=remote.readOnly||!pending;
- const leading:SwipeAction|undefined=off?undefined:incoming&&!refused?{label:t('Accept','קבלה'),icon:<Check/>,tone:'ok',onSelect:()=>swaps.startAccept(r)}
+ const leading:SwipeAction|undefined=off?undefined:incoming&&!refused?{label:t('Accept','קבלה'),icon:<Check/>,tone:'brand',onSelect:()=>swaps.startAccept(r)}
   :admin?{label:t('Approve','אישור'),icon:<ShieldCheck/>,tone:'brand',onSelect:()=>swaps.openApprove(r)}:undefined;
  const trailing:SwipeAction|undefined=off?undefined:incoming?{label:t('Decline','סירוב'),icon:<X/>,tone:'danger',onSelect:()=>swaps.decline(r)}
   :admin?{label:t('Reject','דחייה'),icon:<X/>,tone:'danger',onSelect:()=>swaps.reject(r)}

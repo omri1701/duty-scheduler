@@ -65,16 +65,16 @@ textarea{resize:vertical;min-height:76px}
 
 /* ---------- brand ---------- */
 .logo{direction:ltr;display:inline-flex;width:var(--logo-size,36px);height:var(--logo-size,36px);line-height:0;flex-shrink:0}
-.logo img{display:block;width:100%;height:100%}
+.logo picture,.logo img{display:block;width:100%;height:100%}
 .wordmark{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font-weight:750;letter-spacing:-.02em;font-size:calc(var(--logo-size,30px)*.8);text-decoration:none}
-.wordmark-name,.access-name{direction:ltr;unicode-bidi:isolate}
+.wordmark-name{direction:ltr;unicode-bidi:isolate}
 .wordmark-context{font-weight:400;font-size:13px;color:var(--ink-3);letter-spacing:0}
 
 /* ---------- shell ---------- */
 .app-shell{min-height:100dvh;display:flex;flex-direction:column;gap:8px}
 .app-shell-inner{display:contents}
 .app-main{flex:1;min-width:0;display:flex;flex-direction:column}
-.hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + var(--sat)) max(16px,var(--sar)) 8px max(16px,var(--sal));min-height:56px}
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + var(--sat) + min(var(--sat),6px)) max(16px,var(--sar)) 8px max(16px,var(--sal));min-height:56px}
 .hdr-actions{display:flex;align-items:center;gap:6px;margin-inline-start:auto}
 .hdr-spacer{flex:1}
 .icon-button{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:50%;color:var(--ink-2);transition:background var(--dur) var(--ease)}
@@ -209,7 +209,7 @@ textarea{resize:vertical;min-height:76px}
 .skel:not(.skel-text)::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--shimmer) 50%,transparent);pointer-events:none}
 @media(prefers-reduced-motion:no-preference){.skel:not(.skel-text)::after{animation:placeholder-shimmer 1.4s ease-in-out infinite}@keyframes placeholder-shimmer{to{transform:translateX(100%)}}}
 .switch{position:relative;width:51px;height:31px;border-radius:999px;background:var(--line-strong);transition:background var(--dur) var(--ease);flex-shrink:0}
-.switch[data-state=checked]{background:var(--ok)}
+.switch[data-state=checked]{background:var(--brand);box-shadow:var(--brand-edge)}
 .switch:disabled{opacity:.5}
 .switch-thumb{display:block;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transform:translateX(2px);transition:transform var(--dur) var(--spring)}
 .switch[data-state=checked] .switch-thumb{transform:translateX(22px)}
@@ -669,7 +669,7 @@ textarea{resize:vertical;min-height:76px}
 .settings-name input:hover,.settings-name input:focus-visible{border-color:var(--line-strong);background:var(--surface)}
 .settings-name-action{position:absolute;inset-block:0;inset-inline-end:4px;display:flex;align-items:center;pointer-events:none}
 .settings-name-action>*{pointer-events:auto}
-.settings-saved{font-size:13px;font-weight:600;color:var(--ok);animation:settings-saved-in .2s ease-out}
+.settings-saved{font-size:13px;font-weight:600;color:var(--brand-fg);animation:settings-saved-in .2s ease-out}
 .settings-saved::before{content:'✓ '}
 @keyframes settings-saved-in{from{opacity:0;transform:translateY(2px)}}
 .color-grid{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:8px}
@@ -758,7 +758,7 @@ textarea{resize:vertical;min-height:76px}
 .editor-dialog .published-edit-summary{white-space:pre-wrap;font-size:14px;line-height:1.55;max-height:none;resize:none;background:var(--surface-2);color:var(--ink)}
 .special-summary{display:flex;flex-direction:column;gap:4px;background:var(--warn-soft);border-radius:12px;padding:14px;color:var(--warn)}
 .special-summary strong{font-size:22px}.special-summary span{font-size:13px}
-.publish-summary{display:flex;align-items:center;gap:14px;background:var(--ok-soft);padding:16px;border-radius:12px;font-size:15px;color:var(--ok)}
+.publish-summary{display:flex;align-items:center;gap:14px;background:var(--brand-soft);padding:16px;border-radius:12px;font-size:15px;color:var(--brand-ink)}
 .deadline-card{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-3)}
 
 /* ---------- welcome, history, offline ---------- */
@@ -800,9 +800,9 @@ textarea{resize:vertical;min-height:76px}
 .access-stack{width:min(100%,400px);display:grid;gap:22px;animation:fade-up 300ms var(--ease)}
 .access-hero{position:relative;isolation:isolate;display:grid;justify-items:center;gap:8px;text-align:center}
 /* Home's hero glow, soft and behind the mark. */
-.access-hero::before{content:"";position:absolute;z-index:-1;top:-34px;left:50%;width:min(320px,88vw);height:200px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--hero-glow,var(--glow)) var(--hero-glow-mix),transparent),transparent);filter:blur(18px);opacity:.38;pointer-events:none}
+.access-hero::before{content:"";position:absolute;z-index:-1;top:-26px;left:50%;width:min(340px,88vw);height:220px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--hero-glow,var(--glow)) var(--hero-glow-mix),transparent),transparent);filter:blur(18px);opacity:.38;pointer-events:none}
 :root[data-theme=dark] .access-hero::before{opacity:.42}
-.access-name{font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:4px}
+.access-logo{margin:0;line-height:0}
 .access-card{padding:24px;background:var(--surface);border-radius:var(--radius-xl);display:grid;gap:14px;box-shadow:var(--shadow-card);justify-items:stretch;text-align:center}
 .access-state{justify-self:center;display:grid;place-items:center;width:52px;height:52px;border-radius:17px;background:var(--warn-soft);color:var(--warn)}
 .access-state[data-tone=danger]{background:var(--danger-soft);color:var(--danger)}
@@ -821,7 +821,7 @@ textarea{resize:vertical;min-height:76px}
 .local-login{display:grid;gap:14px;min-width:0;text-align:start}
 .local-login input{width:100%;min-width:0;scroll-margin-block:96px}
 .local-login button{min-height:46px}
-@media(max-width:600px){.access-card{padding:20px}.access-name{font-size:28px}}
+@media(max-width:600px){.access-card{padding:20px}}
 /* ---------- environment ---------- */
 .environment-badge{display:inline-flex;align-items:center;flex-shrink:0;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;line-height:1.4;letter-spacing:.05em;white-space:nowrap}
 .environment-local{background:var(--info-soft);color:var(--info)}
@@ -995,6 +995,8 @@ textarea{resize:vertical;min-height:76px}
 .month-title[data-swipe]{touch-action:pan-y}
 
 :root[data-safe-area=test]{--sat:59px;--sab:34px;--sal:0px;--sar:0px}
+/* The status-bar strip (app/layout.tsx): opaque page colour over anything that scrolls under it. */
+.safe-top{position:fixed;inset:0 0 auto;height:var(--sat);background:var(--bg);z-index:60;pointer-events:none}
 /* Phones: the sticky month bar stops below the status bar; its strip above stays the page colour. */
 @media(max-width:600px){.month-bar{top:var(--sat)}.month-bar::before{content:'';position:absolute;inset-inline:-16px;bottom:100%;height:var(--sat);background:var(--bg);pointer-events:none}}
 

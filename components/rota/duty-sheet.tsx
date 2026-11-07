@@ -37,7 +37,7 @@ export function DutySheet({duty, state, lang, t, meId, open, onClose, actions, p
     {b && <div className="duty-facts">
       <div className="duty-chips">
         <Chip tone="brand">{b.points === 1 ? t('1 point', 'נקודה אחת') : t(`${b.points} points`, `${b.points} נקודות`)}</Chip>
-        {published ? <Chip tone="ok">{t('Published', 'פורסם')}</Chip> : <Chip tone="neutral">{t('Draft', 'טיוטה')}</Chip>}
+        {published ? <Chip tone="brand">{t('Published', 'פורסם')}</Chip> : <Chip tone="neutral">{t('Draft', 'טיוטה')}</Chip>}
         {a?.locked && <Chip tone="neutral"><LockKeyhole/>{t('Locked', 'נעול')}</Chip>}
         {a?.override && <Chip tone="warn">{t('Admin exception', 'חריגת מנהל')}</Chip>}
       </div>

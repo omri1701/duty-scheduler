@@ -69,7 +69,7 @@ export function TeamList({balance=null,name=id=>id,team,revision,monthTotals,his
   const canSwipe=!readOnly&&p.id!==selfId&&!saving&&!moving;
   return <SwipeRow key={p.id} id={p.id} rtl={rtl} openId={openSwipe} onOpen={setOpenSwipe} disabled={!canSwipe} className={['team-row',!readOnly?'editable':'',!p.active?'inactive':'',dragging===p.id?'drag-source':''].join(' ')}
    attrs={{'data-gesture-key':p.id,'data-member':p.id}} onClick={()=>onSelect(p.id)}
-   action={canSwipe?p.active?{label:t('Deactivate','השבתה'),icon:<UserRoundX/>,tone:'danger',onSelect:()=>setActive(p.id,false)}:{label:t('Activate','הפעלה'),icon:<UserRoundCheck/>,tone:'ok',onSelect:()=>setActive(p.id,true)}:undefined}>
+   action={canSwipe?p.active?{label:t('Deactivate','השבתה'),icon:<UserRoundX/>,tone:'danger',onSelect:()=>setActive(p.id,false)}:{label:t('Activate','הפעלה'),icon:<UserRoundCheck/>,tone:'brand',onSelect:()=>setActive(p.id,true)}:undefined}>
    <div className="team-row-inner">
     {!readOnly&&p.active?<button type="button" data-no-swipe disabled={readOnly||moving||saving} className="team-grip" aria-label={`${t('Drag to reorder','גרירה לשינוי הסדר')} ${p.name}`} aria-describedby="team-keyboard-hint"
      onClick={e=>e.stopPropagation()}

@@ -39,8 +39,8 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
   </div>
   <div className="access-stack">
    <header className="access-hero">
-    <Logo size={56}/>
-    {pending?<p className="access-name">{APP_NAME}</p>:<h1 className="access-name">{APP_NAME}</h1>}
+    {/* The logo already says miko: no separate name, only one for assistive technology. */}
+    {pending?<p className="access-logo"><Logo size={168}/><span className="sr-only">{APP_NAME}</span></p>:<h1 className="access-logo"><Logo size={168}/><span className="sr-only">{APP_NAME}</span></h1>}
    </header>
    <section className="access-card" aria-live="polite">
     <InspectionWarning environment={remote.environment} lang={lang}/>

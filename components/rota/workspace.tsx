@@ -273,8 +273,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ];
   }
   const status = isManager
-    ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
-    : publication ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
+    ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'brand' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
+    : publication ? {text: t('Published', 'פורסם'), tone: 'brand' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
   const selectedDuty = selectedDay ? calendarBlocks.find(b => b.start <= selectedDay && selectedDay < b.end) : undefined;
   // The chevrons play the calendar's month transition (month-stage.tsx). The name and the calendar
   // swipe separately (owner round 4): a name swipe refreshes the calendar in place, blurred to
