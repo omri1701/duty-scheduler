@@ -540,14 +540,15 @@ test('cancelling synchronous WASM retains accepted assignments and a fresh Worke
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   const active = await started, stopped = active.waitForEvent('close');
   // Progress shows on the button itself, in place (decision 2026-11-07): no block below the plan.
-  const generating = page.getByRole('button', {name: 'Generating…', exact: true});
+  const generating = page.getByRole('button', {name: 'Finding the best arrangement…', exact: true});
   await expect(generating).toBeDisabled();
   await expect(generating).toHaveAttribute('aria-busy', 'true');
   await expect(generating.locator('.spin')).toBeVisible();
   const during = await generating.boundingBox();
   expect(Math.abs(during!.x - placed!.x) + Math.abs(during!.width - placed!.width) + Math.abs(during!.y - placed!.y)).toBeLessThan(1);
   await expect(page.locator('.allocation-progress')).toHaveCount(0);
-  await expect(page.getByText(/Finding the best arrangement|dates covered so far|saved assignments stay in place/)).toHaveCount(0);
+  await expect(page.getByText(/dates covered so far|saved assignments stay in place/)).toHaveCount(0);
+  await expect(page.locator('.allocation-scroll').getByText('Finding the best arrangement…')).toHaveCount(0);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click(); release();
   await stopped;
   expect(backend.raw.assignments).toEqual(before);
@@ -711,7 +712,7 @@ test('exact cutoff during real Worker generation terminates it without saving as
   const started = page.waitForEvent('worker');
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   const active = await started, stopped = active.waitForEvent('close');
-  await expect(page.getByRole('button', {name: 'Generating…', exact: true})).toBeDisabled();
+  await expect(page.getByRole('button', {name: 'Finding the best arrangement…', exact: true})).toBeDisabled();
   // The confirmed server sample was received at 100.25; advance exactly 60 seconds.
   await page.evaluate(() => {Object.defineProperty(performance, 'now', {configurable: true, value: () => 60_100.25});});
   await stopped; release();
@@ -833,11 +834,17 @@ for (const lang of ['en', 'he'] as const) test(`Generate progress stays on the b
   let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
   await confirm.click();
-  const generating = dialog.getByRole('button', {name: t('Generating…', 'משבץ…'), exact: true});
+  const finding = t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…');
+  const generating = dialog.getByRole('button', {name: finding, exact: true});
   await expect(generating).toBeDisabled();
+  // It fits the footer: on a phone the text ellipsizes instead of widening the sheet.
+  const box = (await generating.boundingBox())!, total = (await dialog.locator('.allocation-footer>div').first().boundingBox())!;
+  expect(box.x >= 0 && box.x + box.width <= page.viewportSize()!.width).toBe(true);
+  // The footer total stays whole beside it.
+  expect(lang === 'en' ? total.x + total.width <= box.x : box.x + box.width <= total.x).toBe(true);
   await expect(generating.locator('.spin')).toHaveCSS('animation-name', 'none');
   await expect(page.locator('.allocation-progress')).toHaveCount(0);
-  await expect(dialog.getByRole('status').filter({hasText: t('Generating…', 'משבץ…')})).toHaveCount(1);
+  await expect(dialog.getByRole('status').filter({hasText: finding})).toHaveCount(1);
   test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: `plan-generating-${lang}.png`, viewport: page.viewportSize(), language: lang})});
   const path = test.info().outputPath(`plan-generating-${lang}-actual.png`);
   await page.mouse.move(0, 0);
