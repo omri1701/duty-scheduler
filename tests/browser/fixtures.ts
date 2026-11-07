@@ -408,12 +408,14 @@ export class Backend {
   }
 }
 
-type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean}) => Promise<Page>};
+/** month: the schedule month every load of the page opens on, through the `?month=` deep link (the app opens
+ * on the current month, October under NOW; the fixtures' data is November). null: the app's own default. */
+type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean; month?: string | null}) => Promise<Page>};
 export const test = base.extend<Fixtures>({
   backend: async ({}, provide) => {await provide(new Backend());},
   openApp: async ({page, backend, baseURL}, provide) => {
     const attached = new Set<Page>(), errors: string[] = [], unexpected: string[] = [];
-    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false} = {}) => {
+    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false, month = MONTH} = {}) => {
       if (!attached.has(target)) {
         attached.add(target);
         target.on('pageerror', error => errors.push(error.message));
@@ -432,12 +434,15 @@ export const test = base.extend<Fixtures>({
       const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome, month}) => {
+        // Every load, reloads included, opens the fixture month unless the URL names one.
+        const url = new URL(location.href);
+        if (month && !url.searchParams.has('month')) {url.searchParams.set('month', month); history.replaceState(history.state, '', url);}
         localStorage.clear();
         if (!showWelcome) localStorage.setItem('duty-welcome-seen', '1');
         if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
         if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome});
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome,month});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}
