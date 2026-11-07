@@ -90,7 +90,12 @@ grid until the browser date is known, so a cached build cannot show stale dates.
 The shell uses no member, role or schedule data; disabled controls are inert and
 hidden from assistive technology, with a separate loading status. Verification
 failure returns to the access screen; only approved active members mount the real
-workspace. Language stays consistent through account changes. There is no minimum
+workspace. The access screen (sign-in, waiting, declined, inactive) is one centred column
+inside the safe areas: the logo, the name and "Your team's duty rota" over the brand glow,
+then one main button with everything else as quieter text below it. Its corner switch
+(English / עברית) works before sign-in, survives the Google round trip and becomes the
+member's language. The phone keyboard scrolls the form into view rather than re-centring
+it. Language stays consistent through account changes. There is no minimum
 loading time or shimmer. Only placeholder content pulses on a smooth two-second
 cycle; Reduce Motion disables that pulse and the brief calendar opacity transition.
 Both screens use the same calendar surface (panel, toolbar, weekday row, grid
