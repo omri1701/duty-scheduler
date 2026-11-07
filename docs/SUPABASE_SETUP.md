@@ -817,6 +817,22 @@ Temporary/Permanent edit, undo, reopen, delete and re-plan sequences over two mo
 after every step against a model whose only causes are Temporary replacements and planned
 repayments, with Plan the month starting from the other month only and SQL equal to the core.
 
+Split a published weekend (migration `20261107131818_split_published_weekend.sql`, decision
+2026-11-07): the checked, admin-only RPC `duty_edit_published_weekend(p_publication, p_friday,
+p_friday_primary, p_friday_extra, p_saturday_primary, p_saturday_extra, p_kind, p_revision,
+p_override_reason)` saves one published weekend as one Friday–Sunday row (same primary) or two day
+rows (different primaries), each date's extra exactly as typed, with the same revision,
+current-publication, open-draft and availability-reason checks as `duty_edit_published_duty`, and
+only while Friday is today or later. Covers stay with their date; joining keeps the cover of a date
+that kept its engineer (else Friday's, else Saturday's), and a cover moved onto a date it marked
+unavailable needs the reason too. The ledger stays per date: Temporary is the ordinary transition,
+Permanent adds one `edit/<publication>/<date>` intent per changed date, and `edit_returns` now
+follows each date through split and joined versions, so H1 undoes a half's Temporary change and
+`duty_edit_published_duty` gives each date of a whole weekend its own intent when their histories
+differ. An approved swap that hands someone both halves joins them (`join_weekend_halves`,
+internal, refuses published versions). Pending swaps of either date are invalidated. Regression:
+`supabase/tests/published-split.sql` (empty disposable LOCAL, rolled back).
+
 ### Empty local Supabase database (PowerShell)
 
 Requires Docker Desktop and pnpm. The CLI database-only mode includes real

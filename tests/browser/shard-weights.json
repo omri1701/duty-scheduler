@@ -203,7 +203,7 @@
  "non-weekend.spec.ts::placing a No weekends member on a weekend asks for approval he": 2735,
  "non-weekend.spec.ts::the +1 is editable that month, and Generate gives the member no weekend but the locked one": 10586,
  "published-edit.spec.ts::Hebrew: an unavailable engineer needs an override reason; Permanent records no debt": 2979,
- "published-edit.spec.ts::a combined weekend edits both dates’ extras; engineers keep requesting swaps by tap": 3599,
+ "published-edit.spec.ts::a combined weekend edits each date’s points in the weekend editor; engineers keep requesting swaps by tap": 3599,
  "published-edit.spec.ts::a newer version from another tab names the stale editor and blocks Publish until the duty is reopened": 2544,
  "published-edit.spec.ts::a pending swap that includes the duty is named before the edit": 2321,
  "published-edit.spec.ts::admin edits a published duty: Temporary by default, copyable summary, new version and Team debt": 3069,

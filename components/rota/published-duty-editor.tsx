@@ -50,15 +50,6 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
  const fmt=(day:string)=>shortDate(day,lang),last=addDays(row.end_day,-1);
  const members=raw.members.filter(m=>m.status==='approved'&&(m.active||m.id===row.primary_id)&&m.id!==row.secondary_id);
  const summary=ready?editSummary(row,edit,name,lang,returning):'';
- async function copy(){
-  try{
-   if(navigator.clipboard)await navigator.clipboard.writeText(summary);
-   // Without the async clipboard (an insecure origin), copy the selected summary.
-   else{const box=document.querySelector<HTMLTextAreaElement>('.published-edit-summary');box?.select();if(!document.execCommand('copy'))throw Error('copy')}
-   toast.success(t('Summary copied.','הסיכום הועתק.'))
-  }
-  catch{toast.error(t('Could not copy. Select the summary and copy it manually.','ההעתקה נכשלה. סמנו את הסיכום והעתיקו ידנית.'))}
- }
  async function save(){
   const publication=row.publication_id;
   if(lock.current||busy||!ready||!publication)return;
@@ -86,9 +77,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
     :extraField(t('Extra points','נקודות נוספות'),extra,setExtra)}
    {!validExtras&&<p className="warning-note" role="alert">{t('Use 0 to 20 points in steps of 0.5.','יש להזין 0 עד 20 נקודות בקפיצות של 0.5.')}</p>}
    {changed&&<div className="published-edit-kind">
-    <div className="segmented" role="group" aria-label={t('Compensation','פיצוי')}>
-     {(['temporary','permanent'] as const).map(k=><button key={k} type="button" disabled={busy} aria-pressed={kind===k} className={kind===k?'selected':''} onClick={()=>setKind(k)}>{k==='temporary'?t('Temporary','זמני'):t('Permanent','קבוע')}</button>)}
-    </div>
+    <KindChoice lang={lang} kind={kind} busy={busy} onChange={setKind}/>
     <p className="muted-copy">{kind==='temporary'
      ?t(`${name(row.primary_id!)} owes ${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, repaid in later months.`,`${name(row.primary_id!)} חייב/ת ל־${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, שיוחזרו בחודשים הבאים.`)
      :returns===null?t('Checking this duty’s earlier changes…','בודקים את השינויים הקודמים בתורנות…')
@@ -110,13 +99,38 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
    {/* Any member's duty: the next press on the calendar picks the second duty. */}
    {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם תורנות אחרת…')}</Button>}
   </>:<>
-   <p className="muted-copy">{t('Record this change in your external system first, then publish. Publishing creates a new version of the month.','רשמו את השינוי במערכת החיצונית תחילה, ואז פרסמו. הפרסום יוצר גרסה חדשה של החודש.')}</p>
-   <label className="field-label">{t('Summary','סיכום')}<textarea className="published-edit-summary" readOnly value={summary} dir={lang==='he'?'rtl':'ltr'} style={{height:`calc(${summary.split('\n').length} * 1.55em + 24px)`}}/></label>
-   <Button variant="outline" disabled={busy} onClick={copy}><Copy/>{t('Copy summary','העתקת הסיכום')}</Button>
-   <div className="editor-actions">
-    <Button variant="outline" disabled={busy} onClick={()=>setStep('edit')}>{t('Back','חזרה')}</Button>
-    <Button disabled={busy||remote.readOnly||!ready} onClick={save}>{t('Publish change','פרסום השינוי')}</Button>
-   </div>
+   <ReviewStep lang={lang} summary={summary} busy={busy} canPublish={!remote.readOnly&&ready} onBack={()=>setStep('edit')} onPublish={save}/>
   </>}
  </EditorDialog>;
+}
+
+/** Temporary | Permanent, shared by Edit duty and the weekend editor. */
+export function KindChoice({lang,kind,busy,onChange}:{lang:'en'|'he';kind:EditKind;busy:boolean;onChange:(kind:EditKind)=>void}){
+ const t=(en:string,he:string)=>lang==='en'?en:he;
+ return <div className="segmented" role="group" aria-label={t('Compensation','פיצוי')}>
+  {(['temporary','permanent'] as const).map(k=><button key={k} type="button" disabled={busy} aria-pressed={kind===k} className={kind===k?'selected':''} onClick={()=>onChange(k)}>{k==='temporary'?t('Temporary','זמני'):t('Permanent','קבוע')}</button>)}
+ </div>;
+}
+
+/** The last step of every published edit: a copyable summary for the external record, then Publish. */
+export function ReviewStep({lang,summary,busy,canPublish,onBack,onPublish}:{lang:'en'|'he';summary:string;busy:boolean;canPublish:boolean;onBack:()=>void;onPublish:()=>void}){
+ const t=(en:string,he:string)=>lang==='en'?en:he;
+ async function copy(){
+  try{
+   if(navigator.clipboard)await navigator.clipboard.writeText(summary);
+   // Without the async clipboard (an insecure origin), copy the selected summary.
+   else{const box=document.querySelector<HTMLTextAreaElement>('.published-edit-summary');box?.select();if(!document.execCommand('copy'))throw Error('copy')}
+   toast.success(t('Summary copied.','הסיכום הועתק.'))
+  }
+  catch{toast.error(t('Could not copy. Select the summary and copy it manually.','ההעתקה נכשלה. סמנו את הסיכום והעתיקו ידנית.'))}
+ }
+ return <>
+  <p className="muted-copy">{t('Record this change in your external system first, then publish. Publishing creates a new version of the month.','רשמו את השינוי במערכת החיצונית תחילה, ואז פרסמו. הפרסום יוצר גרסה חדשה של החודש.')}</p>
+  <label className="field-label">{t('Summary','סיכום')}<textarea className="published-edit-summary" readOnly value={summary} dir={lang==='he'?'rtl':'ltr'} style={{height:`calc(${summary.split('\n').length} * 1.55em + 24px)`}}/></label>
+  <Button variant="outline" disabled={busy} onClick={copy}><Copy/>{t('Copy summary','העתקת הסיכום')}</Button>
+  <div className="editor-actions">
+   <Button variant="outline" disabled={busy} onClick={onBack}>{t('Back','חזרה')}</Button>
+   <Button disabled={busy||!canPublish} onClick={onPublish}>{t('Publish change','פרסום השינוי')}</Button>
+  </div>
+ </>;
 }

@@ -21,7 +21,8 @@ import {DutySheet, type DutySheetActions} from './duty-sheet';
 import {DayDetails} from './day-details';
 import {DutyEditor} from '@/components/rota/duty-editor';
 import {PublishedDutyEditor} from '@/components/rota/published-duty-editor';
-import {editablePublishedDuty} from '@/lib/supabase/published-edit';
+import {editablePublishedDuty,publishedWeekend} from '@/lib/supabase/published-edit';
+import {PublishedWeekendEditor} from '@/components/rota/published-weekend-editor';
 import {SettingsScreen} from '@/components/rota/settings-screen';
 import {deepLink} from '@/lib/push/settings';
 import {currentSubscription, describe} from '@/lib/push/browser';
@@ -161,6 +162,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     } : undefined,
   });
   const publishedEditRow = publishedEdit ? editablePublishedDuty(remote.snapshot!, month, today, publishedEdit) : undefined;
+  const publishedEditWeekend = publishedEditRow ? publishedWeekend(remote.snapshot!, publishedEditRow, today) : null;
   const {requestSelection, setRequestSelection} = interactions;
   function goToMonth(m: string) {
     setMonth(m);
@@ -358,8 +360,12 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     {isManager && <PublicationHistory key={`history-${month}`} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
     {selected && <DutyEditor key={selected.id} state={state} duty={selected} month={month} lang={lang} onClose={() => setSelected(null)} saving={remote.saving}
       onMonth={(m) => {goToMonth(m); setSelected(null);}} onSave={draft.editor.save} onRemoveSpecial={draft.editor.removeSpecial}/>}
-    {publishedEditRow && <PublishedDutyEditor key={publishedEditRow.day} remote={remote} row={publishedEditRow} lang={lang} onClose={() => setPublishedEdit(null)}
-      onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>}
+    {/* A weekend that hasn't started opens the "One weekend | Two days" editor (decision 2026-11-07). */}
+    {publishedEditRow && (publishedEditWeekend
+      ? <PublishedWeekendEditor key={publishedEditRow.day} remote={remote} weekend={publishedEditWeekend} focusDay={publishedEditRow.day} lang={lang} onClose={() => setPublishedEdit(null)}
+        onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>
+      : <PublishedDutyEditor key={publishedEditRow.day} remote={remote} row={publishedEditRow} lang={lang} onClose={() => setPublishedEdit(null)}
+        onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>)}
     <DraftSwapDialog controller={draft.swap} state={state} duties={duties} lang={lang} t={t} fmt={fmt} nickname={nickname} personName={personName}/>
     <CancelDraftDialog open={cancelDraftMonth !== null} onOpenChange={open => {if (!open) setCancelDraftMonth(null);}} saving={remote.saving} lang={lang} t={t} monthLabel={monthLabel} onConfirm={async () => {
       if (!cancelDraftMonth) return;
