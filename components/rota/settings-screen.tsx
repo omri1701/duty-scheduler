@@ -63,12 +63,13 @@ export function SettingsScreen({remote, open, onOpenChange, lang, setLang, onExp
         <span className="sr-only">{t('Display name', 'שם לתצוגה')}</span>
         <input disabled={remote.readOnly} maxLength={80} value={name} placeholder={t('Your name', 'השם שלך')} onChange={e => {setName(e.target.value); setSaved(false);}}
           onKeyDown={e => {if (e.key === 'Enter' && name.trim() && !unchanged && !remote.saving && !remote.readOnly) void rename();}}/>
+        {/* Save and Saved sit inside the field's end, so nothing below is reserved or shifts. */}
+        <span className="settings-name-action" aria-live="polite">
+          {!unchanged && <Button size="icon-sm" aria-label={t('Save name', 'שמירת השם')} title={t('Save name', 'שמירת השם')} disabled={remote.readOnly || remote.saving || !name.trim()} onClick={rename}><Check/></Button>}
+          {saved && unchanged && <span className="settings-saved" role="status">{t('Saved', 'נשמר')}</span>}
+        </span>
       </label>
       <p className="muted small">{me?.email}</p>
-      <div className="settings-actions" aria-live="polite">
-        {!unchanged && <Button size="sm" disabled={remote.readOnly || remote.saving || !name.trim()} onClick={rename}>{t('Save name', 'שמירת השם')}</Button>}
-        {saved && unchanged && <span className="settings-saved" role="status">{t('Saved', 'נשמר')}</span>}
-      </div>
       {error && <p className="note-line" data-tone="danger" role="alert">{error}</p>}
     </section>
 

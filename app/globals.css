@@ -647,12 +647,13 @@ textarea{resize:vertical;min-height:76px}
 
 /* ---------- settings ---------- */
 .settings-sheet .sheet-body{gap:0}
-.settings-profile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0 10px;text-align:center}
+.settings-profile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0 0;text-align:center}
 .settings-avatar{font-size:26px!important;box-shadow:0 0 0 4px var(--surface),0 0 0 5px var(--line)}
-.settings-name{width:100%;max-width:320px}
-.settings-name input{width:100%;text-align:center;font-size:20px;font-weight:700;background:transparent;border-color:transparent;padding:6px 10px}
+.settings-name{position:relative;display:block;width:100%;max-width:320px}
+.settings-name input{width:100%;text-align:center;font-size:20px;font-weight:700;background:transparent;border-color:transparent;padding:6px 64px;text-overflow:ellipsis}
 .settings-name input:hover,.settings-name input:focus-visible{border-color:var(--line-strong);background:var(--surface)}
-.settings-actions{display:flex;align-items:center;justify-content:center;gap:8px;min-height:36px}
+.settings-name-action{position:absolute;inset-block:0;inset-inline-end:4px;display:flex;align-items:center;pointer-events:none}
+.settings-name-action>*{pointer-events:auto}
 .settings-saved{font-size:13px;font-weight:600;color:var(--ok);animation:settings-saved-in .2s ease-out}
 .settings-saved::before{content:'✓ '}
 @keyframes settings-saved-in{from{opacity:0;transform:translateY(2px)}}
