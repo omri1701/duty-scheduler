@@ -9,7 +9,7 @@ test('served CSS gate rejects old bytes at the same successful asset URL',async 
  let css=`:root{--duty-css-source:"${hash}"}`,status=200,extra='';
  const server=createServer((req,res)=>{
   if(req.url==='/')res.end('<link rel="stylesheet" href="/_next/static/globals.css">'+extra);
-  else if(req.url==='/stale.css')res.end('.month-toolbar{display:block}');
+  else if(req.url==='/stale.css')res.end('.member-tint{display:block}');
   else {res.writeHead(status,{'Content-Type':'text/css'});res.end(css);}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
