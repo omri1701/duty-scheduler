@@ -50,13 +50,6 @@ export function planAllocation(input: AllocationInput, draft: AllocationDraft) {
 
 function buildPlan(c: Context, input: AllocationInput, draft: AllocationDraft, capacityUnits: Readonly<Record<string, number>>, diagnostics: Diagnostic[]) {
   const tokens: Token[] = c.ids.map(id => ({carrier: id, origin: id, units: draft.baselineUnits[id], trail: [], prior: []}));
-  // A debt a later month repays (decision 2026-11-07): its creditor works it as its own,
-  // its debtor doesn't. Nothing is booked for it.
-  for (const l of draft.repaidLater ?? []) {
-    const own = (id: string) => tokens.find(t => t.carrier === id && t.origin === id && !t.claim && !t.trail.length)!;
-    if (own(l.fromId).units < l.units) throw Error('repaid-later-exceeds-share');
-    own(l.fromId).units -= l.units; own(l.toId).units += l.units;
-  }
   // Uneven-month credit: part of the creditor's own fitted share is carried for
   // the debtor, exactly as if the equal split had been transferred temporarily.
   for (const u of draft.uneven ?? []) {

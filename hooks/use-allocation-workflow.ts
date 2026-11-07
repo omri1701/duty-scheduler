@@ -33,7 +33,7 @@ const bookingProblem = (diagnostics: readonly {code: string}[]) =>
   diagnostics.find(d => /^review-/.test(d.code))?.code ?? 'review-allocation-booking';
 /** Failures that only a fresh proposal resolves: an earlier saved format, an
  * ordinary baseline the duties cannot split into, or uneven-month credit. */
-const needsProposal = (message: string) => /invalid-ordinary-baseline|uneven-credit|invalid-allocation-(shape|changes|pair)|invalid-derived-transfers|invalid-hand-edits|invalid-repaid-later/.test(message);
+const needsProposal = (message: string) => /invalid-ordinary-baseline|uneven-credit|invalid-allocation-(shape|changes|pair)|invalid-derived-transfers|invalid-hand-edits/.test(message);
 
 export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: Translate) {
   const latest = useRef(remote);
@@ -143,12 +143,6 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     if (!open || !captured || !draft?.changes) return true;
     try {return allocationDivisible({...captured.input, schedule: {...captured.input.schedule, locks, approvals}}, draft.targetsUnits);} catch {return true;}
   }, [open, captured, locks, approvals, draft]);
-  // Debts this month booked that a later published month already repays (decision 2026-11-07):
-  // fixed points of the plan, listed with the month that relies on them.
-  const repaidLater = useMemo(() => {
-    if (!open || !captured) return [];
-    try {const c = context(captured.input); return c.repaidLater.map(l => ({...l, months: c.repaidMonths[l.id] ?? []}));} catch {return [];}
-  }, [open, captured]);
   // Indivisible duties can make the ordinary baseline differ from an equal split.
   const uneven = draft && input ? unevenBaseline(input, draft.baselineUnits) : [];
   // Above the spaced ceiling a target still fits availability but needs back-to-back days.
@@ -245,10 +239,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
     }
     if (!c.generationAllowed) return null;
     const next = plan(() => proposeAllocation(c.input, retainedChanges(saved)).draft);
-    // A later month already repays some of this month's points (decision 2026-11-07): they are
-    // kept as fixed points instead of a temporary change booked again.
-    if (next?.repaidLater?.length && JSON.stringify(next.repaidLater) !== JSON.stringify(saved?.repaidLater ?? [])) setNotice(t('A later month already repays some of this month’s points, so they stay as fixed points in this plan. Check it, then confirm.', 'חודש מאוחר יותר כבר מחזיר חלק מהנקודות של החודש הזה, ולכן הן נשארות קבועות בתוכנית. כדאי לבדוק ולאשר.'));
-    else if (next && saved && !reason) setNotice(t('The saved allocation no longer fits this month, so a new proposal replaced it. Check it, then confirm.', 'ההקצאה השמורה אינה מתאימה עוד לחודש זה ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר.'));
+    if (next && saved && !reason) setNotice(t('The saved allocation no longer fits this month, so a new proposal replaced it. Check it, then confirm.', 'ההקצאה השמורה אינה מתאימה עוד לחודש זה ולכן הוחלפה בהצעה חדשה. כדאי לבדוק ולאשר.'));
     return next;
   }
   /** Reads the month again and reviews the retained targets; no manual step. */
@@ -414,7 +405,7 @@ export function useAllocationWorkflow(remote: TeamWorkspace, month: string, t: T
   }
   useEffect(() => {draftRef.current = draft;});
   return {open, show, close: () => {if (!rpc.current) {cancel(); setOpen(false);}}, phase, captured, input, draft, ceilings, spaced, outcome, options, divisible, replanBlocked,
-    locks, approvals, totals, uneven, repaidLater, noWeekends, weekendTakers, weekendShort, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
+    locks, approvals, totals, uneven, noWeekends, weekendTakers, weekendShort, planned, unplaced, step, setStep, error, notice, structural, closed, progress, result, reviewed,
     history, undo, reset, resetReason: resetState.reason, resetDiscards: resetState.discards, edit, transfer, moved, makePermanent, dismissMoved: () => setMoved(null), confirm, cancel,
     retry: retry && phase === 'idle', refresh: () => {void refresh();},
     busy: phase !== 'idle', saving: phase === 'confirming' || phase === 'saving',

@@ -175,16 +175,14 @@ reason "Re-planned <month>") and then deletes the publication
 against it, and `compensation_publication` appends the same events for real, in the
 publishing transaction, before booking the new plan as the month's first version.
 Nothing is rewritten: the old publication, its events and the corrections stay in the
-history. A lot another published month's pending repayment relies on is not reversed
-(migration `20261107101500_later_repaid_debts_stay`, decision 2026-11-07):
-`allocation_repaid_later` lists those lots, and the new plan carries the same list as
-`repaidLater`, part of its offered points (creditor +units, debtor -units, no transfer, no
-intent, so nothing is booked twice). `allocation_compile` requires the exact list and, before
-Permanent changes, keeps the creditor at or above fair share plus the debt and the debtor at
-or below fair share minus it, with no Temporary change of the sign that would net the debt
-away (`repaid-later-floor`, `repaid-later-ceiling`). A re-plan is still refused when another
-month's repayment of one of those lots has settled (`review-replan-later:<month>`), once the
-month has started (`review-replan-started`), or after a hand settlement of one
+history. A deleted or re-planned month counts as nothing (migration
+`20261107111000_deleted_month_counts_as_nothing`, decision 2026-11-07): another published
+month's pending repayment of those lots is released (`release`), the lots are reversed, and
+the released work is booked as an ordinary `claim` the other way (the repaid creditor owes
+the debtor, key `replan/…/reverse/<contribution>`, same audit reason). That claim belongs to
+the later month: deleting or re-planning it reverses the claim too. It is refused when
+another month's repayment of one of those lots has settled (`review-replan-later:<month>`),
+once the month has started (`review-replan-started`), or after a hand settlement of one
 (`review-replan-settled`).
 An unchanged copy keeps its published provenance and rebinds as before.
 
@@ -195,8 +193,8 @@ reverses them too, so they are never counted twice. Since migration
 reverses them with the same audited corrections (reason "Deleted the published <month>
 version"), so with no version left every net is zero; the kept draft copy gets a new
 allocation identity and no source publication, so publishing it books its plan again.
-Only when that is impossible (worked or settled by hand: `review-replan-*`) do the lots stay
-live as described here; a lot a later published month repays stays live either way, as above. Re-plan keys carry the ledger
+Only when that is impossible (worked or settled by hand: `review-replan-*`) do the lots
+stay live as described here. Re-plan keys carry the ledger
 position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
 again. A re-plan is also refused, naming the month, when reversing the lots would
 change a debt another month's pending repayment is reserved on: a reversal nets

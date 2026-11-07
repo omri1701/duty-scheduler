@@ -7,12 +7,6 @@
 -- points, and no one owes or is owed more temporary work than the month holds).
 -- duty_confirm_allocation additionally requires the transfers to be the exact
 -- derivation of those changes and the recorded pairs.
--- A debt this month booked that a later published month already repays (repaidLater,
--- decision 2026-11-07) is a fixed fact of the plan: the server's own list, part of the
--- offered points (its creditor works it, its debtor doesn't), never booked again. Before
--- Permanent changes, its creditor's points never drop below fair share plus the debt and its
--- debtor's never rise above fair share minus it, and neither takes a temporary change that
--- would net it away.
 CREATE FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) RETURNS jsonb
  LANGUAGE plpgsql STABLE SET search_path TO '' AS $$
 #variable_conflict use_column
@@ -20,9 +14,9 @@ declare ids jsonb:=f->'seniority'; candidates jsonb:=duty_private.compensation_c
  tokens jsonb:='[]'; reserved jsonb:='[]'; funding jsonb:='[]'; used jsonb:='[]'; seen text[]:='{}'; lowered jsonb:='{}';
  r jsonb; c jsonb; t jsonb; moved jsonb; transfer jsonb; route jsonb; leg jsonb; ref jsonb; ranges int8multirange; part int8range; v numeric;
  id text; name text; n bigint; take bigint; remaining bigint; capacity bigint; idx integer; position integer; amount bigint; total bigint;
- pass integer; temporary_total bigint:=0; permanent_total bigint:=0; later jsonb; held jsonb:='{}';
+ pass integer; temporary_total bigint:=0; permanent_total bigint:=0;
 begin
- if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','repaidLater','hand','sourceKey']<>'{}'
+ if jsonb_typeof(draft) IS DISTINCT FROM 'object' or draft-array['baselineUnits','offeredUnits','targetsUnits','repayments','changes','pairs','transfers','uneven','hand','sourceKey']<>'{}'
   or jsonb_typeof(draft->'sourceKey') IS DISTINCT FROM 'string' or coalesce(draft->>'sourceKey','')=''
   or (draft ? 'uneven' and jsonb_typeof(draft->'uneven') IS DISTINCT FROM 'array')
   or jsonb_typeof(draft->'repayments') IS DISTINCT FROM 'array' or jsonb_typeof(draft->'transfers') IS DISTINCT FROM 'array'
@@ -39,13 +33,6 @@ begin
   total:=0; for id in select jsonb_array_elements_text(ids) loop total:=total+duty_private.compensation_units(table_value->id); end loop;
   if total<>(select sum((x->>'units')::bigint) from jsonb_array_elements(f->'duties') x) then raise exception 'invalid-allocation-total'; end if;
  end loop;
- select coalesce(jsonb_agg(k order by k->>'id' COLLATE "C"),'[]'::jsonb) into later from jsonb_array_elements(duty_private.allocation_repaid_later(s,f->>'month')) k
-  where ids ? (k->>'fromId') and ids ? (k->>'toId');
- if coalesce(draft->'repaidLater','[]'::jsonb) IS DISTINCT FROM later then raise exception 'invalid-repaid-later'; end if;
- for r in select value from jsonb_array_elements(later) loop
-  held:=held||jsonb_build_object(r->>'toId',coalesce((held->>(r->>'toId'))::bigint,0)+(r->>'units')::bigint);
-  held:=held||jsonb_build_object(r->>'fromId',coalesce((held->>(r->>'fromId'))::bigint,0)-(r->>'units')::bigint);
- end loop;
  if (select count(*) from jsonb_each(draft->'changes'))<>jsonb_array_length(ids) or exists(select 1 from jsonb_each(draft->'changes') where not ids ? key) then raise exception 'invalid-allocation-changes'; end if;
  for id in select jsonb_array_elements_text(ids) loop
   change:=draft->'changes'->id;
@@ -61,13 +48,6 @@ begin
   if (draft->'baselineUnits'->>id)::numeric::bigint+(change->>'permanent')::numeric::bigint>total then raise exception 'permanent-above-month-total'; end if;
   if abs((change->>'temporary')::numeric::bigint)>total then raise exception 'temporary-above-month-total'; end if;
   if (draft->'offeredUnits'->>id)::numeric::bigint+(change->>'temporary')::numeric::bigint+(change->>'permanent')::numeric::bigint<>(draft->'targetsUnits'->>id)::numeric::bigint then raise exception 'unexplained-target-edit'; end if;
-  -- Fair share plus the debt is the bound, before Permanent changes (they move the fair share
-  -- itself): points never drop below it for its creditor or rise above it for its debtor, and
-  -- no temporary change can net the debt away.
-  if coalesce((held->>id)::bigint,0)>0 and ((change->>'temporary')::numeric<0
-   or (draft->'targetsUnits'->>id)::numeric-(change->>'permanent')::numeric<(draft->'baselineUnits'->>id)::numeric+(held->>id)::bigint) then raise exception 'repaid-later-floor'; end if;
-  if coalesce((held->>id)::bigint,0)<0 and ((change->>'temporary')::numeric>0
-   or (draft->'targetsUnits'->>id)::numeric-(change->>'permanent')::numeric>(draft->'baselineUnits'->>id)::numeric+(held->>id)::bigint) then raise exception 'repaid-later-ceiling'; end if;
   lowered:=lowered||jsonb_build_object(id,greatest(0,(draft->'offeredUnits'->>id)::numeric::bigint-(draft->'targetsUnits'->>id)::numeric::bigint));
  end loop;
  if temporary_total<>0 or permanent_total<>0 then raise exception 'unbalanced-allocation-changes'; end if;
@@ -81,18 +61,6 @@ begin
  expected:=draft->'baselineUnits';
  for id in select x from jsonb_array_elements_text(ids) x order by x COLLATE "C" loop
   tokens:=tokens||jsonb_build_array(jsonb_build_object('carrier',id,'origin',id,'units',expected->id,'claim',null,'trail','[]'::jsonb,'prior','[]'::jsonb));
- end loop;
- -- A debt a later month repays: its creditor works it as its own, its debtor doesn't.
- for r in select value from jsonb_array_elements(later) loop
-  n:=(r->>'units')::bigint;
-  select ordinality::integer-1 into position from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
-   where value->>'carrier'=r->>'fromId' and value->>'origin'=r->>'fromId' and value->'claim'='null' and value->'trail'='[]'::jsonb and (value->>'units')::bigint>=n limit 1;
-  if position is null then raise exception 'repaid-later-exceeds-share'; end if;
-  tokens:=jsonb_set(tokens,array[position::text,'units'],to_jsonb((tokens->position->>'units')::bigint-n));
-  select ordinality::integer-1 into position from jsonb_array_elements(tokens) with ordinality tok(value,ordinality)
-   where value->>'carrier'=r->>'toId' and value->>'origin'=r->>'toId' and value->'claim'='null' and value->'trail'='[]'::jsonb limit 1;
-  tokens:=jsonb_set(tokens,array[position::text,'units'],to_jsonb((tokens->position->>'units')::bigint+n));
-  expected:=jsonb_set(jsonb_set(expected,array[r->>'fromId'],to_jsonb((expected->>(r->>'fromId'))::bigint-n)),array[r->>'toId'],to_jsonb((expected->>(r->>'toId'))::bigint+n));
  end loop;
  -- Uneven-month credit (decision 2026-10-30): part of the creditor's own fitted
  -- share is carried for the debtor, exactly as if the equal split had been

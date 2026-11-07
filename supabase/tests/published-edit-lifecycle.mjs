@@ -266,46 +266,30 @@ assert.deepEqual(nets(r.replanned),debt(a,b,2),'only the new plan’s own Tempor
 assert.deepEqual(nets(r.owner),debt(a,b,2),'the new plan binds its Temporary change to the same date; b gives it back for good, the plan’s debt stays');
 console.log('PASS: Plan the month on a reopened edited month leaves out its own debt; a new plan replaces the edit');
 
-// A month whose debt a later published month already repays (decision 2026-11-07): re-planning
-// it, or deleting its only version, keeps that debt live instead of refusing, reverses the rest,
-// and its next plan takes the debt as fixed points: booked once, never twice. The creditor's
-// points never drop below fair share plus the debt and the debtor's never rise above it.
-const keptRows=`(select jsonb_agg(jsonb_build_object('id',l->>'id','fromId',l->>'debtorId','toId',l->>'creditorId','units',(l->>'correctedUnits')::bigint) order by l->>'id')
- from jsonb_array_elements((select v from context)->'actual'->'lots') l where (l->>'correctedUnits')::bigint>0 and l->>'correctionOf' is null)`;
-// The cover is no longer a Temporary change of the plan: it is part of the offered points.
-function keptPlan({floor=false,ceiling=false}={}) {
- const {draft}=plan(false),{placed}=plan(true),kept=structuredClone(draft);
- for(const t of ['offeredUnits','targetsUnits']){kept[t][a]-=x.units;kept[t][b]+=x.units}
- // A Temporary point b gives to c (floor), or c gives to a (ceiling).
- if(floor){kept.changes[b].temporary-=2;kept.changes[c].temporary+=2;kept.targetsUnits[b]-=2;kept.targetsUnits[c]+=2}
- if(ceiling){kept.changes[a].temporary+=2;kept.changes[c].temporary-=2;kept.targetsUnits[a]+=2;kept.targetsUnits[c]-=2}
- kept.transfers=deriveTransfers(ids,kept.changes,kept.pairs);
- return {draft:kept,placed};
-}
-const confirmWith=draft=>`select public.duty_confirm_allocation('${month}',${draft},'[]','[]',(select v->>'revision' from context)::bigint,(select v->>'fingerprint' from context))`;
-const kept=options=>`jsonb_set(${quote(keptPlan(options).draft)},'{repaidLater}',${keptRows})`;
-const replanKept=`update context set v=(${confirmWith(kept())});
-update context set v=public.duty_save_generation('${month}',${quote(keptPlan().placed)},(v->>'revision')::bigint,v->>'fingerprint',123);`+publish(month);
-const live=r=>r.view.lots.filter(l=>!l.correctionOf&&l.correctedUnits>0).map(l=>[l.debtorId,l.creditorId,l.correctedUnits]);
-// Re-planned twice, or deleted, republished and deleted again. A deleted version's kept draft lost
-// its provenance: unchanged, its Temporary change would book the debt twice. (An unchanged
-// reopened copy keeps the published intents instead, so it books nothing new.)
-for(const [label,reopen,check,again] of [['re-plan',restore,'',restore+planned('planned again')+replanKept],['delete',remove,failure(confirmWith(quote(plan(true).draft)),'invalid-repaid-later'),remove]]){
- r=run(nextMonth([a,b,2])+report('repaying')+reopen+report('reopened')+planned('planned')+check
-  +failure(confirmWith(kept({floor:true})),'repaid-later-floor')+failure(confirmWith(kept({ceiling:true})),'repaid-later-ceiling')
-  +replanKept+report('replanned')+again+report('again'),true);
+// A deleted or re-planned month counts as nothing (decision 2026-11-07): the month's lots are
+// reversed even when a later month's pending repayment relies on them; that repayment is released
+// and its planned work becomes a debt the other way, booked once and shown at once. December's
+// new plan repays it as an ordinary debt; deleting January too leaves nothing owed.
+const removeNext=`select public.duty_delete_publication(${current(next)},${rev});`;
+// December's new plan: b repays a two points (the same placement as the cover).
+const repayPlan=`update context set v=public.duty_confirm_allocation('${month}',jsonb_set(${quote((()=>{const {draft}=plan(false),d=structuredClone(draft);for(const t of ['offeredUnits','targetsUnits']){d[t][a]-=x.units;d[t][b]+=x.units}return d})())},'{repayments}',
+ jsonb_build_array(jsonb_build_object('claim',(select k from jsonb_array_elements(v->'actual'->'claims') k where k->>'debtorId'='${b}' and k->>'creditorId'='${a}'),'units',2))),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');
+update context set v=public.duty_save_generation('${month}',${quote(plan(true).placed)},(v->>'revision')::bigint,v->>'fingerprint',123);`+publish(month);
+const reasons=r=>r.view.events.filter(e=>e.sourceKey.startsWith('replan/')).map(e=>[e.operation.kind,e.reason??null]);
+// Deleting the re-planned version would bring back the one before the re-plan, which is refused.
+for(const [label,reopen,again] of [['delete',remove,remove],['re-plan',restore,'']]){
+ r=run(nextMonth([a,b,2])+report('repaying')+reopen+report('reopened')+planned('planned')+repayPlan+report('repaid')+again+report('again'),true);
  assert.deepEqual(nets(r.repaying),{},`${label}: January repays December`);
- assert.equal(r.planned.context.replanBlocked??null,null,`${label}: nothing blocks the plan`);
- assert.deepEqual(owed(r.planned.context.actual),debt(a,b,2),`${label}: the debt January repays stays live`);
- assert.deepEqual(r.reopened.contributions,['pending'],`${label}: January's repayment still waits`);
- assert.deepEqual(nets(r.reopened),{},`${label}: once January is worked every net is 0`);
- for(const step of ['replanned','again']){
-  assert.deepEqual(live(r[step]),[[a,b,2]],`${label} ${step}: the debt is booked once`);
-  assert.deepEqual(r[step].contributions,['pending'],`${label} ${step}`);assert.deepEqual(nets(r[step]),{},`${label} ${step}: no double booking`);
- }
+ assert.deepEqual(r.planned.context.replanBlocked??null,null,`${label}: nothing blocks December`);
+ assert.deepEqual(owed(r.planned.context.actual),debt(b,a,2),`${label}: December's plan starts from b owing a`);
+ assert.deepEqual(r.repaid.contributions.sort(),['cancelled','pending'],`${label}: January's repayment released, December's pending`);
+ assert.deepEqual(nets(r.repaid),{},`${label}: December's new plan repays it, booked once`);
+ if(again)assert.deepEqual(nets(r.again),debt(b,a,2),`${label}: deleting December again, January's work counts again`);
 }
-// The kept draft of the deleted version still holds the old Temporary change: publishing it as it
-// is would book the debt twice, so it is refused; the browser re-proposes it first.
-r=run(nextMonth([a,b,2])+remove+failure(publish(month),'Compensation changed|invalid-repaid-later')+report('refused'),true);
-assert.deepEqual(live(r.refused),[[a,b,2]]);assert.deepEqual(nets(r.refused),{});
-console.log('PASS: a month whose debt a later month repays re-plans and deletes keeping that debt as fixed points; never booked twice, floor and ceiling hold');
+r=run(nextMonth([a,b,2])+remove+report('deleted')+removeNext+report('neither'),true);
+assert.equal(r.deleted.versions,0);assert.deepEqual(owed(r.deleted.view),debt(b,a,2),'b owes a at once');
+assert.deepEqual(nets(r.deleted),debt(b,a,2),'January’s work no longer repays anything');
+assert.deepEqual(r.deleted.contributions,['cancelled']);
+assert.deepEqual(reasons(r.deleted),[['release','Deleted the published 2027-12 version'],['correct','Deleted the published 2027-12 version'],['claim','Deleted the published 2027-12 version'],['publication',null]],'audited once');
+assert.deepEqual(nets(r.neither),{},'January deleted too: nothing is owed');
+console.log('PASS: a deleted or re-planned month counts as nothing; a later month’s repayment of it becomes a debt the other way, booked once; deleting that month too leaves nothing');

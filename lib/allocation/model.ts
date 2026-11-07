@@ -2,8 +2,7 @@ import {approvedPair, boundaryBlocked, boundaryTouches} from '../scheduling/solv
 import {prepareGeneration, inputKey, snapshotKey} from '../scheduling/domain.ts';
 import {canonicalDuties, coverageStart} from '../scheduling/calendar.ts';
 import {project} from '../compensation/index.ts';
-import {repaidLater} from '../compensation/replan.ts';
-import type {AllocationInput, RepaidLater} from './types.ts';
+import type {AllocationInput} from './types.ts';
 
 export const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 export const units = (v: number) => {
@@ -45,15 +44,7 @@ export function context(input: AllocationInput) {
   const generated = merge(weekendId => !splitLocked(weekendId));
   const weekendDuties = generated.filter(d => d.weekendId && !lockOf.has(d.id)).map(d => d.units).sort((a, b) => b - a);
   const weekendFree = sum(weekendDuties);
-  // Debts this month booked that a later published month already repays (decision 2026-11-07):
-  // fixed facts of the plan. `held` nets them per member: a creditor (+) never goes below its
-  // offered points, a debtor (-) never above them.
-  const later = repaidLater(projection.actual, schedule.month).filter(l => ids.includes(l.fromId) && ids.includes(l.toId));
-  const repaid: RepaidLater[] = later.map(({id, fromId, toId, units}) => ({id, fromId, toId, units}));
-  const held: Record<string, number> = Object.fromEntries(ids.map(id => [id, 0]));
-  for (const l of repaid) {held[l.toId] += l.units; held[l.fromId] -= l.units;}
   return {prepared, ids, total, locked, nonWeekend, weekendFree, weekendDuties, weights, generated, projection, seniority: [...input.seniority],
-    repaidLater: repaid, repaidMonths: Object.fromEntries(later.map(l => [l.id, l.months])) as Record<string, string[]>, held,
     candidates: projection.projected.candidates.filter(c => ids.includes(c.debtorId) && ids.includes(c.creditorId)),
     key: inputKey({schedule, seniority: snapshotKey(input.seniority), ledger: projection.sourceFingerprint, cutoff: projection.cutoffMs})};
 }

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {record,replay,reconcile,normalize,sliceClaim,project,replanEvents} from '../../lib/compensation/index.ts';
-import {repaidLater} from '../../lib/compensation/replan.ts';
 import {handover} from '../../lib/scheduling/calendar.ts';
 const container=process.argv[2];
 assert.match(container??'',/^supabase_db_[\w-]+$/);
@@ -100,7 +99,7 @@ for(let seed=1;seed<=20;seed++) {
 }
 // Re-planning a published month (decision 2026-11-01): the same corrections and deletion as
 // lib/compensation/replan.ts, or the same refusal.
-const replans=[],laters=[];
+const replans=[];
 const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,month,at))}catch(e){expected={error:e.code??e.message}}replans.push({events:h,month,at,expected})};
 {
  const intent=(id,fromId,toId,date)=>({id,kind:'temporary',fromId,toId,capacity:[{date,offset:0,units:2}]});
@@ -111,11 +110,11 @@ const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,
  // Its lots corrected once already: a second re-plan reverses only what is live.
  const twice=publish(replanEvents(n,'2026-11',100),publication('nov-2',[duty('2026-11-02','b'),duty('2026-11-04','d',2,'2026-11-05')],[],[intent('nov-2-intent','b','d','2026-11-04')]));
  replanCase(twice,'2026-11',200);
- // December repays November's lot: November re-plans keeping that lot live (decision 2026-11-07).
+ // December repays November's lot: November still re-plans; December's repayment is released
+ // and becomes a debt the other way (decision 2026-11-07).
  const lot=replay(n).claims.find(k=>k.debtorId==='b'&&k.creditorId==='d');
  const dec=publish(n,publication('dec',[duty('2026-12-02','b',2,'2026-12-03')],[{id:'december-repayment',capacity:{date:'2026-12-02',offset:0,units:2},claim:sliceClaim(lot,2)}],[],'2026-12'));
  replanCase(dec,'2026-11',300);
- laters.push({events:dec,month:'2026-11'},{events:replanEvents(dec,'2026-11',300),month:'2026-11'},{events:dec,month:'2026-12'});
  replanCase(n,'2026-11',completion+1);
  // The only version deleted: its repayments are cancelled, its own lots stay live until a new plan reverses them.
  replanCase(send(n,{kind:'publication',month:'2026-11',beforeId:'nov',after:null,mode:'delete'},'delete-nov',150),'2026-11',160);
@@ -178,21 +177,8 @@ for(let i=0;i<plans.length;i++){
  assert.ok(expected.claims.some(c=>c.path[0].lotId.startsWith(`replan/dec-p/${sequence}/`)),'the re-plan lots keep the current ledger position');
 }
 assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','replanned','review-replan-started','replanned','review-replan-later:2026-12','review-replan-later:unknown']);
-// December's repayment keeps November's lot live: the same list in SQL and the core.
-assert.deepEqual(replans[2].expected.lots.filter(l=>!l.correctionOf&&l.correctedUnits>0&&l.id.includes('/intent/')).map(l=>[l.debtorId,l.creditorId,l.correctedUnits]),[['b','d',2]]);
-{
- const empty='{"events":[],"members":{},"lots":{},"claims":[],"contributions":{},"settlements":{},"publications":{},"intents":{},"normalizations":[]}';
- const q=`begin;create function pg_temp.later(events jsonb, month text) returns jsonb language plpgsql as $$
-declare s jsonb:='${empty}';e jsonb;begin for e in select value from jsonb_array_elements(events) loop s:=duty_private.compensation_apply(s,e);end loop;
- return duty_private.allocation_repaid_later(s,month);end $$;
-${laters.map(c=>`select pg_temp.later(${quote(c.events)},'${c.month}');`).join('\n')}
-rollback;`;
- const out=spawnSync('docker',['exec','-i',container,'psql','-XqAt','-U','postgres','-v','ON_ERROR_STOP=1'],{input:q,encoding:'utf8',maxBuffer:16*1024*1024});
- assert.equal(out.status,0,out.stderr);
- const lists=out.stdout.trim().split('\n').map(JSON.parse);
- laters.forEach((c,i)=>assert.deepEqual(lists[i],repaidLater(replay(c.events),c.month).map(({months,...l})=>(void months,l)),'SQL/core repaid-later '+i));
- assert.deepEqual(lists.map(l=>l.length),[1,1,0],'kept before and after the re-plan; none of December’s own');
-}
+assert.equal(replans[2].expected.contributions.find(c=>c.id==='december-repayment').status,'cancelled');
+assert.deepEqual(replans[2].expected.lots.filter(l=>l.id.includes('/reverse/')).map(l=>[l.debtorId,l.creditorId,l.units]),[['d','b',2]],'d owes b the work December planned');
 // Projection uses the same pure core after the SQL event suffix is persisted.
 assert.equal(project(cases[7].events,100,completion).actual.events.length,cases[7].events.length);
 console.log(`PASS: ${cases.length} SQL/core histories, ${graphs.length} graph normalizations and ${replans.length} re-plans (${plans.length} projected to opening) match exactly (claims, lots, provenance, holds, settlements, publications and events)`);

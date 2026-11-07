@@ -112,8 +112,8 @@ Temporary leg is reversed, and a repayment it cancelled by a Permanent move coun
 (its creditor owes the debtor the same units). Deletions recorded before that replay as
 they were booked. Deleting a month's only version (`after: null`) is preceded by the
 re-plan corrections of every live lot the month booked (decision 2026-11-07), so no
-version means no debt, except worked or already-used points and a lot a later published
-month's pending repayment relies on (`repaidLater`), which stays live for the month's next plan. Historical
+version means no debt, except worked or already-used points; a later month's pending
+repayment of those lots is released and its work booked as a claim the other way. Historical
 corrections use explicit accounting operations, not a retroactive rota editor.
 
 `projected.candidates` additionally exposes the simulated unreserved active slices,

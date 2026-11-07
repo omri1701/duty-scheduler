@@ -28,12 +28,11 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
 
 /** A confirmed plan whose repayments today's ledger no longer offers (review of #62): a month
  * published since repays the same debt, or deleting the month's only version reversed what it
- * booked, or kept a debt a later month repays (decision 2026-11-07). Publish waits with this
- * before the click instead of failing after it; opening the plan proposes again. A copy keeps
- * its provenance (the RPC decides). */
+ * booked (decision 2026-11-07). Publish waits with this before the click instead of
+ * failing after it; opening the plan proposes again. A copy keeps its provenance (the RPC decides). */
 export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
   try {reviewAllocation(input, saved); return false;}
-  catch (e) {return /repayment-source|repaid-later/.test((e as Error).message);}
+  catch (e) {return /repayment-source/.test((e as Error).message);}
 }
 
 /** Whether a plan copied from a publication (restored, or reopened to change it) still
@@ -49,10 +48,7 @@ export function copyFits(input: AllocationInput, saved: AllocationDraft | null) 
       Object.keys(t).length === c.ids.length && c.ids.every(id => Object.hasOwn(t, id));
     const total = (t: unknown) => members(t) && c.ids.every(id => Number.isSafeInteger(t[id])) &&
       c.ids.reduce((n, id) => n + (t[id] as number), 0) === c.total;
-    // A debt a later month now repays makes it a new plan (decision 2026-11-07).
-    const later = (l: {id: string; units: number}[] | undefined) => JSON.stringify((l ?? []).map(x => [x.id, x.units]));
-    return total(saved.baselineUnits) && total(saved.offeredUnits) && validTargets(c, saved.targetsUnits) && members(saved.changes) &&
-      later(saved.repaidLater) === later(c.repaidLater);
+    return total(saved.baselineUnits) && total(saved.offeredUnits) && validTargets(c, saved.targetsUnits) && members(saved.changes);
   } catch {return false;}
 }
 

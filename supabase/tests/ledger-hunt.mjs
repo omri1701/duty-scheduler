@@ -191,7 +191,7 @@ function move(m, day, toId, kind, extra, swap = false) {
     const chain = m.chain[day] ?? [];
     returned = !swap && kind === 'permanent' && chain.includes(toId);
     const temporary = kind === 'temporary' || returned;
-    for (const r of m.repay) if (r.date === day && r.state === 'live') r.state = temporary ? 'worked' : 'cancelled';
+    for (const r of m.repay) if (r.date === day && r.state === 'live' && !r.released) r.state = temporary ? 'worked' : 'cancelled';
     if (temporary) {m.net[fromId] -= shared; m.net[toId] += shared;}
     else {m.perm[fromId] -= shared; m.perm[toId] += shared;}
     m.chain[day] = swap ? [] : kind === 'temporary' ? [...chain, fromId] : returned ? chain.slice(0, chain.lastIndexOf(toId)) : [];
@@ -254,10 +254,9 @@ async function sequence(db, seed, script, ops = [], log = []) {
         assert.ok(m === M1 && model[M2]?.repay.some(r => r.state === 'live'), `${label}: [plan] ${m} blocked without a later repayment`);
         continue;
       }
+      // December counts as nothing (decision 2026-11-07): January's live repayment of it is
+      // released, and its planned work is owed the other way, which is what it counts for here.
       const start = planned(ctx.actual), wanted = nets(other);
-      // A debt of December's that January's live repayment relies on stays booked (decision
-      // 2026-11-07): December's plan starts from it too, as fixed points.
-      if (m === M1) for (const r of model[M2]?.repay ?? []) if (r.state === 'live') {wanted[r.debtorId] -= r.units; wanted[r.creditorId] += r.units;}
       assert.deepEqual(start, wanted, `${label}: [plan] Plan the month ${m} starts from ${differ(start, wanted)}`);
       const projected = Object.fromEntries(ids.map(id => [id, ctx.projected.net[id] ?? 0]));
       assert.deepEqual(projected, Object.fromEntries(ids.map(id => [id, ctx.actual.net[id] ?? 0])), `${label}: [plan] ${m} projection moved before opening`);
@@ -352,15 +351,16 @@ async function sequence(db, seed, script, ops = [], log = []) {
       assert.equal(error, null, `${label}: [refused] reopen`);
       [{error}] = await db.run(all(planSql(op.m, placed, `ledger-hunt-replan-${i}`, null, mm.extra)));
       if (error) {
-        // Only a later month's live repayment of this month's points may block it: by name when
-        // reversing would change it, or because this plan would book that kept debt again
-        // instead of holding it as fixed points (decision 2026-11-07).
-        assert.ok(op.m === M1 && /review-replan-later:2028-01|invalid-repaid-later/.test(error) && model[M2]?.repay.some(r => r.state === 'live'), `${label}: [refused] re-plan (${error})`);
+        // Only a later month's live repayment of this month's points may block it, by name.
+        assert.ok(op.m === M1 && /review-replan-later:2028-01/.test(error) && model[M2]?.repay.some(r => r.state === 'live'), `${label}: [refused] re-plan (${error})`);
         [{error}] = await db.run(`select jsonb_build_object('error',pg_temp.attempt($q$select public.duty_cancel_draft('${op.m}',${rev})$q$));`);
         assert.equal(error, null, `${label}: [refused] cancel draft`); log.push(`${label}: blocked by a January repayment`);
         await check(label); continue;
       }
       model[op.m] = Object.assign(monthModel(op.m, placed, [], mm.extra), {month: op.m});
+      // A later month's live repayment of it is released (decision 2026-11-07): its planned work
+      // still counts, as a debt the other way, but no longer follows its duty.
+      for (const other of Object.values(model)) if (other.month > op.m) for (const r of other.repay) if (r.state === 'live') r.released = true;
     }
     log.push(label);
     balances = await check(label, expectSame);
