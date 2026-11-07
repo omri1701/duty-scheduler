@@ -9,13 +9,14 @@
 -- (review-replan-later:<month>), when part of one was settled by hand
 -- (review-replan-settled), or once the published month has started (review-replan-started), its
 -- last version counting when the only one was deleted: worked days keep their debts.
--- `commit` appends the events for real, inside the publishing transaction.
+-- `commit` appends the events for real, inside the publishing transaction. Deleting a month's
+-- only version reverses the same lots, with its own audit reason (decision 2026-11-07).
 -- lib/compensation/replan.ts builds the same events.
-CREATE FUNCTION duty_private.compensation_replan(s jsonb, p_month text, instant bigint, commit boolean DEFAULT false) RETURNS jsonb
+CREATE FUNCTION duty_private.compensation_replan(s jsonb, p_month text, instant bigint, commit boolean DEFAULT false, p_reason text DEFAULT NULL) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
 declare original jsonb:=s; pub jsonb:=s->'publications'->p_month; keys text[]; lots text[]; lot jsonb; c jsonb; other text; op jsonb; key text;
- actor text:=coalesce(auth.uid()::text,'system'); reason text:='Re-planned '||p_month;
+ actor text:=coalesce(auth.uid()::text,'system'); reason text:=coalesce(p_reason,'Re-planned '||p_month);
  last jsonb:=coalesce(s->'publications'->p_month,(select x->'operation'->'after' from jsonb_array_elements(s->'events') with ordinality e(x,i)
   where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month and x->'operation'->'after'<>'null' order by i desc limit 1));
  prefix text:='replan/'||coalesce(s->'publications'->p_month->>'id','none')||'/'||coalesce((s->'events'->-1->>'sequence')::bigint,0)||'/';

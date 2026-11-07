@@ -66,6 +66,13 @@ the ordinary-baseline checks and `allocation_uneven` see each split as the weeke
 halves' sum), exactly as the browser's planning context does. Generate's own checks
 (`generation_validate`, `save_generation`) keep the real duties. No table, data or grant changes.
 
+Migration `20261107004222_delete_only_version_reverses_lots.sql` (decision 2026-11-07): deleting a
+month's only published version now reverses every live lot the month booked, with the re-plan's
+audited corrections (`compensation_replan` gains an optional audit reason, so it is dropped and
+recreated with the same grants), and gives the kept draft copy a new allocation identity, so
+publishing it books its plan again. Worked, used or hand-settled points stay booked as before.
+`published-edit-lifecycle.mjs` and `allocation-fit.mjs` cover it.
+
 Hosted Development activation requires the normal reviewed database-first release
 after merge into `develop`; this feature PR does not apply hosted migrations.
 

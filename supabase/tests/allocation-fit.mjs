@@ -172,7 +172,11 @@ try {
  assert.equal(Object.values(view.publications)[0].intents.length,1);
  assert.deepEqual(intent.route[0].counterparts,[{...six.draft.uneven[0],kind:'temporary'}]);
  assert.deepEqual(view.claims.map(c=>[c.debtorId,c.creditorId,c.units]),[[crew[0],crew[3],1]]);
- console.log('PASS: a published uneven month carries the credit as one ordinary temporary half-point claim, recorded with its uneven counterpart and reported by duty_balance as kind uneven');
+ // Deleting the month's only version removes its credit too (decision 2026-11-07): no version, no debt.
+ await sql(`set local role authenticated;select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`);
+ const cleared=await json('select public.duty_balance();');
+ assert.ok(Object.values(cleared.net).every(n=>n===0),JSON.stringify(cleared.net));assert.deepEqual(cleared.lines,[]);
+ console.log('PASS: a published uneven month carries the credit as one ordinary temporary half-point claim, recorded with its uneven counterpart and reported by duty_balance as kind uneven, and deleting the version clears it');
  await sql('rollback;');
 
  // A split weekend never changes planning (decision 2026-11-07). Six members, one +2 Sunday:

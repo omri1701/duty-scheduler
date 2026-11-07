@@ -19,7 +19,8 @@ begin
  -- publications booked and the publication is deleted, cancelling its pending
  -- repayments; the plan is then booked as a first publication. Refused while another
  -- month's repayment uses those lots (review-replan-later:<month>) or once it started. A month
- -- whose only version was deleted keeps its lots live until then; they are reversed too.
+ -- whose only version was deleted while its lots couldn't be reversed keeps them live until
+ -- then; they are reversed too.
  if not deleting and publication is not null and allocation.month is not null and allocation.source_publication_id is null then
   -- The ledger may have moved since the plan was confirmed (another month published): the
   -- re-plan and the binding below re-check every source, so the plan publishes whenever it
@@ -31,6 +32,23 @@ begin
    raise;
   end;
   before_pub:=null;
+ end if;
+ -- Deleting a month's only version removes what it booked (decision 2026-11-07): the same
+ -- audited corrections as a re-plan reverse every live lot the month's publications booked and
+ -- the deletion cancels its pending repayments, so with no version left every net is zero. The
+ -- kept draft copy is then a plan of its own: publishing it books it again. When worked or used
+ -- points make that impossible (review-replan-*: started, repaid by a later month, settled by
+ -- hand), the lots stay live as before and a new plan reverses them.
+ if deleting and publication is null and before_pub is not null then
+  begin
+   s:=duty_private.compensation_replan(s,month,instant,true,'Deleted the published '||month||' version');
+   -- A new allocation identity: its intents are booked again, never matched to the reversed ones.
+   update public.duty_allocations a set source_publication_id=null,allocation_id=gen_random_uuid()
+    where a.month=compensation_publication.month and a.publication_id is null and a.source_publication_id::text=before_pub->>'id';
+   return;
+  exception when raise_exception then
+   if SQLERRM not like 'review-replan-%' then raise; end if;
+  end;
  end if;
  after_pub:=duty_private.compensation_snapshot(publication);
  if deleting and after_pub is not null then

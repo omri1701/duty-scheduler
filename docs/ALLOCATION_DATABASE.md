@@ -182,7 +182,13 @@ An unchanged copy keeps its published provenance and rebinds as before.
 
 Across history (migration `20261101124753_replan_history`): a month whose only version
 was deleted keeps its own debts live (its repayments are cancelled), and a new plan
-reverses them too, so they are never counted twice. Re-plan keys carry the ledger
+reverses them too, so they are never counted twice. Since migration
+`20261107004222_delete_only_version_reverses_lots` (decision 2026-11-07) the deletion itself
+reverses them with the same audited corrections (reason "Deleted the published <month>
+version"), so with no version left every net is zero; the kept draft copy gets a new
+allocation identity and no source publication, so publishing it books its plan again.
+Only when that is impossible (worked, repaid by a later month or settled by hand:
+`review-replan-*`) do the lots stay live as described here. Re-plan keys carry the ledger
 position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
 again. A re-plan is also refused, naming the month, when reversing the lots would
 change a debt another month's pending repayment is reserved on: a reversal nets

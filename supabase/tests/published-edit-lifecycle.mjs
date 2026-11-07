@@ -116,6 +116,18 @@ r=run(edit(x.id,b)+edit(x.id,c,{kind:'permanent'})+report('permanent')+remove+re
 assert.deepEqual(nets(r.permanent),debt(a,b,2));assert.deepEqual(nets(r.deleted),debt(a,b,2),'back to the Temporary version');
 console.log('PASS: repeated, reverted, chained and extra-point edits keep the ledger equal to who does each duty');
 
+// Deleting a month's only version removes what it booked (decision 2026-11-07): with no
+// version left every net is zero; the kept draft republishes and books its plan again.
+// Deleting a later version leaves exactly the earlier version's debts.
+r=run(report('published')+remove+report('deleted')+publish(month)+report('republished'),true);
+assert.deepEqual(nets(r.published),debt(a,b,2));
+assert.equal(r.deleted.versions,0);assert.deepEqual(nets(r.deleted),{},'no version, no debt');
+assert.deepEqual(r.deleted.view.lots.filter(l=>!l.correctionOf&&l.correctedUnits>0),[],'every lot of the deleted version is reversed');
+assert.deepEqual(nets(r.republished),debt(a,b,2),'the kept draft books its plan again');
+r=run(edit(x.id,c)+report('v2')+remove+report('v1'),true);
+assert.equal(r.v2.versions,2);assert.notDeepEqual(nets(r.v2),debt(a,b,2));assert.equal(r.v1.versions,1);assert.deepEqual(nets(r.v1),debt(a,b,2),'back to the first version’s debts only');
+console.log('PASS: deleting the only version leaves no debt and its draft books again; deleting a later version keeps the earlier one’s');
+
 // Stale tabs: a second edit from the same revision or publication is refused by name.
 const opened=`create temp table tab as select ${current(month)} publication,${rev} revision;`;
 r=run(opened+edit(x.id,b)+failure(edit(y.id,c,{revision:'(select revision from tab)'}),'The team data changed. Refresh and try again.')
