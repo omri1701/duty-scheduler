@@ -2,9 +2,9 @@ import {sliceClaim} from '../compensation/index.ts';
 import {canonicalDuties} from '../scheduling/calendar.ts';
 import {balanceChanges, deriveTransfers, handOf, type Hand} from './derive.ts';
 import {equalShares, fitPartition, partitionableWeekends} from './fit.ts';
-import {availability, ceilings, context, grain, type Context} from './model.ts';
+import {availability, ceilings, context, grain, sum, type Context} from './model.ts';
 import {validateDraft} from './edits.ts';
-import type {AllocationInput, AllocationDraft, Change, Pair, UnevenTransfer} from './types.ts';
+import type {AllocationInput, AllocationDraft, Change, Pair, RepaidLater, UnevenTransfer} from './types.ts';
 
 /** A non-weekend member's standing extra (decision 2026-11-01): +1 Permanent point
  * every month for skipping weekends. Proposed by default, editable that month. */
@@ -12,7 +12,7 @@ export const NON_WEEKEND_UNITS = 2;
 
 /** Per-person changes worth keeping across proposals: the hand changes, pairs and
  * the confirmed ordinary baseline (immutable while duties and participants stand). */
-export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string, number>};
+export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string, number>; repaidLater?: RepaidLater[]};
 
 /** Synchronous proposal: plain arithmetic, no solver. Date placement and the
  * exact coverage check remain Generate's job.
@@ -82,7 +82,11 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
   };
   const repay = (baseline: Record<string, number>) => {
     const carried = carriedUnits(unevenTransfers(input.seniority, weights, baseline));
-    const offered = {...baseline}, taken = new Map<string, number>(), order: string[] = [], repaying = new Set<string>();
+    // A debt a later month repays is part of the offered points (decision 2026-11-07).
+    const offered = Object.fromEntries(c.ids.map(id => [id, baseline[id] + c.held[id]])), taken = new Map<string, number>(), order: string[] = [], repaying = new Set<string>();
+    // Its creditor takes no relief below fair share plus the debt; its debtor repays nothing above fair share minus it.
+    const floor = (id: string) => Math.max(c.locked[id], c.held[id] > 0 ? baseline[id] + c.held[id] : 0);
+    const room = (id: string) => c.held[id] < 0 ? baseline[id] + c.held[id] - offered[id] : Infinity;
     for (const creditorId of [...new Set(c.candidates.map(k => k.creditorId))]) {
       const claims = (id: string) => c.candidates.filter(k => k.debtorId === id && k.creditorId === creditorId);
       const owed = (id: string) => claims(id).reduce((n, k) => n + k.units - (taken.get(k.id) ?? 0), 0);
@@ -91,11 +95,11 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
       // Turns: one point at a time to the debtor who has repaid least of this debt so far, newest
       // first on ties, while the creditor keeps relief above its locks and the debtor still owes.
       for (;;) {
-        const relief = offered[creditorId] - c.locked[creditorId] - (carried[creditorId] ?? 0);
+        const relief = offered[creditorId] - floor(creditorId) - (carried[creditorId] ?? 0);
         const next = debtors.filter(id => !stuck.has(id) && owed(id) > 0)
           .sort((a, b) => turns.get(a)! - turns.get(b)! || newest.indexOf(a) - newest.indexOf(b))[0];
         if (!next || relief < g) break;
-        let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], relief) / g) * g;
+        let amount = Math.floor(Math.min(2, owed(next), ceiling[next] - offered[next], room(next), relief) / g) * g;
         const before = amount > 0 ? level(offered) : 0;
         if (before) {
           while (amount > 0 && level({...offered, [next]: offered[next] + amount, [creditorId]: offered[creditorId] - amount}) < before) amount -= g;
@@ -128,14 +132,29 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
     const targets = Object.fromEntries(c.ids.map(id => [id, offered[id] + changes[id].temporary + changes[id].permanent]));
     return {baselineUnits: baseline, offeredUnits: offered, targetsUnits: targets, repayments, changes, pairs,
       transfers: deriveTransfers(input.seniority, changes, pairs), uneven: unevenTransfers(input.seniority, weights, baseline, changes),
+      ...(c.repaidLater.length ? {repaidLater: structuredClone(c.repaidLater)} : {}),
       sourceKey: c.key, ...(Object.keys(hand).length ? {hand: Object.keys(hand)} : {})};
   };
   const fits = (hand: Hand) => Object.entries(hand).every(([id, ch]) => ch.permanent >= -Math.min(baseline[id], offered[id]) &&
     baseline[id] + ch.permanent <= c.total && offered[id] + ch.temporary + ch.permanent >= c.locked[id]);
   let draft = build({}, []), hand: Hand = {}, pairs: Pair[] = [];
   if (retained) {
-    const keptHand = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)));
-    const keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId));
+    const keptHand: Record<string, Change> = Object.fromEntries(Object.entries(retained.hand).filter(([id]) => c.ids.includes(id)).map(([id, ch]) => [id, {...ch}]));
+    let keptPairs = retained.pairs.filter(p => c.ids.includes(p.fromId) && c.ids.includes(p.toId)).map(p => ({...p}));
+    // A plan made before a later month repaid one of its temporary changes (decision 2026-11-07):
+    // that change is now the fixed debt, so it is taken out of the hand changes and drags
+    // instead of being booked a second time.
+    for (const l of c.repaidLater) {
+      let left = l.units - sum((retained.repaidLater ?? []).filter(o => o.id === l.id).map(o => o.units));
+      for (const p of keptPairs) if (left > 0 && p.kind === 'temporary' && p.fromId === l.fromId && p.toId === l.toId) {
+        const n = Math.min(left, p.units); p.units -= n; left -= n;
+      }
+      left = l.units - sum((retained.repaidLater ?? []).filter(o => o.id === l.id).map(o => o.units));
+      const to = keptHand[l.toId], from = keptHand[l.fromId];
+      const n = Math.min(left, Math.max(0, to?.temporary ?? 0), Math.max(0, -(from?.temporary ?? 0)));
+      if (n > 0) {to.temporary -= n; from.temporary += n;}
+    }
+    keptPairs = keptPairs.filter(p => p.units > 0);
     // A kept default +1 is never funded by a non-weekend member: when the retained changes
     // would be, the defaults are dropped (the loop below adds back what fits) and the other
     // hand changes kept; if those still need one, they stand as the manager left them.
@@ -213,7 +232,8 @@ export const allocationDivisible = (input: AllocationInput, targetsUnits: Readon
 export function retainedChanges(draft: AllocationDraft | null): Retained | undefined {
   const baseline = draft?.baselineUnits && typeof draft.baselineUnits === 'object' ? {baselineUnits: {...draft.baselineUnits}} : {};
   if (!draft?.changes || !Array.isArray(draft.pairs)) return 'baselineUnits' in baseline ? {hand: {}, pairs: [], ...baseline} : undefined;
-  return {hand: handOf(draft), pairs: structuredClone(draft.pairs), ...baseline};
+  return {hand: handOf(draft), pairs: structuredClone(draft.pairs), ...baseline,
+    ...(Array.isArray(draft.repaidLater) ? {repaidLater: structuredClone(draft.repaidLater)} : {})};
 }
 
 /** System credit for an indivisible month (decision 2026-10-30): the fitted

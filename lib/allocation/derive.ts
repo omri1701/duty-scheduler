@@ -81,16 +81,25 @@ export function balanceChanges(c: Context, seniority: readonly string[], baselin
     const rooms = takers.map(t => room(t)), after = takers.map(t => t === id ? Math.max(0, room(t) - units) : room(t));
     return sum(after) >= c.weekendFree && spread(after) >= spread(rooms);
   };
-  const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id] && keepsWeekends(id, units))
+  // A debt a later month repays (decision 2026-11-07): before Permanent changes, its creditor
+  // never goes below fair share plus the debt, its debtor never above fair share minus it, and
+  // neither takes a temporary change of the sign that would net the debt away.
+  const keepsDebt = (id: string, kind: Kind, delta: number) => {
+    const h = c.held[id] ?? 0;
+    if (!h || kind === 'permanent') return true;
+    const temporary = changes[id].temporary + delta, own = offered[id] + temporary;
+    return h > 0 ? temporary >= 0 && own >= baseline[id] + h : temporary <= 0 && own <= baseline[id] + h;
+  };
+  const givers = (kind: Kind, units: number, except?: string) => free.filter(id => id !== except && full(id) - units >= c.locked[id] && keepsWeekends(id, units) && keepsDebt(id, kind, -units))
     .sort((a, b) => (kind === 'permanent' ? nonWeekend(a) - nonWeekend(b) : 0) || other(a, kind) - other(b, kind) || full(b) - full(a) || rank(a) - rank(b));
   // A permanent receiver's fair share plus punishment never exceeds the month's total points.
   const received: Record<string, number> = {};
-  const receivers = (kind: Kind, units: number) => free.filter(id => kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total)
+  const receivers = (kind: Kind, units: number) => free.filter(id => (kind !== 'permanent' || baseline[id] + changes[id].permanent + units <= c.total) && keepsDebt(id, kind, units))
     .sort((a, b) => (received[a] ?? 0) - (received[b] ?? 0) || other(a, kind) - other(b, kind) || full(a) - full(b) || rank(b) - rank(a));
   for (const id of seniority) {
     if (hand[id]) continue;
     while (full(id) < c.locked[id]) {
-      const units = Math.min(g, c.locked[id] - full(id)), giver = givers('temporary', units, id)[0];
+      const units = Math.min(g, c.locked[id] - full(id)), giver = keepsDebt(id, 'temporary', units) ? givers('temporary', units, id)[0] : undefined;
       if (!giver) break;
       changes[giver].temporary -= units; changes[id].temporary += units;
     }

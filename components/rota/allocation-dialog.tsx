@@ -60,7 +60,12 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
     return () => clearTimeout(timer);
   }, [moved, dismissMoved]);
   // Built from the compiled plan: what is really repaid now and carried forward.
-  const owed = f.planned?.plan && f.captured ? nettedCompensation(f.captured.projected.net, {transfers: f.planned.plan.intents, repayments: f.planned.plan.repayments}, f.input?.seniority ?? []) : [];
+  // A debt a later month already repays is listed on its own, as what that month relies on
+  // (decision 2026-11-07), not netted again here.
+  const opening = {...f.captured?.projected.net};
+  for (const l of f.repaidLater) {opening[l.toId] = (opening[l.toId] ?? 0) - l.units; opening[l.fromId] = (opening[l.fromId] ?? 0) + l.units;}
+  const owed = f.planned?.plan && f.captured ? nettedCompensation(opening, {transfers: f.planned.plan.intents, repayments: f.planned.plan.repayments}, f.input?.seniority ?? []) : [];
+  const monthName = (m: string) => new Date(`${m}-15T00:00:00Z`).toLocaleString(lang === 'he' ? 'he' : 'en', {month: 'long', year: 'numeric', timeZone: 'UTC'});
   // One line per extra share: "Avi and Dana get 6 pts".
   const list = (ids: string[]) => new Intl.ListFormat(lang === 'he' ? 'he' : 'en', {type: 'conjunction'}).format(ids.map(name));
   const uneven = [...new Set(f.uneven.map(u => u.units))].sort((a, b) => b - a).map(units => {
@@ -175,7 +180,9 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       </div>}
       <p className="allocation-caption">{t('Points = fair share, plus any repayment, plus the temporary and permanent changes. Locked duties count toward points.', 'נקודות = החלק ההוגן, בתוספת החזרים ובתוספת השינויים הזמניים והקבועים. תורנויות נעולות נספרות בנקודות.')}</p>
       {f.draft && <details className="allocation-details" open={unplacedUnits > 0}>
-        <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
+        <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!(owed.length + f.repaidLater.length) && <span>{owed.length + f.repaidLater.length}</span>}</summary>
+        {!!f.repaidLater.length && <ul className="allocation-repaid-later">{f.repaidLater.map(l => <li key={l.id}><strong>{name(l.fromId)} {lang === 'he' ? '←' : '→'} {name(l.toId)}</strong> · <bdi>{points(l.units)}</bdi> · {
+          t(`kept: ${l.months.map(monthName).join(', ')} already repays it`, `נשמר: ${l.months.map(monthName).join(', ')} כבר מחזיר אותו`)}</li>)}</ul>}
         {unplacedUnits > 0 && <p className="allocation-attention">{points(unplacedUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
         {owed.length ? <ul>{owed.map(l => {
           // A lone half cannot be repaid by whole duties; it waits for its second half instead of a later month.
@@ -184,7 +191,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           l.thisMonth && `${points(l.thisMonth)} ${t('this month', 'החודש')}`, whole && `${points(whole)} ${t('later', 'בהמשך')}`,
           lone && t('0.5 waiting for the second half', '0.5 ממתין לחצי השני'),
           l.reason === 'uneven' && t('uneven split', 'חלוקה לא שווה')].filter(Boolean).join(' · ')}</li>;})}</ul>
-          : <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
+          : !f.repaidLater.length && <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
       </details>}
       {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}

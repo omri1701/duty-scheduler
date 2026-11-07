@@ -37,8 +37,10 @@ begin
  -- audited corrections as a re-plan reverse every live lot the month's publications booked and
  -- the deletion cancels its pending repayments, so with no version left every net is zero. The
  -- kept draft copy is then a plan of its own: publishing it books it again. When worked or used
- -- points make that impossible (review-replan-*: started, repaid by a later month, settled by
- -- hand), the lots stay live as before and a new plan reverses them.
+ -- points make that impossible (review-replan-*: started, a later month's repayment settled,
+ -- settled by hand), the lots stay live as before and a new plan reverses them. A lot a later
+ -- published month's pending repayment relies on stays live either way; the kept draft's next
+ -- plan holds it as a fixed fact (allocation_repaid_later).
  if deleting and publication is null and before_pub is not null then
   begin
    s:=duty_private.compensation_replan(s,month,instant,true,'Deleted the published '||month||' version');

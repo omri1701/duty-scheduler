@@ -21,6 +21,11 @@ export type Transfer = {id: string; fromId: string; toId: string; units: number;
  * equal split, carried temporarily for a member still below it. Derived, never
  * chosen (`uneven/<debtor>/<creditor>`); the checked RPC requires the exact list. */
 export type UnevenTransfer = {id: string; fromId: string; toId: string; units: number};
+/** A debt this month booked that a later published month already repays (decision
+ * 2026-11-07): the lot (`id`) stays live through a re-plan, and the plan keeps it as a fixed
+ * fact, part of the offered points: `toId` works the units, `fromId` doesn't. Derived from the
+ * ledger, never chosen; duty_private.allocation_compile requires the exact list. */
+export type RepaidLater = {id: string; fromId: string; toId: string; units: number};
 /** Preserve this snapshot; never recompute its baseline from later history. */
 export type AllocationDraft = {
   baselineUnits: Record<string, number>;
@@ -34,6 +39,8 @@ export type AllocationDraft = {
   /** Uneven-month credit still carried after permanent changes. Absent in
    * snapshots saved before the credit existed: they carry none. */
   uneven?: UnevenTransfer[];
+  /** Absent when the month has none, and in plans saved before it existed. */
+  repaidLater?: RepaidLater[];
   sourceKey: string;
   /** Members the manager changed by hand. The automatic balance never moves them.
    * Local editing state only: it is stripped before the checked RPC persists.

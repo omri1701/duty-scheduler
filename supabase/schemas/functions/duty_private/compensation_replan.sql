@@ -1,11 +1,13 @@
 -- The ledger a new plan for a month starts from (decision 2026-11-01): every live lot the
--- month's publication events booked is reversed by an audited correction, then a current
+-- month's publications booked is reversed by an audited correction, then a current
 -- publication is deleted, which cancels its pending repayments. The plan, its checks and
 -- its publication see the month as if it had never been booked; nothing is rewritten.
 -- A month whose only version was deleted still has live lots: a new plan reverses them
 -- too, so they are never counted twice. Keys carry the ledger position, so the month can
--- be re-planned again later. Refused when a repayment of another month already uses one
--- of those lots, or would be held because a debt it repays nets differently afterwards
+-- be re-planned again later. A lot a later published month's pending repayment relies on
+-- stays live (allocation_repaid_later, decision 2026-11-07): the new plan keeps it as a
+-- fixed fact instead. Refused when a settled repayment of another month used one of those
+-- lots, or a repayment would be held because a debt it repays nets differently afterwards
 -- (review-replan-later:<month>), when part of one was settled by hand
 -- (review-replan-settled), or once the published month has started (review-replan-started), its
 -- last version counting when the only one was deleted: worked days keep their debts.
@@ -15,7 +17,7 @@
 CREATE FUNCTION duty_private.compensation_replan(s jsonb, p_month text, instant bigint, commit boolean DEFAULT false, p_reason text DEFAULT NULL) RETURNS jsonb
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare original jsonb:=s; pub jsonb:=s->'publications'->p_month; keys text[]; lots text[]; lot jsonb; c jsonb; other text; op jsonb; key text;
+declare original jsonb:=s; pub jsonb:=s->'publications'->p_month; keys text[]; lots text[]; kept text[]; lot jsonb; c jsonb; other text; op jsonb; key text;
  actor text:=coalesce(auth.uid()::text,'system'); reason text:=coalesce(p_reason,'Re-planned '||p_month);
  last jsonb:=coalesce(s->'publications'->p_month,(select x->'operation'->'after' from jsonb_array_elements(s->'events') with ordinality e(x,i)
   where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month and x->'operation'->'after'<>'null' order by i desc limit 1));
@@ -26,18 +28,22 @@ begin
   where x->'operation'->>'kind'='publication' and x->'operation'->>'month'=p_month;
  select coalesce(array_agg(l.key order by l.key COLLATE "C"),'{}') into lots from jsonb_each(s->'lots') l
   where l.value->>'sourceKey'=any(keys) and (l.value->>'correctedUnits')::bigint>0;
+ select coalesce(array_agg(k->>'id'),'{}') into kept from jsonb_array_elements(duty_private.allocation_repaid_later(s,p_month)) k;
  for c in select value from jsonb_each(s->'contributions') where value->>'status'<>'cancelled'
   and exists(select 1 from jsonb_array_elements(value->'claim'->'path') p where p->>'lotId'=any(lots)) loop
   if pub is not null and exists(select 1 from jsonb_array_elements(pub->'reservations') r where r->>'id'=c->>'id') then
    if c->>'status'='settled' then raise exception 'review-replan-started'; end if;
    continue;
   end if;
+  -- A later month's pending repayment keeps the lots it relies on live.
+  if c->>'status'<>'settled' and not exists(select 1 from jsonb_array_elements(c->'claim'->'path') p where p->>'lotId'=any(lots) and not p->>'lotId'=any(kept)) then continue; end if;
   -- The earliest other month whose repayment uses this month's points.
   other:=least(other,coalesce((select min(m.key COLLATE "C") from jsonb_each(s->'publications') m
    where exists(select 1 from jsonb_array_elements(m.value->'reservations') r where r->>'id'=c->>'id')),'unknown'));
  end loop;
  if other is not null then raise exception 'review-replan-later:%',other; end if;
  foreach key in array lots loop
+  if key=any(kept) then continue; end if;
   lot:=s->'lots'->key;
   if (lot->>'remaining')::bigint<(lot->>'units')::bigint then raise exception 'review-replan-settled'; end if;
   op:=jsonb_build_object('kind','correct','lotId',key,'deltaUnits',-(lot->>'correctedUnits')::bigint);

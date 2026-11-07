@@ -1,7 +1,7 @@
 import {assertCurrent, unevenTransfers} from './planner.ts';
 import {balanceChanges, deriveTransfers, handOf, isKind, KINDS, zeroChange, type Hand} from './derive.ts';
 import {context, sum, units, type Context} from './model.ts';
-import type {AllocationDraft, AllocationInput, Change, Kind, Pair, Transfer} from './types.ts';
+import type {AllocationDraft, AllocationInput, Change, Kind, Pair, RepaidLater, Transfer} from './types.ts';
 
 const signed = (v: unknown): v is number => Number.isSafeInteger(v) && Math.abs(v as number) <= 1e9;
 const changeShape = (v: unknown): v is Change => !!v && typeof v === 'object' && Object.keys(v).length === 2 &&
@@ -27,6 +27,10 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
   if (!draft.changes || typeof draft.changes !== 'object' || !Array.isArray(draft.pairs) || !Array.isArray(draft.transfers)) throw Error('invalid-allocation-shape');
   table(draft.baselineUnits); table(draft.offeredUnits); table(draft.targetsUnits);
   if (sum(Object.values(draft.baselineUnits)) !== c.total) throw Error('invalid-baseline-total');
+  // A debt a later month repays is the ledger's fact, never chosen (decision 2026-11-07).
+  const later = draft.repaidLater ?? [], field = (l: RepaidLater) => [l.id, l.fromId, l.toId, l.units];
+  if (!Array.isArray(later) || later.some(l => !l || typeof l !== 'object' || Object.keys(l).length !== 4) ||
+    JSON.stringify(later.map(field)) !== JSON.stringify(c.repaidLater.map(field))) throw Error('invalid-repaid-later');
   const expected = {...draft.baselineUnits}, slices = new Map<string, {offset: number; units: number}[]>();
   for (const r of draft.repayments) {
     units(r.units);
@@ -44,6 +48,7 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
     }
     expected[r.claim.debtorId] += r.units; expected[r.claim.creditorId] -= r.units;
   }
+  for (const l of later) {expected[l.fromId] -= l.units; expected[l.toId] += l.units;}
   if (c.ids.some(id => expected[id] !== draft.offeredUnits[id])) throw Error('invalid-offered-allocation');
   if (Object.keys(draft.changes).length !== c.ids.length || c.ids.some(id => !changeShape(draft.changes[id]))) throw Error('invalid-allocation-changes');
   for (const id of c.ids) {
@@ -52,6 +57,12 @@ export function validateDraft(c: Context, seniority: readonly string[], draft: A
     // No one owes, or is owed, more temporary work than the month holds.
     if (Math.abs(draft.changes[id].temporary) > c.total) throw Error('temporary-above-month-total');
     if (draft.offeredUnits[id] + draft.changes[id].permanent + draft.changes[id].temporary !== draft.targetsUnits[id]) throw Error('unexplained-target-edit');
+    // Fair share plus a debt a later month repays is the bound (decision 2026-11-07), before
+    // Permanent changes (they move the fair share itself): its creditor never below it, its
+    // debtor never above it, and no temporary change nets it away.
+    const own = draft.targetsUnits[id] - draft.changes[id].permanent, bound = draft.baselineUnits[id] + c.held[id];
+    if (c.held[id] > 0 && (draft.changes[id].temporary < 0 || own < bound)) throw Error('repaid-later-floor');
+    if (c.held[id] < 0 && (draft.changes[id].temporary > 0 || own > bound)) throw Error('repaid-later-ceiling');
   }
   // A change no one can absorb leaves points unplaced, never more points than the month has.
   if (sum(c.ids.map(id => draft.targetsUnits[id])) > c.total) throw Error('allocation-above-month-total');
@@ -104,6 +115,7 @@ export function rebuild(c: Context, input: AllocationInput, source: AllocationDr
     repayments: structuredClone(source.repayments), changes, pairs: structuredClone(pairs),
     transfers: deriveTransfers(input.seniority, changes, pairs),
     uneven: unevenTransfers(input.seniority, c.weights, source.baselineUnits, changes),
+    ...(source.repaidLater?.length ? {repaidLater: structuredClone(source.repaidLater)} : {}),
     sourceKey: source.sourceKey, hand: Object.keys(hand)};
   validateDraft(c, input.seniority, draft);
   // The configured total always equals the month total: an edit no one can
