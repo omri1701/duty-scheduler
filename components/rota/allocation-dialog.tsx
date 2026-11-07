@@ -96,8 +96,8 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
       : <>
         {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
         {f.phase === 'generating' ? <Button variant="outline" className="plan-cancel" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
-        : !f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved || f.busy} aria-busy={shows('save') || undefined} onClick={() => {setRunning('save'); f.confirm(false);}}>
-          {f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <>{shows('save') ? <LoaderCircle className="spin"/> : <Save/>}<BusyLabel busy={shows('save')} idle={t('Save', 'שמירה')} active={t('Saving…', 'שומר…')}/></>}</Button>}
+        : !f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved || f.busy} aria-busy={shows('save') || undefined} aria-label={shows('save') ? status : undefined} onClick={() => {setRunning('save'); f.confirm(false);}}>
+          {f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <>{shows('save') ? <LoaderCircle className="spin"/> : <Save/>}<BusyLabel busy={shows('save')} idle={t('Save', 'שמירה')} active={t('Saving…', 'שומר…')} short={t('Save', 'שמירה')}/></>}</Button>}
         <Button className="plan-generate" disabled={f.busy || !f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} aria-busy={shows('generate') || undefined} aria-label={shows('generate') ? status : undefined} onClick={() => {setRunning('generate'); f.confirm(!f.closed);}}>
           {shows('generate') ? <LoaderCircle className="spin"/> : <Sparkles/>}
           <BusyLabel busy={shows('generate')} idle={f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')} active={f.closed ? t('Saving…', 'שומר…') : finding}

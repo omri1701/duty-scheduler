@@ -4,12 +4,11 @@ import {Ellipsis} from 'lucide-react';
 import {MonthTitle} from './month-title';
 import {DropdownMenu} from 'radix-ui';
 import {Button} from '@/components/ui/button';
-import {BusyLabel} from '@/components/ui/busy-label';
 import {Chip} from '@/components/ui/chip';
 import type {Translate} from './workspace-types';
 
 export type MenuItem = {key: string; label: string; icon?: ReactNode; onSelect: () => void; disabled?: boolean; reason?: string; danger?: boolean};
-export type PrimaryAction = {label: string; /** Shown in place while busy, at the same width (decision 2026-11-07). */ busyLabel?: string; onClick: () => void; disabled?: boolean; reason?: string; icon?: ReactNode; busy?: boolean; dot?: boolean; variant?: 'default' | 'secondary'};
+export type PrimaryAction = {label: string; /** Shown in place while busy (decision 2026-11-07); the bar's button width holds both. */ busyLabel?: string; onClick: () => void; disabled?: boolean; reason?: string; icon?: ReactNode; busy?: boolean; dot?: boolean; variant?: 'default' | 'secondary'};
 
 /** The month heading with its chevrons, the status chip, one primary action and a ⋯ menu for
  * rare actions (decision 2026-11-06). Everyone sees the heading; the actions are the admin's. */
@@ -24,7 +23,7 @@ export function MonthBar({month, label, status, t, onChange, primary, menu, load
     {(primary || menu?.length || children) && <div className="month-actions">
       {children}
       {primary && <Button className="month-primary" variant={primary.variant ?? 'default'} disabled={primary.disabled || primary.busy} title={primary.reason} aria-label={primary.busy && primary.busyLabel ? primary.busyLabel : primary.label} aria-busy={primary.busy || undefined} onClick={primary.onClick}>
-        {primary.icon}{primary.busyLabel ? <BusyLabel busy={!!primary.busy} idle={primary.label} active={primary.busyLabel}/> : <span>{primary.label}</span>}{primary.dot && <span className="review-dot" aria-hidden="true"/>}
+        {primary.icon}<span>{primary.busy && primary.busyLabel ? primary.busyLabel : primary.label}</span>{primary.dot && <span className="review-dot" aria-hidden="true"/>}
       </Button>}
       {!!menu?.length && <DropdownMenu.Root dir={rtl ? 'rtl' : 'ltr'}>
         <DropdownMenu.Trigger asChild>

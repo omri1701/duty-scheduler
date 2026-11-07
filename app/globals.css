@@ -52,10 +52,10 @@ textarea{resize:vertical;min-height:76px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .muted{color:var(--ink-3)}.small{font-size:13px}.w-full{width:100%}.grow{flex:1}
 .rtl-flip{transform:none}[dir=rtl] .rtl-flip{transform:scaleX(-1)}
-.spin{animation:rotate 1.3s linear infinite}
+.spin{animation:rotate 1.3s linear infinite}@keyframes rotate{to{transform:rotate(360deg)}}
 .busy-label{display:inline-grid;grid-template-columns:minmax(0,auto);min-width:0}.busy-label>span{grid-area:1/1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.busy-label>span:last-child,.busy-label[data-busy]>span:first-child{visibility:hidden}.busy-label[data-busy]>span:last-child{visibility:visible}
 .busy-short{display:none}
-@media(min-width:601px){.busy-label[data-fit]>span:last-child{width:0;min-width:100%}.busy-label[data-fit] .busy-short{display:inline}.busy-label[data-fit] .busy-long{display:none}}@keyframes rotate{to{transform:rotate(360deg)}}
+@media(min-width:601px){.busy-label[data-fit]>span:last-child{width:0;min-width:100%}.busy-label[data-fit] .busy-short{display:inline}.busy-label[data-fit] .busy-long{display:none}}
 /* A member's colour pair is read where it is painted, so the variables resolve per element. */
 .member-tint,.assignment-chip,.plan-row,.plan-slice{--member-bg:var(--member-light,var(--surface-3));--member-ink:var(--member-light-ink,var(--ink))}
 :root[data-theme=dark] .member-tint,:root[data-theme=dark] .assignment-chip,:root[data-theme=dark] .plan-row{--member-bg:var(--member-dark,var(--surface-3));--member-ink:var(--member-dark-ink,var(--ink))}
