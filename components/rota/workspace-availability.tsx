@@ -1,5 +1,6 @@
 import {Lock} from 'lucide-react';
 import {MonthTitle} from './month-title';
+import {useMonthArrival} from './month-stage';
 import {Select, SelectTrigger, SelectValue, SelectContent, SelectItem} from '@/components/ui/select';
 import {Chip} from '@/components/ui/chip';
 import {AvailabilityEditor} from '@/components/rota/availability-editor';
@@ -16,9 +17,11 @@ export function WorkspaceAvailability({state, month, monthLabel, onMonth, person
   const active = state.team.filter((p) => p.active);
   const mine = state.constraints[person] ?? {};
   const counts = Object.values(mine).reduce((n, kind) => ({...n, [kind]: (n[kind] ?? 0) + 1}), {} as Record<string, number>);
+  // A name swipe refreshes the grid in place, blurred to sharp (owner round 4).
+  const {ref: arrivalRef, mark: markArrival} = useMonthArrival<HTMLDivElement>(month);
   return <section className="availability-screen">
     <div className="month-bar">
-      <MonthTitle month={month} label={monthLabel} t={t} onChange={onMonth}
+      <MonthTitle month={month} label={monthLabel} t={t} onChange={onMonth} onSwipe={n => {markArrival(); onMonth(n);}}
         status={constraintsClosed ? <Chip tone="neutral" size="sm" className="month-status"><Lock/>{t('Closed', 'סגור')}</Chip> : <Chip tone="brand" size="sm" className="month-status">{t(`Due ${shortDate(deadline, lang)}`, `עד ${shortDate(deadline, lang)}`)}</Chip>}/>
       {isManager && <div className="month-actions">
         <Select value={person} onValueChange={setPerson}>
@@ -31,6 +34,6 @@ export function WorkspaceAvailability({state, month, monthLabel, onMonth, person
       <Chip tone="danger" size="sm"><i className="dot"/>{t(`${counts.no ?? 0} unavailable`, `${counts.no ?? 0} לא זמין`)}</Chip>
       <Chip tone="ok" size="sm"><i className="dot"/>{t(`${counts.prefer ?? 0} preferred`, `${counts.prefer ?? 0} מועדף`)}</Chip>
     </div>
-    <AvailabilityEditor state={state} month={month} person={person} cells={dateCells} lang={lang} disabled={constraintsClosed} onSave={saveConstraints}/>
+    <div ref={arrivalRef}><AvailabilityEditor state={state} month={month} person={person} cells={dateCells} lang={lang} disabled={constraintsClosed} onSave={saveConstraints}/></div>
   </section>;
 }

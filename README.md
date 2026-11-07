@@ -162,13 +162,18 @@ icons and iOS startup screens from them. Member colours come from the 20-colour 
 in Settings (`duty_set_color`, own row, taken colours greyed) and an admin can change anyone's
 in the member sheet.
 
-The month changes by direct manipulation: dragging the calendar sideways (or the month name,
-on phones too) moves it with the finger while the neighbouring month, drawn by the same
-calendar component from the already-loaded snapshot, slides in blurred and sharpens; past
-40% of the width (48px from the heading) or a flick it lands, otherwise it springs back. The
-chevrons play the same transition, Hebrew mirrors it, reduced motion makes it instant. The
-landed month is the peek without the blur; refreshes keep the grid mounted and fade in only
-chips whose person changed. Safe areas go through `--sat/--sab/--sal/--sar` (`env()` with a 0
+The month changes by direct manipulation, and the month name and the calendar swipe
+separately. Dragging the calendar sideways moves it with the finger while the neighbouring
+month, drawn by the same calendar component from the already-loaded snapshot, slides in
+blurred and sharpens; past 40% of the width or a flick it lands, otherwise it springs back.
+The name stays put and arrives blurred to sharp on release. While the neighbour shows, the
+calendar eases to the taller month, so a six-week month is seen whole and nothing jumps when
+it lands. Dragging the month name (on every month screen) moves only the name: the next
+name follows the finger and sharpens as it arrives. Past 48px or a flick the month changes,
+and the calendar (or the Availability grid) refreshes in place, blurred to sharp, with no
+slide. The chevrons slide the calendar and roll the name. Hebrew mirrors all of it, and
+reduced motion makes it instant. The landed month is the peek without the blur. Refreshes
+keep the grid mounted and fade in only the chips whose person changed. Safe areas go through `--sat/--sab/--sal/--sar` (`env()` with a 0
 fallback; `data-safe-area=test` forces iPhone insets in specs); the status bar style stays
 `default` so its text is readable in both themes, and `theme-color` follows the chosen theme.
 

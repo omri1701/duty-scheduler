@@ -1,4 +1,4 @@
-import {test, expect, duty, ids, type Backend, switchLanguage, monthAction} from './fixtures';
+import {test, expect, duty, ids, type Backend, switchLanguage, monthAction, openDutySheet} from './fixtures';
 import type {Page} from '@playwright/test';
 
 // Fixture rows exist twice: the published copy and the working draft. The draft calendar is what the admin edits.
@@ -266,4 +266,41 @@ test('adding a holiday on assigned days keeps every person, lock and emergency c
   expect(draftRow(backend, '2026-11-06')).toMatchObject({end_day: '2026-11-08', saturday_extra_points: 1, points: 3});
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule').at(-1)!.params.p_state).toMatchObject({lock_edits: ['2026-11-06', '2026-11-07']});
   await expect(duty(page, '2026-11-05')).toHaveAccessibleName(new RegExp(backend.raw.members.find(m => m.id === before[1].primary_id)!.name));
+});
+
+// Owner round 4: a weekday run into a weekend (Thu–Sat) and a run across the row break keep their
+// name centred, on top and readable, also in swap mode where the following cells are targets.
+for (const scheme of ['light', 'dark'] as const) test(`multi-day bars show their name on top and legible, also while a swap is picked (${scheme})`, async ({page, backend, openApp}) => {
+  backend.raw.months[0].status = 'published';
+  for (const day of ['2026-11-19', '2026-11-20']) for (const r of rows(backend, day)) r.primary_id = ids.e;
+  for (const day of ['2026-11-27', '2026-11-29', '2026-11-30']) for (const r of rows(backend, day)) r.primary_id = ids.c;
+  await page.emulateMedia({colorScheme: scheme});
+  await openApp('admin'); await schedule(page);
+  const legible = async () => {
+    for (const day of ['2026-11-19', '2026-11-27', '2026-11-29']) {
+      const label = duty(page, day).locator('.streak-label, .assignment-chip > .pill-text').first();
+      await expect(label, day).toBeVisible();
+      const check = await label.evaluate(el => {
+        // The label ignores the pointer (taps go to the day); let it be hit only for this probe.
+        (el as HTMLElement).style.pointerEvents = 'auto';
+        const r = el.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        (el as HTMLElement).style.pointerEvents = '';
+        const chip = el.closest('.assignment-chip')!, lum = (c: string) => {
+          const [r, g, b] = c.match(/[\d.]+/g)!.slice(0, 3).map(v => {const s = Number(v) / 255; return s <= .03928 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;});
+          return .2126 * r + .7152 * g + .0722 * b;
+        };
+        const fg = lum(getComputedStyle(el).color), bg = lum(getComputedStyle(chip).backgroundColor === 'rgba(0, 0, 0, 0)' ? getComputedStyle(chip, '::before').backgroundColor : getComputedStyle(chip).backgroundColor);
+        return {onTop: !!top && el.contains(top), text: el.textContent, contrast: (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05)};
+      });
+      expect(check.onTop, `${day} name on top`).toBe(true);
+      expect(check.text, day).toMatch(/\S/);
+      expect(check.contrast, `${day} contrast`).toBeGreaterThanOrEqual(4.5);
+    }
+  };
+  await legible();
+  // Picking a duty to swap turns the following cells into targets; the names stay on top.
+  await (await openDutySheet(page, '2026-11-10')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(duty(page, '2026-11-20')).toHaveClass(/drag-target/);
+  await legible();
 });

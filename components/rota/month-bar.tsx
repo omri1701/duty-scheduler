@@ -1,7 +1,7 @@
 'use client';
 import type {ReactNode} from 'react';
 import {Ellipsis} from 'lucide-react';
-import {MonthTitle, type MonthGesture} from './month-title';
+import {MonthTitle} from './month-title';
 import {DropdownMenu} from 'radix-ui';
 import {Button} from '@/components/ui/button';
 import {Chip} from '@/components/ui/chip';
@@ -12,13 +12,13 @@ export type PrimaryAction = {label: string; onClick: () => void; disabled?: bool
 
 /** The month heading with its chevrons, the status chip, one primary action and a ⋯ menu for
  * rare actions (decision 2026-11-06). Everyone sees the heading; the actions are the admin's. */
-export function MonthBar({month, label, status, t, onChange, primary, menu, loading = false, children, gesture}: {
+export function MonthBar({month, label, status, t, onChange, primary, menu, loading = false, children, onSwipe, arrival}: {
   month: string; label: string; status?: {text: string; tone: 'ok' | 'neutral' | 'warn'}; t: Translate; onChange?: (offset: number) => void;
-  primary?: PrimaryAction; menu?: MenuItem[]; loading?: boolean; children?: ReactNode; gesture?: MonthGesture;
+  primary?: PrimaryAction; menu?: MenuItem[]; loading?: boolean; children?: ReactNode; onSwipe?: (offset: number) => void; arrival?: 'roll' | 'blur';
 }) {
   const rtl = t('ltr', 'rtl') === 'rtl';
   return <div className="month-bar">
-    <MonthTitle month={month} label={label} t={t} onChange={onChange} loading={loading} gesture={gesture}
+    <MonthTitle month={month} label={label} t={t} onChange={onChange} loading={loading} onSwipe={onSwipe} arrival={arrival}
       status={status && <Chip tone={status.tone} size="sm" className="month-status">{status.text}</Chip>}/>
     {(primary || menu?.length || children) && <div className="month-actions">
       {children}

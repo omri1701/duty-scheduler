@@ -1,7 +1,7 @@
 import {CalendarDateLine, CalendarSurface, CalendarDay, CalendarAssignment} from './calendar-presentation';
 import {calendarCells} from '@/lib/rota/calendar-dates';
 import {streakCells} from '@/lib/rota/streaks';
-import {LockKeyhole} from 'lucide-react';
+import {ArrowLeftRight, LockKeyhole} from 'lucide-react';
 import {addDays, dayOf, ownerMonth, type State, type Duty} from '@/lib/rota/engine';
 import {memberStyle} from '@/lib/theme/palette';
 import type {CalendarInteractions} from '@/hooks/use-calendar-interactions';
@@ -63,6 +63,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
       const swapFrom = requesting ? keyboardSource ?? dragFrom ?? pendingDrop?.from ?? null : null,
         blocked = swapFrom && b && interactive && b.id !== swapFrom ? swapHint(swapFrom, b.id) : null,
         swapState = swapFrom && b && interactive && b.id !== swapFrom ? swapBlock(swapFrom, b.id) : undefined;
+      const source = !!b && (dragFrom === b.id || keyboardSource === b.id || pickingFrom === b.id || pendingDrop?.from === b.id);
       const name = p ? nickname(p.id) : '', long = name.length > 7;
       const initials = p ? p.name.trim().split(/\s+/).map(n => n[0] ?? '').join('').slice(0, 2) : '';
       const label = (showYou: boolean) => <span className="pill-text" data-long={long || undefined}>
@@ -100,7 +101,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
             markedWeeks.has(week(d)) ? 'marks-week' : '',
             combined && b?.specialDates?.includes(b.start) ? 'holiday-friday' : '',
             combined && b?.specialDates?.includes(addDays(b!.start, 1)) ? 'holiday-saturday' : '',
-            dragFrom === b?.id || keyboardSource === b?.id || pickingFrom === b?.id || pendingDrop?.from === b?.id ? 'drag-source' : '',
+            source ? 'drag-source' : '',
             (dragOver === b?.id && dragFrom !== b?.id && !(swapState && swapState !== 'pending')) || (keyboardSource && b && requestTarget(keyboardSource, b.id)) || pendingDrop?.to === b?.id ? 'drag-target' : '',
             pendingDrop?.to === b?.id || (dragOver === b?.id && swapState === 'pending') ? 'checking' : '',
             (requesting ? b && swapSourceDays.has(b.id) : draft && a?.primary) ? 'can-swap' : '',
@@ -109,6 +110,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
           aria-label={`${b && swapSourceDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}${blocked ? ` · ${t('Unavailable', 'לא זמין')}: ${blocked}` : ''}`}
         >
           <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end, -1) : undefined}>
+            {source && <span className="swap-source-mark" role="img" aria-label={t('Swapping this duty', 'מחליפים את התורנות הזאת')}><ArrowLeftRight/></span>}
             {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={11}/></span>}
             {cell?.badge !== undefined && <span className="tiny-badge" dir="ltr">+{cell.badge}</span>}
           </CalendarDateLine>
