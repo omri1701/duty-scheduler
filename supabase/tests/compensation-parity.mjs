@@ -118,7 +118,8 @@ const replanCase=(h,month,at)=>{let expected;try{expected=replay(replanEvents(h,
  replanCase(n,'2026-11',completion+1);
  // The only version deleted: its repayments are cancelled, its own lots stay live until a new plan reverses them.
  replanCase(send(n,{kind:'publication',month:'2026-11',beforeId:'nov',after:null,mode:'delete'},'delete-nov',150),'2026-11',160);
- // A reversal nets against the oldest opposing debt: December's repayment on it would be held.
+ // A reversal nets against the oldest opposing debt: December's repayment on it is released and
+ // becomes a debt the other way instead of being held (decision 2026-11-07).
  let x=owe(setup(),'a','b',4,'x');
  x=publish(x,publication('nov-x',[duty('2026-11-04','b',2,'2026-11-05')],[],[intent('nov-x-intent','a','b','2026-11-04')]));
  const old=replay(x).claims.find(k=>k.path[0].lotId==='x');
@@ -176,7 +177,7 @@ for(let i=0;i<plans.length;i++){
  assert.ok(expected.contributions.some(c=>c.id==='november-p'&&c.status==='settled'),'November settles before opening');
  assert.ok(expected.claims.some(c=>c.path[0].lotId.startsWith(`replan/dec-p/${sequence}/`)),'the re-plan lots keep the current ledger position');
 }
-assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','replanned','review-replan-started','replanned','review-replan-later:2026-12','review-replan-later:unknown']);
+assert.deepEqual(replans.map(c=>c.expected.error??'replanned'),['replanned','replanned','replanned','review-replan-started','replanned','replanned','review-replan-later:unknown']);
 assert.equal(replans[2].expected.contributions.find(c=>c.id==='december-repayment').status,'cancelled');
 assert.deepEqual(replans[2].expected.lots.filter(l=>l.id.includes('/reverse/')).map(l=>[l.debtorId,l.creditorId,l.units]),[['d','b',2]],'d owes b the work December planned');
 // Projection uses the same pure core after the SQL event suffix is persisted.

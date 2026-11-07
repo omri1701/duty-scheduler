@@ -802,8 +802,9 @@ fingerprint), so a reopened copy of an edited version republishes unchanged with
 double counting. Edit duty names a pending swap request of the duty before saving ("Pending swap
 with Dana. Saving cancels it."), and saving invalidates it, for a new engineer as well as new points:
 consent was given for the earlier engineer and points. A
-later month that already repays a debt keeps its version. Editing the duty back holds that
-repayment (no double charge). Plan the month on a reopened edited month plans without that
+later month that already repays a debt keeps its version. Editing the duty back (or deleting
+the edited version) undoes the debt, so that repayment is released and its planned work is owed
+the other way, booked once (decision 2026-11-07): no double charge, and nothing lost. Plan the month on a reopened edited month plans without that
 month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
 plan replaces the edit with the plan. Migration `20261105134826_published_edit_lifecycle.sql`
 adds these lifecycle rules. Deleting the live version is that version's exact undo, a

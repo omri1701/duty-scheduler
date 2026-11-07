@@ -34,7 +34,7 @@ const rev='(select revision from public.duty_workspace where id)';
 const current=m=>`(select current_publication_id from public.duty_months where month='${m}')`;
 const as=id=>`set local request.jwt.claim.sub='${id}';`;
 const publish=(m,deadline='2027-11-24')=>`select public.duty_save_schedule(jsonb_build_object('team','[]'::jsonb,'months',jsonb_build_object('${m}',jsonb_build_object('status','draft','deadline','${deadline}','generated',true)),
- 'duties',(select jsonb_agg(to_jsonb(a)) from public.duty_assignments a where publication_id is null and day>='${m}-01' and day<'${m===month?next:'2028-02'}-01')),${rev},'${m}');`;
+ 'duties',(select jsonb_agg(to_jsonb(a)) from public.duty_assignments a where publication_id is null and day>='${m}-01' and day<'${{[month]:next,[next]:'2028-02','2028-02':'2028-03'}[m]}-01')),${rev},'${m}');`;
 function setup(cover=false) {
  const {draft,placed}=plan(cover);
  return `begin;
@@ -202,8 +202,8 @@ assert.deepEqual(asked(swap+approve+returns('swapped')+edit(x.id,b,{extra:1})+re
 console.log('PASS: saving an edit cancels a pending swap of the duty; other swaps, and swaps before or after an edit, keep exact balances');
 
 // The next month: planned or published, it keeps its version; its plan sees the debt.
-function nextMonth(repay) {
- const list=canonicalDuties(next,{}),base=Object.fromEntries(ids.map(id=>[id,4]));base[manager]+=list.reduce((n,d)=>n+d.units,0)-ids.length*4;
+function nextMonth(repay,target=next,deadline='2027-12-24') {
+ const list=canonicalDuties(target,{}),base=Object.fromEntries(ids.map(id=>[id,4]));base[manager]+=list.reduce((n,d)=>n+d.units,0)-ids.length*4;
  const offered={...base};if(repay){offered[repay[0]]+=repay[2];offered[repay[1]]-=repay[2]}
  const remaining={...offered},chosen={},seen=new Map(ids.map(id=>[id,new Set()]));
  const place=i=>{if(i===list.length)return Object.values(remaining).every(n=>n===0);const d=list[i];
@@ -213,9 +213,9 @@ function nextMonth(repay) {
  assert.ok(place(0),'constructive next-month fixture');
  const draft={baselineUnits:base,offeredUnits:offered,targetsUnits:{...offered},repayments:[],changes:Object.fromEntries(ids.map(id=>[id,{temporary:0,permanent:0}])),pairs:[],transfers:[],sourceKey:'published-edit-next'};
  const claim=repay?`jsonb_build_array(jsonb_build_object('claim',(select k from jsonb_array_elements(v->'actual'->'claims') k where k->>'debtorId'='${repay[0]}' and k->>'creditorId'='${repay[1]}'),'units',${repay[2]}))`:`'[]'::jsonb`;
- return `update context set v=public.duty_generation_context('${next}',${rev});
-update context set v=public.duty_confirm_allocation('${next}',jsonb_set(${quote(draft)},'{repayments}',${claim}),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');
-update context set v=public.duty_save_generation('${next}',${quote(chosen)},(v->>'revision')::bigint,v->>'fingerprint',123);`+publish(next,'2027-12-24');
+ return `update context set v=public.duty_generation_context('${target}',${rev});
+update context set v=public.duty_confirm_allocation('${target}',jsonb_set(${quote(draft)},'{repayments}',${claim}),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');
+update context set v=public.duty_save_generation('${target}',${quote(chosen)},(v->>'revision')::bigint,v->>'fingerprint',123);`+publish(target,deadline);
 }
 const nextVersion=`reset role;select jsonb_build_object('label','next','view',duty_private.compensation_view(duty_private.compensation_state()),'publication',${current(next)},
  'claims',(select v->'projected'->'claims' from context));set local role authenticated;`;
@@ -224,13 +224,14 @@ assert.equal(r.after.publication,r.next.publication,'the next month keeps its pu
 assert.deepEqual(r.after.claims.map(k=>[k.debtorId,k.creditorId,k.units]),[[a,b,2]],'the next month’s plan sees the earlier month’s debt');
 assert.deepEqual(nets(r.edited),debt(a,b,2));
 // The next month repays the debt; editing the duty back (Temporary, or Permanent as H1's undo)
-// holds that repayment, never charging twice.
+// undoes the debt, so the next month's repayment is released and its planned work is owed the
+// other way, booked once (decision 2026-11-07): never charged twice, never lost.
 for(const kind of ['temporary','permanent']) {
  r=run(edit(x.id,b)+nextMonth([a,b,2])+report('repaying')+edit(x.id,a,{kind})+report('back'));
  assert.deepEqual(r.repaying.contributions,['pending']);assert.deepEqual(nets(r.repaying),{});
- assert.deepEqual(r.back.contributions,['held'],`${kind}: the repayment waits for a debt`);assert.deepEqual(nets(r.back),{});
+ assert.deepEqual(r.back.contributions,['cancelled'],`${kind}: the repayment is released`);assert.deepEqual(nets(r.back),debt(b,a,2),`${kind}: b owes a the planned work`);
 }
-console.log('PASS: a planned or published next month keeps its version; its repayment of a reverted debt is held');
+console.log('PASS: a planned or published next month keeps its version; its repayment of an undone debt becomes a debt the other way');
 
 // Reopening the edited month: edits wait for the draft, which republishes unchanged
 // without double counting; Cancel Draft restores editing.
@@ -311,4 +312,23 @@ insert into public.duty_assignments(publication_id,day,end_day,primary_id,title,
  r=run(halves(owner)+edit(sat,owner,{extra:1})+weekend('healed'));
  assert.deepEqual(rows(r.healed),[[w1.id,w1.endDate,owner,0,1]],'identical halves heal on the next edit; each date keeps its extra');
  console.log('PASS: a published weekend put back on one person is one Friday–Sunday duty; swaps see one weekend; identical halves heal on the next edit');
+}
+
+// The reported sequence (decision 2026-11-07): an Edit-duty Temporary change makes a owe b (v2),
+// January repays it, v2 is deleted back to v1 (its exact undo), then v1, December's only version,
+// is deleted. January's planned extra duty for a is real and December counts as nothing, so b owes
+// a from the revert on; a February plan repays it like any debt and every net ends at 0.
+{
+ const feb='2028-02';
+ r=run(edit(x.id,b)+report('v2')+nextMonth([a,b,2])+report('repaying')+remove+report('reverted')+remove+report('deleted')
+  +`reset role;insert into public.duty_months(month,deadline) values('${feb}','2028-01-24');set local role authenticated;`+nextMonth([b,a,2],feb,'2028-01-24')+report('february'));
+ assert.deepEqual(nets(r.v2),debt(a,b,2));assert.deepEqual(nets(r.repaying),{});
+ assert.equal(r.reverted.versions,1);assert.deepEqual(nets(r.reverted),debt(b,a,2),'after the revert b owes a');
+ assert.deepEqual(owed(r.reverted.view),debt(b,a,2),'shown at once');
+ assert.ok(!r.reverted.contributions.includes('held'),'no repayment left held');
+ assert.equal(r.deleted.versions,0);assert.deepEqual(nets(r.deleted),debt(b,a,2),'December deleted: still b owes a');
+ assert.deepEqual(nets(r.february),{},'February repays it: every net is 0');
+ const released=r.reverted.view.events.filter(e=>/\/(release|reverse)\//.test(e.sourceKey)).map(e=>e.operation.kind);
+ assert.deepEqual(released,['release','claim'],'booked once');
+ console.log('PASS: an edit-made debt a later month repays, reverted then deleted: the repayment becomes a debt the other way, booked once, and a later plan repays it to 0');
 }

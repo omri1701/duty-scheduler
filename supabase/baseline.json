@@ -77,6 +77,7 @@
     "schemas/functions/duty_private/compensation_record.sql",
     "schemas/functions/duty_private/compensation_replan.sql",
     "schemas/functions/duty_private/compensation_replan_step.sql",
+    "schemas/functions/duty_private/compensation_release_held.sql",
     "schemas/functions/duty_private/compensation_replanned.sql",
     "schemas/functions/duty_private/replanned_versions.sql",
     "schemas/functions/duty_private/compensation_reserve.sql",

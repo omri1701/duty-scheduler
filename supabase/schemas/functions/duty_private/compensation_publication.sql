@@ -3,7 +3,7 @@
 CREATE FUNCTION duty_private.compensation_publication(month text, publication uuid, metadata jsonb DEFAULT NULL, deleting boolean DEFAULT false, edit jsonb DEFAULT NULL) RETURNS void
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb; ledger text;
+declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb; ledger text; key text; before_state jsonb;
 begin
  perform 1 from public.duty_workspace where id for update;
  s:=duty_private.compensation_state(); before_pub:=s->'publications'->month;
@@ -127,5 +127,10 @@ begin
  if deleting and (after_pub is null or known is not null) and before_pub is not null then
   op:=op||case when after_pub is null then '{"mode":"delete"}' else '{"mode":"delete","revert":true}' end::jsonb;
  end if;
- perform duty_private.compensation_append(s,op,'publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1),instant,coalesce(auth.uid()::text,'system'),nullif(edit->>'reason',''));
+ key:='publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1); before_state:=s;
+ s:=duty_private.compensation_append(s,op,key,instant,coalesce(auth.uid()::text,'system'),nullif(edit->>'reason',''));
+ -- A repayment this change left held (a revert or an edit undid the debt it repays) is never
+ -- lost: its planned work becomes a debt the other way (decision 2026-11-07).
+ perform duty_private.compensation_release_held(before_state,s,key||'/',instant,coalesce(auth.uid()::text,'system'),
+  'Repayment released: a change to '||to_char(to_date(month||'-01','YYYY-MM-DD'),'FMMonth YYYY')||' undid the debt it repaid',true);
 end $$;

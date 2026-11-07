@@ -119,6 +119,8 @@ REVOKE ALL ON FUNCTION duty_private.compensation_record(jsonb, text, text) FROM 
 REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_replanned(jsonb, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_replan_step(jsonb, jsonb, text, bigint, text, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.compensation_release_held(before jsonb, s jsonb, prefix text, instant bigint, actor text, reason text, commit boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reserve(jsonb, jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_segment(jsonb, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_slice(jsonb, bigint, bigint) FROM PUBLIC, anon, authenticated, service_role;
