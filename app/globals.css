@@ -372,10 +372,10 @@ textarea{resize:vertical;min-height:76px}
 /* ---------- month bar, notes, slide ---------- */
 .month-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 0 12px}
 .month-title{display:flex;align-items:center;gap:2px;min-width:0}
-/* PC: the chevrons' target is 46px with -1px margins, so it measures at least 44px at any browser zoom (rounding
-   there reported 43.99997) while the bar's layout and the transparent ghost button look unchanged. Phones keep
-   their fixed 44px grid columns. */
-@media(min-width:601px){.month-title>button{flex:none;min-width:46px;min-height:46px;margin:-1px}}
+/* PC: the chevrons are 44px plus four layout units (1/64px each) with half that as negative margins, so they
+   measure at least 44px at any browser zoom (rounding there reported 43.99997), never shrink, and keep the bar's
+   layout and row alignment (a 46px box with -1px margins moved their top by 1px). Phones keep their 44px columns. */
+@media(min-width:601px){.month-title>button{flex:none;min-width:44.0625px;min-height:44.0625px;margin:-.03125px}}
 .month-title h2{display:flex;align-items:center;gap:8px;min-width:0;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2;text-align:center;padding:0 4px;white-space:nowrap}
 .month-status{vertical-align:middle}
 .month-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-inline-start:auto}
