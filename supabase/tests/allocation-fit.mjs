@@ -1,6 +1,6 @@
 // Real RPC -> browser baseline fit -> checked confirm, inside rolled-back transactions.
-// A 14-day +2 special among 12 engineers (its weekends split by hand, so every weekend date
-// is its own 2.5-point half) cannot split equally; the fitted baseline must be
+// Ten +2 weekdays, four Friday-only +1.5 holiday weekends (2.5 points each) and two +1 weekdays
+// among 12 engineers cannot split equally; the fitted baseline must be
 // accepted together with exactly the system uneven credit it implies (decision 2026-10-30),
 // reduced by the real permanent load (decision 2026-10-31), and nothing else may create,
 // enlarge, redirect or drop that credit. A seniority reorder after confirmation re-pairs the
@@ -34,7 +34,12 @@ const confirm=async(draft,context)=>readGenerationContext(await json(`select pub
 const refuse=(draft,context,pattern)=>sql(`do $$begin perform public.duty_confirm_allocation('${month}',${q(draft)},'[]','[]',${context.revision},'${context.fingerprint}');
  raise exception 'unexpected acceptance: ${pattern}';exception when raise_exception then if sqlerrm !~ '${pattern}' then raise;end if;end$$;`);
 const credit=u=>`${u.fromId}>${u.toId}:${u.units}`;
-async function fixture(engineers,specialEnd){
+// A hand split never changes planning (decision 2026-11-07), so odd duties come from holidays.
+const holiday=(id,start,end,extra)=>({id,title:'Holiday',start,end,extra});
+const lumpy=[holiday('holiday','2026-11-01','2026-11-06',2),holiday('w1','2026-11-06','2026-11-07',1.5),holiday('holiday2','2026-11-08','2026-11-13',2),
+ holiday('w2','2026-11-13','2026-11-14',1.5),holiday('plus','2026-11-16','2026-11-18',1),holiday('w3','2026-11-20','2026-11-21',1.5),holiday('w4','2026-11-27','2026-11-28',1.5)];
+const sixLumpy=[holiday('holiday','2026-11-01','2026-11-06',2),holiday('w1','2026-11-06','2026-11-07',1.5),holiday('mon','2026-11-09','2026-11-10',1),holiday('w2','2026-11-13','2026-11-14',1.5)];
+async function fixture(engineers,specials){
  await sql(`begin;
  do $$begin if exists(select 1 from auth.users) or exists(select 1 from public.duty_members) then raise exception 'Requires empty disposable LOCAL';end if;end$$;
  create or replace function duty_private.compensation_now() returns bigint language sql volatile set search_path='' as $$select ${now}::bigint$$;
@@ -44,15 +49,14 @@ async function fixture(engineers,specialEnd){
  do $$begin for i in 1..${engineers-1} loop perform public.duty_add_temporary_member('Engineer '||i,${rev});end loop;end$$;
  select public.duty_save_schedule(${q({team:[],months:{[month]:{status:'draft',deadline:'2026-10-25',generated:false}},duties:[]})},${rev},null);`);
  const state=await load();
- state.specials=[{id:'holiday',title:'Holiday',start:'2026-11-01',end:specialEnd,extra:2}];
- state.splitWeekends=['2026-11-06','2026-11-13'].filter(friday=>friday<specialEnd);
+ state.specials=specials;
  await sql(`select public.duty_save_schedule(${q(schedulePayload(state,month))},${rev},null);`);
  const context=await contextOf();
  assert.equal(context.input.schedule.members.filter(m=>m.eligible).length,engineers);
  return context;
 }
 try {
- let context=await fixture(12,'2026-11-15');
+ let context=await fixture(12,lumpy);
  const proposal=proposeAllocation(context.input),ids=context.input.seniority;
  assert.deepEqual(ids.map(id=>proposal.draft.baselineUnits[id]),[...Array(6).fill(8),...Array(6).fill(10)]);
  assert.deepEqual(unevenBaseline(context.input,proposal.draft.baselineUnits).map(u=>u.id),ids.slice(6));
@@ -122,7 +126,7 @@ try {
  // Audit reorder: after confirming an uneven month, the newest member becomes most senior.
  // The retained draft still reviews and confirms (the credit is re-paired under the current
  // order), and a new proposal keeps the confirmed baseline instead of hitting the immutable rule.
- context=await fixture(12,'2026-11-15');
+ context=await fixture(12,lumpy);
  const before=proposeAllocation(context.input),team=context.input.seniority;
  const edited=persistedDraft(editAllocation(context.input,before.draft,{engineer:team[3],deltaUnits:-2,kind:'temporary'}).draft);
  context=await confirm(edited,context);
@@ -148,7 +152,7 @@ try {
 
  // Six members, seven +2 days: 6, 6.5, 6.5, 7, 7, 7 points. The most senior 7-point
  // member carries half a point for the 6-point member through publication.
- context=await fixture(6,'2026-11-08');
+ context=await fixture(6,sixLumpy);
  const six=proposeAllocation(context.input),crew=context.input.seniority;
  assert.deepEqual(crew.map(id=>six.draft.baselineUnits[id]),[12,13,13,14,14,14]);
  assert.deepEqual(six.draft.uneven,[{id:`uneven/${crew[0]}/${crew[3]}`,fromId:crew[0],toId:crew[3],units:1}]);
@@ -168,6 +172,46 @@ try {
  assert.equal(Object.values(view.publications)[0].intents.length,1);
  assert.deepEqual(intent.route[0].counterparts,[{...six.draft.uneven[0],kind:'temporary'}]);
  assert.deepEqual(view.claims.map(c=>[c.debtorId,c.creditorId,c.units]),[[crew[0],crew[3],1]]);
- console.log('PASS: a published uneven month carries the credit as one ordinary temporary half-point claim, recorded with its uneven counterpart and reported by duty_balance as kind uneven');
+ // Deleting the month's only version removes its credit too (decision 2026-11-07): no version, no debt.
+ await sql(`set local role authenticated;select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`);
+ const cleared=await json('select public.duty_balance();');
+ assert.ok(Object.values(cleared.net).every(n=>n===0),JSON.stringify(cleared.net));assert.deepEqual(cleared.lines,[]);
+ console.log('PASS: a published uneven month carries the credit as one ordinary temporary half-point claim, recorded with its uneven counterpart and reported by duty_balance as kind uneven, and deleting the version clears it');
+ await sql('rollback;');
+
+ // A split weekend never changes planning (decision 2026-11-07). Six members, one +2 Sunday:
+ // fair shares 4, 4, 5, 5, 5, 5. Split by hand, the 20 November weekend's halves would make
+ // 4, 4.5, 4.5, 5, 5, 5 fairer, but the checked confirmation sees the weekend it came from: the
+ // same whole-point shares and no uneven credit, then the manager's typed −0.5 / +0.5 saved
+ // exactly, as the only transfer. The stored shares, saved again unchanged, are kept.
+ context=await fixture(6,[holiday('holiday','2026-11-01','2026-11-02',2)]);
+ const plain=proposeAllocation(context.input),staff=context.input.seniority;
+ assert.deepEqual(Object.values(plain.draft.baselineUnits).sort((a,b)=>a-b),[8,8,10,10,10,10]);
+ const handSplit=await load();
+ handSplit.splitWeekends=[...handSplit.splitWeekends,'2026-11-20'];
+ await sql(`select public.duty_save_schedule(${q(schedulePayload(handSplit,month))},${rev},null);`);
+ context=await contextOf();
+ assert.ok(context.input.schedule.calendar.splitWeekends.includes('2026-11-20'));
+ const splitPlan=proposeAllocation(context.input).draft;
+ assert.deepEqual(splitPlan.baselineUnits,plain.draft.baselineUnits);assert.deepEqual(splitPlan.uneven,[]);
+ context=await confirm(splitPlan,context);
+ assert.deepEqual(context.allocation.uneven,[]);
+ let typed=reviewAllocation(context.input,context.allocation);
+ typed=editAllocation(context.input,typed,{engineer:staff[0],deltaUnits:-1,kind:'temporary'}).draft;
+ // The +0.5 goes to someone the automatic balance left alone, as the admin would type it.
+ const taker=staff.find(id=>id!==staff[0]&&!typed.changes[id].temporary);
+ typed=persistedDraft(editAllocation(context.input,typed,{engineer:taker,deltaUnits:1,kind:'temporary'}).draft);
+ context=await confirm(typed,context);
+ assert.deepEqual(context.allocation.targetsUnits,typed.targetsUnits);assert.deepEqual(context.allocation.baselineUnits,plain.draft.baselineUnits);
+ assert.deepEqual(context.allocation.uneven,[]);
+ assert.deepEqual(context.allocation.transfers.map(t=>[t.fromId,t.toId,t.units,t.kind]),[[staff[0],taker,1,'temporary']]);
+ // The database derives no credit from the halves, so half-point credit is refused.
+ await refuse({...typed,uneven:[{id:`uneven/${staff[0]}/${staff[5]}`,fromId:staff[0],toId:staff[5],units:1}]},context,'invalid-uneven-credit');
+ await sql('reset role;');
+ // The kept check is an exact partition: shares the duties can't make are refused.
+ await sql(`select duty_private.allocation_kept_baseline(${q({duties:[{units:2},{units:1},{units:1}]})},${q({a:2,b:2})});`);
+ for(const shares of [{a:3,b:1},{a:3,b:3},{a:1,b:3}]) await sql(`do $$begin perform duty_private.allocation_kept_baseline(${q({duties:[{units:2},{units:2}]})},${q(shares)});
+  raise exception 'unexpected acceptance';exception when raise_exception then if sqlerrm<>'invalid-ordinary-baseline' then raise;end if;end$$;`);
+ console.log('PASS: a split weekend plans as the weekend it came from: same fair shares, no uneven credit, and the typed half-point change saved exactly as the only transfer');
  await sql('rollback;');
 } finally {db.stdin.end();}

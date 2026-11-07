@@ -139,10 +139,6 @@ export function useWorkspaceDraft({
       return;
     }
     const touched = allKnownBlocks(state).filter((b) => overlap(b, x));
-    if (touched.some(b => state.assignments[b.id]?.secondary)) {
-      toast.error(t('Review emergency cover on these dates before changing duty structure.', 'יש לבדוק את כיסוי החירום בתאריכים אלה לפני שינוי המבנה.'));
-      return;
-    }
     if (touched.some((b) => ownerMonth(b) !== month && state.assignments[b.id]?.primary)) {
       toast.error(
         t(
@@ -152,18 +148,18 @@ export function useWorkspaceDraft({
       );
       return;
     }
-    const saved = await update((s) => {
-      const assignments = { ...s.assignments };
-      touched.forEach((b) => delete assignments[b.id]);
-      return { ...s, assignments, specials: [...s.specials, x] };
-    });
+    // Adding extra points keeps every assignment and the duties' shape (decision 2026-11-07):
+    // only the points change, and Plan the month shows the difference. A locked duty's points
+    // change, so it is reviewed explicitly, as removing extra points does.
+    const reviewed = touched.filter(b => state.assignments[b.id]?.locked)
+      .flatMap(b => b.weekendId ? [b.weekendId, addDays(b.weekendId, 1)] : [b.id]);
+    const saved = await update((s) => ({ ...s, specials: [...s.specials, x] }), true, true, reviewed.length ? reviewed : undefined);
     if (!saved) return;
     setSpecialOpen(false);
     toast.success(
-      t(
-        'Special block added. Generate to fill its assignment.',
-        'המקטע נוסף. ניתן ליצור שיבוץ חדש.',
-      ),
+      touched.some(b => state.assignments[b.id]?.primary)
+        ? t('Special block added. The assigned people stay; check the points in Plan the month.', 'המקטע נוסף. המשובצים נשארים; כדאי לבדוק את הנקודות בתכנון החודש.')
+        : t('Special block added. Generate to fill its assignment.', 'המקטע נוסף. ניתן ליצור שיבוץ חדש.'),
     );
   }
   function startSwap(from: string, to: string) {

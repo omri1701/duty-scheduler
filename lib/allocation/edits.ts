@@ -103,7 +103,7 @@ export function rebuild(c: Context, input: AllocationInput, source: AllocationDr
   const draft: AllocationDraft = {baselineUnits: {...source.baselineUnits}, offeredUnits: {...source.offeredUnits}, targetsUnits,
     repayments: structuredClone(source.repayments), changes, pairs: structuredClone(pairs),
     transfers: deriveTransfers(input.seniority, changes, pairs),
-    uneven: unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), source.baselineUnits, changes),
+    uneven: unevenTransfers(input.seniority, c.weights, source.baselineUnits, changes),
     sourceKey: source.sourceKey, hand: Object.keys(hand)};
   validateDraft(c, input.seniority, draft);
   // The configured total always equals the month total: an edit no one can

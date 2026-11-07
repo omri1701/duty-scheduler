@@ -250,3 +250,38 @@ test('history deletion requires confirmation and closes the last live version', 
   await expect(page.getByRole('dialog')).toContainText('No published versions yet.');
   expect(backend.calls.filter(c => c.name === 'duty_delete_publication')).toHaveLength(1);
 });
+
+test('a weekend split by hand and joined back to one person is one weekend again, and swaps whole', async ({page, openApp, backend}, info) => {
+  await openApp();
+  const row = (day: string) => backend.raw.assignments.filter(d => d.day === day && d.publication_id === null);
+  const name = (id: string | null) => backend.raw.members.find(m => m.id === id)!.name;
+  const owner = row('2026-11-06')[0].primary_id, target = '2026-11-13';
+  const [someone, other] = backend.raw.members.filter(m => m.status === 'approved' && m.active && m.id !== owner);
+  const pick = async (day: string, field: string, person: string) => {
+    await duty(page, day).click();
+    await page.getByRole('combobox', {name: field, exact: true}).click();
+    await page.getByRole('option', {name: person, exact: true}).click();
+    const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
+    if (await override.isVisible()) await override.check();
+    await page.getByRole('button', {name: 'Save assignment'}).click();
+    await expect(page.getByRole('dialog')).toBeHidden();
+  };
+  const saturday = (person: string) => pick('2026-11-06', 'Saturday engineer', person);
+  await pick(target, 'Friday primary engineer', other.name);
+  await saturday(someone.name);
+  expect(row('2026-11-07')).toHaveLength(1);
+  await expect(duty(page, '2026-11-07')).toHaveCount(1);
+  // Joined back: one Friday–Sunday duty, one calendar cell, no Saturday row.
+  await saturday(name(owner));
+  expect(row('2026-11-07')).toHaveLength(0);
+  expect(row('2026-11-06')).toMatchObject([{primary_id: owner, end_day: '2026-11-08'}]);
+  await expect(duty(page, '2026-11-07')).toHaveCount(0);
+  // Swapping it with another weekend moves the whole weekend: one weekend each.
+  await drag(page, info.project.name === 'mobile', '2026-11-06', target);
+  await expect(page.getByRole('dialog', {name: 'Swap duties'})).toBeVisible();
+  await expect(page.getByText('This swap adds another weekend', {exact: false})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Confirm swap', exact: true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  expect(row('2026-11-06')).toMatchObject([{primary_id: other.id, end_day: '2026-11-08'}]);
+  expect(row(target)).toMatchObject([{primary_id: owner}]);
+});

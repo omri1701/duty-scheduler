@@ -146,3 +146,36 @@ test('a current-format copy from an old team or another month total is replaced,
   assert.equal(copyFits(input, earlier), false);
   assert.deepEqual(opened(input, earlier).draft.baselineUnits, copy.baselineUnits);
 });
+
+test('a split weekend never changes planning: same fair shares, Reset, no uneven credit or notice, exact check on Generate’s duties', async () => {
+  const {allocationDivisible, unevenBaseline} = await import('../lib/allocation/planner.ts');
+  const {planAllocation} = await import('../lib/allocation/compile.ts');
+  const {input: {targets, ...schedule}, witness, now} = monthScenario('normal');
+  const plain = {schedule, now, events: [], seniority: schedule.members.map(m => m.id)};
+  const split = {...plain, schedule: {...schedule, calendar: {...schedule.calendar, splitWeekends: ['2026-11-06']}}};
+  const before = proposeAllocation(plain).draft, after = proposeAllocation(split).draft;
+  // Half-point duties would make 4.5-point shares fairer; planning still sees one weekend.
+  assert.deepEqual(after.baselineUnits, before.baselineUnits);
+  assert.deepEqual(after.targetsUnits, before.targetsUnits);
+  assert.equal(Object.values(after.targetsUnits).reduce((n, u) => n + u, 0), Object.values(targets).reduce((n, p) => n + 2 * p, 0), 'the month total is unchanged by the split');
+  assert.ok(Object.values(after.targetsUnits).every(u => u % 2 === 0));
+  assert.deepEqual(after.uneven, []); assert.deepEqual(unevenBaseline(split, after.baselineUnits), []);
+  assert.equal(allocationDivisible(split, after.targetsUnits), true);
+  // A locked half is an assignment detail too: the same shares.
+  const fri = witness['2026-11-06'].primary;
+  const locked = {...split, schedule: {...split.schedule, locks: [{dutyId: '2026-11-06', engineer: fri}]}};
+  assert.deepEqual(Object.values(proposeAllocation(locked).draft.baselineUnits).sort(), Object.values(before.baselineUnits).sort());
+  // The admin's typed ±0.5 is the only change: no uneven credit, and the plan books just that.
+  const other = plain.seniority.find(id => id !== fri);
+  let typed = editAllocation(split, after, {engineer: fri, deltaUnits: -1, kind: 'temporary'}).draft;
+  typed = editAllocation(split, typed, {engineer: other, deltaUnits: 1, kind: 'temporary'}).draft;
+  assert.deepEqual(typed.uneven, []);
+  assert.deepEqual(typed.transfers.map(t => [t.fromId, t.toId, t.units, t.kind]), [[fri, other, 1, 'temporary']]);
+  const booked = planAllocation(split, typed);
+  assert.equal(booked.confirmable, true);
+  assert.deepEqual(booked.plan.intents.map(i => [i.fromId, i.toId, i.units, i.kind]), [[fri, other, 1, 'temporary']]);
+  // Generate joins the unlocked split, so a half-point target can't be exact there; a locked split stays split.
+  assert.equal(allocationDivisible(split, typed.targetsUnits), false);
+  const both = {...split, schedule: {...split.schedule, locks: [{dutyId: '2026-11-06', engineer: fri}, {dutyId: '2026-11-07', engineer: other}]}};
+  assert.equal(allocationDivisible(both, typed.targetsUnits), true);
+});

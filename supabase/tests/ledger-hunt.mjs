@@ -42,8 +42,10 @@ function firstPlacement() {
   let weekend = 0, weekday = 0;
   return Object.fromEntries(dutyList(M1).map(d => [d.id, {primary: ids[d.weekendId ? weekend++ : 6 + weekday++ % 7]}]));
 }
+/** Planning weights: a split weekend counts as the weekend it came from (decision 2026-11-07). */
+const planWeights = list => [...list.reduce((w, d) => w.set(d.weekendId ?? d.id, (w.get(d.weekendId ?? d.id) ?? 0) + d.units), new Map()).values()];
 /** The ordinary baseline: the cheapest exact partition, larger shares to the first members. */
-const fairOf = (m, extra) => {const shares = fitPartition(dutyList(m, extra).map(d => d.units), ids.length).sort((a, b) => b - a);
+const fairOf = (m, extra) => {const shares = fitPartition(planWeights(dutyList(m, extra)), ids.length).sort((a, b) => b - a);
   return Object.fromEntries(ids.map((id, i) => [id, shares[i]]));};
 function draftFor(m, placed, key, repay, extra) {
   const list = dutyList(m, extra), fair = fairOf(m, extra);
@@ -189,7 +191,7 @@ function move(m, day, toId, kind, extra, swap = false) {
     const chain = m.chain[day] ?? [];
     returned = !swap && kind === 'permanent' && chain.includes(toId);
     const temporary = kind === 'temporary' || returned;
-    for (const r of m.repay) if (r.date === day && r.state === 'live') r.state = temporary ? 'worked' : 'cancelled';
+    for (const r of m.repay) if (r.date === day && r.state === 'live' && !r.released) r.state = temporary ? 'worked' : 'cancelled';
     if (temporary) {m.net[fromId] -= shared; m.net[toId] += shared;}
     else {m.perm[fromId] -= shared; m.perm[toId] += shared;}
     m.chain[day] = swap ? [] : kind === 'temporary' ? [...chain, fromId] : returned ? chain.slice(0, chain.lastIndexOf(toId)) : [];
@@ -252,6 +254,8 @@ async function sequence(db, seed, script, ops = [], log = []) {
         assert.ok(m === M1 && model[M2]?.repay.some(r => r.state === 'live'), `${label}: [plan] ${m} blocked without a later repayment`);
         continue;
       }
+      // December counts as nothing (decision 2026-11-07): January's live repayment of it is
+      // released, and its planned work is owed the other way, which is what it counts for here.
       const start = planned(ctx.actual), wanted = nets(other);
       assert.deepEqual(start, wanted, `${label}: [plan] Plan the month ${m} starts from ${differ(start, wanted)}`);
       const projected = Object.fromEntries(ids.map(id => [id, ctx.projected.net[id] ?? 0]));
@@ -354,6 +358,9 @@ async function sequence(db, seed, script, ops = [], log = []) {
         await check(label); continue;
       }
       model[op.m] = Object.assign(monthModel(op.m, placed, [], mm.extra), {month: op.m});
+      // A later month's live repayment of it is released (decision 2026-11-07): its planned work
+      // still counts, as a debt the other way, but no longer follows its duty.
+      for (const other of Object.values(model)) if (other.month > op.m) for (const r of other.repay) if (r.state === 'live') r.released = true;
     }
     log.push(label);
     balances = await check(label, expectSame);
