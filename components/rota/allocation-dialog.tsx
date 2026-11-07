@@ -79,7 +79,8 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
   }).join('; ');
   const unplacedUnits = Math.abs(f.unplaced.temporary) + Math.abs(f.unplaced.permanent);
   // Progress shows on the button that started it (decision 2026-11-07), never as a block below.
-  // The wording the plan used below it, now on the button; it ellipsizes when a phone is narrow.
+  // The wording the plan used below it, now on the button: in full on phones (ellipsized when
+  // narrow), shortened on PC so the button keeps its resting size.
   const finding = t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…');
   const [running, setRunning] = useState<'save' | 'generate' | null>(null);
   const shows = (action: 'save' | 'generate') => f.busy && f.phase !== 'loading' && running === action;
@@ -97,9 +98,10 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
         {f.phase === 'generating' ? <Button variant="outline" className="plan-cancel" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
         : !f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved || f.busy} aria-busy={shows('save') || undefined} onClick={() => {setRunning('save'); f.confirm(false);}}>
           {f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <>{shows('save') ? <LoaderCircle className="spin"/> : <Save/>}<BusyLabel busy={shows('save')} idle={t('Save', 'שמירה')} active={t('Saving…', 'שומר…')}/></>}</Button>}
-        <Button className="plan-generate" disabled={f.busy || !f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} aria-busy={shows('generate') || undefined} onClick={() => {setRunning('generate'); f.confirm(!f.closed);}}>
+        <Button className="plan-generate" disabled={f.busy || !f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} aria-busy={shows('generate') || undefined} aria-label={shows('generate') ? status : undefined} onClick={() => {setRunning('generate'); f.confirm(!f.closed);}}>
           {shows('generate') ? <LoaderCircle className="spin"/> : <Sparkles/>}
-          <BusyLabel busy={shows('generate')} idle={f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')} active={f.closed ? t('Saving…', 'שומר…') : finding}/>
+          <BusyLabel busy={shows('generate')} idle={f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')} active={f.closed ? t('Saving…', 'שומר…') : finding}
+            short={f.closed ? undefined : t('Finding best fit…', 'מחפש שיבוץ…')}/>
         </Button>
         <span className="sr-only" role="status">{status}</span>
       </>}</div></div>}>

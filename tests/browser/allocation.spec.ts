@@ -833,9 +833,13 @@ for (const lang of ['en', 'he'] as const) test(`Generate progress stays on the b
   await expect(confirm).toBeEnabled({timeout: 30_000});
   let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
+  // On PC the button rests at its own label's size; only phones reserve the full busy text.
+  const rest = await confirm.boundingBox(), idleWidth = await confirm.locator('.busy-label>span').first().evaluate(el => el.scrollWidth);
+  if (page.viewportSize()!.width > 600) expect(Math.abs((await confirm.locator('.busy-label').boundingBox())!.width - idleWidth)).toBeLessThan(1.5);
   await confirm.click();
   const finding = t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…');
   const generating = dialog.getByRole('button', {name: finding, exact: true});
+  expect(Math.abs((await generating.boundingBox())!.width - rest!.width)).toBeLessThan(1);
   await expect(generating).toBeDisabled();
   // It fits the footer: on a phone the text ellipsizes instead of widening the sheet.
   const box = (await generating.boundingBox())!, total = (await dialog.locator('.allocation-footer>div').first().boundingBox())!;
