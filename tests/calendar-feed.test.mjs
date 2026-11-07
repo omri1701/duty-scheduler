@@ -50,7 +50,7 @@ test('text values escape backslashes, semicolons, commas and newlines, and drop 
 });
 
 test('lines fold at 75 octets without splitting a UTF-8 character', () => {
-  const long = 'SUMMARY:' + 'תורנות '.repeat(30);
+  const long = 'SUMMARY:' + 'כוננות '.repeat(30);
   const folded = foldLine(long);
   for (const line of folded.split('\r\n')) assert.ok(encoder.encode(line).length <= 75);
   assert.equal(folded.replace(/\r\n /g, ''), long);
@@ -104,12 +104,12 @@ test('Hebrew feeds use Hebrew names, dates and points, still valid UTF-8 within 
     duty('2026-11-02', '2026-11-03', {title: 'חג, כיסוי מיוחד; ארוך מאוד מאוד מאוד מאוד מאוד', points: 3}), duty('2026-11-14', '2026-11-15', {role: 'emergency', points: null})], 'he'), APP);
   validate(ics);
   const list = events(ics);
-  assert.equal(list[0].SUMMARY, 'תורנות סוף שבוע (שישי)');
-  assert.equal(list[1].SUMMARY, 'תורנות סוף שבוע');
+  assert.equal(list[0].SUMMARY, 'כוננות סוף שבוע (שישי)');
+  assert.equal(list[1].SUMMARY, 'כוננות סוף שבוע');
   assert.equal(list[2].SUMMARY, 'חג\\, כיסוי מיוחד\\; ארוך מאוד מאוד מאוד מאוד מאוד · 3 נקודות');
   assert.equal(list[3].SUMMARY, 'כיסוי חירום');
   assert.match(list[1].DESCRIPTION, /שעון ישראל/); assert.match(list[1].DESCRIPTION, /נקודה אחת/);
-  assert.ok(ics.includes('X-WR-CALNAME:MiKo · התורנויות שלי\r\n'));
+  assert.ok(ics.includes('X-WR-CALNAME:MiKo · הכוננויות שלי\r\n'));
 });
 
 test('an empty feed is still a valid calendar, and malformed RPC data is refused', () => {

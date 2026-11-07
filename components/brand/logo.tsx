@@ -1,10 +1,11 @@
 import type {CSSProperties} from 'react';
-import {APP_NAME} from '@/lib/brand';
+import {APP_NAME, LOGO_SRC} from '@/lib/brand';
 
-/** The "d." mark and the wordmark: the only component that draws the brand. */
+/** The logo mark and the name: the only component that draws the brand. */
 export function Logo({size = 36, className = ''}: {size?: number; className?: string}) {
   return <span className={`logo ${className}`} style={{'--logo-size': `${size}px`} as CSSProperties} aria-hidden="true">
-    <span className="logo-letter">d</span><span className="logo-dot"/>
+    {/* eslint-disable-next-line @next/next/no-img-element -- a small static SVG; next/image adds nothing */}
+    <img src={LOGO_SRC} alt="" width={size} height={size} decoding="async" draggable={false}/>
   </span>;
 }
 

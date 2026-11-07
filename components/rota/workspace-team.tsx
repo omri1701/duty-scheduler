@@ -44,7 +44,7 @@ export function WorkspaceTeam({remote, state, metrics, month, monthLabel, onMont
       </div>
       <Card tone="brand" className="coverage-card">
         <div className="coverage-number"><CountUp value={assigned} decimals={0}/><span>/ {owned.length}</span></div>
-        <div className="coverage-copy">{t('duties covered', 'תורנויות משובצות')}</div>
+        <div className="coverage-copy">{t('duties covered', 'כוננויות משובצות')}</div>
         <div className="coverage-track"><span style={{width: `${owned.length ? (assigned / owned.length) * 100 : 0}%`}}/></div>
         <div className="coverage-bottom"><span>{active.length} {t('engineers', 'מהנדסים')}</span><span>{points} {t('points', 'נקודות')}</span></div>
       </Card>

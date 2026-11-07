@@ -60,7 +60,7 @@ export function AvailabilityEditor({state,month,person,cells,lang,disabled,onSav
   {conflicts(kind)&&<p className="constraint-notes-help" role="status">{warning(kind)} {t('You will be asked to confirm before saving.','לפני השמירה יידרש אישור.')}</p>}
   <div className="constraint-choices">
    <button disabled={saving} aria-pressed={kind==='no'} className={kind==='no'?'chosen no':''} onClick={()=>setKind('no')}>{t('Unavailable','לא זמין')}</button>
-   <button disabled={saving} aria-pressed={kind==='prefer'} className={kind==='prefer'?'chosen prefer':''} onClick={()=>setKind('prefer')}>{t('Prefer duty','מעדיף תורנות')}</button>
+   <button disabled={saving} aria-pressed={kind==='prefer'} className={kind==='prefer'?'chosen prefer':''} onClick={()=>setKind('prefer')}>{t('Prefer duty','מעדיף כוננות')}</button>
   </div>
   <label className="field-label">{t('Description (optional)','תיאור (לא חובה)')}<textarea disabled={saving} value={note} maxLength={300} rows={2} placeholder={t('Vacation, appointment…','חופשה, תור…')} onChange={e=>setNote(e.target.value)}/></label>
   {hasPersistedSelection&&<Button disabled={saving} variant="outline" className="remove-constraint" onClick={()=>save('clear')}><Trash2 size={16}/>{t('Remove constraint','הסרת אילוץ')}</Button>}

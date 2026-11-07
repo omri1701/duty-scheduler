@@ -68,8 +68,8 @@ const LABELS = {
   en: {calendar: 'MiKo · My duties', description: 'Your own published duties from MiKo.', day: 'Duty', weekend: 'Weekend duty',
     friday: 'Weekend duty (Friday)', saturday: 'Weekend duty (Saturday)', emergency: 'Emergency cover', israel: 'Israel time', open: 'Open MiKo',
     points: (n: number) => (n === 1 ? '1 point' : `${number(n)} points`), locale: 'en-GB'},
-  he: {calendar: 'MiKo · התורנויות שלי', description: 'התורנויות שפורסמו לך ב־MiKo.', day: 'תורנות', weekend: 'תורנות סוף שבוע',
-    friday: 'תורנות סוף שבוע (שישי)', saturday: 'תורנות סוף שבוע (שבת)', emergency: 'כיסוי חירום', israel: 'שעון ישראל', open: 'לפתיחת MiKo',
+  he: {calendar: 'MiKo · הכוננויות שלי', description: 'הכוננויות שפורסמו לך ב־MiKo.', day: 'כוננות', weekend: 'כוננות סוף שבוע',
+    friday: 'כוננות סוף שבוע (שישי)', saturday: 'כוננות סוף שבוע (שבת)', emergency: 'כיסוי חירום', israel: 'שעון ישראל', open: 'לפתיחת MiKo',
     points: (n: number) => (n === 1 ? 'נקודה אחת' : `${number(n)} נקודות`), locale: 'he-IL'},
 } as const;
 

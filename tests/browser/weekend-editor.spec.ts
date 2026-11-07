@@ -133,7 +133,7 @@ for (const lang of ['en', 'he'] as const) test(`Plan the month says unlocked spl
   for (const day of ['2026-11-13', '2026-11-14']) await expect(duty(page, day)).toHaveClass(/flash-day/);
   // A locked half keeps the split, so the notice goes away.
   await edit(page, '2026-11-13');
-  await page.locator('.duty-dialog').getByRole('button', {name: he ? 'נעילת תורנות' : 'Lock duty', exact: true}).click();
+  await page.locator('.duty-dialog').getByRole('button', {name: he ? 'נעילת כוננות' : 'Lock duty', exact: true}).click();
   await save(page);
   await openPlan(page, he);
   await expect(note).toHaveCount(0);

@@ -75,12 +75,12 @@ test('weekend lock covers both saved primaries and preserves emergency cover in 
   await edit(page, '2026-11-06');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
-  await dialog.getByRole('button', {name: 'נעילת תורנות', exact: true}).click();
+  await dialog.getByRole('button', {name: 'נעילת כוננות', exact: true}).click();
   await dialog.screenshot({path: info.outputPath('weekend-lock-he.png')});
   await dialog.getByRole('button', {name: 'שמירת השיבוץ', exact: true}).click();
   await expect(dialog).toBeHidden();
   expect(backend.raw.assignments.find(d => d.day === before.day && !d.publication_id)).toMatchObject({...before, locked: true});
-  await expect(duty(page, before.day).getByRole('img', {name: 'תורנות נעולה'})).toBeVisible();
+  await expect(duty(page, before.day).getByRole('img', {name: 'כוננות נעולה'})).toBeVisible();
   await edit(page, before.day);
   // Two days: both halves start with the weekend's person and lock.
   await dialog.getByRole('radio', {name: 'שני ימים', exact: true}).click();
@@ -92,7 +92,7 @@ test('weekend lock covers both saved primaries and preserves emergency cover in 
   await expect(dialog).toBeHidden();
   for (const day of ['2026-11-06', '2026-11-07']) {
     expect(backend.raw.assignments.find(d => d.day === day && !d.publication_id)?.locked).toBe(true);
-    await expect(duty(page, day).getByRole('img', {name: 'תורנות נעולה'})).toBeVisible();
+    await expect(duty(page, day).getByRole('img', {name: 'כוננות נעולה'})).toBeVisible();
   }
 });
 

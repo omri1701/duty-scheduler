@@ -43,7 +43,7 @@ export function DutySheet({duty, state, lang, t, meId, open, onClose, actions, p
       </div>
       <div className="card card-inset">
         <ListRow lead={primary ? <Avatar name={primary.name} color={primary.color} size={36}/> : <span className="avatar avatar-empty" aria-hidden="true">—</span>}
-          title={primary ? <>{primary.name}{primary.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</> : t('Unassigned', 'ללא שיבוץ')} subtitle={t('On duty', 'תורן/ית')}/>
+          title={primary ? <>{primary.name}{primary.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</> : t('Unassigned', 'ללא שיבוץ')} subtitle={t('On duty', 'כונן/ית')}/>
         {cover && <ListRow lead={<Avatar name={cover.name} color={cover.color} size={36}/>} title={<>{cover.name}{cover.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</>} subtitle={t('Emergency cover', 'כיסוי חירום')}/>}
       </div>
       {actions.swap?.reason && <p className="muted small">{actions.swap.reason}</p>}

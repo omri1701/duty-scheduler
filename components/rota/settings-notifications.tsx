@@ -139,7 +139,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     {key: 'deadlines', label: t('Constraint deadline', 'מועד אחרון לאילוצים'), help: t('3 days before, and 1 day before if you entered none', '3 ימים לפני, ויום לפני אם לא הזנת')},
     {key: 'published', label: t('Month published', 'חודש פורסם'), help: ''},
     {key: 'swaps', label: t('Swap requests', 'בקשות החלפה'), help: ''},
-    {key: 'edits', label: t('Changes to my duties', 'שינויים בתורנויות שלי'), help: ''},
+    {key: 'edits', label: t('Changes to my duties', 'שינויים בכוננויות שלי'), help: ''},
     {key: 'evening', label: t('Evening before', 'ערב לפני'), help: '', time: 'eveningTime'},
     {key: 'morning', label: t('Morning of', 'בבוקר'), help: '', time: 'morningTime'},
     ...(remote.isAdmin ? [{key: 'members' as const, label: t('New member waiting', 'חבר צוות חדש ממתין'), help: ''}] : []),

@@ -35,7 +35,7 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
  await switchLanguage(page, 'he');
  await net(page,ids.a).focus();
  await expect(page.locator('.net-popover')).toHaveAttribute('dir','rtl');
- await expect(breakdown).toContainText('תורנות כוסתה על ידי');
+ await expect(breakdown).toContainText('כוננות כוסתה על ידי');
  await expect(breakdown).toContainText('זמני');
  await page.keyboard.press('Escape');
  await net(page,ids.d).focus();

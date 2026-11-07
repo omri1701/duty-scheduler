@@ -1,14 +1,12 @@
 import type { Metadata, Viewport } from 'next';
-import {Rubik} from 'next/font/google';
 import './tailwind.css';
 import './globals.css';
-import {APP_DESCRIPTION, APP_NAME, APP_TAGLINE} from '@/lib/brand';
+import {APP_DESCRIPTION, APP_NAME, LOGO_SRC} from '@/lib/brand';
 import {THEME_SCRIPT} from '@/lib/theme/theme';
-// The MiKo wordmark only (self-hosted at build by next/font); body text keeps the system font.
-const wordmarkFont = Rubik({subsets: ['latin'], weight: ['700', '800'], display: 'swap', variable: '--font-wordmark'});
+import {wordmarkFont} from './wordmark-font';
 export const viewport: Viewport = {width: 'device-width', initialScale: 1, viewportFit: 'cover', interactiveWidget: 'resizes-content',
   themeColor: [{media: '(prefers-color-scheme: dark)', color: '#000000'}, {media: '(prefers-color-scheme: light)', color: '#f2f3f5'}]};
-export const metadata: Metadata = {title: `${APP_NAME} — ${APP_TAGLINE.en}`, description: APP_DESCRIPTION,
+export const metadata: Metadata = {title: APP_NAME, description: APP_DESCRIPTION,
   icons: {icon: '/favicon.svg', shortcut: '/favicon.svg', apple: '/apple-touch-icon.png'},
   appleWebApp: {capable: true, title: APP_NAME, statusBarStyle: 'default'}};
 // width, height, points width, points height, scale.
@@ -18,6 +16,7 @@ export default function Layout({children}: {children: React.ReactNode}) {
   return <html lang="en" className={wordmarkFont.variable} suppressHydrationWarning>
     <head>
       <script dangerouslySetInnerHTML={{__html: THEME_SCRIPT}}/>
+      <link rel="preload" as="image" href={LOGO_SRC} type="image/svg+xml"/>
       {/* iOS startup screens (scripts/render-icons.mjs), matched by device points and scale. */}
       {SPLASH.map(([w, h, pw, ph, r]) => <link key={`${w}x${h}`} rel="apple-touch-startup-image" href={`/splash/${w}x${h}.png`}
         media={`screen and (device-width: ${pw}px) and (device-height: ${ph}px) and (-webkit-device-pixel-ratio: ${r})`}/>)}

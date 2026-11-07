@@ -14,8 +14,8 @@ function markSeen() {try {localStorage.setItem(KEY, '1');} catch {}}
 export function Welcome({open, onClose, lang, t}: {open: boolean; onClose: () => void; lang: Language; t: Translate}) {
   const [step, setStep] = useState(0);
   const cards = [
-    {icon: <House/>, title: t(`Welcome to ${APP_NAME}`, `ברוכים הבאים ל־${APP_NAME}`), text: t('Home shows your next duty and what needs you.', 'הבית מציג את התורנות הבאה שלך ומה שמחכה לך.')},
-    {icon: <ArrowLeftRight/>, title: t('Swap in a tap', 'החלפה בלחיצה'), text: t('Tap a duty in Schedule, or hold and drag it onto another.', 'לוחצים על תורנות בלוח, או מחזיקים וגוררים אל תורנות אחרת.')},
+    {icon: <House/>, title: t(`Welcome to ${APP_NAME}`, `ברוכים הבאים ל־${APP_NAME}`), text: t('Home shows your next duty and what needs you.', 'הבית מציג את הכוננות הבאה שלך ומה שמחכה לך.')},
+    {icon: <ArrowLeftRight/>, title: t('Swap in a tap', 'החלפה בלחיצה'), text: t('Tap a duty in Schedule, or hold and drag it onto another.', 'לוחצים על כוננות בלוח, או מחזיקים וגוררים אל כוננות אחרת.')},
     {icon: <CalendarCheck/>, title: t('Say when you can’t', 'אומרים מתי אי אפשר'), text: t('Mark unavailable days before the deadline; the plan respects them.', 'מסמנים ימים לא זמינים לפני המועד האחרון; התוכנית מכבדת אותם.')},
   ];
   const last = step === cards.length - 1;

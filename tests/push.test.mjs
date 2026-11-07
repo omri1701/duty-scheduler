@@ -80,7 +80,7 @@ test('dispatch writes each message in its own language and never contacts other 
     {id: '4', outcome: 'unknown'}, {id: '5', outcome: 'rejected'}, {id: '6', outcome: 'rejected'}, {id: '7', outcome: 'rejected'}]);
   assert.equal(sent.length, 4, 'only allowed push services with valid keys are contacted');
   assert.deepEqual(sent[0].body, {title: 'Duty tomorrow', body: 'You’re on duty on Thu 3 Dec.', url: '/?tab=schedule&month=2026-12', tag: 'duty-12', lang: 'en'});
-  assert.equal(sent[1].body.lang, 'he'); assert.equal(sent[1].body.title, 'תורנות מחר');
+  assert.equal(sent[1].body.lang, 'he'); assert.equal(sent[1].body.title, 'כוננות מחר');
   assert.deepEqual(sent[0].options, {TTL: 21600, urgency: 'high', topic: 'duty-12'});
   assert.equal(JSON.parse(payload(message({kind: 'published', params: {month: '2026-12'}}))).title, 'December 2026 is published');
 });

@@ -273,7 +273,7 @@ test('indivisible holiday duties show one inline note naming who gets more, in E
   await clickPlan(page);
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
-  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`תורנויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
+  await expect(dialog.getByRole('note').filter({hasText: 'שווה בשווה'})).toHaveText(`כוננויות החודש אינן מתחלקות שווה בשווה: ${fourth} – 7 נק׳.`);
   await dialog.locator('summary').click();
   await expect(dialog.locator('.allocation-details li')).toHaveText(`${first} ← ${fourth} · 0.5 · 0.5 ממתין לחצי השני · חלוקה לא שווה`);
 });

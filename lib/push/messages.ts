@@ -33,13 +33,13 @@ export function pushText(kind: PushKind, params: PushParams, lang: PushLanguage)
       body: t(`Enter your ${month} constraints by ${deadline}.`, `יש להזין את האילוצים ל${month} עד ${deadline}.`)};
     case 'deadline_1': return {title: t('Constraints close tomorrow', 'הגשת האילוצים נסגרת מחר'),
       body: t(`You haven’t entered constraints for ${month} yet. The deadline is ${deadline}.`, `עדיין לא הזנת אילוצים ל${month}. המועד האחרון הוא ${deadline}.`)};
-    case 'published': return {title: t(`${month} is published`, `${month} פורסם`), body: t('See your duties in the schedule.', 'אפשר לראות את התורנויות שלך בלוח.')};
-    case 'republished': return {title: t(`${month} was updated`, `${month} עודכן`), body: t('A new version of the schedule is published. Check your duties.', 'גרסה חדשה של הלוח פורסמה. כדאי לבדוק את התורנויות שלך.')};
+    case 'published': return {title: t(`${month} is published`, `${month} פורסם`), body: t('See your duties in the schedule.', 'אפשר לראות את הכוננויות שלך בלוח.')};
+    case 'republished': return {title: t(`${month} was updated`, `${month} עודכן`), body: t('A new version of the schedule is published. Check your duties.', 'גרסה חדשה של הלוח פורסמה. כדאי לבדוק את הכוננויות שלך.')};
     case 'edit': {
       const more = (params.count ?? 1) > 1;
-      return {title: t('Your duty was changed', 'התורנות שלך שונתה'),
-        body: more ? t(`An admin changed your duties from ${day} (${params.count} dates).`, `מנהל שינה את התורנויות שלך החל מ־${day} (${params.count} תאריכים).`)
-          : t(`An admin changed your duty on ${day}.`, `מנהל שינה את התורנות שלך ב־${day}.`)};
+      return {title: t('Your duty was changed', 'הכוננות שלך שונתה'),
+        body: more ? t(`An admin changed your duties from ${day} (${params.count} dates).`, `מנהל שינה את הכוננויות שלך החל מ־${day} (${params.count} תאריכים).`)
+          : t(`An admin changed your duty on ${day}.`, `מנהל שינה את הכוננות שלך ב־${day}.`)};
     }
     case 'swap_new': return {title: t('New swap request', 'בקשת החלפה חדשה'), body: t(`Swap ${swap}. Open it to answer.`, `החלפה ${swap}. יש לפתוח כדי להשיב.`)};
     case 'swap_accepted': return {title: t('Swap accepted', 'ההחלפה התקבלה'), body: t(`Swap ${swap} was accepted.`, `ההחלפה ${swap} התקבלה.`)};
@@ -47,10 +47,10 @@ export function pushText(kind: PushKind, params: PushParams, lang: PushLanguage)
     case 'swap_declined': return {title: t('Swap declined', 'ההחלפה נדחתה'), body: t(`Swap ${swap} was declined.`, `ההחלפה ${swap} נדחתה.`)};
     case 'swap_rejected': return {title: t('Swap not approved', 'ההחלפה לא אושרה'), body: t(`An admin didn’t approve swap ${swap}.`, `מנהל לא אישר את ההחלפה ${swap}.`)};
     case 'swap_approved': return {title: t('Swap approved', 'ההחלפה אושרה'), body: t(`Swap ${swap} is approved and in the schedule.`, `ההחלפה ${swap} אושרה ונכנסה ללוח.`)};
-    case 'remind_evening': return {title: cover ? t('Emergency cover tomorrow', 'כיסוי חירום מחר') : t('Duty tomorrow', 'תורנות מחר'),
-      body: cover ? t(`You’re emergency cover on ${day}.`, `יש לך כיסוי חירום ב־${day}.`) : t(`You’re on duty on ${day}.`, `יש לך תורנות ב־${day}.`)};
-    case 'remind_morning': return {title: cover ? t('Emergency cover today', 'כיסוי חירום היום') : t('Duty today', 'תורנות היום'),
-      body: cover ? t(`You’re emergency cover today, ${day}.`, `יש לך כיסוי חירום היום, ${day}.`) : t(`You’re on duty today, ${day}.`, `יש לך תורנות היום, ${day}.`)};
+    case 'remind_evening': return {title: cover ? t('Emergency cover tomorrow', 'כיסוי חירום מחר') : t('Duty tomorrow', 'כוננות מחר'),
+      body: cover ? t(`You’re emergency cover on ${day}.`, `יש לך כיסוי חירום ב־${day}.`) : t(`You’re on duty on ${day}.`, `יש לך כוננות ב־${day}.`)};
+    case 'remind_morning': return {title: cover ? t('Emergency cover today', 'כיסוי חירום היום') : t('Duty today', 'כוננות היום'),
+      body: cover ? t(`You’re emergency cover today, ${day}.`, `יש לך כיסוי חירום היום, ${day}.`) : t(`You’re on duty today, ${day}.`, `יש לך כוננות היום, ${day}.`)};
     case 'member_waiting': {
       const name = clean(params.name, 80);
       return {title: t('New member waiting', 'חבר צוות חדש ממתין'),

@@ -1,6 +1,6 @@
-# MiKo — Who’s on call?
+# MiKo
 
-MiKo (short for “מי כונן?”, formerly Duty Scheduler) is a mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty. Engineers join through approved accounts or are added by an admin as temporary members without accounts. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager confirms the monthly allocation and runs Generate.
+MiKo (formerly Duty Scheduler) is a mobile-first, bilingual English/Hebrew duty scheduler for one engineering team. Milestone 2 connects Supabase storage, Google sign-in, manager approval, private constraints and published schedules. Hosted workspaces start empty. Engineers join through approved accounts or are added by an admin as temporary members without accounts. LOCAL provides isolated synthetic accounts. No assignments are generated until the manager confirms the monthly allocation and runs Generate.
 
 For Codex and Claude Code setup, selective agent routing and CI gates, see [AI development](docs/AI_DEVELOPMENT.md).
 For database-first deployments, approved Production releases, environment secrets
@@ -160,9 +160,14 @@ The redesign (decision 2026-11-06) is Apple-clean: one token set in light and da
 (`app/globals.css`; **Auto / Light / Dark** per device in Settings, resolved before the
 first paint by `lib/theme/theme.ts`), the system font, soft cards, and a small design system
 in `components/ui` (Card, Sheet, ListRow, Chip, Avatar, Segmented, Switch, EmptyState,
-Skeleton, CountUp, SwipeRow, Toaster). The product name and the "d." mark live only in
-`lib/brand.ts` and `components/brand/logo.tsx`; `scripts/render-icons.mjs` renders the PWA
-icons and iOS startup screens from them. Member colours come from the 20-colour palette in
+Skeleton, CountUp, SwipeRow, Toaster). The product name lives in `lib/brand.ts`; the logo is one file, `public/brand/logo.svg`
+(the company owl, traced from its PNG), drawn only by `components/brand/logo.tsx`; the name's
+font lives only in `app/wordmark-font.ts`; `scripts/render-icons.mjs` renders the favicon, PWA icons and iOS
+startup screens from it. The brand colours are the logo's: navy `#090442` fills (white text on it)
+and cyan `#19f2f7`, used only on navy or dark surfaces or as a glow, never as text or thin lines on
+white (`--brand`, `--brand-fg`, `--cyan`). In dark mode navy fills get a thin near-white edge and a soft
+cyan glow (`--brand-edge`). The Hebrew UI calls a duty כוננות (plural כוננויות) and the person on
+duty כונן/ית; `tests/hebrew-terms.test.mjs` keeps the older word out. Member colours come from the 20-colour palette in
 `lib/theme/palette.ts` (the 15 older stored values map onto it); each member picks their own
 in Settings (`duty_set_color`, own row, taken colours greyed) and an admin can change anyone's
 in the member sheet.

@@ -133,10 +133,10 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
         {onShowSplits && <Button size="xs" variant="link" className="plan-split-show" onClick={() => onShowSplits(splits)}>{t('Show', 'הצגה')}</Button>}
       </p>}
       {f.replanBlocked && <p className="allocation-attention" role="note">{allocationMessage(f.replanBlocked, t)}</p>}
-      {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
+      {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: כוננויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {f.weekendTakers !== null && f.weekendTakers <= 1 && <p className="allocation-attention" role="note">{f.weekendTakers ? t('Only one member here takes weekends, so Generate may leave some weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'רק חבר אחד כאן עושה סופי שבוע, ולכן השיבוץ עלול להשאיר סופי שבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.') : t('No one here takes weekends, so Generate will leave the weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'אף אחד כאן לא עושה סופי שבוע, ולכן השיבוץ ישאיר את סופי השבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.')}</p>}
       {f.weekendShort && <p className="allocation-attention" role="note">{weekendShortNote(f.weekendShort, list, t)}</p>}
-      {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'תורנויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
+      {uneven && <p className="allocation-attention" role="note">{t('This month’s duties can’t split evenly: ', 'כוננויות החודש אינן מתחלקות שווה בשווה: ')}{uneven}.</p>}
       <p className="plan-sr" id="plan-no-counterpart">{t('No one else can take on less. Drag a point instead.', 'אין מי שיכול לקבל פחות. אפשר לגרור נקודה במקום.')}</p>
       <p className="plan-sr" id="plan-no-receiver">{t('No one else can take this point. Drag a point instead.', 'אין מי שיכול לקבל את הנקודה. אפשר לגרור נקודה במקום.')}</p>
       {f.draft && <div className="plan-rows" role="table" aria-label={t('Monthly point allocation', 'הקצאת נקודות חודשית')}>
@@ -189,9 +189,9 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
             {f.noWeekends[r.id]?.lockedWeekend && <p className="allocation-row-warning" role="note">{t('A locked weekend is kept. Unlock it in the calendar to free it.', 'סוף שבוע נעול נשמר. אפשר לבטל את הנעילה בלוח כדי לשחרר אותו.')}</p>}
             {ceiling && <p className="allocation-row-warning" role="note" id={capNote}>{t(`Max punishment here is +${points(r.permanentMax)} (${points(f.totals?.total ?? 0)} points this month)`, `העונש המרבי כאן הוא \u200E+${points(r.permanentMax)} (${points(f.totals?.total ?? 0)} נקודות החודש)`)}</p>}
             {f.ceilings && r.target > f.ceilings[r.id] && <p className="allocation-row-warning" role="note">{t(`Availability allows about ${points(f.ceilings[r.id])}`, `הזמינות מאפשרת בערך ${points(f.ceilings[r.id])}`)}</p>}
-            {!f.outcome?.generated && f.ceilings && f.spaced && r.target <= f.ceilings[r.id] && r.target > f.spaced[r.id] && <p className="allocation-row-note" role="note">{t('This needs some back-to-back days', 'יידרשו כמה תורנויות רצופות')}</p>}
+            {!f.outcome?.generated && f.ceilings && f.spaced && r.target <= f.ceilings[r.id] && r.target > f.spaced[r.id] && <p className="allocation-row-note" role="note">{t('This needs some back-to-back days', 'יידרשו כמה כוננויות רצופות')}</p>}
             {f.outcome?.generated && r.assigned !== r.target && <p className="allocation-row-warning" role="note">{t(`${points(r.assigned)} scheduled, plan says ${points(r.target)}`, `שובצו ${points(r.assigned)}, בתוכנית ${points(r.target)}`)}</p>}
-            {!!f.outcome?.backToBack[r.id] && <p className="allocation-row-note" role="note">{t(`Back-to-back days: ${f.outcome.backToBack[r.id]}`, `תורנויות רצופות: ${f.outcome.backToBack[r.id]}`)}</p>}
+            {!!f.outcome?.backToBack[r.id] && <p className="allocation-row-note" role="note">{t(`Back-to-back days: ${f.outcome.backToBack[r.id]}`, `כוננויות רצופות: ${f.outcome.backToBack[r.id]}`)}</p>}
           </div>;
         })}
       </div>}
@@ -207,7 +207,7 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
           l.reason === 'uneven' && t('uneven split', 'חלוקה לא שווה')].filter(Boolean).join(' · ')}</li>;})}</ul>
           : <p>{t('No one owes points.', 'אין נקודות פתוחות.')}</p>}
       </details>}
-      {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף תורנויות.')}</div>}
+      {f.closed && <div className="warning-note">{t('Monthly coverage has started. Generation is closed; manual changes, locks and swaps remain available.', 'הכיסוי החודשי התחיל. השיבוץ האוטומטי נסגר; ניתן לערוך ידנית, לנעול ולהחליף כוננויות.')}</div>}
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy || !canMakePermanent} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
