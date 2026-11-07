@@ -20,7 +20,8 @@ assert.ifError(login.error);
 const load = async () => {const r = await client.rpc('duty_load'); assert.ifError(r.error); return r.data;};
 const initial = await load(), admin = login.data.user.id;
 assert(initial.members.filter(m => !m.is_temporary).every(m => m.email.endsWith('@duty.local')), 'Synthetic LOCAL workspace required');
-const base = initialCalendarMonth();
+// The first month that can still be planned: the app opens on the current month, one before it.
+const base = monthNext(initialCalendarMonth());
 const offset = Array.from({length: 24}, (_, i) => i).find(i => !initial.months.some(m => m.month === monthNext(base, i)));
 assert.notEqual(offset, undefined, 'Need an unused future owner month');
 const month = monthNext(base, offset), duty = blocks(month, []).find(d => ownerMonth(d) === month && !d.weekendId && d.start.slice(-2) >= '08');
@@ -51,11 +52,11 @@ try {
   await page.getByLabel('Password', {exact: true}).fill(LOCAL_PASSWORD);
   await page.getByRole('button', {name: 'Sign in locally', exact: true}).click();
   await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
-  for (let i = 0; i < offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
+  for (let i = 0; i <= offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
   await expect(page.locator('.month-title h2')).toHaveText(calendarMonthLabel(month, 'en'));
   async function reloadMonth() {
     await page.reload(); await page.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(page.locator('.month-bar')).toBeVisible();
-    for (let i = 0; i < offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
+    for (let i = 0; i <= offset; i++) await page.getByRole('button', {name: 'Next month', exact: true}).click();
     await expect(page.locator('.month-title h2')).toHaveText(calendarMonthLabel(month, 'en'));
   }
   const cell = page.locator(`button[data-date="${duty.id}"]`).filter({has: page.locator('.date-line')});

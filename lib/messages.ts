@@ -79,7 +79,7 @@ export function userMessage(raw: string, t: Translate): string {
   return message;
 }
 
-// duty_edit_published_duty's own sentences.
+// duty_edit_published_duty's and duty_edit_published_weekend's own sentences.
 const EDITS: readonly (readonly [RegExp, string, string])[] = [
   [/This publication changed\. Refresh first/, 'A newer version of this month was published or a draft was reopened. Close the duty, open it again, then edit it.', 'פורסמה גרסה חדשה של החודש או שנפתחה טיוטה. יש לסגור את התורנות, לפתוח אותה שוב ואז לערוך.'],
   [/^Nothing changed$/, 'Nothing changed. Choose another engineer or other extra points.', 'לא השתנה דבר. יש לבחור מהנדס אחר או נקודות נוספות אחרות.'],
@@ -87,6 +87,7 @@ const EDITS: readonly (readonly [RegExp, string, string])[] = [
   [/Keep the override reason under 500 characters/, 'Keep the override reason under 500 characters.', 'נימוק החריגה צריך להיות קצר מ־500 תווים.'],
   [/Publish or cancel the open draft before editing published duties/, 'This month has an open draft. Publish or cancel it, then edit the published duty.', 'לחודש יש טיוטה פתוחה. יש לפרסם או לבטל אותה, ואז לערוך את התורנות שפורסמה.'],
   [/Choose a duty in this published month/, 'Choose a duty from this published month.', 'יש לבחור תורנות מהחודש שפורסם.'],
+  [/Choose a weekend in this published month/, 'Choose a weekend from this published month.', 'יש לבחור סוף שבוע מהחודש שפורסם.'],
   [/This duty has no primary engineer/, 'This duty has no engineer, so it can’t be edited here.', 'לתורנות הזו אין מהנדס, ולכן לא ניתן לערוך אותה כאן.'],
   [/Choose an active approved engineer/, 'Choose an active team member.', 'יש לבחור חבר צוות פעיל.'],
   [/Extra points must be 0 to 20 in half points/, 'Use 0 to 20 extra points in steps of 0.5.', 'יש להזין 0 עד 20 נקודות נוספות בקפיצות של 0.5.'],

@@ -5,6 +5,7 @@ import {record} from '../../lib/compensation';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {proposeAllocation, transferAllocation, persistedDraft} from '../../lib/allocation';
 import type {AllocationDraft} from '../../lib/allocation/types';
+import {existsSync} from 'node:fs';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -20,8 +21,9 @@ async function clickPlan(page: import('@playwright/test').Page) {
   if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
   const he = await page.locator('html').getAttribute('lang') === 'he';
   await expect(page.locator('.month-primary')).toBeVisible();
-  const primary = page.locator('.month-primary').filter({hasText: he ? /^(תכנון החודש|בדיקת התוכנית)$/ : /^(Plan the month|Review plan)$/});
-  if (await primary.isVisible()) await primary.click();
+  // Its accessible name is the visible label (the busy label shares its cell, hidden).
+  const primary = page.locator('.month-primary');
+  if ((he ? /^(תכנון החודש|בדיקת התוכנית)$/ : /^(Plan the month|Review plan)$/).test(await primary.getAttribute('aria-label') ?? '')) await primary.click();
   else await monthAction(page, he ? 'תכנון החודש' : 'Plan the month');
 }
 async function openPlan(page: import('@playwright/test').Page) {
@@ -535,9 +537,19 @@ test('cancelling synchronous WASM retains accepted assignments and a fresh Worke
   let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
   await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
   const started = page.waitForEvent('worker');
+  const placed = await page.locator('.plan-generate').boundingBox();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   const active = await started, stopped = active.waitForEvent('close');
-  await expect(page.getByText('Finding the best arrangement…', {exact: true})).toBeVisible();
+  // Progress shows on the button itself, in place (decision 2026-11-07): no block below the plan.
+  const generating = page.getByRole('button', {name: 'Finding the best arrangement…', exact: true});
+  await expect(generating).toBeDisabled();
+  await expect(generating).toHaveAttribute('aria-busy', 'true');
+  await expect(generating.locator('.spin')).toBeVisible();
+  const during = await generating.boundingBox();
+  expect(Math.abs(during!.x - placed!.x) + Math.abs(during!.width - placed!.width) + Math.abs(during!.y - placed!.y)).toBeLessThan(1);
+  await expect(page.locator('.allocation-progress')).toHaveCount(0);
+  await expect(page.getByText(/dates covered so far|saved assignments stay in place/)).toHaveCount(0);
+  await expect(page.locator('.allocation-scroll').getByText('Finding the best arrangement…')).toHaveCount(0);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click(); release();
   await stopped;
   expect(backend.raw.assignments).toEqual(before);
@@ -701,7 +713,7 @@ test('exact cutoff during real Worker generation terminates it without saving as
   const started = page.waitForEvent('worker');
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   const active = await started, stopped = active.waitForEvent('close');
-  await expect(page.getByText('Finding the best arrangement…', {exact: true})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Finding the best arrangement…', exact: true})).toBeDisabled();
   // The confirmed server sample was received at 100.25; advance exactly 60 seconds.
   await page.evaluate(() => {Object.defineProperty(performance, 'now', {configurable: true, value: () => 60_100.25});});
   await stopped; release();
@@ -803,4 +815,52 @@ test('a hand split never changes the plan: half-point changes save exactly as ty
   await expect(dialog).toBeHidden({timeout: 50_000});
   expect(draftRow('2026-11-06').map(d => d.end_day)).toEqual(['2026-11-08']);
   expect(draftRow('2026-11-07')).toHaveLength(0);
+});
+
+// Generate shows its progress on the button (decision 2026-11-07): gallery captures in both
+// languages, the month bar keeps its width, and reduced motion stills the spinner.
+for (const lang of ['en', 'he'] as const) test(`Generate progress stays on the buttons ${lang}`, async ({page, backend, openApp}) => {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  fresh(backend); acceptedDraft(backend);
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  await openApp();
+  if (lang === 'he') await switchLanguage(page, 'he');
+  const primary = page.locator('.month-primary');
+  await page.getByRole('tab', {name: t('Schedule', 'לוח'), exact: true}).click();
+  const bar = await primary.boundingBox();
+  await primary.click();
+  const dialog = page.getByRole('dialog', {name: t('Plan the month', 'תכנון החודש')});
+  const confirm = dialog.getByRole('button', {name: t('Confirm & generate', 'אישור ושיבוץ'), exact: true});
+  await expect(confirm).toBeEnabled({timeout: 30_000});
+  let release!: () => void; const gate = new Promise<void>(resolve => {release = resolve;});
+  await page.route('**/api/scheduling/asset/highs.mjs', async route => {await gate; await route.continue();});
+  // On PC the button rests at its own label's size; only phones reserve the full busy text.
+  const rest = await confirm.boundingBox(), idleWidth = await confirm.locator('.busy-label>span').first().evaluate(el => el.scrollWidth);
+  if (page.viewportSize()!.width > 600) expect(Math.abs((await confirm.locator('.busy-label').boundingBox())!.width - idleWidth)).toBeLessThan(1.5);
+  await confirm.click();
+  const finding = t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…');
+  const generating = dialog.getByRole('button', {name: finding, exact: true});
+  expect(Math.abs((await generating.boundingBox())!.width - rest!.width)).toBeLessThan(1);
+  await expect(generating).toBeDisabled();
+  // It fits the footer: on a phone the text ellipsizes instead of widening the sheet.
+  const box = (await generating.boundingBox())!, total = (await dialog.locator('.allocation-footer>div').first().boundingBox())!;
+  expect(box.x >= 0 && box.x + box.width <= page.viewportSize()!.width).toBe(true);
+  // The footer total stays whole beside it.
+  expect(lang === 'en' ? total.x + total.width <= box.x : box.x + box.width <= total.x).toBe(true);
+  await expect(generating.locator('.spin')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('.allocation-progress')).toHaveCount(0);
+  await expect(dialog.getByRole('status').filter({hasText: finding})).toHaveCount(1);
+  test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: `plan-generating-${lang}.png`, viewport: page.viewportSize(), language: lang})});
+  await page.mouse.move(0, 0);
+  // Attached for the review gallery only while the reference is missing (as redesign.spec does).
+  if (!existsSync(test.info().snapshotPath(`plan-generating-${lang}.png`))) {
+    const path = test.info().outputPath(`plan-generating-${lang}-actual.png`);
+    await page.screenshot({path, fullPage: true, animations: 'disabled', caret: 'hide'});
+    await test.info().attach(`plan-generating-${lang}-actual.png`, {path, contentType: 'image/png'});
+  }
+  await expect.soft(page).toHaveScreenshot(`plan-generating-${lang}.png`, {fullPage: true});
+  await dialog.getByRole('button', {name: t('Cancel', 'ביטול'), exact: true}).click(); release();
+  await expect(confirm).toBeEnabled();
+  // The month bar's primary keeps its place and width whatever its label says.
+  expect(Math.abs((await primary.boundingBox())!.width - bar!.width)).toBeLessThan(1);
 });

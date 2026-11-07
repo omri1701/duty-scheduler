@@ -7,7 +7,7 @@ import {assertMonthBar,assertMonthMenu} from '../tests/browser/month-bar-asserti
 import {traverseMonths} from '../tests/browser/month-navigation.ts';
 import {zoomContext,setBrowserZoom} from '../tests/browser/zoom-context.mjs';
 import {LOCAL_PASSWORD} from './local-supabase.mjs';
-import {initialCalendarMonth} from '../lib/rota/calendar-dates.ts';
+import {initialCalendarMonth,monthNext} from '../lib/rota/calendar-dates.ts';
 import {blocks,ownerMonth,dayOf,addDays} from '../lib/rota/engine.ts';
 import {fromSnapshot,schedulePayload} from '../lib/supabase/snapshot.ts';
 const origin=process.env.DUTY_RUNTIME_URL??'http://localhost:5173',out='work/runtime-investigation/corrected';
@@ -19,9 +19,12 @@ assert.ifError(login.error);
 const load=async()=>{const r=await client.rpc('duty_load');assert.ifError(r.error);return r.data;};
 const initial=await load();
 assert(initial.members.every(m=>m.email.endsWith('@duty.local')),'Only isolated synthetic members');
-const month=initialCalendarMonth();
+// The planning month: the app opens on the current month, so every page of these contexts opens
+// this one through the `?month=` deep link (also after a reload).
+const month=monthNext(initialCalendarMonth());
+const keepMonth=context=>context.addInitScript(m=>{const u=new URL(location.href);if(!u.searchParams.has('month')){u.searchParams.set('month',m);history.replaceState(history.state,'',u)}},month);
 await mkdir(out,{recursive:true});
-const context=await zoomContext(),browser=context.browser();
+const context=await zoomContext(),browser=context.browser();await keepMonth(context);
 const page=await context.newPage();
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
 const assets=[];page.on('response',r=>{if(['stylesheet','script'].includes(r.request().resourceType()))assets.push({path:new URL(r.url()).pathname,status:r.status()});});
@@ -48,7 +51,7 @@ async function verifyState(state) {
  try {
   const storageState=await context.storageState();
   for(const width of [375,390,430]) {
-   const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});
+   const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});await keepMonth(phone);
    const p=await phone.newPage();await p.goto(origin);await p.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(p.locator('.month-bar')).toBeVisible();
    if(state==='new')await p.getByRole('button',{name:'Next month',exact:true}).click();
    for(const language of ['en','he']) {
@@ -131,7 +134,7 @@ try {
  const phoneBrowser=await webkit.launch();
  try {
   for(const width of [375,390,430]) {
-   const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState:state,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});
+   const phone=await phoneBrowser.newContext({...devices['iPhone 13'],viewport:{width,height:844},storageState:state,locale:'en-GB',timezoneId:'Asia/Jerusalem',reducedMotion:'reduce'});await keepMonth(phone);
    const p=await phone.newPage();await p.goto(origin);await p.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(p.locator('.month-bar')).toBeVisible();
    for(const language of ['en','he']) {
     if(language==='he')await p.getByRole('button',{name:'Switch to Hebrew',exact:true}).click();
@@ -141,7 +144,7 @@ try {
    await phone.close();
   }
  } finally {await phoneBrowser.close();}
- const fresh=await browser.newContext({storageState:state,viewport:{width:1280,height:1000}});
+ const fresh=await browser.newContext({storageState:state,viewport:{width:1280,height:1000}});await keepMonth(fresh);
  const freshPage=await fresh.newPage();await freshPage.goto(origin);await freshPage.getByRole('tab',{name:'Schedule',exact:true}).click();await expect(freshPage.locator('.month-bar')).toBeVisible();
  evidence.push({session:'fresh-context',...await assertMonthBar(freshPage)});await fresh.close();
  assert.deepEqual(errors,[]);assert(assets.every(a=>a.status===200||a.status===304),'Asset downloads: '+JSON.stringify(assets.filter(a=>a.status!==200&&a.status!==304)));

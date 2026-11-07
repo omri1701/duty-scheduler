@@ -4,7 +4,7 @@ CREATE FUNCTION duty_private.resolve_swap(p_request uuid, p_action text, p_revis
     AS $$
 declare r public.duty_swap_requests; a public.duty_assignments; b public.duty_assignments;
  current_publication uuid; publication uuid; next_version integer; reason text:=trim(coalesce(p_override_reason,'')); side text; next_status text;
- party boolean:=false; me uuid:=duty_private.current_member_id();
+ party boolean:=false; me uuid:=duty_private.current_member_id(); joined boolean:=false;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
@@ -83,6 +83,9 @@ begin
     not (v->>'rule' in ('availability','boundary') and v->>'dutyId' in (a.day::text,b.day::text))
     and not (v->>'rule'='consecutive' and ((v->'duties') ? a.day::text or (v->'duties') ? b.day::text))
     and not (v->>'rule'='weekends' and v->>'engineer' in (r.requester_id::text,r.other_id::text))),accounting_fingerprint,calendar_fingerprint,current_publication,generation,'swap' from public.duty_allocations where publication_id=current_publication;
+  -- Both halves of a weekend on one person are one weekend again (decision 2026-11-07).
+  joined:=duty_private.join_weekend_halves(publication,a.day);
+  joined:=duty_private.join_weekend_halves(publication,b.day) or joined;
  end if;
  next_status:=case p_action when 'accept' then case when (side='other' and (r.proposed_by is null or r.requester_accepted_at is not null))
    or (side='requester' and r.accepted_by is not null) then 'awaiting_admin' else 'awaiting_engineer' end
@@ -97,6 +100,11 @@ begin
   result_publication_id=publication,override_reason=case when p_action='approve' then reason else '' end where id=r.id;
  if publication is not null then
   update public.duty_months set current_publication_id=publication where month=r.month;
+  -- A joined weekend changed the month's calendar; the copied plan follows it.
+  if joined then
+   update public.duty_allocations set calendar_fingerprint=md5((select jsonb_agg(d-array['primary','secondary'] order by d->>'id')::text
+    from jsonb_array_elements(duty_private.generation_facts(r.month)->'duties') d)) where publication_id=publication;
+  end if;
  end if;
  update public.duty_workspace set revision=revision+1 where id;
  return (select status from public.duty_swap_requests where id=r.id);

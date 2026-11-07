@@ -3,7 +3,7 @@ import {initialCalendarMonth, calendarMonthLabel} from '@/lib/rota/calendar-date
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {EnvironmentBadge, InspectionWarning} from '@/components/environment-indicator';
-import {Check, Eraser, History, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2} from 'lucide-react';
+import {Check, Eraser, History, LoaderCircle, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Avatar} from '@/components/ui/avatar';
 import {Segmented} from '@/components/ui/segmented';
@@ -21,7 +21,8 @@ import {DutySheet, type DutySheetActions} from './duty-sheet';
 import {DayDetails} from './day-details';
 import {DutyEditor} from '@/components/rota/duty-editor';
 import {PublishedDutyEditor} from '@/components/rota/published-duty-editor';
-import {editablePublishedDuty} from '@/lib/supabase/published-edit';
+import {editablePublishedDuty,publishedWeekend} from '@/lib/supabase/published-edit';
+import {PublishedWeekendEditor} from '@/components/rota/published-weekend-editor';
 import {SettingsScreen} from '@/components/rota/settings-screen';
 import {deepLink} from '@/lib/push/settings';
 import {currentSubscription, describe} from '@/lib/push/browser';
@@ -161,6 +162,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     } : undefined,
   });
   const publishedEditRow = publishedEdit ? editablePublishedDuty(remote.snapshot!, month, today, publishedEdit) : undefined;
+  const publishedEditWeekend = publishedEditRow ? publishedWeekend(remote.snapshot!, publishedEditRow, today) : null;
   const {requestSelection, setRequestSelection} = interactions;
   function goToMonth(m: string) {
     setMonth(m);
@@ -250,7 +252,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   const planLabel = t('Plan the month', 'תכנון החודש'), closedReason = t('Coverage has started: manual edits and swaps only', 'הכיסוי החודשי התחיל: רק עריכה ידנית והחלפות');
   let primary: PrimaryAction | undefined, menu: MenuItem[] = [];
   if (isManager) {
-    const plan: PrimaryAction = {label: allocation.busy ? t('Generating…', 'משבץ…') : planLabel, icon: <Sparkles className={allocation.busy ? 'spin' : undefined}/>, onClick: allocation.show, busy: allocation.busy,
+    const generating = t('Generating…', 'משבץ…');
+    const plan: PrimaryAction = {label: planLabel, busyLabel: generating, icon: allocation.busy ? <LoaderCircle className="spin"/> : <Sparkles/>, onClick: allocation.show, busy: allocation.busy,
       disabled: remote.readOnly || (generationClosed && !monthDetails.generated) || !metrics.active.length, reason: generationClosed && !monthDetails.generated ? closedReason : !metrics.active.length ? t('Add active members first', 'יש להוסיף חברי צוות פעילים קודם') : undefined};
     if (monthDetails.status === 'published') primary = {label: t('Reopen', 'פתיחה לעריכה'), variant: 'secondary', icon: <History/>, disabled: remote.readOnly, onClick: async () => {
       if (!publication) return;
@@ -259,7 +262,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     else if (!viewingDraft) primary = undefined;
     else if (publishable) primary = {label: t('Publish', 'פרסום'), icon: <Check/>, disabled: remote.readOnly || allocation.busy, onClick: () => setPublishOpen(true)};
     else if (!monthDetails.generated) primary = plan;
-    else primary = {...plan, label: allocation.busy ? t('Generating…', 'משבץ…') : t('Review plan', 'בדיקת התוכנית'), dot: reviewNotes > 0, disabled: remote.readOnly || allocation.busy, reason: publishBlockers.join(' · ') || undefined};
+    else primary = {...plan, label: t('Review plan', 'בדיקת התוכנית'), dot: reviewNotes > 0, disabled: remote.readOnly || allocation.busy, reason: publishBlockers.join(' · ') || undefined};
     menu = [
       ...(viewingDraft && primary !== plan && primary?.label !== planLabel ? [{key: 'plan', label: planLabel, icon: <Sparkles/>, onSelect: allocation.show, disabled: plan.disabled || allocation.busy, reason: plan.reason}] : []),
       {key: 'versions', label: t('Versions', 'גרסאות'), icon: <History/>, onSelect: () => setHistoryOpen(true)},
@@ -360,8 +363,12 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     {isManager && <PublicationHistory key={`history-${month}`} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
     {selected && <DutyEditor key={selected.id} state={state} duty={selected} month={month} lang={lang} onClose={() => setSelected(null)} saving={remote.saving}
       onMonth={(m) => {goToMonth(m); setSelected(null);}} onSave={draft.editor.save} onRemoveSpecial={draft.editor.removeSpecial}/>}
-    {publishedEditRow && <PublishedDutyEditor key={publishedEditRow.day} remote={remote} row={publishedEditRow} lang={lang} onClose={() => setPublishedEdit(null)}
-      onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>}
+    {/* A weekend that hasn't started opens the "One weekend | Two days" editor (decision 2026-11-07). */}
+    {publishedEditRow && (publishedEditWeekend
+      ? <PublishedWeekendEditor key={publishedEditRow.day} remote={remote} weekend={publishedEditWeekend} focusDay={publishedEditRow.day} lang={lang} onClose={() => setPublishedEdit(null)}
+        onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>
+      : <PublishedDutyEditor key={publishedEditRow.day} remote={remote} row={publishedEditRow} lang={lang} onClose={() => setPublishedEdit(null)}
+        onSwap={interactions.swapSourceDays.has(publishedEditRow.day) ? () => {setPublishedEdit(null); interactions.setKeyboardSource(publishedEditRow.day);} : undefined}/>)}
     <DraftSwapDialog controller={draft.swap} state={state} duties={duties} lang={lang} t={t} fmt={fmt} nickname={nickname} personName={personName}/>
     <CancelDraftDialog open={cancelDraftMonth !== null} onOpenChange={open => {if (!open) setCancelDraftMonth(null);}} saving={remote.saving} lang={lang} t={t} monthLabel={monthLabel} onConfirm={async () => {
       if (!cancelDraftMonth) return;

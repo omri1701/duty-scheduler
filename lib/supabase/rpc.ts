@@ -51,6 +51,8 @@ export type Functions = {
   duty_delete_push_subscription: Operation<{p_endpoint: string}>;
   duty_edit_published_duty: Operation<Revision & {p_publication: string; p_day: string; p_primary: string; p_extra_points: number;
     p_saturday_extra_points: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number}>;
+  duty_edit_published_weekend: Operation<Revision & {p_publication: string; p_friday: string; p_friday_primary: string; p_friday_extra: number;
+    p_saturday_primary: string; p_saturday_extra: number; p_kind: 'temporary' | 'permanent'; p_override_reason: string}, {publication: string; version: number; joined: boolean}>;
 };
 export type Database = {public: {Tables: Record<string, never>; Views: Record<string, never>; Functions: Functions}};
 export type DutyClient = SupabaseClient<Database>;

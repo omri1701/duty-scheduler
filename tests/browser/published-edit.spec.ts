@@ -83,18 +83,18 @@ test('Hebrew: an unavailable engineer needs an override reason; Permanent record
   expect(backend.balance).toBeNull();
 });
 
-test('a combined weekend edits both dates’ extras; engineers keep requesting swaps by tap', async ({page, browser, openApp, backend}) => {
+test('a combined weekend edits each date’s points in the weekend editor; engineers keep requesting swaps by tap', async ({page, browser, openApp, backend}) => {
   await openApp();
   await edit(page, '2026-11-06');
-  const dialog = page.getByRole('dialog', {name: 'Edit duty'});
+  const dialog = page.locator('.published-edit-dialog');
   await expect(dialog).toContainText('6 Nov – 7 Nov');
-  await dialog.getByLabel('Saturday extra points').fill('1');
+  await dialog.getByLabel('Saturday points').fill('1.5');
   await expect(dialog.getByRole('group', {name: 'Compensation'})).toHaveCount(0);
   await dialog.getByRole('button', {name: 'Review change'}).click();
-  await expect(page.getByLabel('Summary')).toHaveValue(/Date: Fri 06\/11\/2026 – Sat 07\/11\/2026\n.*\(unchanged\)\nPoints: 1 point → 2 points\nExtra: none → 1 point\nBalance: No debt; the extra counts for /);
+  await expect(page.getByLabel('Summary')).toHaveValue(/Date: Fri 06\/11\/2026 – Sat 07\/11\/2026\nWeekend: One weekend\nFri 06\/11\/2026: .* \(unchanged\) · 0.5 points\nSat 07\/11\/2026: .* \(unchanged\) · 0.5 points → 1.5 points\nBalance: No debt; the points count for whoever does each day$/);
   await page.getByRole('button', {name: 'Publish change'}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
-  expect(call(backend)[0].params).toMatchObject({p_day: '2026-11-06', p_extra_points: 0, p_saturday_extra_points: 1});
+  expect(backend.calls.filter(c => c.name === 'duty_edit_published_weekend')[0].params).toMatchObject({p_friday: '2026-11-06', p_friday_extra: 0, p_saturday_extra: 1});
   const context = await browser.newContext({viewport: page.viewportSize()!, timezoneId: 'Asia/Jerusalem', locale: 'en-GB', serviceWorkers: 'block'});
   try {
     const engineer = await context.newPage();
