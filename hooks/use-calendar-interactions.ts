@@ -40,7 +40,7 @@ export function useCalendarInteractions({
   editPublished?: (day: string) => boolean;
   lang: 'en' | 'he';
 }) {
-  const meId = remote.user!.id;
+  const meId = remote.memberId;
   const mobile = useMobileLayout();
   const [requestSelection, setRequestSelection] = useState<DutySelection | null>(null),
     [keyboardSource, setKeyboardSource] = useState<string | null>(null);

@@ -5,6 +5,7 @@ import {record} from '../../lib/compensation';
 import {readGenerationContext} from '../../lib/supabase/generation';
 import {proposeAllocation, transferAllocation, persistedDraft} from '../../lib/allocation';
 import type {AllocationDraft} from '../../lib/allocation/types';
+import {existsSync} from 'node:fs';
 
 function fresh(backend: Backend, count = 6) {
   backend.raw.assignments = []; backend.raw.publications = [];
@@ -850,10 +851,13 @@ for (const lang of ['en', 'he'] as const) test(`Generate progress stays on the b
   await expect(page.locator('.allocation-progress')).toHaveCount(0);
   await expect(dialog.getByRole('status').filter({hasText: finding})).toHaveCount(1);
   test.info().annotations.push({type: 'visual-review', description: JSON.stringify({name: `plan-generating-${lang}.png`, viewport: page.viewportSize(), language: lang})});
-  const path = test.info().outputPath(`plan-generating-${lang}-actual.png`);
   await page.mouse.move(0, 0);
-  await page.screenshot({path, fullPage: true, animations: 'disabled', caret: 'hide'});
-  await test.info().attach(`plan-generating-${lang}-actual.png`, {path, contentType: 'image/png'});
+  // Attached for the review gallery only while the reference is missing (as redesign.spec does).
+  if (!existsSync(test.info().snapshotPath(`plan-generating-${lang}.png`))) {
+    const path = test.info().outputPath(`plan-generating-${lang}-actual.png`);
+    await page.screenshot({path, fullPage: true, animations: 'disabled', caret: 'hide'});
+    await test.info().attach(`plan-generating-${lang}-actual.png`, {path, contentType: 'image/png'});
+  }
   await expect.soft(page).toHaveScreenshot(`plan-generating-${lang}.png`, {fullPage: true});
   await dialog.getByRole('button', {name: t('Cancel', 'ביטול'), exact: true}).click(); release();
   await expect(confirm).toBeEnabled();

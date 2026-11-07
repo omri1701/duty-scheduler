@@ -2,7 +2,7 @@ CREATE FUNCTION duty_private.request_swap(p_from uuid, p_to uuid, p_explanation 
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare a public.duty_assignments; b public.duty_assignments; t public.duty_assignments; m text; me uuid:=auth.uid();
+declare a public.duty_assignments; b public.duty_assignments; t public.duty_assignments; m text; me uuid:=duty_private.current_member_id();
 begin
  perform duty_private.check_revision(p_revision);
  -- Recheck after lock acquisition, including a membership change while waiting.

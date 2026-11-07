@@ -24,7 +24,7 @@ export function HomeScreen({remote, swaps, today, lang, t, onSchedule, onAvailab
   /** Starts a swap for the member's own published duty on that day. */
   onSwap: (month: string, day: string) => void;
 }) {
-  const raw = remote.snapshot!, me = remote.user!.id, admin = remote.isAdmin;
+  const raw = remote.snapshot!, me = remote.memberId, admin = remote.isAdmin;
   const name = (id: string | null) => raw.members.find(m => m.id === id)?.name ?? '';
   const first = (remote.me?.name ?? '').trim().split(/\s+/)[0] || '';
   const duties = myUpcomingDuties(raw, me, today);

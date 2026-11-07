@@ -65,7 +65,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
       document.documentElement.classList.remove('keyboard-open');
     };
   }, [mobile]);
-  const isManager = remote.isAdmin, meId = remote.user!.id;
+  const isManager = remote.isAdmin, meId = remote.memberId;
   // A notification opens the screen it links to (`/?tab=…&month=…`, decision 2026-11-06).
   const [link] = useState(() => typeof window === 'undefined' ? {} : deepLink(window.location.search));
   const [month, setMonth] = useState(() => link.month ?? initialCalendarMonth()), [tab, setTab] = useState<string>(link.tab ?? 'home');

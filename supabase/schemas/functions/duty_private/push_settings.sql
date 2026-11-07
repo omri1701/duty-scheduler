@@ -22,11 +22,11 @@ CREATE FUNCTION duty_private.notification_settings() RETURNS jsonb
 declare s public.duty_notification_settings;
 begin
  if not duty_private.is_member() then raise exception 'Member access required' using errcode='42501'; end if;
- select * into s from public.duty_notification_settings where member_id=auth.uid();
+ select * into s from public.duty_notification_settings where member_id=duty_private.current_member_id();
  return jsonb_build_object('deadlines',coalesce(s.deadlines,true),'published',coalesce(s.published,true),'swaps',coalesce(s.swaps,true),
   'edits',coalesce(s.edits,true),'evening',coalesce(s.evening,true),'eveningTime',to_char(coalesce(s.evening_time,time '18:00'),'HH24:MI'),
   'morning',coalesce(s.morning,true),'morningTime',to_char(coalesce(s.morning_time,time '08:30'),'HH24:MI'),'members',coalesce(s.members,true),
-  'devices',(select count(*) from public.duty_push_subscriptions where member_id=auth.uid()));
+  'devices',(select count(*) from public.duty_push_subscriptions where member_id=duty_private.current_member_id()));
 end $$;
 
 -- Replaces the caller's own switches. Every key is required with its exact type;
@@ -50,7 +50,7 @@ begin
   raise exception 'Invalid notification time';
  end if;
  insert into public.duty_notification_settings(member_id,deadlines,published,swaps,edits,evening,evening_time,morning,morning_time,members,updated_at)
- values(auth.uid(),(p_settings->>'deadlines')::boolean,(p_settings->>'published')::boolean,(p_settings->>'swaps')::boolean,(p_settings->>'edits')::boolean,
+ values(duty_private.current_member_id(),(p_settings->>'deadlines')::boolean,(p_settings->>'published')::boolean,(p_settings->>'swaps')::boolean,(p_settings->>'edits')::boolean,
   (p_settings->>'evening')::boolean,(p_settings->>'eveningTime')::time,(p_settings->>'morning')::boolean,(p_settings->>'morningTime')::time,(p_settings->>'members')::boolean,now())
  on conflict(member_id) do update set deadlines=excluded.deadlines,published=excluded.published,swaps=excluded.swaps,edits=excluded.edits,
   evening=excluded.evening,evening_time=excluded.evening_time,morning=excluded.morning,morning_time=excluded.morning_time,members=excluded.members,updated_at=now();
@@ -71,9 +71,9 @@ begin
   raise exception 'push-service-unsupported';
  end if;
  if coalesce(p_p256dh,'') !~ '^[A-Za-z0-9_-]{80,100}$' or coalesce(p_auth,'') !~ '^[A-Za-z0-9_-]{16,44}$' then raise exception 'push-keys-invalid'; end if;
- insert into public.duty_push_subscriptions(member_id,endpoint,p256dh,auth) values(auth.uid(),p_endpoint,p_p256dh,p_auth)
+ insert into public.duty_push_subscriptions(member_id,endpoint,p256dh,auth) values(duty_private.current_member_id(),p_endpoint,p_p256dh,p_auth)
  on conflict(endpoint) do update set member_id=excluded.member_id,p256dh=excluded.p256dh,auth=excluded.auth,last_seen_at=now();
- delete from public.duty_push_subscriptions where id in (select id from public.duty_push_subscriptions where member_id=auth.uid() order by last_seen_at desc,id offset 10);
+ delete from public.duty_push_subscriptions where id in (select id from public.duty_push_subscriptions where member_id=duty_private.current_member_id() order by last_seen_at desc,id offset 10);
 end $$;
 
 -- Removes one of the caller's own devices (turning notifications off, or signing
@@ -84,5 +84,5 @@ CREATE FUNCTION duty_private.delete_push_subscription(p_endpoint text) RETURNS v
     AS $$
 begin
  if auth.uid() is null then raise exception 'Sign in first' using errcode='42501'; end if;
- delete from public.duty_push_subscriptions where endpoint=p_endpoint and member_id=auth.uid();
+ delete from public.duty_push_subscriptions where endpoint=p_endpoint and member_id=duty_private.current_member_id();
 end $$;

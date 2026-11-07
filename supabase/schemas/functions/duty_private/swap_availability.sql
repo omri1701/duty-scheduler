@@ -2,7 +2,7 @@ CREATE FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) RETURNS j
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare a public.duty_assignments; b public.duty_assignments; admin boolean:=duty_private.is_manager();
+declare a public.duty_assignments; b public.duty_assignments; admin boolean:=duty_private.is_manager(); me uuid:=duty_private.current_member_id();
 begin
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
  select * into a from public.duty_assignments where id=p_from;
@@ -14,7 +14,7 @@ begin
  -- Only the two members (or an admin) learn whose availability blocks this swap,
  -- and members only for a pair they could still request.
  if not admin then
-  if auth.uid() is distinct from a.primary_id and auth.uid() is distinct from b.primary_id then
+  if me is distinct from a.primary_id and me is distinct from b.primary_id then
    raise exception 'Choose your own primary duty' using errcode='42501';
   end if;
   if a.primary_id is null or b.primary_id is null or a.primary_id=b.primary_id

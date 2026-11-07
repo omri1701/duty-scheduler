@@ -1,6 +1,6 @@
 import {test as base, expect, type Page} from '@playwright/test';
 import {addDays, blocks, dayOf, specialAt} from '../../lib/rota/engine';
-import {canManage, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {canManage, findMe, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
 import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
 import {snapshotKey} from '../../lib/scheduling/domain';
@@ -103,9 +103,10 @@ export class Backend {
         neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
         sourcePublicationId: this.sourcePublication, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
   }
-  snapshot(user: string) {
-    const raw = structuredClone(this.raw), admin = canManage(raw, user);
-    const member = raw.members.find(m => m.id === user)!;
+  snapshot(signIn: string) {
+    const raw = structuredClone(this.raw), admin = canManage(raw, signIn);
+    // A sign-up linked to a temporary member owns that member's id (decision 2026-11-07).
+    const member = findMe(raw, signIn)!, user = member?.id ?? signIn;
     // Mirrors the migrated column default; legacy rows are covered by unit tests.
     raw.assignments = raw.assignments.map(d => ({...d, locked: d.locked ?? false}));
     if (!member || member.status !== 'approved' || !member.active) return {...raw, revision: null, members: member ? [member] : [], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
@@ -119,17 +120,19 @@ export class Backend {
     raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || r.proposed_by === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
     return raw;
   }
-  rpc(name: string, p: Record<string, unknown>, user: string) {
+  rpc(name: string, p: Record<string, unknown>, signIn: string) {
+    // Every own-row RPC acts on the caller's member row, as duty_private.current_member_id() does.
+    const user = findMe(this.raw, signIn)?.id ?? signIn;
     this.calls.push({name, params: p, user});
     if (name === 'duty_join') {
-      if (!this.raw.members.some(m=>m.id===user)) {
+      if (!findMe(this.raw, signIn)) {
         const member=seed().members.find(m=>m.id===user);
         if (!member) throw Error('Unknown synthetic identity');
         this.raw.members.push({...member,name:String(p.p_name),role:'engineer',status:'pending',active:false});
       }
       return null;
     }
-    if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_load') return this.snapshot(signIn);
     // Personal RPCs (decision 2026-11-06): own rows only, no workspace revision.
     if (name === 'duty_set_language') {
       expect(['en', 'he']).toContain(p.p_language);
@@ -163,7 +166,7 @@ export class Backend {
       return null;
     }
     if (name === 'duty_replanned_versions') {
-      if (!canManage(this.raw, user)) throw Error('Admin access required');
+      if (!canManage(this.raw, signIn)) throw Error('Admin access required');
       return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
     }
     if (name === 'duty_balance') {
@@ -171,16 +174,16 @@ export class Backend {
       if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
       const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
       // Mirrors the database scope: members receive only their own row and relationships.
-      return canManage(this.raw, user) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+      return canManage(this.raw, signIn) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
     }
     if (name === 'duty_edit_returns') {
-      expect(canManage(this.raw, user)).toBe(true);
+      expect(canManage(this.raw, signIn)).toBe(true);
       return this.editReturns;
     }
     if (name === 'duty_swap_availability') {
       // Mirrors duty_private.swap_availability: parties or admins, who and when, never the note.
       const a = this.raw.assignments.find(d => d.id === p.p_from)!, b = this.raw.assignments.find(d => d.id === p.p_to)!;
-      const manager = canManage(this.raw, user);
+      const manager = canManage(this.raw, signIn);
       expect(manager || [a.primary_id, b.primary_id].includes(user)).toBe(true);
       const inside = (d: DutyRow, day: string) => day >= d.day && day < d.end_day;
       return this.raw.constraints.filter(c => c.kind === 'no' && (([b.primary_id, a.secondary_id].includes(c.member_id) && inside(a, c.day)) ||
@@ -199,7 +202,7 @@ export class Backend {
       return {token: this.calendarResets.toString(16).padStart(64, 'c'), createdAt, language};
     }
     expect(p.p_revision).toBe(this.raw.revision);
-    const admin = canManage(this.raw, user);
+    const admin = canManage(this.raw, signIn);
     if (name === 'duty_generation_context') {
       expect(admin).toBe(true); return this.generationEnvelope(String(p.p_month));
     } else if (name === 'duty_confirm_allocation') {
@@ -273,6 +276,13 @@ export class Backend {
       const member = this.raw.members.find(m => m.id === user)!;
       expect(member.status).toBe('approved');
       member.color = p.p_color as string;
+    } else if (name === 'duty_link_temporary_member') {
+      // Mirrors duty_private.link_temporary_member: the temporary row keeps its id and gains the sign-in.
+      expect(admin).toBe(true);
+      const signup = this.raw.members.find(m => m.id === p.p_pending && m.status === 'pending' && !m.is_temporary)!, temporary = this.raw.members.find(m => m.id === p.p_temporary && m.is_temporary)!;
+      expect(signup).toBeTruthy(); expect(temporary).toBeTruthy();
+      this.raw.members = this.raw.members.filter(m => m !== signup);
+      Object.assign(temporary, {is_temporary: false, auth_user_id: signup.id, email: signup.email, language: signup.language ?? temporary.language ?? null});
     } else if (name === 'duty_review_member') {
       expect(admin).toBe(true);
       this.raw.members.find(m => m.id === p.p_member)!.status = p.p_status as string;

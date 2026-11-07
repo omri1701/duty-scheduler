@@ -10,7 +10,7 @@ CREATE FUNCTION duty_private.join_weekend_halves(p_publication uuid, p_day date)
 declare friday date; fri public.duty_assignments; sat public.duty_assignments;
 begin
  -- Only a version being made: a published one (current or history) never changes.
- if exists(select 1 from public.duty_months where current_publication_id=p_publication) then raise exception 'Published versions are immutable'; end if;
+ if exists(select 1 from public.duty_months where current_publication_id=p_publication) then raise exception 'published-version-immutable'; end if;
  if p_day is null or extract(dow from p_day) not in (5,6) then return false; end if;
  friday:=case when extract(dow from p_day)=6 then p_day-1 else p_day end;
  select * into fri from public.duty_assignments a where a.publication_id=p_publication and a.day=friday and a.end_day=friday+1;

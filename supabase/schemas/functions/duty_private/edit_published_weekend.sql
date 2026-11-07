@@ -55,7 +55,7 @@ begin
   or (joined and c.member_id=cover and ((c.day=p_friday and cover is distinct from f.secondary_id) or (c.day=saturday and cover is distinct from s.secondary_id))))) into conflicts;
  if conflicts and reason='' then raise exception 'Availability conflict. An admin must explicitly override with a reason.'; end if;
  update public.duty_months set publication_sequence=publication_sequence+1 where month=m.month returning publication_sequence into next_version;
- insert into public.duty_publications(month,version,published_by) values(m.month,next_version,auth.uid()) returning id into publication;
+ insert into public.duty_publications(month,version,published_by) values(m.month,next_version,duty_private.current_member_id()) returning id into publication;
  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
  select publication,a.day,a.end_day,a.primary_id,a.secondary_id,a.manager_override,a.title,a.extra_points,a.saturday_extra_points,a.locked
  from public.duty_assignments a where a.publication_id=p_publication and a.id not in (f.id,s.id);

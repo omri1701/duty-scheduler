@@ -4,19 +4,19 @@ CREATE FUNCTION duty_private.resolve_swap(p_request uuid, p_action text, p_revis
     AS $$
 declare r public.duty_swap_requests; a public.duty_assignments; b public.duty_assignments;
  current_publication uuid; publication uuid; next_version integer; reason text:=trim(coalesce(p_override_reason,'')); side text; next_status text;
- party boolean:=false; joined boolean:=false;
+ party boolean:=false; me uuid:=duty_private.current_member_id(); joined boolean:=false;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_member() then raise exception 'Your membership is not approved' using errcode='42501'; end if;
  select * into r from public.duty_swap_requests where id=p_request for update;
  if r.id is null then raise exception 'Request not found' using errcode='42501'; end if;
  if p_action='cancel' then
-  if coalesce(r.proposed_by,r.requester_id)<>auth.uid() then raise exception 'Only the person who started the request can cancel' using errcode='42501'; end if;
+  if coalesce(r.proposed_by,r.requester_id) is distinct from me then raise exception 'Only the person who started the request can cancel' using errcode='42501'; end if;
  elsif p_action in ('accept','decline') then
   -- Each party answers only for their own side. A requester who asked for the
   -- swap consented by sending it; one an admin proposed it for must accept too.
   -- Temporary members have no account: an admin answers for them, and only for them.
-  party:=r.other_id=auth.uid() or (r.requester_id=auth.uid() and r.proposed_by is not null);
+  party:=coalesce(r.other_id=me or (r.requester_id=me and r.proposed_by is not null),false);
   if not party and not (duty_private.is_manager() and exists(select 1 from public.duty_members m where m.is_temporary
     and (m.id=r.other_id or (m.id=r.requester_id and r.proposed_by is not null)))) then
    raise exception 'Only the current counterpart can respond' using errcode='42501';
@@ -36,13 +36,13 @@ begin
   if r.status<>'awaiting_engineer' then raise exception 'Engineer consent already recorded'; end if;
   -- The caller's own side first; then an admin answers a temporary member's open side,
   -- the requester's before the other's (swapAnswerFor mirrors this order).
-  if r.other_id=auth.uid() and r.accepted_by is null then side:='other';
-  elsif r.requester_id=auth.uid() and r.proposed_by is not null and r.requester_accepted_at is null then side:='requester';
+  if r.other_id=me and r.accepted_by is null then side:='other';
+  elsif r.requester_id=me and r.proposed_by is not null and r.requester_accepted_at is null then side:='requester';
   elsif duty_private.is_manager() and r.proposed_by is not null and r.requester_accepted_at is null
    and exists(select 1 from public.duty_members where id=r.requester_id and is_temporary) then side:='requester';
   elsif duty_private.is_manager() and r.accepted_by is null
    and exists(select 1 from public.duty_members where id=r.other_id and is_temporary) then side:='other';
-  elsif r.other_id=auth.uid() or (r.requester_id=auth.uid() and r.proposed_by is not null) then
+  elsif r.other_id=me or (r.requester_id=me and r.proposed_by is not null) then
    raise exception 'Your answer is already recorded';
   elsif party then raise exception 'The counterpart changed. Refresh first.' using errcode='40001';
   else raise exception 'Only the current counterpart can respond' using errcode='42501'; end if;
@@ -63,7 +63,7 @@ begin
  end if;
  if p_action='approve' then
   update public.duty_months set publication_sequence=publication_sequence+1 where month=r.month returning publication_sequence into next_version;
-  insert into public.duty_publications(month,version,published_by) values(r.month,next_version,auth.uid()) returning id into publication;
+  insert into public.duty_publications(month,version,published_by) values(r.month,next_version,me) returning id into publication;
   insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
   select publication,d.day,d.end_day,case when d.id=a.id then r.other_id when d.id=b.id then r.requester_id else d.primary_id end,
    d.secondary_id,case when d.id in (a.id,b.id) then exists(
@@ -96,7 +96,7 @@ begin
   accepted_at=case when p_action='accept' and side='other' then now() else accepted_at end,
   requester_accepted_at=case when p_action='accept' and side='requester' then now() else requester_accepted_at end,
   resolved_at=case when p_action='accept' then null else now() end,
-  resolved_by=case when p_action='accept' then null else auth.uid() end,
+  resolved_by=case when p_action='accept' then null else me end,
   result_publication_id=publication,override_reason=case when p_action='approve' then reason else '' end where id=r.id;
  if publication is not null then
   update public.duty_months set current_publication_id=publication where month=r.month;
