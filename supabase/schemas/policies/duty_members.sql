@@ -1,1 +1,1 @@
-CREATE POLICY members_read ON public.duty_members FOR SELECT TO authenticated USING (((id = ( SELECT auth.uid() AS uid)) OR ( SELECT duty_private.is_manager() AS is_manager) OR ((status = 'approved'::text) AND ( SELECT duty_private.is_member() AS is_member))));
+CREATE POLICY members_read ON public.duty_members FOR SELECT TO authenticated USING (((auth_user_id = ( SELECT auth.uid() AS uid)) OR ( SELECT duty_private.is_manager() AS is_manager) OR ((status = 'approved'::text) AND ( SELECT duty_private.is_member() AS is_member))));

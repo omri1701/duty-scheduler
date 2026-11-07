@@ -8,6 +8,8 @@ begin
  select * into u from auth.users where id=auth.uid() and email_confirmed_at is not null and not is_anonymous;
  if u.id is null then raise exception 'A verified account is required' using errcode='42501'; end if;
  perform 1 from public.duty_workspace where id for update;
+ -- A sign-up linked to a former temporary member already has its row (under that member's id).
+ if exists(select 1 from public.duty_members where auth_user_id=u.id) then return; end if;
  insert into public.duty_members(id,email,name,seniority,color)
  values(u.id,lower(u.email),left(coalesce(nullif(trim(p_name),''),split_part(u.email,'@',1)),80),(select coalesce(max(seniority),0)+1 from public.duty_members),(array['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9','#dbb677','#f1c3ba','#a5dfac'])[(select count(*)::int%15+1 from public.duty_members)]) on conflict(id) do nothing;
  get diagnostics added=row_count;

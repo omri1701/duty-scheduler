@@ -50,8 +50,10 @@ try {
  // Non-weekend members add no_weekends (false: every existing member keeps taking weekends)
  // and weekends_from (null: no member has rejoined the weekend rotation yet).
  // Push adds language (null: nobody has chosen an app language yet).
+ // Linking a sign-up to a temporary member adds linked_user_id (null: no member is linked yet,
+ // so auth_user_id stays the member id).
  // Admin-proposed swaps add proposed_by and requester_accepted_at, NULL for existing requests.
- const expected={...before,members:before.members.map(member=>({...member,is_temporary:false,auth_user_id:member.id,no_weekends:false,weekends_from:null,language:null})),requests:before.requests.map(request=>({...request,proposed_by:null,requester_accepted_at:null})),duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)).map(duty=>({...duty,locked:false,saturday_extra_points:0})),revision:before.revision+2};
+ const expected={...before,members:before.members.map(member=>({...member,is_temporary:false,auth_user_id:member.id,no_weekends:false,weekends_from:null,language:null,linked_user_id:null})),requests:before.requests.map(request=>({...request,proposed_by:null,requester_accepted_at:null})),duties:JSON.parse(query(`select jsonb_agg(to_jsonb(a) order by id) from public.duty_assignments a where publication_id is not null or not exists(select 1 from public.duty_months m where m.status='published' and m.month=duty_private.duty_owner(a.day))`)).map(duty=>({...duty,locked:false,saturday_extra_points:0})),revision:before.revision+2};
  const ledgerQuery='select duty_private.compensation_view(duty_private.compensation_state())';
  let committedLedger;
  // Friday 31 December owns split Saturday 1 January, independently of row span.

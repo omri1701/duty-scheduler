@@ -1,1 +1,1 @@
-CREATE POLICY constraints_read ON public.duty_constraints FOR SELECT TO authenticated USING ((( SELECT duty_private.is_manager() AS is_manager) OR ((member_id = ( SELECT auth.uid() AS uid)) AND ( SELECT duty_private.is_member() AS is_member))));
+CREATE POLICY constraints_read ON public.duty_constraints FOR SELECT TO authenticated USING ((( SELECT duty_private.is_manager() AS is_manager) OR ((member_id = ( SELECT duty_private.current_member_id() AS current_member_id)) AND ( SELECT duty_private.is_member() AS is_member))));
