@@ -6,7 +6,7 @@ import {Logo} from '@/components/brand/logo';
 import {EnvironmentBadge,InspectionWarning} from '@/components/environment-indicator';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {StartupSkeleton} from './startup-skeleton';
-import {APP_NAME} from '@/lib/brand';
+import {APP_NAME, APP_TAGLINE} from '@/lib/brand';
 
 /** Sign-in, and the waiting / declined / inactive states before the workspace (owner round 4,
  * 2026-11-07): centred on phone and PC within the safe areas, a header with the logo, the name
@@ -28,7 +28,7 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
  },[remote.loading]);
  const pending=!!remote.user,rejected=remote.me?.status==='rejected',inactive=remote.me?.status==='approved'&&!remote.me.active,local=remote.environment?.target==='local';
  if(remote.loading)return <StartupSkeleton lang={lang} environment={remote.environment}/>;
- const tagline=t('Your team’s duty rota','לוח התורנויות של הצוות');
+ const tagline=APP_TAGLINE[lang];
  const title=rejected?t('Request declined','הבקשה נדחתה'):inactive?t('Membership inactive','החברות אינה פעילה'):t('Waiting for approval','ממתין לאישור');
  const copy=rejected?t('An admin declined this account.','מנהל דחה את החשבון הזה.'):inactive?t('An admin deactivated this membership.','מנהל השבית את החברות הזו.'):t('An admin approves new members. Check back soon.','מנהל מאשר חברים חדשים. כדאי לבדוק שוב בקרוב.');
  return <main ref={page} className="access-page" dir={lang==='he'?'rtl':'ltr'}>
@@ -41,7 +41,7 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
   <div className="access-stack">
    <header className="access-hero">
     <Logo size={56}/>
-    <span className="access-name">{APP_NAME.toLowerCase()}</span>
+    <span className="access-name">{APP_NAME}</span>
     {pending?<p className="access-tagline">{tagline}</p>:<h1 className="access-tagline">{tagline}</h1>}
    </header>
    <section className="access-card" aria-live="polite">

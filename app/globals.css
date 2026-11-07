@@ -63,6 +63,7 @@ textarea{resize:vertical;min-height:76px}
 .logo-letter{font-size:calc(var(--logo-size,36px)*.64);font-weight:800;letter-spacing:-.04em;margin-bottom:calc(var(--logo-size,36px)*.13);margin-inline-start:calc(var(--logo-size,36px)*-.08)}
 .logo-dot{position:absolute;width:calc(var(--logo-size,36px)*.2);height:calc(var(--logo-size,36px)*.2);border-radius:50%;background:var(--lime);inset-inline-end:calc(var(--logo-size,36px)*.16);bottom:calc(var(--logo-size,36px)*.2)}
 .wordmark{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font-weight:750;letter-spacing:-.02em;font-size:calc(var(--logo-size,30px)*.8);text-decoration:none}
+.wordmark-name,.access-name{font-family:var(--font-wordmark),var(--font);direction:ltr;unicode-bidi:isolate}
 .wordmark-context{font-weight:400;font-size:13px;color:var(--ink-3);letter-spacing:0}
 
 /* ---------- shell ---------- */

@@ -28,7 +28,7 @@ function validate(ics) {
   }
   assert.equal(stack.length, 0);
   assert.equal(lines[0], 'BEGIN:VCALENDAR'); assert.equal(lines.at(-1), 'END:VCALENDAR');
-  assert.ok(lines.includes('VERSION:2.0') && lines.some(l => l.startsWith('PRODID:')));
+  assert.ok(lines.includes('VERSION:2.0') && lines.includes('PRODID:-//MiKo//Personal duty feed//EN') && lines.some(l => l.startsWith('X-WR-CALNAME:MiKo · ')));
   const events = ics.replace(/\r\n /g, '').split('BEGIN:VEVENT').slice(1);
   const uids = new Set();
   for (const event of events) {
@@ -71,7 +71,7 @@ test('duties are all-day events on their Israel dates, with exclusive ends and s
   assert.equal(weekday.SUMMARY, 'Duty'); assert.equal(weekend.SUMMARY, 'Weekend duty');
   assert.equal(weekday.UID, `20261102-primary-${KEY}@duty-scheduler`);
   assert.equal(weekday.DTSTAMP, '20261030T080000Z');
-  assert.match(weekend.DESCRIPTION, /^Fri 6 Nov 09:00 – Sun 8 Nov 09:00 \(Israel time\)\\n1 point\\nOpen Duty Scheduler: https:\/\/duty\.example\.test\/$/);
+  assert.match(weekend.DESCRIPTION, /^Fri 6 Nov 09:00 – Sun 8 Nov 09:00 \(Israel time\)\\n1 point\\nOpen MiKo: https:\/\/duty\.example\.test\/$/);
   assert.equal(weekend.URL, APP);
   // Rendering the same feed twice gives the same bytes (stable ETag); an edit keeps the UID.
   assert.equal(buildCalendar(feed([duty('2026-11-06', '2026-11-08')]), APP), buildCalendar(feed([duty('2026-11-06', '2026-11-08')]), APP));
@@ -109,7 +109,7 @@ test('Hebrew feeds use Hebrew names, dates and points, still valid UTF-8 within 
   assert.equal(list[2].SUMMARY, 'חג\\, כיסוי מיוחד\\; ארוך מאוד מאוד מאוד מאוד מאוד · 3 נקודות');
   assert.equal(list[3].SUMMARY, 'כיסוי חירום');
   assert.match(list[1].DESCRIPTION, /שעון ישראל/); assert.match(list[1].DESCRIPTION, /נקודה אחת/);
-  assert.ok(ics.includes('X-WR-CALNAME:התורנויות שלי\r\n'));
+  assert.ok(ics.includes('X-WR-CALNAME:MiKo · התורנויות שלי\r\n'));
 });
 
 test('an empty feed is still a valid calendar, and malformed RPC data is refused', () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {PROJECTS,LOCAL_API_URL,resolveEnvironment,validatePublicKey,validateDevOrigin,configuredDevOrigin,configuredLocalTunnel} from '../lib/supabase/environment.ts';
+import {PROJECTS,LOCAL_API_URL,HOSTED_ORIGINS,resolveEnvironment,validatePublicKey,validateDevOrigin,configuredDevOrigin,configuredLocalTunnel} from '../lib/supabase/environment.ts';
 import {selectConfiguration} from '../scripts/dev-environment.mjs';
 
 test('all five display cases derive from the project URL and runtime origin',()=>{
@@ -29,6 +29,24 @@ test('unknown projects, unsafe URLs and mismatched hosting fail closed',()=>{
  assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://unknown.vercel.app'));
  assert.equal(resolveEnvironment(PROJECTS.prod,'https://duty-production-immutable.vercel.app','https://duty-production-immutable.vercel.app').badge,null);
  assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://duty-scheduler-dev.vercel.app','https://duty-scheduler-dev.vercel.app'));
+});
+
+test('MiKo and the old duty-scheduler hosts both resolve to their own environment, never the other one',()=>{
+ for(const origin of ['https://duty-scheduler-dev.vercel.app','https://miko-dev.vercel.app']){
+  assert.deepEqual([resolveEnvironment(PROJECTS.dev,origin).badge,resolveEnvironment(PROJECTS.dev,origin).readOnly],['DEV',false]);
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(LOCAL_API_URL,origin),/do not match/);
+ }
+ for(const origin of ['https://duty-scheduler-prod.vercel.app','https://miko.vercel.app','https://miko-prod.vercel.app']){
+  assert.deepEqual([resolveEnvironment(PROJECTS.prod,origin).badge,resolveEnvironment(PROJECTS.prod,origin).readOnly],[null,false]);
+  assert.throws(()=>resolveEnvironment(PROJECTS.dev,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(PROJECTS.dev,origin,origin),/do not match/);
+ }
+ // Look-alikes are not hosted origins: wrong scheme, a port, or a different name.
+ for(const origin of ['http://miko.vercel.app','https://miko.vercel.app:8443','https://miko-preview.vercel.app','https://miko.vercel.app.evil.example','https://xmiko-dev.vercel.app'])
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin));
+ assert.deepEqual(Object.keys(HOSTED_ORIGINS),['dev','prod']);
 });
 
 test('mode selection rejects mismatches and requires fresh Production confirmation',()=>{

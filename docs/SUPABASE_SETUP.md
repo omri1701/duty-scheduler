@@ -1,9 +1,12 @@
 # Supabase setup
 
 Frankfurt Production: **Duty Scheduler**, `hpszwgnwxtxyxpcaivgj`, `eu-central-1`,
-`https://duty-scheduler-prod.vercel.app`. Frankfurt Development: **Duty Scheduler
+`https://duty-scheduler-prod.vercel.app` and `https://miko.vercel.app` (or
+`https://miko-prod.vercel.app`). Frankfurt Development: **Duty Scheduler
 Dev**, `qhndiuahuxczujxxitsm`, `eu-central-1`,
-`https://duty-scheduler-dev.vercel.app`. Accounts, OAuth configuration and data stay
+`https://duty-scheduler-dev.vercel.app` and `https://miko-dev.vercel.app`. The app is
+named MiKo; the old domains keep working (`lib/supabase/environment.ts`
+`HOSTED_ORIGINS`); keep their redirect URLs when adding the new ones. Accounts, OAuth configuration and data stay
 separate. See [release workflow](DEPLOYMENT.md) for database-first CI/CD, scoped
 credentials, Production approval and recovery. Never reset these hosted projects.
 Native Next.js needs only a project URL and publishable key; no service-role key.
@@ -273,17 +276,19 @@ In **Authentication → URL Configuration** set:
 
 | Setting | Value |
 |---|---|
-| Production Site URL | `https://duty-scheduler-prod.vercel.app` |
-| Production allowed redirect URL | `https://duty-scheduler-prod.vercel.app/` |
+| Production Site URL | `https://miko.vercel.app` (was `https://duty-scheduler-prod.vercel.app`) |
+| Production allowed redirect URLs | `https://miko.vercel.app/` and `https://duty-scheduler-prod.vercel.app/` |
 
-Development uses `https://duty-scheduler-dev.vercel.app` and its exact trailing-slash
-return, plus localhost. These are never added to Production.
+The app sends each browser back to its own origin, so every hosted domain needs its
+exact trailing-slash redirect URL. Local Production inspection always returns through
+`https://duty-scheduler-prod.vercel.app/`; keep that one. Development uses
+`https://miko-dev.vercel.app/` and `https://duty-scheduler-dev.vercel.app/`, plus localhost. These are never added to Production.
 
 ## 3. First login and explicit admin promotion
 
 After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
-Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their Duty session without Google OAuth. Signing out clears the Duty session without signing out of Google; choosing a different account still requires that identity's own membership approval.
+Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their MiKo session without Google OAuth. Signing out clears the MiKo session without signing out of Google; choosing a different account still requires that identity's own membership approval.
 
 The first account is **not** automatically made admin. Confirm the environment/project and the owner's actual `auth.users.id`, then execute [the operator-only first-admin script](../supabase/admin/promote-first-admin.sql). It verifies the exact confirmed Google identity and pending profile, refuses an existing admin, and atomically promotes the row and increments `duty_workspace.revision` under its lock. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
