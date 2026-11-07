@@ -2,7 +2,7 @@
 
 ## 1. Purpose, authority and scope
 
-This is the product and engineering contract for the Duty Scheduler generation
+This is the product and engineering contract for the MiKo (formerly Duty Scheduler) generation
 redesign. The isolated TypeScript engine in `lib/scheduling` implements canonical
 duties, confirmed-target generation, independent validation and solver execution.
 See [engine API, tests and benchmarks](GENERATION_ENGINE.md), the isolated

@@ -18,7 +18,7 @@ for (const identity of ['signed-out', 'pending', 'rejected', 'inactive'] as cons
   await openApp(identity);
   if (lang === 'he') await page.getByRole('button', {name: 'עברית', exact: true}).click();
   await expect(page.locator('.access-page')).toHaveAttribute('dir', lang === 'he' ? 'rtl' : 'ltr');
-  await expect(page.locator('.access-hero')).toContainText(lang === 'he' ? 'לוח התורנויות של הצוות' : 'Your team’s duty rota');
+  await expect(page.locator('.access-hero')).toContainText(lang === 'he' ? 'מי כונן?' : 'Who’s on call?');
   const c = await centring(page);
   expect(Math.abs(c.dx), 'horizontally centred').toBeLessThanOrEqual(1);
   expect(Math.abs(c.dy), 'vertically centred').toBeLessThanOrEqual(1);
@@ -31,7 +31,7 @@ test('the language picked before sign-in survives the round trip and becomes the
   await openApp('signed-out');
   await page.getByRole('button', {name: 'עברית', exact: true}).click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-  await expect(page.getByRole('heading', {level: 1})).toHaveText('לוח התורנויות של הצוות');
+  await expect(page.getByRole('heading', {level: 1})).toHaveText('מי כונן?');
   await expect(page.getByRole('button', {name: 'עברית', exact: true})).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => localStorage.getItem('duty-sign-in-language'))).toBe('he');
   // The fixture clears storage on every load; a real browser keeps it across the Google redirect.

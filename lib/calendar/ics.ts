@@ -65,11 +65,11 @@ const plusDays = (day: string, days: number) => new Date(time(day) + days * DAY_
 const standardPoints = (s: Shape) => (s === 'friday' || s === 'saturday' ? 0.5 : 1);
 
 const LABELS = {
-  en: {calendar: 'My duties', description: 'Your own published duties from Duty Scheduler.', day: 'Duty', weekend: 'Weekend duty',
-    friday: 'Weekend duty (Friday)', saturday: 'Weekend duty (Saturday)', emergency: 'Emergency cover', israel: 'Israel time', open: 'Open Duty Scheduler',
+  en: {calendar: 'MiKo · My duties', description: 'Your own published duties from MiKo.', day: 'Duty', weekend: 'Weekend duty',
+    friday: 'Weekend duty (Friday)', saturday: 'Weekend duty (Saturday)', emergency: 'Emergency cover', israel: 'Israel time', open: 'Open MiKo',
     points: (n: number) => (n === 1 ? '1 point' : `${number(n)} points`), locale: 'en-GB'},
-  he: {calendar: 'התורנויות שלי', description: 'התורנויות שפורסמו לך בלוח התורנויות.', day: 'תורנות', weekend: 'תורנות סוף שבוע',
-    friday: 'תורנות סוף שבוע (שישי)', saturday: 'תורנות סוף שבוע (שבת)', emergency: 'כיסוי חירום', israel: 'שעון ישראל', open: 'לפתיחת לוח התורנויות',
+  he: {calendar: 'MiKo · התורנויות שלי', description: 'התורנויות שפורסמו לך ב־MiKo.', day: 'תורנות', weekend: 'תורנות סוף שבוע',
+    friday: 'תורנות סוף שבוע (שישי)', saturday: 'תורנות סוף שבוע (שבת)', emergency: 'כיסוי חירום', israel: 'שעון ישראל', open: 'לפתיחת MiKo',
     points: (n: number) => (n === 1 ? 'נקודה אחת' : `${number(n)} נקודות`), locale: 'he-IL'},
 } as const;
 
@@ -77,7 +77,7 @@ function handover(day: string, language: FeedLanguage) {
   return new Intl.DateTimeFormat(LABELS[language].locale, {weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC'}).format(new Date(time(day)));
 }
 
-/** One VEVENT's content lines. The UID is stable for the same member, start date and role,
+/** One VEVENT's content lines. The UID (its @duty-scheduler domain kept through the MiKo rename) is stable for the same member, start date and role,
  * so a changed duty replaces its event and a swapped-away duty simply disappears. */
 export function eventLines(duty: FeedDuty, feed: Feed, appUrl: string): string[] {
   const l = LABELS[feed.language], s = shape(duty), emergency = duty.role === 'emergency';
@@ -100,7 +100,7 @@ export function eventLines(duty: FeedDuty, feed: Feed, appUrl: string): string[]
 /** The complete iCalendar object: CRLF line ends, folded lines, a final CRLF. */
 export function buildCalendar(feed: Feed, appUrl: string): string {
   const l = LABELS[feed.language];
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Duty Scheduler//Personal duty feed//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MiKo//Personal duty feed//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     `NAME:${escapeText(l.calendar)}`, `X-WR-CALNAME:${escapeText(l.calendar)}`, `X-WR-CALDESC:${escapeText(l.description)}`,
     'X-WR-TIMEZONE:Asia/Jerusalem', 'REFRESH-INTERVAL;VALUE=DURATION:PT15M', 'X-PUBLISHED-TTL:PT15M',
     ...feed.duties.flatMap(duty => eventLines(duty, feed, appUrl)), 'END:VCALENDAR'];

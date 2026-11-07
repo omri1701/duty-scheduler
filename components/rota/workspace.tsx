@@ -196,7 +196,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   function exportBackup() {
     const a = document.createElement('a');
     const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}));
-    a.href = url; a.download = 'duty-team-backup.json'; a.click();
+    a.href = url; a.download = 'miko-team-backup.json'; a.click();
     URL.revokeObjectURL(url);
   }
   useEffect(() => {

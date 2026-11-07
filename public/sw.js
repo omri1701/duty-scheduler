@@ -42,7 +42,7 @@ self.addEventListener('push', event => {
   const text = value => typeof value === 'string' ? value.slice(0, 200) : '';
   const lang = data.lang === 'he' ? 'he' : 'en';
   const url = typeof data.url === 'string' && LINK.test(data.url) ? data.url : '/';
-  event.waitUntil(self.registration.showNotification(text(data.title) || 'Duty', {
+  event.waitUntil(self.registration.showNotification(text(data.title) || 'MiKo', {
     body: text(data.body), lang, dir: lang === 'he' ? 'rtl' : 'ltr', tag: text(data.tag) || undefined,
     icon: '/icon-192.png', badge: '/icon-192.png', data: {url},
   }));
