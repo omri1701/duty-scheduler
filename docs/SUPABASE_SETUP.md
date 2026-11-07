@@ -60,6 +60,12 @@ exactly into the month's duties, so a weekend split by hand (half-point duties) 
 saved plan as `invalid-ordinary-baseline`. A new or changed baseline is still checked as the month's
 ordinary fit. No table, data or grant changes; `allocation-fit.mjs` covers both paths.
 
+Migration `20261107001755_split_weekend_plans_as_weekend.sql` (decision 2026-11-07) redefines
+`duty_private.confirm_allocation` again: a split weekend, locked or not, never changes planning, so
+the ordinary-baseline checks and `allocation_uneven` see each split as the weekend it came from (its
+halves' sum), exactly as the browser's planning context does. Generate's own checks
+(`generation_validate`, `save_generation`) keep the real duties. No table, data or grant changes.
+
 Hosted Development activation requires the normal reviewed database-first release
 after merge into `develop`; this feature PR does not apply hosted migrations.
 

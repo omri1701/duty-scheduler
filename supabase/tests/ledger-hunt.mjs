@@ -42,8 +42,10 @@ function firstPlacement() {
   let weekend = 0, weekday = 0;
   return Object.fromEntries(dutyList(M1).map(d => [d.id, {primary: ids[d.weekendId ? weekend++ : 6 + weekday++ % 7]}]));
 }
+/** Planning weights: a split weekend counts as the weekend it came from (decision 2026-11-07). */
+const planWeights = list => [...list.reduce((w, d) => w.set(d.weekendId ?? d.id, (w.get(d.weekendId ?? d.id) ?? 0) + d.units), new Map()).values()];
 /** The ordinary baseline: the cheapest exact partition, larger shares to the first members. */
-const fairOf = (m, extra) => {const shares = fitPartition(dutyList(m, extra).map(d => d.units), ids.length).sort((a, b) => b - a);
+const fairOf = (m, extra) => {const shares = fitPartition(planWeights(dutyList(m, extra)), ids.length).sort((a, b) => b - a);
   return Object.fromEntries(ids.map((id, i) => [id, shares[i]]));};
 function draftFor(m, placed, key, repay, extra) {
   const list = dutyList(m, extra), fair = fairOf(m, extra);
