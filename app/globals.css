@@ -60,7 +60,7 @@ textarea{resize:vertical;min-height:76px}
 .member-tint{background:var(--member-bg);color:var(--member-ink)}
 
 /* ---------- brand ---------- */
-.logo{display:inline-flex;align-items:flex-end;justify-content:center;width:var(--logo-size,36px);height:var(--logo-size,36px);border-radius:calc(var(--logo-size,36px)*.3);background:var(--brand);color:#fff;line-height:1;position:relative;flex-shrink:0;overflow:hidden;box-shadow:inset 0 -2px 0 rgba(0,0,0,.12)}
+.logo{direction:ltr;display:inline-flex;align-items:flex-end;justify-content:center;width:var(--logo-size,36px);height:var(--logo-size,36px);border-radius:calc(var(--logo-size,36px)*.3);background:var(--brand);color:#fff;line-height:1;position:relative;flex-shrink:0;overflow:hidden;box-shadow:inset 0 -2px 0 rgba(0,0,0,.12)}
 .logo-letter{font-size:calc(var(--logo-size,36px)*.64);font-weight:800;letter-spacing:-.04em;margin-bottom:calc(var(--logo-size,36px)*.13);margin-inline-start:calc(var(--logo-size,36px)*-.08)}
 .logo-dot{position:absolute;width:calc(var(--logo-size,36px)*.2);height:calc(var(--logo-size,36px)*.2);border-radius:50%;background:var(--lime);inset-inline-end:calc(var(--logo-size,36px)*.16);bottom:calc(var(--logo-size,36px)*.2)}
 .wordmark{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font-weight:750;letter-spacing:-.02em;font-size:calc(var(--logo-size,30px)*.8);text-decoration:none}
@@ -370,6 +370,10 @@ textarea{resize:vertical;min-height:76px}
 /* ---------- month bar, notes, slide ---------- */
 .month-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 0 12px}
 .month-title{display:flex;align-items:center;gap:2px;min-width:0}
+/* PC: the chevrons' target is 46px with -1px margins, so it measures at least 44px at any browser zoom (rounding
+   there reported 43.99997) while the bar's layout and the transparent ghost button look unchanged. Phones keep
+   their fixed 44px grid columns. */
+@media(min-width:601px){.month-title>button{flex:none;min-width:46px;min-height:46px;margin:-1px}}
 .month-title h2{display:flex;align-items:center;gap:8px;min-width:0;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2;text-align:center;padding:0 4px;white-space:nowrap}
 .month-status{vertical-align:middle}
 .month-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-inline-start:auto}
@@ -782,24 +786,40 @@ textarea{resize:vertical;min-height:76px}
 .offline-pill svg{width:13px;height:13px}
 
 /* ---------- access ---------- */
-.access-page{min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg)}
-.access-card{width:min(100%,420px);padding:28px 28px 30px;background:var(--surface);border-radius:var(--radius-xl);display:grid;gap:16px;box-shadow:var(--shadow-card);animation:fade-up 300ms var(--ease)}
-.access-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
-.access-brand{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:800;letter-spacing:-.02em}
-.access-tools{display:flex;align-items:center;gap:6px}
-.access-state{display:grid;place-items:center;width:56px;height:56px;border-radius:18px;background:var(--warn-soft);color:var(--warn)}
+/* Sign-in and its states (owner round 4): one centred column inside the safe areas. --access-h is the
+   height the page opened with (access-screen.tsx), so the phone keyboard never re-centres it. */
+.access-page{position:relative;min-height:var(--access-h,100dvh);display:grid;place-items:center;padding:calc(64px + var(--sat)) calc(16px + var(--sar)) calc(32px + var(--sab)) calc(16px + var(--sal));background:var(--bg);overflow:hidden}
+.access-corner{position:absolute;top:calc(14px + var(--sat));inset-inline:calc(16px + var(--sal)) calc(16px + var(--sar));display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.access-language{display:inline-flex;padding:3px;border-radius:999px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line)}
+.access-language button{min-height:30px;padding:0 12px;border:0;border-radius:999px;background:none;color:var(--ink-3);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background 160ms ease,color 160ms ease}
+.access-language button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-card)}
+.access-language button:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.access-stack{width:min(100%,400px);display:grid;gap:22px;animation:fade-up 300ms var(--ease)}
+.access-hero{position:relative;isolation:isolate;display:grid;justify-items:center;gap:8px;text-align:center}
+/* Home's hero glow, soft and behind the mark. */
+.access-hero::before{content:"";position:absolute;z-index:-1;top:-34px;left:50%;width:min(320px,88vw);height:200px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--hero-glow,var(--brand)) var(--hero-glow-mix),transparent),transparent);filter:blur(18px);opacity:.5;pointer-events:none}
+:root[data-theme=dark] .access-hero::before{opacity:.75}
+.access-name{font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:4px}
+.access-tagline{font-size:17px;font-weight:500;line-height:1.4;color:var(--ink-3);letter-spacing:0}
+.access-card{padding:24px;background:var(--surface);border-radius:var(--radius-xl);display:grid;gap:14px;box-shadow:var(--shadow-card);justify-items:stretch;text-align:center}
+.access-state{justify-self:center;display:grid;place-items:center;width:52px;height:52px;border-radius:17px;background:var(--warn-soft);color:var(--warn)}
 .access-state[data-tone=danger]{background:var(--danger-soft);color:var(--danger)}
-.access-state svg{width:26px;height:26px}
-.access-card h1{font-size:28px;line-height:1.15;letter-spacing:-.02em;font-weight:800}
-.access-card p{font-size:16px;line-height:1.5;color:var(--ink-3)}
-.access-card small{font-size:14px;overflow-wrap:anywhere;color:var(--ink-3)}
-.access-card>button,.access-actions>button{min-height:48px}
-.access-actions{display:flex;gap:10px;flex-wrap:wrap}
-.access-actions>button{flex:1}
-.local-login{display:grid;gap:14px;min-width:0}
-.local-login input{width:100%;min-width:0}
+.access-state svg{width:24px;height:24px}
+.access-card h1{font-size:24px;line-height:1.2;letter-spacing:-.02em;font-weight:800}
+.access-card p{font-size:15px;line-height:1.5;color:var(--ink-3)}
+.access-email{font-size:14px;overflow-wrap:anywhere;color:var(--ink-3)}
+.access-main{min-height:50px;width:100%}
+/* Everything but the main action is quieter text below it. */
+.access-card .access-quiet{font-size:13px;line-height:1.5;color:var(--ink-3)}
+.access-quiet-action{justify-self:center;display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 10px;border:0;border-radius:10px;background:none;color:var(--ink-3);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.access-quiet-action:hover{color:var(--ink)}
+.access-quiet-action:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.access-quiet-action svg{width:16px;height:16px}
+.access-inspection{padding-top:14px;border-top:1px solid var(--line);text-align:start}
+.local-login{display:grid;gap:14px;min-width:0;text-align:start}
+.local-login input{width:100%;min-width:0;scroll-margin-block:96px}
 .local-login button{min-height:46px}
-@media(max-width:600px){.access-page{padding:16px;align-items:end}.access-card{padding:24px 20px calc(24px + var(--sab))}}
+@media(max-width:600px){.access-card{padding:20px}.access-name{font-size:28px}}
 /* ---------- environment ---------- */
 .environment-badge{display:inline-flex;align-items:center;flex-shrink:0;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;line-height:1.4;letter-spacing:.05em;white-space:nowrap}
 .environment-local{background:var(--info-soft);color:var(--info)}

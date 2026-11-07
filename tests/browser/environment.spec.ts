@@ -1,5 +1,17 @@
 import {test,expect,duty,openDutySheet} from './fixtures';
 import {PROJECTS} from '../../lib/supabase/environment';
+import {existsSync} from 'node:fs';
+import type {Locator} from '@playwright/test';
+
+/** Playwright attaches no candidate when a reference is missing; attach it so the visual review lists it for approval. */
+async function shot(locator:Locator,name:string){
+ if(!existsSync(test.info().snapshotPath(name))){
+  const path=test.info().outputPath(name.replace(/\.png$/,'-actual.png'));
+  await locator.screenshot({path,animations:'disabled',caret:'hide'});
+  await test.info().attach(name.replace(/\.png$/,'-actual.png'),{path,contentType:'image/png'});
+ }
+ await expect.soft(locator).toHaveScreenshot(name);
+}
 
 for(const {name,url,origin,badge} of [
  {name:'localhost LOCAL',url:'http://127.0.0.1:48321',origin:'http://localhost:8787',badge:'LOCAL'},
@@ -13,10 +25,10 @@ for(const {name,url,origin,badge} of [
   await openApp('signed-out');
   const indicator=page.locator('.environment-badge');
   if(badge)await expect(indicator).toHaveText(badge);else await expect(indicator).toHaveCount(0);
-  await expect.soft(page.locator('.access-card')).toHaveScreenshot(`${name.replaceAll(' ','-')}-login.png`);
+  await shot(page.locator('.access-card'),`${name.replaceAll(' ','-')}-login.png`);
   await openApp('admin');
   if(badge)await expect(indicator).toHaveText(badge);else await expect(indicator).toHaveCount(0);
-  await expect.soft(page.locator('.hdr')).toHaveScreenshot(`${name.replaceAll(' ','-')}-workspace.png`);
+  await shot(page.locator('.hdr'),`${name.replaceAll(' ','-')}-workspace.png`);
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   expect(overflow).toBe(false);
   if(badge==='PROD'){
