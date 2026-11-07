@@ -16,7 +16,8 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
   // identity, so a seniority reorder after confirmation re-pairs the credit under
   // the current order instead of trapping the month.
   if (draft.changes && typeof draft.changes === 'object' && draft.baselineUnits && typeof draft.baselineUnits === 'object') {
-    draft.uneven = unevenTransfers(input.seniority, c.prepared.duties.map(d => d.units), draft.baselineUnits, draft.changes);
+    // A split weekend counts as the weekend it came from (decision 2026-11-07).
+    draft.uneven = unevenTransfers(input.seniority, c.weights, draft.baselineUnits, draft.changes);
     // A plan saved before hand edits were stored: infer them, so reopening keeps
     // automatic points automatic instead of freezing every changed member.
     if (draft.hand === undefined && Array.isArray(draft.pairs)) draft.hand = inferHand(c, input.seniority, draft);
@@ -26,7 +27,8 @@ export function reviewAllocation(input: AllocationInput, saved: AllocationDraft)
 }
 
 /** A confirmed plan whose repayments today's ledger no longer offers (review of #62): a month
- * published since repays the same debt. Publish waits with this before the click instead of
+ * published since repays the same debt, or deleting the month's only version reversed what it
+ * booked (decision 2026-11-07). Publish waits with this before the click instead of
  * failing after it; opening the plan proposes again. A copy keeps its provenance (the RPC decides). */
 export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
   try {reviewAllocation(input, saved); return false;}

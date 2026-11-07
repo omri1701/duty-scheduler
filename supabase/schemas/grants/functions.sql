@@ -123,9 +123,11 @@ REVOKE ALL ON FUNCTION duty_private.compensation_now() FROM PUBLIC, anon, authen
 REVOKE ALL ON FUNCTION duty_private.compensation_publication(text, uuid, jsonb, boolean, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reconcile(jsonb, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_record(jsonb, text, text) FROM PUBLIC, anon, authenticated, service_role;
-REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_replanned(jsonb, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_replan_step(jsonb, jsonb, text, bigint, text, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.compensation_release_held(before jsonb, s jsonb, prefix text, instant bigint, actor text, reason text, commit boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_reserve(jsonb, jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_segment(jsonb, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION duty_private.compensation_slice(jsonb, bigint, bigint) FROM PUBLIC, anon, authenticated, service_role;
@@ -173,6 +175,8 @@ REVOKE ALL ON FUNCTION public.duty_save_generation(p_month text, p_assignments j
 GRANT EXECUTE ON FUNCTION public.duty_save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) TO authenticated;
 
 REVOKE ALL ON FUNCTION duty_private.allocation_baseline(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_kept_baseline(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.allocation_better_baseline(weights integer[], bins integer[], ceiling_cost bigint, quantum integer, total integer) FROM PUBLIC, anon, authenticated, service_role;
 

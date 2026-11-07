@@ -68,7 +68,10 @@ weighted feasibility, creditor relief and confirmed targets. This core does not
 claim that a candidate list is a feasibility proof or choose monthly targets.
 
 Changing normalization can invalidate a reservation. It is then held for explicit
-review rather than silently rebound to another counterparty or over-settled.
+review rather than silently rebound to another counterparty or over-settled. The checked
+publication and re-plan paths never leave it there (decision 2026-11-07): `releaseHeld`
+(`duty_private.compensation_release_held`) releases a repayment their events left held and books
+its planned work once as a `claim` the other way.
 Freezing a current endpoint prevents projection/payment; an inactive intermediary
 occurring only in previously normalized provenance does not. A completion during
 a freeze remains held after reactivation. `release` cancels held/pending capacity;
@@ -110,7 +113,10 @@ an earlier version also carries `revert: true` (decision 2026-11-06) and is the 
 version's exact undo: capacity its intents moved returns without an ordinary debt, each
 Temporary leg is reversed, and a repayment it cancelled by a Permanent move counts as done
 (its creditor owes the debtor the same units). Deletions recorded before that replay as
-they were booked. Historical
+they were booked. Deleting a month's only version (`after: null`) is preceded by the
+re-plan corrections of every live lot the month booked (decision 2026-11-07), so no
+version means no debt, except worked or already-used points; a later month's pending
+repayment of those lots is released and its work booked as a claim the other way. Historical
 corrections use explicit accounting operations, not a retroactive rota editor.
 
 `projected.candidates` additionally exposes the simulated unreserved active slices,

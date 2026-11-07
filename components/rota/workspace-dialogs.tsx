@@ -83,6 +83,7 @@ export function SpecialDutyDialog({form, month, lang, t, fmt}: DialogCopy & {for
       <span>{t('Friday and Saturday: ½ + extra each.', 'שישי ושבת: ½ + תוספת לכל יום.')}</span>
       <span>{specialStart && specialEnd && `${fmt(specialStart)} 09:00 → ${fmt(addDays(specialEnd, 1))} 09:00`}</span>
     </div>
+    <p className="muted-copy">{t('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.', 'תורנויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.')}</p>
   </Sheet>;
 }
 

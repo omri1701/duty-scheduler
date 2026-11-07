@@ -20,7 +20,7 @@ export const PALETTE: readonly MemberColor[] = [
   {hex: '#f0e68c', name: {en: 'Lemon', he: 'לימון'}, light: {bg: '#f0e68c', ink: '#5a5500'}, dark: {bg: '#787212', ink: '#fbf7c2'}},
   {hex: '#cfe7a2', name: {en: 'Lime', he: 'ליים'}, light: {bg: '#cfe7a2', ink: '#355a0b'}, dark: {bg: '#4d7a1a', ink: '#e8f7cd'}},
   {hex: '#b4e1b0', name: {en: 'Green', he: 'ירוק'}, light: {bg: '#b4e1b0', ink: '#1f5a24'}, dark: {bg: '#2f7a37', ink: '#dcf5da'}},
-  {hex: '#a9e3cf', name: {en: 'Mint', he: 'מנטה'}, light: {bg: '#a9e3cf', ink: '#0f5a46'}, dark: {bg: '#1f7a62', ink: '#d4f5ea'}},
+  {hex: '#a9e3cf', name: {en: 'Mint', he: 'מנטה'}, light: {bg: '#a9e3cf', ink: '#0f5a46'}, dark: {bg: '#1b7059', ink: '#d4f5ea'}},
   {hex: '#a6dfe0', name: {en: 'Teal', he: 'טורקיז'}, light: {bg: '#a6dfe0', ink: '#0c5558'}, dark: {bg: '#1a7275', ink: '#d2f4f4'}},
   {hex: '#b3dcf3', name: {en: 'Sky', he: 'תכלת'}, light: {bg: '#b3dcf3', ink: '#0f4a70'}, dark: {bg: '#1f6a97', ink: '#d9eefb'}},
   {hex: '#bccff5', name: {en: 'Blue', he: 'כחול'}, light: {bg: '#bccff5', ink: '#1f3a85'}, dark: {bg: '#3353a8', ink: '#dfe7fb'}},

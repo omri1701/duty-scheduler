@@ -147,7 +147,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ...(confirmedTotals?.rows.filter(r => r.assigned !== r.target).map(r => t(`${nickname(r.id)}: ${r.assigned / 2} scheduled, plan says ${r.target / 2}`, `${nickname(r.id)}: שובצו ${r.assigned / 2}, בתוכנית ${r.target / 2}`)) ?? []),
     ...(unassigned > 0 ? [t(`${unassigned} without a primary`, `${unassigned} ללא שיבוץ`)] : []),
     ...(captured?.allocation && !captured.sourcePublicationId && allocation.replanBlocked ? [userMessage(allocation.replanBlocked, t)] : []),
-    ...(taken ? [t('A month published since this plan was confirmed repays the same debt. Open the plan and confirm it again', 'חודש שפורסם אחרי שהתוכנית אושרה מחזיר את אותו חוב. יש לפתוח את התוכנית ולאשר אותה שוב')] : []),
+    ...(taken ? [t('The debts this plan repays changed since it was confirmed (a month was published or a version deleted). Open the plan and confirm it again', 'החובות שהתוכנית מחזירה השתנו מאז שאושרה (פורסם חודש או נמחקה גרסה). יש לפתוח את התוכנית ולאשר אותה שוב')] : []),
   ] : [];
   const {selected, setSelected} = draft.editor;
   const interactions = useCalendarInteractions({
@@ -276,9 +276,12 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
     : publication ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
   const selectedDuty = selectedDay ? calendarBlocks.find(b => b.start <= selectedDay && selectedDay < b.end) : undefined;
-  // The chevrons and the heading drag play the calendar's month transition (month-stage.tsx).
-  const stage = useRef<MonthStageHandle>(null);
+  // The chevrons play the calendar's month transition (month-stage.tsx). The name and the calendar
+  // swipe separately (owner round 4): a name swipe refreshes the calendar in place, blurred to
+  // sharp; a calendar swipe brings the new name in the same way when it lands.
+  const stage = useRef<MonthStageHandle>(null), [nameArrival, setNameArrival] = useState<'roll' | 'blur'>('roll');
   const navigateMonth = (n: number) => {if (stage.current) stage.current.go(n); else changeMonth(n);};
+  const swipeMonth = (n: number) => {stage.current?.arrive(); changeMonth(n);};
   // The neighbouring month while it slides in: the same calendar from the data already loaded (the
   // snapshot holds every month), as it will look once it lands, minus the blur.
   const neighbour = (m: string) => {
@@ -324,12 +327,11 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
               }}/>
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>
-            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={navigateMonth} primary={primary} menu={menu}
-              gesture={{drag: dx => stage.current?.drag(dx), release: (dx, speed, threshold) => stage.current?.release(dx, speed, threshold)}}>
+            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={navigateMonth} onSwipe={swipeMonth} arrival={nameArrival} primary={primary} menu={menu}>
               {reopened && <Segmented label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
                 options={[{value: 'draft', label: t('Draft', 'טיוטה')}, {value: 'published', label: t('Published', 'פורסם')}]}/>}
             </MonthBar>
-            <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={changeMonth} preview={neighbour}>
+            <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={(n, swiped) => {setNameArrival(swiped ? 'blur' : 'roll'); changeMonth(n);}} preview={neighbour}>
                 <WorkspaceCalendar state={state} calendarState={calendarState} calendarBlocks={calendarBlocks} dateCells={dateCells} today={today} month={month} lang={lang} t={t} fmt={fmt}
                   nickname={nickname} meId={meId} readOnly={remote.readOnly} requesting={requesting} interactions={interactions} onSelect={selectDay}
                   selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices} flashDays={flashDays}/>

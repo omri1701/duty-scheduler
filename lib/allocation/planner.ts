@@ -41,7 +41,7 @@ export type Retained = {hand: Hand; pairs: Pair[]; baselineUnits?: Record<string
  * retained baseline that is the same partition keeps its arrangement, so a
  * seniority reorder never forces a different ordinary baseline. */
 export function proposeAllocation(input: AllocationInput, retained?: Retained) {
-  const c = context(input), g = grain(c), ceiling = ceilings(c), weights = c.prepared.duties.map(d => d.units);
+  const c = context(input), g = grain(c), ceiling = ceilings(c), weights = c.weights;
   const shares = fitPartition(weights, c.ids.length);
   const newest = [...input.seniority].reverse();
   // A step never leaves the month unable to give everyone exactly its points (decision
@@ -181,10 +181,11 @@ export function proposeAllocation(input: AllocationInput, retained?: Retained) {
  * duties kept by their member (duty weights only; calendar rules are Generate's). */
 function splitsExactly(c: Context, input: AllocationInput, units: Readonly<Record<string, number>>, weekends = true) {
   const lockOf = new Map((input.schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
-  const free = c.prepared.duties.filter(d => !lockOf.has(d.id));
+  // Generate's own duties: an unlocked split weekend is one weekend again (decision 2026-11-07).
+  const free = c.generated.filter(d => !lockOf.has(d.id));
   // Weekends go to weekend members only, as in Generate (decision 2026-11-05).
   return partitionableWeekends(free.filter(d => !d.weekendId).map(d => d.units), free.filter(d => d.weekendId).map(d => d.units),
-    c.ids.map(id => c.prepared.duties.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]),
+    c.ids.map(id => c.generated.filter(d => lockOf.get(d.id) === id).map(d => d.units)), c.ids.map(id => units[id]),
     c.ids.map(id => weekends && c.nonWeekend.has(id)));
 }
 /** Non-weekend members in the order the default +1 is tried: by seniority, starting one
@@ -261,7 +262,8 @@ export function carriedUnits(uneven: readonly UnevenTransfer[]) {
  * month's duties are indivisible. Empty when the equal split stands, whichever
  * member holds a remainder. */
 export function unevenBaseline(input: AllocationInput, baseline: Record<string, number>) {
-  const weights = canonicalDuties(input.schedule.month, input.schedule.calendar).map(d => d.units);
+  // A split weekend counts as the weekend it came from (decision 2026-11-07).
+  const weights = canonicalDuties(input.schedule.month, {...input.schedule.calendar, splitWeekends: []}).map(d => d.units);
   const credited = new Set(unevenTransfers(input.seniority, weights, baseline).map(u => u.toId));
   return input.seniority.flatMap(id => credited.has(id) ? [{id, units: baseline[id]}] : []);
 }

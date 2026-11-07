@@ -3,7 +3,7 @@
 CREATE FUNCTION duty_private.compensation_publication(month text, publication uuid, metadata jsonb DEFAULT NULL, deleting boolean DEFAULT false, edit jsonb DEFAULT NULL) RETURNS void
  LANGUAGE plpgsql SECURITY DEFINER SET search_path TO '' AS $$
 #variable_conflict use_column
-declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb; ledger text;
+declare s jsonb; before_pub jsonb; after_pub jsonb; op jsonb; atoms jsonb; old_atoms jsonb; reservations jsonb; instant bigint; known jsonb; allocation public.duty_allocations; facts jsonb; checked jsonb; assignments jsonb; ledger text; key text; before_state jsonb;
 begin
  perform 1 from public.duty_workspace where id for update;
  s:=duty_private.compensation_state(); before_pub:=s->'publications'->month;
@@ -19,7 +19,8 @@ begin
  -- publications booked and the publication is deleted, cancelling its pending
  -- repayments; the plan is then booked as a first publication. Refused while another
  -- month's repayment uses those lots (review-replan-later:<month>) or once it started. A month
- -- whose only version was deleted keeps its lots live until then; they are reversed too.
+ -- whose only version was deleted while its lots couldn't be reversed keeps them live until
+ -- then; they are reversed too.
  if not deleting and publication is not null and allocation.month is not null and allocation.source_publication_id is null then
   -- The ledger may have moved since the plan was confirmed (another month published): the
   -- re-plan and the binding below re-check every source, so the plan publishes whenever it
@@ -31,6 +32,25 @@ begin
    raise;
   end;
   before_pub:=null;
+ end if;
+ -- Deleting a month's only version removes what it booked (decision 2026-11-07): the same
+ -- audited corrections as a re-plan reverse every live lot the month's publications booked and
+ -- the deletion cancels its pending repayments, so with no version left every net is zero. The
+ -- kept draft copy is then a plan of its own: publishing it books it again. When worked or used
+ -- points make that impossible (review-replan-*: started, a later month's repayment settled,
+ -- settled by hand), the lots stay live as before and a new plan reverses them. A later month's
+ -- pending repayment of those lots is released and becomes a debt the other way: a deleted
+ -- month counts as nothing (decision 2026-11-07).
+ if deleting and publication is null and before_pub is not null then
+  begin
+   s:=duty_private.compensation_replan(s,month,instant,true,'Deleted the published '||month||' version');
+   -- A new allocation identity: its intents are booked again, never matched to the reversed ones.
+   update public.duty_allocations a set source_publication_id=null,allocation_id=gen_random_uuid()
+    where a.month=compensation_publication.month and a.publication_id is null and a.source_publication_id::text=before_pub->>'id';
+   return;
+  exception when raise_exception then
+   if SQLERRM not like 'review-replan-%' then raise; end if;
+  end;
  end if;
  after_pub:=duty_private.compensation_snapshot(publication);
  if deleting and after_pub is not null then
@@ -107,5 +127,10 @@ begin
  if deleting and (after_pub is null or known is not null) and before_pub is not null then
   op:=op||case when after_pub is null then '{"mode":"delete"}' else '{"mode":"delete","revert":true}' end::jsonb;
  end if;
- perform duty_private.compensation_append(s,op,'publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1),instant,coalesce(auth.uid()::text,'system'),nullif(edit->>'reason',''));
+ key:='publication/'||coalesce(publication::text,'none')||'/'||(coalesce((s->'events'->-1->>'sequence')::bigint,0)+1); before_state:=s;
+ s:=duty_private.compensation_append(s,op,key,instant,coalesce(auth.uid()::text,'system'),nullif(edit->>'reason',''));
+ -- A repayment this change left held (a revert or an edit undid the debt it repays) is never
+ -- lost: its planned work becomes a debt the other way (decision 2026-11-07).
+ perform duty_private.compensation_release_held(before_state,s,key||'/',instant,coalesce(auth.uid()::text,'system'),
+  'Repayment released: a change to '||to_char(to_date(month||'-01','YYYY-MM-DD'),'FMMonth YYYY')||' undid the debt it repaid',true);
 end $$;

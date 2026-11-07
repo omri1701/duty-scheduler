@@ -268,7 +268,16 @@ repayment+=`create temp table proposed(v jsonb);insert into proposed select json
 repayment+=failure(`update context set v=public.duty_confirm_allocation('${month}',(select jsonb_set(v,'{repayments}',(v->'repayments')||(v->'repayments')) from proposed),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint')`,'duplicate-repayment-source');
 repayment+=`update context set v=public.duty_confirm_allocation('${month}',(select v from proposed),'[]','[]',(v->>'revision')::bigint,v->>'fingerprint');`;
 repayment+=save(reassign)+publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
-repayment+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());
+repayment+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());`;
+// Deleting the month's only version before it starts removes what it booked (decision 2026-11-07):
+// only the reviewed debt is left, and the kept draft is a fresh plan whose repayment source
+// changed, so Publish waits (repaymentsTaken) and a republish is refused by name, never booked twice.
+const deleteOnly=repayment+`set local role authenticated;select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});
+reset role;select duty_private.compensation_view(duty_private.compensation_state());set local role authenticated;
+select public.duty_generation_context('${month}',${rev});`+failure(publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'").trim().replace(/;$/,''),'Compensation changed')+'rollback;';
+// Once the month has started, a deletion can't reverse its worked points: its lots stay live and
+// republishing the kept draft rebinds the outstanding repayment with new IDs, as before.
+repayment+=`create or replace function duty_private.compensation_now() returns bigint language sql volatile set search_path='' as $$select ${handover(duties[0].endDate)*60000}::bigint$$;
 set local role authenticated;select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`;
 repayment+=publish.replaceAll("and duty_private.duty_owner(day)='2027-12'","and day>='2027-12-01' and day<'2028-01-01'");
 repayment+=`reset role;select duty_private.compensation_view(duty_private.compensation_state());
@@ -296,7 +305,16 @@ console.log('PASS: deferred mixed route retains the original debtor and reserves
 assert.equal(repaymentViews[1].lots.length,repaymentView.lots.length);
 const rebound=repaymentViews[1].contributions.filter(c=>c.status==='pending');assert.equal(rebound.reduce((n,c)=>n+c.capacity.units,0),2);
 assert.ok(rebound.every(c=>!repaymentView.contributions.some(old=>old.id===c.id)),'cancelled contribution IDs are never resurrected');
-console.log('PASS: deleting the final publication and republishing rebinds outstanding repayment with new exclusive IDs without replaying origins');
+console.log('PASS: deleting the final publication once the month started and republishing rebinds outstanding repayment with new exclusive IDs without replaying origins');
+{
+ const [booked,afterDelete,draftContext]=sql(deleteOnly);
+ for(const view of [booked,afterDelete])assert.deepEqual(ordered(view),ordered(replay(view.events)));
+ assert.deepEqual(Object.entries(afterDelete.net).filter(([,n])=>n).sort(),[[creditor,4],[debtor,-4]].sort(),'only the reviewed debt is left');
+ assert.ok(afterDelete.contributions.every(c=>c.status==='cancelled'),'its repayments are cancelled');
+ const kept=readGenerationContext(draftContext);assert.equal(kept.sourcePublicationId,null);
+ assert.equal(repaymentsTaken(kept.input,kept.allocation),true,'Publish waits with the plan notice; opening the plan proposes again');
+ console.log('PASS: deleting the only version before it starts leaves only the reviewed debt; its kept draft re-plans before it can publish');
+}
 
 // A deferred repayment handed to someone who owes the same creditor (decision 2026-10-31):
 // Tamar repays Local Admin 2 of her planned 4 points' units and hands 1 point to Lior, who owes
@@ -406,13 +424,13 @@ update context set v=public.duty_confirm_allocation('${month}',(select v from pr
  assert.ok(replans.some(e=>e.operation.kind==='correct'&&e.reason===`Re-planned ${month}`)&&replans.at(-1).operation.mode==='delete','audited corrections, then the deletion');
  assert.deepEqual(ordered(replaced),ordered(replay(replaced.events)));
  console.log('PASS: a published month re-planned through the RPCs is planned without its own entries and republished with only the new plan\'s debts; a stale tab and the pre-re-plan version are refused by name');
- // Deleting the month's only version keeps its own debts live; a fresh plan published
- // afterwards reverses them instead of counting them twice.
+ // Deleting the month's only version removes its own debts (decision 2026-11-07); a fresh plan
+ // published afterwards books only its own, never both.
  const fresh=proposeAllocation(input).draft;
  const [deleted,republished]=sql(setup+confirm(persistedDraft(first))+save(arrangement(first.targetsUnits))+pub+
   `select public.duty_delete_publication((select current_publication_id from public.duty_months where month='${month}'),${rev});`+refresh+view+
   confirm(persistedDraft(fresh))+save(arrangement(fresh.targetsUnits))+pub+view+'rollback;').filter(r=>r.view).map(r=>r.view);
- assert.equal(deleted.net[taker],owed,'deleted: the only version\'s own debts stay until a new plan replaces them');
+ assert.ok(Object.values(deleted.net).every(n=>n===0),'deleted: no version, no debt');
  assert.ok(Object.values(republished.net).every(n=>n===0),'republished: the fresh plan\'s debts only, never both');
  assert.deepEqual(ordered(republished),ordered(replay(republished.events)));
  console.log('PASS: deleting a month\'s only version and publishing a fresh plan counts its debts once');

@@ -3,13 +3,17 @@
 -- publication transition makes the old engineer owe the new one each date's shared
 -- units (Temporary); Permanent adds a reviewed permanent intent from that old engineer
 -- over exactly those units, so no debt. Added extra counts for whoever does the duty.
+-- A weekend whose two halves end up identical (same primary, cover and lock, neither started)
+-- is one ordinary Friday–Sunday duty again (decision 2026-11-07): swaps and weekend rules see
+-- one weekend, never a half each. Each date keeps its own extra; already-saved identical
+-- halves heal on the next edit of either.
 CREATE FUNCTION duty_private.edit_published_duty(p_publication uuid, p_day date, p_primary uuid, p_extra_points numeric, p_saturday_extra_points numeric, p_kind text, p_revision bigint, p_override_reason text DEFAULT ''::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
 declare d public.duty_assignments; m public.duty_months; publication uuid; next_version integer; reason text:=btrim(coalesce(p_override_reason,''),U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF');
  saturday numeric:=coalesce(p_saturday_extra_points,0); changed boolean; conflicts boolean:=false; capacity jsonb:='[]'; old_atoms jsonb; new_atoms jsonb; atom text; a jsonb;
- plan jsonb; intent jsonb; back boolean;
+ plan jsonb; intent jsonb; back boolean; fri public.duty_assignments; sat public.duty_assignments; edited bigint;
 begin
  perform duty_private.check_revision(p_revision);
  if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
@@ -41,6 +45,17 @@ begin
   case when x.id=d.id and changed then exists(select 1 from public.duty_constraints c where c.kind='no' and c.day>=x.day and c.day<x.end_day and c.member_id in (p_primary,x.secondary_id))
    else x.manager_override end,x.title,case when x.id=d.id then p_extra_points else x.extra_points end,case when x.id=d.id then saturday else x.saturday_extra_points end,x.locked
  from public.duty_assignments x where x.publication_id=p_publication;
+ select (x.points*2)::bigint into edited from public.duty_assignments x where x.publication_id=publication and x.day=d.day;
+ select * into fri from public.duty_assignments x where x.publication_id=publication and extract(dow from x.day)=5 and x.end_day=x.day+1
+  and x.day in (d.day,d.day-1);
+ select * into sat from public.duty_assignments x where x.publication_id=publication and x.day=fri.day+1 and x.end_day=x.day+1;
+ if fri.id is not null and sat.id is not null and fri.day>=(now() at time zone 'Asia/Jerusalem')::date and fri.primary_id is not distinct from sat.primary_id
+  and fri.secondary_id is not distinct from sat.secondary_id and fri.locked=sat.locked then
+  delete from public.duty_assignments where id=sat.id;
+  update public.duty_assignments set end_day=fri.day+2,saturday_extra_points=sat.extra_points,manager_override=fri.manager_override or sat.manager_override,
+   title=case when fri.title='' then sat.title else fri.title end where id=fri.id;
+ else fri:=null;
+ end if;
  -- The allocation keeps its lineage like an approved swap; locks follow the new
  -- engineer and approvals for the changed dates or the two engineers' weekends drop.
  -- Its targets follow the edit, so a reopened copy of this version still matches its plan.
@@ -48,11 +63,12 @@ begin
  if jsonb_typeof(plan->'targetsUnits')='object' then
   plan:=jsonb_set(plan,array['targetsUnits',d.primary_id::text],to_jsonb(coalesce((plan->'targetsUnits'->>d.primary_id::text)::bigint,0)-(d.points*2)::bigint));
   plan:=jsonb_set(plan,array['targetsUnits',p_primary::text],to_jsonb(coalesce((plan->'targetsUnits'->>p_primary::text)::bigint,0)
-   +(select (x.points*2)::bigint from public.duty_assignments x where x.publication_id=publication and x.day=d.day)));
+   +edited));
  end if;
  insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)
  select month,publication,allocation_id,plan,
-  (select coalesce(jsonb_agg(case when changed and (l->>'dutyId')>=d.day::text and (l->>'dutyId')<d.end_day::text then jsonb_set(l,'{engineer}',to_jsonb(p_primary::text)) else l end),'[]') from jsonb_array_elements(locks) l),
+  (select coalesce(jsonb_agg(case when changed and (l->>'dutyId')>=d.day::text and (l->>'dutyId')<d.end_day::text then jsonb_set(l,'{engineer}',to_jsonb(p_primary::text)) else l end),'[]') from jsonb_array_elements(locks) l
+   where fri.id is null or l->>'dutyId'<>sat.day::text),
   (select coalesce(jsonb_agg(v),'[]') from jsonb_array_elements(approvals) v where not changed or (
    not (v->>'rule' in ('availability','boundary') and (v->>'dutyId')>=d.day::text and (v->>'dutyId')<d.end_day::text)
    and not (v->>'rule'='consecutive' and exists(select 1 from jsonb_array_elements_text(case when jsonb_typeof(v->'duties')='array' then v->'duties' else '[]' end) k where k>=d.day::text and k<d.end_day::text))
@@ -79,8 +95,8 @@ begin
   'intents',case when intent is null then '[]'::jsonb else jsonb_build_array(intent) end,
   'reason','Published duty edit '||d.day||' ('||p_kind||')'||case when conflicts then '. Availability override: '||reason else '' end));
  update public.duty_months set current_publication_id=publication where month=m.month;
- -- New points change the month's calendar; the copied plan follows it as its targets do.
- if p_extra_points<>d.extra_points or saturday<>d.saturday_extra_points then
+ -- New points, or a weekend joined again, change the month's calendar; the copied plan follows it.
+ if p_extra_points<>d.extra_points or saturday<>d.saturday_extra_points or fri.id is not null then
   update public.duty_allocations set calendar_fingerprint=md5((select jsonb_agg(x-array['primary','secondary'] order by x->>'id')::text
    from jsonb_array_elements(duty_private.generation_facts(m.month)->'duties') x)) where publication_id=publication;
  end if;
@@ -89,7 +105,8 @@ begin
  -- pointer hook's re-ask of a new counterpart is not kept either.
  update public.duty_swap_requests set status='invalidated',accepted_by=null,accepted_at=null,resolved_at=now(),resolved_by=null
  where duty_swap_requests.month=m.month and duty_swap_requests.status in ('awaiting_engineer','awaiting_admin')
-  and ((from_day=d.day and from_end_day=d.end_day) or (to_day=d.day and to_end_day=d.end_day));
+  and ((from_day=d.day and from_end_day=d.end_day) or (to_day=d.day and to_end_day=d.end_day)
+   or (fri.id is not null and (from_day in (fri.day,sat.day) or to_day in (fri.day,sat.day))));
  update public.duty_workspace set revision=revision+1 where id;
  return jsonb_build_object('publication',publication,'version',next_version);
 end $$;

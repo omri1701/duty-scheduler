@@ -149,3 +149,27 @@ test('a greyed day is grey once: nothing is green or selectable while checking, 
   expect(seen.length).toBeGreaterThan(0);
   expect(seen.filter(c => !/swap-blocked/.test(c) || /drag-target/.test(c)), 'blocked day flashed').toEqual([]);
 });
+
+// Owner round 4: the picked duty must read as picked, not as one more green target, in both themes.
+for (const scheme of ['light', 'dark'] as const) test(`the picked duty has its own ink ring and a swap mark, unlike the green targets (${scheme})`, async ({page, openApp, backend}) => {
+  backend.raw.months[0].status = 'published';
+  await page.emulateMedia({colorScheme: scheme});
+  await openApp('admin');
+  await (await openDutySheet(page, '2026-11-10')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const source = duty(page, '2026-11-10'), target = page.locator('.calendar-grid .drag-target').first();
+  await expect(source).toHaveClass(/drag-source/);
+  await expect(source.getByRole('img', {name: 'Swapping this duty', exact: true})).toBeVisible();
+  await expect(target).toBeVisible();
+  const look = await page.evaluate(() => {
+    const css = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+    const probe = document.createElement('i'); probe.style.color = 'var(--ink)'; document.body.append(probe);
+    const ink = getComputedStyle(probe).color; probe.remove();
+    return {source: css('.calendar-grid .drag-source').boxShadow, sourceBg: css('.calendar-grid .drag-source').backgroundColor,
+      target: css('.calendar-grid .drag-target').boxShadow, targetBg: css('.calendar-grid .drag-target').backgroundColor, ink};
+  });
+  // An ink ring (dark text colour in light, light in dark), not the targets' green ring or fill.
+  expect(look.source).toContain(look.ink);
+  expect(look.source).not.toBe(look.target);
+  expect(look.sourceBg).not.toBe(look.targetBg);
+});
