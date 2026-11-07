@@ -90,3 +90,78 @@ export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>str
  else lines.push(`${t('Balance','מאזן')}: ${t(`No debt; the extra counts for ${from}`,`ללא חוב; התוספת נזקפת ל־${from}`)}`);
  return lines.join('\n');
 }
+
+/** One date of a published weekend: the row covering it, its holder and its own points. */
+export type WeekendHalf={day:string;row:DutyRow;primary:string;extra:number};
+/** A published weekend as its two dates (decision 2026-11-07): one Friday–Sunday row or two day rows. */
+export type PublishedWeekend={friday:string;joined:boolean;fri:WeekendHalf;sat:WeekendHalf};
+export type WeekendEdit={fridayPrimary:string;fridayExtra:number;saturdayPrimary:string;saturdayExtra:number;kind:EditKind;overrideReason:string};
+/** A weekend date's points: 0.5 plus its extra. */
+export const halfPoints=(extra:number)=>.5+extra;
+
+/** The published weekend the row belongs to, while it can still be split or joined: both dates
+ * have a person and Friday is today or later (a started weekend's Saturday is a normal day). */
+export function publishedWeekend(raw:Snapshot,row:DutyRow,today:string):PublishedWeekend|null{
+ if(![5,6].includes(dayOf(row.day))||!row.publication_id)return null;
+ const friday=dayOf(row.day)===6?addDays(row.day,-1):row.day,saturday=addDays(friday,1);
+ if(friday<today)return null;
+ const covering=(day:string)=>raw.assignments.find(a=>a.publication_id===row.publication_id&&a.day<=day&&a.end_day>day);
+ const f=covering(friday),s=covering(saturday);
+ if(!f||!s||f.day!==friday||!f.primary_id||!s.primary_id)return null;
+ const joined=f.id===s.id;
+ return {friday,joined,fri:{day:friday,row:f,primary:f.primary_id,extra:Number(f.extra_points)},
+  sat:{day:saturday,row:s,primary:s.primary_id,extra:Number(joined?f.saturday_extra_points??0:s.extra_points)}};
+}
+
+/** Each date whose person changes: who gives it, who takes it, and the shared points a
+ * Temporary edit makes the giver owe (the ledger's per-date units; extra added now counts
+ * for whoever does it). */
+export function weekendChanges(w:PublishedWeekend,edit:WeekendEdit){
+ return ([[w.fri,edit.fridayPrimary,edit.fridayExtra],[w.sat,edit.saturdayPrimary,edit.saturdayExtra]] as const)
+  .filter(([h,to])=>to!==h.primary).map(([h,to,extra])=>({day:h.day,from:h.primary,to,owed:Math.min(halfPoints(h.extra),halfPoints(extra))}));
+}
+
+/** The emergency cover of the weekend saved as one duty, as edit_published_weekend picks it:
+ * the cover of a date that kept its engineer (Friday first), else Friday's, else Saturday's. */
+export function joinedCover(w:PublishedWeekend,edit:WeekendEdit){
+ const f=w.fri.row.secondary_id,s=w.sat.row.secondary_id;
+ return [edit.fridayPrimary===w.fri.primary?f:null,edit.saturdayPrimary===w.sat.primary?s:null,f,s].find(Boolean)??null;
+}
+
+/** Dates a member marked unavailable among the dates they newly take: a new engineer, or a cover
+ * that joining moves onto a date it didn't cover. */
+export function weekendConflicts(raw:Snapshot,w:PublishedWeekend,edit:WeekendEdit){
+ const taken=weekendChanges(w,edit).map(c=>({day:c.day,member:c.to}));
+ const cover=edit.fridayPrimary===edit.saturdayPrimary?joinedCover(w,edit):null;
+ if(cover)for(const h of [w.fri,w.sat])if(h.row.secondary_id!==cover)taken.push({day:h.day,member:cover});
+ return taken.flatMap(t=>raw.constraints.filter(x=>x.member_id===t.member&&x.kind==='no'&&x.day===t.day).map(x=>({day:x.day,member:t.member,note:x.note})));
+}
+
+/** Plain text for the admin's external record of a weekend edit, written before saving. Never
+ * includes availability notes; the override reason is the admin's own text. returning: dates a
+ * Permanent edit gives back to who held them before a Temporary change (H1). */
+export function weekendEditSummary(w:PublishedWeekend,edit:WeekendEdit,name:(id:string)=>string,lang:'en'|'he',returning:ReadonlySet<string>=new Set()){
+ const he=lang==='he',t=(en:string,hebrew:string)=>he?hebrew:en;
+ const date=(day:string)=>`${(he?['יום א׳','יום ב׳','יום ג׳','יום ד׳','יום ה׳','יום ו׳','שבת']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])[dayOf(day)]} ${day.slice(8)}/${day.slice(5,7)}/${day.slice(0,4)}`;
+ const points=(n:number)=>he?`${n} ${n===1?'נקודה':'נקודות'}`:`${n} ${n===1?'point':'points'}`;
+ const change=(a:string,b:string)=>he?`${b} במקום ${a}`:`${a} → ${b}`;
+ const joined=edit.fridayPrimary===edit.saturdayPrimary,layout=(one:boolean)=>one?t('One weekend','סוף שבוע אחד'):t('Two days','שני ימים');
+ const changes=weekendChanges(w,edit);
+ const lines=[
+  t('Duty change (published schedule)','שינוי תורנות (לוח שפורסם)'),
+  `${t('Date','תאריך')}: ${date(w.fri.day)} – ${date(w.sat.day)}`,
+  `${t('Weekend','סוף שבוע')}: ${joined===w.joined?layout(joined):change(layout(w.joined),layout(joined))}`,
+ ];
+ for(const [h,to,extra] of [[w.fri,edit.fridayPrimary,edit.fridayExtra],[w.sat,edit.saturdayPrimary,edit.saturdayExtra]] as const){
+  const before=halfPoints(h.extra),after=halfPoints(extra);
+  lines.push(`${date(h.day)}: ${to===h.primary?`${name(to)} ${t('(unchanged)','(ללא שינוי)')}`:change(name(h.primary),name(to))} · ${before===after?points(after):change(points(before),points(after))}`);
+ }
+ if(changes.length){
+  lines.push(`${t('Type','סוג')}: ${edit.kind==='temporary'?t('Temporary','זמני'):t('Permanent','קבוע')}`);
+  for(const c of changes)lines.push(`${t('Balance','מאזן')} ${date(c.day)}: ${edit.kind==='temporary'?t(`${name(c.from)} owes ${name(c.to)} ${points(c.owed)}`,`${name(c.from)} חייב/ת ל־${name(c.to)} ${points(c.owed)}`)
+   :returning.has(c.day)?t(`${name(c.to)} gets the day back: the earlier Temporary change is undone and its debt cancels`,`${name(c.to)} מקבל/ת את היום בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו`):t('No debt','ללא חוב')}`);
+  if(edit.overrideReason.trim())lines.push(`${t('Availability override','חריגה מאילוץ')}: ${edit.overrideReason.trim()}`);
+ }
+ else lines.push(`${t('Balance','מאזן')}: ${t('No debt; the points count for whoever does each day','ללא חוב; הנקודות נזקפות למי שעושה כל יום')}`);
+ return lines.join('\n');
+}

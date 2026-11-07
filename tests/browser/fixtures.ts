@@ -358,6 +358,36 @@ export class Backend {
       const publication = this.publish(m.month, rows);
       this.raw.revision!++;
       return {publication, version: m.publication_sequence};
+    } else if (name === 'duty_edit_published_weekend') {
+      // One weekend or two days (decision 2026-11-07): same person joins, different people split.
+      expect(admin).toBe(true);
+      const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
+      if (!m) throw Error('Synthetic stale: This publication changed. Refresh first.');
+      const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
+      const friday = p.p_friday as string, saturday = addDays(friday, 1), covering = (day: string) => rows.find(d => d.day <= day && d.end_day > day)!;
+      const f = covering(friday), s = covering(saturday), wasJoined = f === s;
+      const halves = [{day: friday, row: f, extra: f.extra_points, to: p.p_friday_primary as string, next: p.p_friday_extra as number},
+        {day: saturday, row: s, extra: wasJoined ? f.saturday_extra_points ?? 0 : s.extra_points, to: p.p_saturday_primary as string, next: p.p_saturday_extra as number}];
+      const changed = halves.filter(h => h.to !== h.row.primary_id);
+      if (!changed.length && (halves[0].to === halves[1].to) === wasJoined && halves.every(h => h.next === h.extra)) throw Error('Nothing changed');
+      const conflict = changed.some(h => this.raw.constraints.some(c => c.member_id === h.to && c.kind === 'no' && c.day === h.day));
+      if (conflict && !String(p.p_override_reason).trim()) throw Error('Availability conflict. An admin must explicitly override with a reason.');
+      const joined = halves[0].to === halves[1].to, base = {...f, title: f.title || s.title, manager_override: conflict};
+      const next: DutyRow[] = joined
+        ? [{...base, day: friday, end_day: addDays(friday, 2), primary_id: halves[0].to, secondary_id: f.secondary_id ?? s.secondary_id, extra_points: halves[0].next, saturday_extra_points: halves[1].next, points: 1 + halves[0].next + halves[1].next}]
+        : halves.map(h => ({...base, day: h.day, end_day: addDays(h.day, 1), primary_id: h.to, secondary_id: h.row.secondary_id, extra_points: h.next, saturday_extra_points: 0, points: .5 + h.next}));
+      // Display-only stand-in for the ledger: Temporary moves each date's shared points.
+      if (p.p_kind === 'temporary') for (const h of changed) {
+        const units = Math.min(1 + 2 * h.extra, 1 + 2 * h.next), from = h.row.primary_id!;
+        const balance = this.balance ??= {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+        balance.net[from] -= units; balance.net[h.to] += units;
+        balance.lines.push({memberId: from, counterpartId: h.to, units: -units, kind: 'change', date: null, month: m.month},
+          {memberId: h.to, counterpartId: from, units, kind: 'change', date: null, month: m.month});
+      }
+      for (const r of this.raw.swapRequests ?? []) if (['awaiting_engineer', 'awaiting_admin'].includes(r.status) && [r.from_day, r.to_day].some(d => d === friday || d === saturday)) Object.assign(r, {status: 'invalidated', accepted_by: null, accepted_at: null});
+      const publication = this.publish(m.month, [...rows.filter(d => d !== f && d !== s), ...next].sort((a, b) => a.day.localeCompare(b.day)));
+      this.raw.revision!++;
+      return {publication, version: m.publication_sequence, joined};
     } else throw Error(`Unexpected RPC: ${name}`);
     this.raw.revision!++;
     return null;
@@ -378,12 +408,14 @@ export class Backend {
   }
 }
 
-type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean}) => Promise<Page>};
+/** month: the schedule month every load of the page opens on, through the `?month=` deep link (the app opens
+ * on the current month, October under NOW; the fixtures' data is November). null: the app's own default. */
+type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean; month?: string | null}) => Promise<Page>};
 export const test = base.extend<Fixtures>({
   backend: async ({}, provide) => {await provide(new Backend());},
   openApp: async ({page, backend, baseURL}, provide) => {
     const attached = new Set<Page>(), errors: string[] = [], unexpected: string[] = [];
-    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false} = {}) => {
+    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false, month = MONTH} = {}) => {
       if (!attached.has(target)) {
         attached.add(target);
         target.on('pageerror', error => errors.push(error.message));
@@ -402,12 +434,15 @@ export const test = base.extend<Fixtures>({
       const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome, month}) => {
+        // Every load, reloads included, opens the fixture month unless the URL names one.
+        const url = new URL(location.href);
+        if (month && !url.searchParams.has('month')) {url.searchParams.set('month', month); history.replaceState(history.state, '', url);}
         localStorage.clear();
         if (!showWelcome) localStorage.setItem('duty-welcome-seen', '1');
         if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
         if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome});
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome,month});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}
