@@ -293,3 +293,22 @@ assert.deepEqual(r.deleted.contributions,['cancelled']);
 assert.deepEqual(reasons(r.deleted),[['release','Deleted the published 2027-12 version'],['correct','Deleted the published 2027-12 version'],['claim','Deleted the published 2027-12 version'],['publication',null]],'audited once');
 assert.deepEqual(nets(r.neither),{},'January deleted too: nothing is owed');
 console.log('PASS: a deleted or re-planned month counts as nothing; a later month’s repayment of it becomes a debt the other way, booked once; deleting that month too leaves nothing');
+
+// A published weekend split into two halves and put back on one person is one ordinary weekend
+// again (decision 2026-11-07): one Friday–Sunday row, so a swap moves the whole weekend and never
+// counts a left-behind half as a second weekend. Identical halves saved before heal on the next edit.
+{
+ const [w1,w2]=duties.filter(d=>d.weekendId),owner=assignments[w1.id].primary,sat=w1.dates[1];
+ const halves=who=>`reset role;update public.duty_assignments set end_day=day+1 where publication_id=${current(month)} and day='${w1.id}';
+insert into public.duty_assignments(publication_id,day,end_day,primary_id,title,extra_points,saturday_extra_points,locked) values(${current(month)},'${sat}','${w1.endDate}','${who}','',0,0,false);set local role authenticated;`;
+ const weekend=label=>`reset role;select jsonb_build_object('label','${label}','view',duty_private.compensation_view(duty_private.compensation_state()),
+ 'rows',(select jsonb_agg(jsonb_build_array(a.day,a.end_day,a.primary_id,a.extra_points,a.saturday_extra_points) order by a.day) from public.duty_assignments a where a.publication_id=${current(month)} and a.day>='${w1.id}' and a.day<'${w1.endDate}'),
+ 'swap',duty_private.validate_swap(${at(w1.id)},${at(w2.id)},${current(month)}));set local role authenticated;`;
+ const rows=r=>r.rows.map(([day,end,primary,extra,saturday])=>[day,end,primary,Number(extra),Number(saturday)]);
+ r=run(halves(c)+edit(sat,owner)+weekend('joined'));
+ assert.deepEqual(rows(r.joined),[[w1.id,w1.endDate,owner,0,0]],'one Friday–Sunday duty again');
+ assert.equal(r.joined.swap,false,'swapping it with another weekend is valid: one weekend each, no conflict');
+ r=run(halves(owner)+edit(sat,owner,{extra:1})+weekend('healed'));
+ assert.deepEqual(rows(r.healed),[[w1.id,w1.endDate,owner,0,1]],'identical halves heal on the next edit; each date keeps its extra');
+ console.log('PASS: a published weekend put back on one person is one Friday–Sunday duty; swaps see one weekend; identical halves heal on the next edit');
+}

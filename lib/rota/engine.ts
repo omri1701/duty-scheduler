@@ -47,8 +47,10 @@ export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
   // A weekend emptied on both days is one empty weekend again, never two empty halves.
   const empty=(x?:Assignment)=>!x?.primary&&!x?.secondary&&!x?.locked;
   if(empty(a)&&empty(b)){if(a)assignments[f]={...a,override:undefined};delete assignments[addDays(f,1)];return false;}
-  if(!a?.primary||a.primary!==b?.primary||a.secondary!==b.secondary||!!a.locked!==!!b.locked)return true;
-  assignments[f]={...a,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
+  // Joined back to one person, a weekend is one ordinary duty again (decision 2026-11-07): no
+  // cover is the same however it was cleared.
+  if(!a?.primary||a.primary!==b?.primary||(a.secondary||'')!==(b.secondary||'')||!!a.locked!==!!b.locked)return true;
+  assignments[f]={...a,secondary:a.secondary||undefined,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
  });
  return {...s,assignments,splitWeekends};
 }

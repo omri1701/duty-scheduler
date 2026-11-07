@@ -219,3 +219,14 @@ test('Generate joins an unlocked hand split into one weekend; a lock on either h
  // Nothing to join: the same state comes back.
  assert.equal(joinUnlockedSplits(j,'2026-10'),j);
 });
+test('a weekend split by hand and joined back to one person is one ordinary weekend: swaps move it whole (decision 2026-11-07)',()=>{
+ let s=demo();s.constraints={};s.specials=[];s.assignments={'2026-10-02':{primary:'e0'},'2026-10-09':{primary:'e1'}};
+ s=setWeekendAssignments(s,'2026-10-02',{primary:'e0'},{primary:'e2',secondary:'e3'});assert.deepEqual(s.splitWeekends,['2026-10-02']);
+ // Joined back with the cover cleared on Saturday ('' from the picker, undefined on Friday).
+ s=setWeekendAssignments(s,'2026-10-02',{primary:'e0'},{primary:'e0',secondary:''});
+ assert.deepEqual(s.splitWeekends,[]);assert.equal(s.assignments['2026-10-03'],undefined);assert.equal(s.assignments['2026-10-02'].primary,'e0');assert.ok(!s.assignments['2026-10-02'].secondary);
+ assert.deepEqual(blocks('2026-10',[],s.splitWeekends).filter(b=>b.weekendId==='2026-10-02').map(b=>[b.id,b.end]),[['2026-10-02','2026-10-04']]);
+ const r=swapDraft(s,'2026-10','2026-10-02','2026-10-09');assert.ok(r.ok,r.reason);
+ assert.equal(r.assignments['2026-10-02'].primary,'e1');assert.equal(r.assignments['2026-10-09'].primary,'e0');
+ assert.equal(weekendCounts({...s,assignments:r.assignments},'2026-10').e0,1);
+});
