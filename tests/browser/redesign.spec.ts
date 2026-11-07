@@ -353,3 +353,33 @@ for (const lang of ['en', 'he'] as const) {
     await both(page, `plan-split-${lang}`);
   });
 }
+
+// Owner round 3: the month swipe mid-gesture (the real neighbour month, blurred) and a notched phone.
+for (const lang of ['en', 'he'] as const) {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  test(`month swipe mid-gesture and safe areas ${lang}`, async ({page, openApp, backend}, info) => {
+    const mobile = info.project.name === 'mobile';
+    backend.raw.months.push({month: '2026-12', deadline: '2026-11-24', status: 'draft', generated: true, current_publication_id: null, publication_sequence: 0});
+    backend.raw.assignments.push({id: 'dec-weekend', publication_id: null, day: '2026-12-04', end_day: '2026-12-06', primary_id: ids.a, secondary_id: null, manager_override: false, title: '', extra_points: 0, points: 1});
+    await openApp('admin');
+    if (lang === 'he') await switchLanguage(page, 'he');
+    await tab(page, t('Schedule', 'לוח')).click();
+    const grid = (await page.locator('.calendar-grid').first().boundingBox())!, head = (await page.locator('.calendar-weekdays:visible').first().boundingBox())!;
+    const x = grid.x + grid.width / 2, y = mobile ? grid.y + 20 : head.y + head.height / 2, dx = (lang === 'he' ? 1 : -1) * grid.width * .35;
+    const cdp = mobile ? await page.context().newCDPSession(page) : null;
+    if (cdp) {
+      await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x, y}]});
+      for (let step = 1; step <= 6; step++) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: x + dx * step / 6, y}]});
+    } else {await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dx, y, {steps: 6});}
+    await expect(page.locator('.month-peek .calendar-grid')).toBeVisible();
+    // Captured light only: the gesture is held while the screenshot is taken.
+    await snapshot(page, `month-swipe-${lang}`);
+    if (cdp) {await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []}); await cdp.detach();} else await page.mouse.up();
+    if (!mobile) return;
+    await page.evaluate(() => {document.documentElement.dataset.safeArea = 'test';});
+    await both(page, `safe-area-schedule-${lang}`);
+    await page.locator('[data-settings-button]').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await both(page, `safe-area-settings-${lang}`);
+  });
+}

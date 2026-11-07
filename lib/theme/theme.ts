@@ -7,7 +7,7 @@ export const THEME_KEY = 'duty-theme';
 /** The PC sidebar collapsed to icons, remembered per device (owner review 2026-11-07). */
 export const SIDEBAR_KEY = 'duty-sidebar';
 
-export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';if(localStorage.getItem('${SIDEBAR_KEY}')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';if(p)document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',d?'#000000':'#f2f3f5')});if(localStorage.getItem('${SIDEBAR_KEY}')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}})();`;
 
 export function readPreference(): ThemePreference {
   try {
@@ -24,7 +24,8 @@ export function resolveTheme(preference: ThemePreference): Theme {
 export function applyTheme(preference: ThemePreference) {
   const theme = resolveTheme(preference);
   document.documentElement.dataset.theme = theme;
-  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#000000' : '#f2f3f5');
+  // Every theme-color tag (one per scheme), so a chosen theme colours the status bar even when the device's differs.
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach(meta => meta.setAttribute('content', theme === 'dark' ? '#000000' : '#f2f3f5'));
   return theme;
 }
 

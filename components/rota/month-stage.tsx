@@ -2,7 +2,13 @@
 import {forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 import {monthNext} from '@/lib/rota/engine';
 
-export type MonthStageHandle = {go: (offset: number) => void};
+export type MonthStageHandle = {
+  go: (offset: number) => void;
+  /** A drag that started elsewhere (the month heading) moves the calendar the same way. */
+  drag: (dx: number) => void;
+  /** Ends that drag: commits past the threshold or on a flick (`speed` in px/ms), else springs back. */
+  release: (dx: number, speed: number, threshold?: number) => void;
+};
 const COMMIT = .4, FLICK = .5, DURATION = 280;
 const reduced = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -26,7 +32,7 @@ export const MonthStage = forwardRef<MonthStageHandle, {month: string; rtl: bool
       if (n && offset) {
         n.style.transition = transition;
         n.style.transform = `translateX(${dx + offset * dirSign * w}px)`;
-        n.style.opacity = String(.35 + progress * .65); n.style.filter = `blur(${(1 - progress) * 8}px)`;
+        n.style.opacity = String(.55 + progress * .45); n.style.filter = `blur(${(1 - progress) * 5}px) saturate(${.7 + progress * .3})`;
       }
     };
     // The month changed (a gesture or a chevron): the new month is the current pane again, before paint.
@@ -40,7 +46,7 @@ export const MonthStage = forwardRef<MonthStageHandle, {month: string; rtl: bool
       paint(-offset * dirSign * width(), offset, true);
       window.setTimeout(() => onChange(offset), DURATION);
     }
-    useImperativeHandle(ref, () => ({go: offset => {
+    useImperativeHandle(ref, () => ({drag: dx => {if (!busy.current) follow(dx);}, release: (dx, speed, threshold) => {if (!busy.current) {if (dx) release(dx, speed, threshold); else springBack();}}, go: offset => {
       if (busy.current) return;
       if (reduced() || Math.abs(offset) !== 1) {onChange(offset); return;}
       setPeek(offset);
@@ -48,6 +54,13 @@ export const MonthStage = forwardRef<MonthStageHandle, {month: string; rtl: bool
       requestAnimationFrame(() => {paint(0, offset, false); requestAnimationFrame(() => finish(offset));});
     }}));
     const springBack = () => {const offset = peek; paint(0, offset, !reduced()); window.setTimeout(() => {if (!busy.current) setPeek(0);}, reduced() ? 0 : DURATION);};
+    // Dragging toward the reading start brings the next month.
+    const follow = (dx: number) => {const offset = dx * dirSign < 0 ? 1 : -1; if (offset !== peek) setPeek(offset); paint(dx, offset, false);};
+    // `threshold`: a drag from the short month heading commits sooner than one across the calendar.
+    const release = (dx: number, speed: number, threshold = width() * COMMIT) => {
+      suppress.current = performance.now() + 350;
+      if (Math.abs(dx) > threshold || (speed > FLICK && Math.abs(dx) > 40)) finish(dx * dirSign < 0 ? 1 : -1); else springBack();
+    };
     return <div ref={stage} className="month-stage"
       onPointerDown={e => {
         if (busy.current || !e.isPrimary || e.button !== 0) return;
@@ -67,22 +80,16 @@ export const MonthStage = forwardRef<MonthStageHandle, {month: string; rtl: bool
           if ((s.touch && performance.now() - s.t > 300) || stage.current?.querySelector('.gesture-active,.mobile-drag-preview')) {g.current = null; return;}
           s.live = true; e.currentTarget.setPointerCapture(e.pointerId);
         }
-        s.dx = dx;
-        // Dragging toward the reading start brings the next month.
-        const offset = dx * dirSign < 0 ? 1 : -1;
-        if (offset !== peek) setPeek(offset);
-        paint(dx, offset, false);
+        s.dx = dx; follow(dx);
       }}
       onPointerUp={e => {
         const s = g.current; g.current = null;
         if (!s || s.id !== e.pointerId || !s.live) return;
-        suppress.current = performance.now() + 350;
-        const w = width(), speed = Math.abs(s.dx) / Math.max(1, performance.now() - s.t), offset = s.dx * dirSign < 0 ? 1 : -1;
-        if (Math.abs(s.dx) > w * COMMIT || (speed > FLICK && Math.abs(s.dx) > 40)) finish(offset); else springBack();
+        release(s.dx, Math.abs(s.dx) / Math.max(1, performance.now() - s.t));
       }}
       onPointerCancel={() => {if (g.current?.live) springBack(); g.current = null;}}
       onClickCapture={e => {if (busy.current || performance.now() < suppress.current) {e.preventDefault(); e.stopPropagation();}}}>
       <div ref={current} className="month-pane">{children}</div>
-      {peek !== 0 && <div ref={next} className="month-pane month-peek" aria-hidden="true" inert style={{transform: `translateX(${peek * dirSign * 100}%)`, opacity: .35, filter: 'blur(8px)'}}>{preview(monthNext(month, peek))}</div>}
+      {peek !== 0 && <div ref={next} className="month-pane month-peek" aria-hidden="true" inert style={{transform: `translateX(${peek * dirSign * 100}%)`, opacity: .55, filter: 'blur(5px) saturate(.7)'}}>{preview(monthNext(month, peek))}</div>}
     </div>;
   });

@@ -28,7 +28,7 @@ import {currentSubscription, describe} from '@/lib/push/browser';
 import {PublicationHistory} from '@/components/rota/publication-history';
 import {SwapRequestDialog, useSwapActions} from '@/components/rota/swap-requests';
 import {WorkspaceAvailability} from './workspace-availability';
-import {WorkspaceCalendar, MonthPreview} from './workspace-calendar';
+import {WorkspaceCalendar} from './workspace-calendar';
 import {WorkspaceTeam} from './workspace-team';
 import {DraftSwapDialog, SpecialDutyDialog, MonthSettingsDialog, PublishDialog, CancelDraftDialog, ClearBoardDialog} from './workspace-dialogs';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
@@ -115,7 +115,9 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     interactions.resetSelection(); setPickingFrom(null); setSheetDuty(null);
     setCalendarChoice({month, status: monthDetails.status, version});
   }
-  const calendarState = !isManager || viewingDraft ? state : fromSnapshot(remote.snapshot!, meId, undefined, true);
+  // The published calendar, built once per snapshot: the current month and its neighbours share it.
+  const publishedState = useMemo(() => fromSnapshot(remote.snapshot!, meId, undefined, true), [remote.snapshot, meId]);
+  const calendarState = !isManager || viewingDraft ? state : publishedState;
   const calendarBlocks = visibleCalendarBlocks(calendarState, month);
   const constraintsClosed = isManager
     ? monthDetails.status === 'published'
@@ -277,6 +279,13 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   // The chevrons and the heading drag play the calendar's month transition (month-stage.tsx).
   const stage = useRef<MonthStageHandle>(null);
   const navigateMonth = (n: number) => {if (stage.current) stage.current.go(n); else changeMonth(n);};
+  // The neighbouring month while it slides in: the same calendar from the data already loaded (the
+  // snapshot holds every month), as it will look once it lands, minus the blur.
+  const neighbour = (m: string) => {
+    const draftView = isManager && (state.months[m]?.status ?? 'draft') === 'draft', s = !isManager || draftView ? state : publishedState;
+    return <WorkspaceCalendar preview state={state} calendarState={s} calendarBlocks={visibleCalendarBlocks(s, m)} dateCells={calendarDates(m)} today={today} month={m} lang={lang} t={t} fmt={fmt}
+      nickname={nickname} meId={meId} readOnly={remote.readOnly} requesting={!draftView} interactions={interactions} onSelect={() => {}} selectedDay={null}/>;
+  };
   const swaps = useSwapActions(remote, lang);
   const notices: ReactNode = <>
     {isManager && viewingDraft && generationClosed && monthDetails.status === 'draft' && <p className="note-line">{closedReason}</p>}
@@ -315,11 +324,12 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
               }}/>
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>
-            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={navigateMonth} primary={primary} menu={menu}>
+            <MonthBar month={month} label={monthLabel} status={status} t={t} onChange={navigateMonth} primary={primary} menu={menu}
+              gesture={{drag: dx => stage.current?.drag(dx), release: (dx, speed, threshold) => stage.current?.release(dx, speed, threshold)}}>
               {reopened && <Segmented label={t('Schedule version', 'גרסת לוח')} value={viewingDraft ? 'draft' : 'published'} onChange={setVersion}
                 options={[{value: 'draft', label: t('Draft', 'טיוטה')}, {value: 'published', label: t('Published', 'פורסם')}]}/>}
             </MonthBar>
-            <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={changeMonth} preview={m => <MonthPreview month={m} state={calendarState} lang={lang}/>}>
+            <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={changeMonth} preview={neighbour}>
                 <WorkspaceCalendar state={state} calendarState={calendarState} calendarBlocks={calendarBlocks} dateCells={dateCells} today={today} month={month} lang={lang} t={t} fmt={fmt}
                   nickname={nickname} meId={meId} readOnly={remote.readOnly} requesting={requesting} interactions={interactions} onSelect={selectDay}
                   selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices} flashDays={flashDays}/>
