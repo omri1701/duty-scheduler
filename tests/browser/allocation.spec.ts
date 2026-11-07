@@ -1,4 +1,4 @@
-import {test, expect, ids, MONTH, type Backend, switchLanguage, monthAction, duty} from './fixtures';
+import {test, expect, ids, MONTH, type Backend, switchLanguage, monthAction, duty, openDutySheet} from './fixtures';
 import {coverageStart} from '../../lib/scheduling/calendar';
 import {validateGeneration} from '../../lib/scheduling/validate';
 import {record} from '../../lib/compensation';
@@ -244,9 +244,13 @@ test('opening the plan runs no Worker; a target above availability warns on its 
 
 test('indivisible holiday duties show one inline note naming who gets more, in English and Hebrew', async ({page, backend, openApp}) => {
   fresh(backend);
-  // Seven +2 days among six: the equal 6.5/7 split is not a real partition of the duties.
-  for (let day = 1; day <= 7; day++) backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day: `2026-11-0${day}`, end_day: `2026-11-0${day + 1}`,
-    primary_id: null, secondary_id: null, title: 'Holiday', extra_points: 2, points: 3, locked: false, manager_override: false});
+  // Five +2 weekdays, two Friday-only +1.5 holiday weekends (2.5 points each) and a +1 Monday among
+  // six: the equal 6.5/7 split is not a real partition of the duties. (A hand split would not make
+  // half-point duties: it plans as the weekend it came from.)
+  const row = (day: string, end_day: string, extra_points: number, points: number) => backend.raw.assignments.push({id: `holiday-${day}`, publication_id: null, day, end_day,
+    primary_id: null, secondary_id: null, title: 'Holiday', extra_points, saturday_extra_points: 0, points, locked: false, manager_override: false});
+  for (let day = 1; day <= 5; day++) row(`2026-11-0${day}`, `2026-11-0${day + 1}`, 2, 3);
+  row('2026-11-06', '2026-11-08', 1.5, 2.5); row('2026-11-09', '2026-11-10', 1, 2); row('2026-11-13', '2026-11-15', 1.5, 2.5);
   await openApp(); await openPlan(page);
   const fourth = await page.locator('.plan-row').nth(3).locator('.plan-member strong').textContent();
   const note = page.getByRole('dialog').getByRole('note').filter({hasText: 'split evenly'});
@@ -756,3 +760,47 @@ for (const count of [12, 24]) {
     await info.attach('allocation-timing.json', {body: JSON.stringify({count, project: info.project.name, proposalMs, generationMs, includes: 'Worker initialization, domain work, intercepted checked RPCs and UI feedback'}), contentType: 'application/json'});
   });
 }
+
+test('a hand split never changes the plan: half-point changes save exactly as typed, and Generate joins the unlocked split again', async ({page, backend, openApp}) => {
+  fresh(backend); await openApp(); await openPlan(page);
+  const dialog = page.getByRole('dialog', {name: 'Plan the month'});
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  const draftRow = (day: string) => backend.raw.assignments.filter(d => d.day === day && d.publication_id === null);
+  const team = backend.raw.members.filter(m => m.status === 'approved' && m.active);
+  const a = team.find(m => m.id === draftRow('2026-11-06')[0].primary_id)!, b = team.find(m => m.id !== a.id)!;
+  // Split by hand: A keeps Friday, B takes Saturday.
+  await (await openDutySheet(page, '2026-11-06')).getByRole('button', {name: 'Edit', exact: true}).click();
+  await page.getByRole('radio', {name: 'Two days', exact: true}).click();
+  await page.getByRole('combobox', {name: 'Saturday primary engineer', exact: true}).click();
+  await page.getByRole('option', {name: b.name, exact: true}).click();
+  const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
+  if (await override.isVisible()) await override.check();
+  await page.getByRole('button', {name: 'Save assignment'}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  expect(draftRow('2026-11-07')).toHaveLength(1);
+  await openPlan(page);
+  const [ma, mb] = [member(page, a.name), member(page, b.name)], [ta, tb] = [await targetOf(ma), await targetOf(mb)];
+  // The plan says the schedule differs from it; the stored fair shares are kept.
+  await expect(ma.row.locator('.allocation-row-warning')).toHaveText(`${ta - .5} scheduled, plan says ${ta}`);
+  // A split plans as the weekend it came from: whole-point shares, no "can't split evenly" note.
+  await expect(dialog.getByRole('note').filter({hasText: 'split evenly'})).toHaveCount(0);
+  await expect(dialog.locator('.allocation-details li')).toHaveCount(0);
+  await page.getByRole('button', {name: '0.5', exact: true}).click();
+  await dialog.getByRole('button', {name: `Decrease Temporary · ${a.name}`, exact: true}).click();
+  await dialog.getByRole('button', {name: `Increase Temporary · ${b.name}`, exact: true}).click();
+  const typed = await dialog.locator('.plan-row output').allTextContents();
+  expect([await targetOf(ma), await targetOf(mb)]).toEqual([ta - .5, tb + .5]);
+  await dialog.getByRole('button', {name: 'Save', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'Saved', exact: true})).toBeDisabled();
+  await expect(dialog.locator('.plan-row output')).toHaveText(typed);
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  expect(backend.allocations.get(MONTH)!.draft.targetsUnits[a.id]).toBe((ta - .5) * 2);
+  await page.keyboard.press('Escape'); await openPlan(page);
+  await expect(dialog.locator('.plan-row output')).toHaveText(typed);
+  // Generate fills the unlocked split as one weekend for one member again.
+  await dialog.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
+  await expect(dialog).toBeHidden({timeout: 50_000});
+  expect(draftRow('2026-11-06').map(d => d.end_day)).toEqual(['2026-11-08']);
+  expect(draftRow('2026-11-07')).toHaveLength(0);
+});

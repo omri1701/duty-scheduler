@@ -147,7 +147,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ...(confirmedTotals?.rows.filter(r => r.assigned !== r.target).map(r => t(`${nickname(r.id)}: ${r.assigned / 2} scheduled, plan says ${r.target / 2}`, `${nickname(r.id)}: שובצו ${r.assigned / 2}, בתוכנית ${r.target / 2}`)) ?? []),
     ...(unassigned > 0 ? [t(`${unassigned} without a primary`, `${unassigned} ללא שיבוץ`)] : []),
     ...(captured?.allocation && !captured.sourcePublicationId && allocation.replanBlocked ? [userMessage(allocation.replanBlocked, t)] : []),
-    ...(taken ? [t('A month published since this plan was confirmed repays the same debt. Open the plan and confirm it again', 'חודש שפורסם אחרי שהתוכנית אושרה מחזיר את אותו חוב. יש לפתוח את התוכנית ולאשר אותה שוב')] : []),
+    ...(taken ? [t('The debts this plan repays changed since it was confirmed (a month was published or a version deleted). Open the plan and confirm it again', 'החובות שהתוכנית מחזירה השתנו מאז שאושרה (פורסם חודש או נמחקה גרסה). יש לפתוח את התוכנית ולאשר אותה שוב')] : []),
   ] : [];
   const {selected, setSelected} = draft.editor;
   const interactions = useCalendarInteractions({

@@ -369,22 +369,42 @@ test('re-planning a published month starts from the ledger without its own entri
   assert.deepEqual(nets(again, reopened.now + 1000), {});
 });
 
-test('a published month whose points a later month already repays can\'t be re-planned: the later month is named', async () => {
-  const names = ['A', 'B', 'C', 'D', 'E', 'F'];
+test('a deleted or re-planned month counts as nothing: a later month\'s repayment of it becomes a debt the other way, booked once', async () => {
+  // The reported case (decision 2026-11-07): December gave Yossi one of Noa's points
+  // (Temporary), January has Noa repay it, then December's only version is deleted. January's
+  // extra duty for Noa really is planned, so Yossi now owes Noa one point.
+  const names = ['Yossi', 'Noa', 'C', 'D', 'E', 'F'];
   const december = team('2026-12', names, []);
-  let d = proposeAllocation(december).draft;
-  d = drag(december, drag(december, d, 'B', 'A'), 'C', 'A');
+  const d = drag(december, proposeAllocation(december).draft, 'Noa', 'Yossi');
   const events = await publishMonth(december, d);
-  // January, planned before December starts, repays A from December's debts; once January is
-  // published, December can't be replaced.
-  const january = {...december, events, now: december.now + 86400000,
-    schedule: {...december.schedule, month: '2027-01', sourceRevision: 'team-2027-01'}};
-  const j = proposeAllocation(january).draft;
-  assert.ok(j.repayments.length, 'January repays December');
-  assert.doesNotThrow(() => replanEvents(events, '2026-12', january.now), 'before January is published, December can still be re-planned');
-  const both = await publishMonth(january, j);
-  assert.throws(() => replanEvents(both, '2026-12', january.now + 1000), /review-replan-later:2027-01/);
-  // Once December has started, its plan is kept.
+  const month = (m, ev, now) => ({...december, events: ev, now, schedule: {...december.schedule, month: m, sourceRevision: `team-${m}`}});
+  const january = month('2027-01', events, december.now + 86400000), j = proposeAllocation(january).draft;
+  assert.deepEqual(repaidPoints(j), [['Noa', 'Yossi', 1]], 'January repays December');
+  const both = await publishMonth(january, j), after = Date.parse('2027-03-03T12:00:00Z'), at = january.now + 1000;
+  assert.deepEqual(nets(both, after), {}, 'January repays December in full');
+  const owes = {Yossi: -2, Noa: 2};
+  for (const [label, reason] of [['deleted', 'Deleted the published 2026-12 version'], ['re-planned', undefined]]) {
+    const gone = replanEvents(both, '2026-12', at, 'system', reason);
+    assert.deepEqual(nets(gone, at), owes, `${label}: Yossi owes Noa at once`);
+    assert.deepEqual(nets(gone, after), owes, `${label}: January's work no longer repays anything`);
+    // An ordinary debt: December's new plan repays it as plain points, no chip.
+    const reopened = month('2026-12', gone, at + 1000), plan = proposeAllocation(reopened).draft;
+    assert.deepEqual(repaidPoints(plan), [['Yossi', 'Noa', 1]], `${label}: December repays it`);
+    assert.equal(plan.targetsUnits.Yossi, plan.baselineUnits.Yossi + 2); assert.equal(plan.targetsUnits.Noa, plan.baselineUnits.Noa - 2);
+    for (const id of names) assert.deepEqual(plan.changes[id], {temporary: 0, permanent: 0}, `${label}: ${id}`);
+    assert.deepEqual(nets(await publishMonth(reopened, plan), after), {}, `${label}: December repaid, no double booking`);
+    // Or February repays it instead.
+    const february = month('2027-02', gone, at + 1000), f = proposeAllocation(february).draft;
+    assert.deepEqual(repaidPoints(f), [['Yossi', 'Noa', 1]], `${label}: February repays it`);
+    assert.deepEqual(nets(await publishMonth(february, f), after), {}, `${label}: February repaid`);
+    // Deleting January as well: neither month counts, nothing is owed.
+    const neither = replanEvents(gone, '2027-01', at + 2000, 'system', 'Deleted the published 2027-01 version');
+    assert.deepEqual(nets(neither, at + 2000), {}, `${label}: January deleted too`);
+    // Deleting December again after its new plan repaid the debt: January's work counts again.
+    const replanned = await publishMonth(reopened, plan);
+    assert.deepEqual(nets(replanEvents(replanned, '2026-12', at + 2000, 'system', 'Deleted'), after), owes, `${label}: deleted again`);
+  }
+  // Once December has started, its plan is kept: worked days keep their debts.
   assert.throws(() => replanEvents(events, '2026-12', Date.parse('2026-12-03T12:00:00Z')), /review-replan-started/);
 });
 

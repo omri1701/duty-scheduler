@@ -53,6 +53,26 @@ month is accepted by `duty_confirm_allocation` and the equal split is refused. E
 data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
 These commands never target the populated `duty-scheduler-app` database.
 
+Migration `20261106234300_kept_baseline_after_split.sql` (decision 2026-11-07) adds
+`duty_private.allocation_kept_baseline` (private, no role may execute it) and redefines
+`duty_private.confirm_allocation`: a stored baseline saved again unchanged only has to still split
+exactly into the month's duties, so a weekend split by hand (half-point duties) no longer refuses the
+saved plan as `invalid-ordinary-baseline`. A new or changed baseline is still checked as the month's
+ordinary fit. No table, data or grant changes; `allocation-fit.mjs` covers both paths.
+
+Migration `20261107001755_split_weekend_plans_as_weekend.sql` (decision 2026-11-07) redefines
+`duty_private.confirm_allocation` again: a split weekend, locked or not, never changes planning, so
+the ordinary-baseline checks and `allocation_uneven` see each split as the weekend it came from (its
+halves' sum), exactly as the browser's planning context does. Generate's own checks
+(`generation_validate`, `save_generation`) keep the real duties. No table, data or grant changes.
+
+Migration `20261107004222_delete_only_version_reverses_lots.sql` (decision 2026-11-07): deleting a
+month's only published version now reverses every live lot the month booked, with the re-plan's
+audited corrections (`compensation_replan` gains an optional audit reason, so it is dropped and
+recreated with the same grants), and gives the kept draft copy a new allocation identity, so
+publishing it books its plan again. Worked, used or hand-settled points stay booked as before.
+`published-edit-lifecycle.mjs` and `allocation-fit.mjs` cover it.
+
 Hosted Development activation requires the normal reviewed database-first release
 after merge into `develop`; this feature PR does not apply hosted migrations.
 
@@ -782,8 +802,9 @@ fingerprint), so a reopened copy of an edited version republishes unchanged with
 double counting. Edit duty names a pending swap request of the duty before saving ("Pending swap
 with Dana. Saving cancels it."), and saving invalidates it, for a new engineer as well as new points:
 consent was given for the earlier engineer and points. A
-later month that already repays a debt keeps its version. Editing the duty back holds that
-repayment (no double charge). Plan the month on a reopened edited month plans without that
+later month that already repays a debt keeps its version. Editing the duty back (or deleting
+the edited version) undoes the debt, so that repayment is released and its planned work is owed
+the other way, booked once (decision 2026-11-07): no double charge, and nothing lost. Plan the month on a reopened edited month plans without that
 month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
 plan replaces the edit with the plan. Migration `20261105134826_published_edit_lifecycle.sql`
 adds these lifecycle rules. Deleting the live version is that version's exact undo, a

@@ -88,7 +88,8 @@ function check(name, i, c, prop, d, trail, {netting = true} = {}) {
   }
   assert.deepEqual(d.transfers, deriveTransfers(ids, d.changes, d.pairs), `${where}: canonical transfers`);
   // Uneven credit follows the real permanent load: never above the baseline's excess, never for a member at or below the split.
-  const weights = canonicalDuties(i.schedule.month, i.schedule.calendar).map(du => du.units);
+  // A split weekend plans as the weekend it came from (decision 2026-11-07).
+  const weights = canonicalDuties(i.schedule.month, {...i.schedule.calendar, splitWeekends: []}).map(du => du.units);
   assert.deepEqual(d.uneven, unevenTransfers(ids, weights, d.baselineUnits, d.changes), `${where}: canonical uneven credit`);
   const plainCredit = unevenTransfers(ids, weights, d.baselineUnits);
   for (const id of ids) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {record, replay, normalize, halfUnits, loneHalf, sliceClaim, repaymentCandidates, reconcile, project,
+import {record, replay, normalize, halfUnits, loneHalf, sliceClaim, repaymentCandidates, reconcile, project, releaseHeld,
   ledgerFingerprint} from '../lib/compensation/index.ts';
 import {handover} from '../lib/scheduling/calendar.ts';
 
@@ -506,4 +506,22 @@ test('half-point debts stay open without rounding or expiry, and chain across pe
   s = owe(s, 'c', 'a', 1, 'ca');
   assert.deepEqual(amounts(s), [['c', 'a', 1]]);
   assert.deepEqual(invariant(s).net, {a: 1, b: 0, c: -1, d: 0});
+});
+
+test('a repayment whose debt is undone becomes a debt the other way, booked once (decision 2026-11-07)', () => {
+  // a owes b 2; March has a repay it; the debt is then undone (an exact-undo lot the other way).
+  let h = owe(setup(), 'a', 'b', 2, 'ab', 10);
+  h = publish(h, publication('mar', '2099-03', [duty('2099-03-02', 'a')], [plan('res', '2099-03-02', repaymentCandidates(h)[0])]));
+  const before = replay(h);
+  h = owe(h, 'b', 'a', 2, 'undo');
+  assert.deepEqual(replay(h).contributions.map(c => [c.status, c.holdReason]), [['held', 'claim-changed']]);
+  assert.deepEqual(replay(h).net, {a: 0, b: 0, c: 0, d: 0}, 'held: the planned work would count for nothing');
+  const fixed = releaseHeld(before, h, 'publication/x/9/', 50, 'system', 'Repayment released');
+  const v = invariant(fixed);
+  assert.deepEqual(v.contributions.map(c => c.status), ['cancelled']);
+  assert.deepEqual(v.net, {a: 2, b: -2, c: 0, d: 0}, 'b owes a the planned work');
+  assert.deepEqual(v.events.slice(-2).map(e => [e.sourceKey, e.operation.kind]), [['publication/x/9/release/res', 'release'], ['publication/x/9/reverse/res', 'claim']]);
+  assert.deepEqual(releaseHeld(before, fixed, 'publication/x/9/', 51, 'system', 'Repayment released'), fixed, 'booked once');
+  // At the end of time the reverse debt stands until a plan repays it.
+  assert.deepEqual(project(fixed, 60, end('2099-04-01')).projected.net, {a: 2, b: -2, c: 0, d: 0});
 });

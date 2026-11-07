@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {addDays,blocks,dates,demo,generate,totals,unavailable,allKnownBlocks,weekendCounts,setWeekendAssignment,migrate,ownerMonth,weekendAssignments,setWeekendAssignments,removeSpecialDates,COLORS} from '../lib/rota/engine.ts';
+import {addDays,blocks,dates,demo,generate,totals,unavailable,allKnownBlocks,weekendCounts,setWeekendAssignment,migrate,ownerMonth,weekendAssignments,setWeekendAssignments,removeSpecialDates,joinUnlockedSplits,COLORS} from '../lib/rota/engine.ts';
 function run(s,m='2026-10'){const r=generate(s,m);s.assignments=r.assignments;s.months[m]={deadline:m+'-01',status:'draft',generated:true};return r}
 test('February 29, 2028 is covered exactly once with normal weekday points',()=>{
  const day='2028-02-29',covering=blocks('2028-02',[]).filter(b=>dates(b.start,b.end).includes(day));
@@ -200,4 +200,33 @@ test('swapping a No weekends member onto a weekend asks for approval; already th
  const other=swapFixture();other.team=other.team.map(p=>p.id==='e1'?{...p,noWeekends:true}:p);
  const free=swapDraft(other,'2026-10','2026-10-01','2026-10-02');
  assert.ok(free.ok);assert.deepEqual(free.noWeekendConflicts,[]);
+});
+test('Generate joins an unlocked hand split into one weekend; a lock on either half keeps the split and its people',()=>{
+ let s=demo();s.months['2026-10']={deadline:'2026-10-01',status:'draft',generated:true};
+ s=setWeekendAssignment(s,'2026-10-02','all',{primary:'e0'});s=setWeekendAssignment(s,'2026-10-02','sat',{primary:'e1',secondary:'e2'});
+ s=setWeekendAssignment(s,'2026-10-09','all',{primary:'e3'});s=setWeekendAssignments(s,'2026-10-09',{primary:'e3',locked:true},{primary:'e4'});
+ // Another month's split is not this month's Generate.
+ s=setWeekendAssignment(s,'2026-07-31','all',{primary:'e0'});s=setWeekendAssignment(s,'2026-07-31','sat',{primary:'e1'});
+ const before=totals(s,blocks('2026-10',s.specials,s.splitWeekends).filter(b=>ownerMonth(b)==='2026-10'));
+ const j=joinUnlockedSplits(s,'2026-10');
+ assert.deepEqual([...j.splitWeekends].sort(),['2026-07-31','2026-10-09']);
+ const weekend=blocks('2026-10',j.specials,j.splitWeekends).find(b=>b.id==='2026-10-02');
+ assert.deepEqual([weekend.end,weekend.points],['2026-10-04',1]);
+ assert.equal(j.assignments['2026-10-03'],undefined);assert.equal(j.assignments['2026-10-02'].secondary,'e2');assert.equal(j.assignments['2026-10-02'].locked,undefined);
+ assert.deepEqual([j.assignments['2026-10-09'],j.assignments['2026-10-10']],[s.assignments['2026-10-09'],s.assignments['2026-10-10']]);
+ const after=totals(j,blocks('2026-10',j.specials,j.splitWeekends).filter(b=>ownerMonth(b)==='2026-10'));
+ assert.equal(Object.values(after).reduce((a,b)=>a+b,0),Object.values(before).reduce((a,b)=>a+b,0));
+ // Nothing to join: the same state comes back.
+ assert.equal(joinUnlockedSplits(j,'2026-10'),j);
+});
+test('a weekend split by hand and joined back to one person is one ordinary weekend: swaps move it whole (decision 2026-11-07)',()=>{
+ let s=demo();s.constraints={};s.specials=[];s.assignments={'2026-10-02':{primary:'e0'},'2026-10-09':{primary:'e1'}};
+ s=setWeekendAssignments(s,'2026-10-02',{primary:'e0'},{primary:'e2',secondary:'e3'});assert.deepEqual(s.splitWeekends,['2026-10-02']);
+ // Joined back with the cover cleared on Saturday ('' from the picker, undefined on Friday).
+ s=setWeekendAssignments(s,'2026-10-02',{primary:'e0'},{primary:'e0',secondary:''});
+ assert.deepEqual(s.splitWeekends,[]);assert.equal(s.assignments['2026-10-03'],undefined);assert.equal(s.assignments['2026-10-02'].primary,'e0');assert.ok(!s.assignments['2026-10-02'].secondary);
+ assert.deepEqual(blocks('2026-10',[],s.splitWeekends).filter(b=>b.weekendId==='2026-10-02').map(b=>[b.id,b.end]),[['2026-10-02','2026-10-04']]);
+ const r=swapDraft(s,'2026-10','2026-10-02','2026-10-09');assert.ok(r.ok,r.reason);
+ assert.equal(r.assignments['2026-10-02'].primary,'e1');assert.equal(r.assignments['2026-10-09'].primary,'e0');
+ assert.equal(weekendCounts({...s,assignments:r.assignments},'2026-10').e0,1);
 });

@@ -26,23 +26,42 @@ export function context(input: AllocationInput) {
   // Non-weekend members, and the weekend points only the others can take (decision 2026-11-05).
   const nonWeekend = new Set(prepared.members.filter(m => m.noWeekends).map(m => m.id));
   const lockOf = new Map((schedule.locks ?? []).map(l => [l.dutyId, l.engineer]));
-  const weekendDuties = duties.filter(d => d.weekendId && !lockOf.has(d.id)).map(d => d.units).sort((a, b) => b - a);
+  // A split weekend never changes planning (decision 2026-11-07): fair shares, uneven credit
+  // and the duty step see each split as the weekend it came from (its halves' sum), locked or
+  // not; duty_private.confirm_allocation merges the same way. The exact-points check uses
+  // Generate's own duties: an unlocked split is one weekend again, a locked one stays split.
+  const merge = (joined: (weekendId: string) => boolean) => {
+    const out: PlanningDuty[] = [];
+    for (const d of prepared.duties) {
+      const last = out.at(-1);
+      if (d.weekendId && last?.weekendId === d.weekendId && joined(d.weekendId)) last.units += d.units;
+      else out.push({id: d.id, units: d.units, ...(d.weekendId ? {weekendId: d.weekendId} : {})});
+    }
+    return out;
+  };
+  const weights = merge(() => true).map(d => d.units);
+  const splitLocked = (weekendId: string) => prepared.duties.some(d => d.weekendId === weekendId && lockOf.has(d.id));
+  const generated = merge(weekendId => !splitLocked(weekendId));
+  const weekendDuties = generated.filter(d => d.weekendId && !lockOf.has(d.id)).map(d => d.units).sort((a, b) => b - a);
   const weekendFree = sum(weekendDuties);
-  return {prepared, ids, total, locked, nonWeekend, weekendFree, weekendDuties, projection, seniority: [...input.seniority],
+  return {prepared, ids, total, locked, nonWeekend, weekendFree, weekendDuties, weights, generated, projection, seniority: [...input.seniority],
     candidates: projection.projected.candidates.filter(c => ids.includes(c.debtorId) && ids.includes(c.creditorId)),
     key: inputKey({schedule, seniority: snapshotKey(input.seniority), ledger: projection.sourceFingerprint, cutoff: projection.cutoffMs})};
 }
 export type Context = ReturnType<typeof context>;
+/** A duty as planning sees it: a split weekend's halves may be one weekend again. */
+export type PlanningDuty = {id: string; units: number; weekendId?: string};
 
 export function validTargets(c: Context, targets: Record<string, number>) {
   return Object.keys(targets).length === c.ids.length && c.ids.every(id =>
     Number.isSafeInteger(targets[id]) && targets[id] >= c.locked[id]) && sum(Object.values(targets)) === c.total;
 }
 
-/** Smallest allocation step: whole points unless the month has half-point duties. */
+/** Smallest allocation step: whole points unless the month has half-point duties (a split
+ * weekend's halves count as their weekend). */
 export function grain(c: Context) {
   const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
-  return c.prepared.duties.reduce((g, d) => gcd(g, d.units), 0) || 2;
+  return c.weights.reduce((g, units) => gcd(g, units), 0) || 2;
 }
 
 /** The hard availability ceiling, never a feasibility proof: the units of every duty a
