@@ -18,9 +18,9 @@ async function editDuty(page:Page,day:string){
 }
 
 for(const lang of ['en','he'] as const)for(const weekend of [
- {friday:'2026-11-06',sunday:'2026-11-08',previous:0,en:'6 Nov – 7 Nov · Friday–Saturday',he:'6 בנוב׳ – 7 בנוב׳ · שישי–שבת'},
- {friday:'2026-07-31',sunday:'2026-08-02',previous:4,en:'31 Jul – 1 Aug · Friday–Saturday',he:'31 ביולי – 1 באוג׳ · שישי–שבת'},
-])test(`weekend editor shows Friday and Saturday ${lang} ${weekend.friday}`,async({page,openApp,backend},info)=>{
+ {friday:'2026-11-06',sunday:'2026-11-08',previous:0,en:'Fri 6 – Sat 7 Nov · 1 pt',he:'יום ו׳, 6 בנוב׳ – שבת, 7 בנוב׳ · 1 נק׳'},
+ {friday:'2026-07-31',sunday:'2026-08-02',previous:4,en:'Fri 31 Jul – Sat 1 Aug · 1 pt',he:'יום ו׳, 31 ביולי – שבת, 1 באוג׳ · 1 נק׳'},
+])test(`weekend editor shows one weekend and two days ${lang} ${weekend.friday}`,async({page,openApp,backend},info)=>{
  if(weekend.previous){
   backend.raw.months.push({month:'2026-07',deadline:'2026-06-24',status:'draft',generated:true,current_publication_id:null,publication_sequence:0});
   backend.raw.assignments.push({id:'boundary-weekend',publication_id:null,day:weekend.friday,end_day:weekend.sunday,primary_id:ids.admin,secondary_id:ids.c,manager_override:false,title:'',extra_points:0,points:1});
@@ -34,10 +34,17 @@ for(const lang of ['en','he'] as const)for(const weekend of [
  const dialog=page.locator('.duty-dialog'),description=dialog.locator('.sheet-description');
  await expect(dialog).toHaveAttribute('dir',lang==='he'?'rtl':'ltr');
  await expect(description).toHaveText(weekend[lang]);
+ await expect(dialog.getByRole('radio',{name:lang==='en'?'One weekend':'סוף שבוע אחד',exact:true})).toHaveAttribute('aria-checked','true');
+ await expect(dialog.getByRole('combobox',{name:lang==='en'?'Primary engineer':'מהנדס ראשי',exact:true})).toBeVisible();
+ await fits(page,dialog);
+ // Two days: each date its own card; switching back with the same person just joins.
+ await dialog.getByRole('radio',{name:lang==='en'?'Two days':'שני ימים',exact:true}).click();
  await expect(dialog.getByRole('combobox',{name:lang==='en'?'Friday primary engineer':'מהנדס ראשי ביום שישי',exact:true})).toBeVisible();
- await expect(dialog.getByRole('combobox',{name:lang==='en'?'Saturday engineer':'מהנדס ביום שבת',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('combobox',{name:lang==='en'?'Saturday primary engineer':'מהנדס ראשי ביום שבת',exact:true})).toBeVisible();
  await fits(page,dialog);
  await dialog.screenshot({path:info.outputPath(`weekend-${lang}.png`)});
+ await dialog.getByRole('radio',{name:lang==='en'?'One weekend':'סוף שבוע אחד',exact:true}).click();
+ await expect(dialog.getByRole('combobox',{name:lang==='en'?'Primary engineer':'מהנדס ראשי',exact:true})).toBeVisible();
  await dialog.getByRole('button',{name:lang==='en'?'Save assignment':'שמירת השיבוץ',exact:true}).click();
  await expect(dialog).toBeHidden();
  expect(backend.raw.assignments.find(row=>row.day===weekend.friday&&row.publication_id===null)).toMatchObject({

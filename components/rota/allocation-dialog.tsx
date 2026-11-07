@@ -1,6 +1,6 @@
 'use client';
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
+import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles, Split} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Avatar} from '@/components/ui/avatar';
 import {CountUp} from '@/components/ui/count-up';
@@ -8,7 +8,7 @@ import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
 import {PlanPie} from './plan-pie';
 import './plan-month.css';
-import type {State} from '@/lib/rota/engine';
+import {addDays, type State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Kind} from '@/lib/allocation/types';
 import type {Language, Translate} from './workspace-types';
@@ -23,9 +23,16 @@ const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(u
 /** Every error the plan shows names its reason (lib/messages.ts). */
 export const allocationMessage = userMessage;
 
-export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
-  flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;
+/** Hand-split weekends with neither half locked: Generate joins them back into one weekend. */
+export const unlockedSplits = (state: State, month: string) =>
+  (state.splitWeekends ?? []).filter(f => f.slice(0, 7) === month && !state.assignments[f]?.locked && !state.assignments[addDays(f, 1)]?.locked).sort();
+
+export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, onShowSplits}: {
+  flow: AllocationWorkflow; state: State; month: string; monthLabel: string; lang: Language; t: Translate;
+  /** Closes the plan and points at the split weekends in the calendar. */
+  onShowSplits?: (fridays: string[]) => void;
 }) {
+  const splits = unlockedSplits(state, month);
   const member = (id: string) => state.team.find(p => p.id === id);
   const name = (id: string) => member(id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
   // One kind for every +/− control: most changes are temporary (repaid later).
@@ -120,6 +127,11 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
       {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
       {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
+      {!f.closed && !f.busy && !!splits.length && <p className="allocation-attention plan-split-note" role="note" data-split-note>
+        <Split size={16} aria-hidden="true"/>
+        <span>{splits.length === 1 ? t('1 split weekend will go back to one weekend · Lock it to keep it', 'סוף שבוע מפוצל אחד יחזור להיות סוף שבוע אחד · אפשר לנעול אותו כדי לשמור') : t(`${splits.length} split weekends will go back to one weekend · Lock them to keep them`, `${splits.length} סופי שבוע מפוצלים יחזרו להיות סוף שבוע אחד · אפשר לנעול אותם כדי לשמור`)}</span>
+        {onShowSplits && <Button size="xs" variant="link" className="plan-split-show" onClick={() => onShowSplits(splits)}>{t('Show', 'הצגה')}</Button>}
+      </p>}
       {f.replanBlocked && <p className="allocation-attention" role="note">{allocationMessage(f.replanBlocked, t)}</p>}
       {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {f.weekendTakers !== null && f.weekendTakers <= 1 && <p className="allocation-attention" role="note">{f.weekendTakers ? t('Only one member here takes weekends, so Generate may leave some weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'רק חבר אחד כאן עושה סופי שבוע, ולכן השיבוץ עלול להשאיר סופי שבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.') : t('No one here takes weekends, so Generate will leave the weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'אף אחד כאן לא עושה סופי שבוע, ולכן השיבוץ ישאיר את סופי השבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.')}</p>}

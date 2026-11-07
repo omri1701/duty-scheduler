@@ -82,7 +82,10 @@ test('weekend lock covers both saved primaries and preserves emergency cover in 
   expect(backend.raw.assignments.find(d => d.day === before.day && !d.publication_id)).toMatchObject({...before, locked: true});
   await expect(duty(page, before.day).getByRole('img', {name: 'תורנות נעולה'})).toBeVisible();
   await edit(page, before.day);
-  await dialog.getByRole('combobox', {name: 'מהנדס ביום שבת', exact: true}).click();
+  // Two days: both halves start with the weekend's person and lock.
+  await dialog.getByRole('radio', {name: 'שני ימים', exact: true}).click();
+  await expect(dialog.getByRole('button', {name: 'ביטול נעילת יום שבת', exact: true})).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('combobox', {name: 'מהנדס ראשי ביום שבת', exact: true}).click();
   await page.getByRole('option', {name: 'Drew Dale', exact: true}).click();
   if (await dialog.getByRole('checkbox').isVisible()) await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', {name: 'שמירת השיבוץ', exact: true}).click();

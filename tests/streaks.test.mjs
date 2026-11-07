@@ -39,6 +39,9 @@ test('a hand-split weekend and a lone special duty keep per-date badges; differe
   assert.deepEqual([split['2026-10-02'].position, split['2026-10-02'].showTitle, split['2026-10-02'].nameColumns, split['2026-10-03'].position, split['2026-10-03'].badge], ['start', true, 2, 'end', 2]);
   assert.equal(split['2026-10-02'].breakAfter, false, 'Friday → Saturday is inside one row');
   assert.equal('badge' in split['2026-10-02'], false, 'the total shows once, on the last day');
+  // The calendar keeps a split weekend's halves as two regular day chips (decision 2026-11-07).
+  const apart = streakCells([...new Map([...blocks('2026-10', specials, ['2026-10-02'])].map(b => [b.id, b])).values()], {'2026-10-02': own('a'), '2026-10-03': own('a')}, (x, y) => !!x.weekendId && x.weekendId === y.weekendId);
+  assert.deepEqual([apart['2026-10-02'].position, apart['2026-10-03'].position, apart['2026-10-02'].badge, apart['2026-10-03'].badge], ['only', 'only', 1, 1]);
 });
 
 test('each row segment of a streak carries one centred name; a lone segment keeps the name in its own chip', () => {

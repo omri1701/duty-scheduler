@@ -929,3 +929,35 @@ textarea{resize:vertical;min-height:76px}
 .month-preview-day.outside{color:var(--ink-4)}
 .month-preview-day i{font-style:normal;font-size:12px;padding:5px 4px;border-radius:9px;text-align:center;background:var(--member-bg);color:var(--member-ink);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 @media(max-width:600px){.month-preview-day{min-height:72px;padding:6px 3px;font-size:13px;align-items:center}.month-preview-day i{font-size:11px;width:100%}}
+
+/* Weekend editor (duty-editor.tsx, decision 2026-11-07): one card or two day cards in one sheet. */
+.day-cards{display:flex;flex-direction:column;gap:12px}
+.day-card{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:var(--radius);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
+.day-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:32px}
+.day-card-title{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--ink)}
+.day-card .picker{max-width:none;width:100%}
+.day-card .emergency-editor{background:var(--surface-2)}
+.weekend-layout{flex-shrink:0}
+.split-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:6px 6px 6px 14px;border-radius:12px;background:var(--surface-2);font-size:14px;color:var(--ink-2)}
+[dir=rtl] .split-row{padding:6px 14px 6px 6px}
+.keep-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.keep-option{display:flex;align-items:center;gap:10px;min-width:0;min-height:56px;padding:10px 12px;border-radius:12px;background:var(--surface-2);text-align:start;transition:transform 160ms var(--spring),background var(--dur) var(--ease)}
+.keep-option>span:last-child{display:flex;flex-direction:column;min-width:0}
+.keep-option strong{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.keep-option small{font-size:12px;color:var(--ink-3)}
+.keep-option:active{transform:scale(.97)}
+@media(hover:hover){.keep-option:hover{background:var(--surface-3)}}
+@media(max-width:600px){.keep-choice{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:no-preference){
+ .card-split-in{animation:card-split 420ms var(--spring) both}
+ .card-join-in{animation:card-join 300ms var(--spring)}
+ .keep-choice{animation:fade-up 220ms var(--ease) both}
+}
+@keyframes card-split{from{opacity:0;transform:translateY(-55%) scale(.94)}}
+@keyframes card-join{from{transform:scale(1.025)}}
+/* Plan the month: unlocked split weekends go back to one weekend on Generate. */
+.plan-split-note{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.plan-split-note>span{flex:1;min-width:12em}
+@media(prefers-reduced-motion:no-preference){.calendar-grid .flash-day .assignment-chip{animation:flash-day 800ms var(--ease) 3}}
+@keyframes flash-day{50%{transform:scale(1.06);box-shadow:0 0 0 3px color-mix(in srgb,var(--warn) 55%,transparent)}}
+.calendar-grid .flash-day .assignment-chip{box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 55%,transparent)}

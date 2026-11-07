@@ -12,7 +12,8 @@ const tab=async(page:Page,en:string,hebrew:string)=>page.getByRole('tab',{name:a
 const openMember=async(page:Page,id:string)=>{await tab(page,'Team','צוות');await page.locator(`.team-row[data-member="${id}"] .team-row-inner`).click();};
 // A tap opens the duty sheet (on a phone, the day's details first); its Edit opens the editor.
 async function editDuty(page:Page,day:string){
- await tab(page,'Schedule','לוח');await duty(page,day).click();
+ // A second tap on the selected phone day closes it (owner round 2): only tap a day not already open.
+ await tab(page,'Schedule','לוח');if(!await duty(page,day).evaluate(el=>el.classList.contains('selected-day')))await duty(page,day).click();
  const details=page.locator('[data-day-details] .day-duty');
  await expect(page.getByRole('dialog').or(details)).toBeVisible();
  if(await details.isVisible())await details.click();
@@ -171,16 +172,19 @@ for(const lang of ['en','he'] as const)test(`Reset in Plan the month returns to 
  await expect(note).toHaveText(he?'ללא סופי שבוע':'No weekends');
 });
 
-// Clearing a weekend (reported 2026-11-05): Leave unassigned keeps one empty weekend, never two halves.
+// Clearing a weekend (reported 2026-11-05): Leave unassigned keeps one empty weekend, never two halves,
+// also when both of its days were cleared one by one.
 for(const lang of ['en','he'] as const)test(`clearing a weekend in the editor keeps it one weekend ${lang}`,async({page,openApp,backend})=>{
  const he=lang==='he';
  await openApp();
  if(he)await switchLanguage(page, 'he');
  await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog');
- await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
- await page.getByRole('option',{name:he?'ללא שיבוץ':'Leave unassigned',exact:true}).click();
- await expect(dialog.getByRole('combobox',{name:he?'מהנדס ביום שבת':'Saturday engineer',exact:true})).toHaveText(he?'ללא שיבוץ':'Leave unassigned');
+ await dialog.getByRole('radio',{name:he?'שני ימים':'Two days',exact:true}).click();
+ for(const d of he?['שישי','שבת']:['Friday','Saturday']){
+  await dialog.getByRole('combobox',{name:he?`מהנדס ראשי ביום ${d}`:`${d} primary engineer`,exact:true}).click();
+  await page.getByRole('option',{name:he?'ללא שיבוץ':'Leave unassigned',exact:true}).click();
+ }
  await dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true}).click();
  await expect(dialog).toBeHidden();
  const save=backend.calls.filter(c=>c.name==='duty_save_schedule').at(-1)!.params.p_state as {duties:{day:string;end_day:string;primary_id:string|null}[]};
@@ -199,11 +203,11 @@ for(const lang of ['en','he'] as const)test(`placing a No weekends member on a w
  if(he)await switchLanguage(page, 'he');
  await editDuty(page,'2026-11-06');
  const dialog=page.getByRole('dialog'),save=dialog.getByRole('button',{name:he?'שמירת השיבוץ':'Save assignment',exact:true});
- await dialog.getByRole('combobox',{name:he?'מהנדס ראשי ביום שישי':'Friday primary engineer',exact:true}).click();
+ await dialog.getByRole('combobox',{name:he?'מהנדס ראשי':'Primary engineer',exact:true}).click();
  const option=page.getByRole('option',{name:new RegExp(`^${who}`)});
  await expect(option).toContainText(he?' · ללא סופי שבוע':' · no weekends');
  await option.click();
- // Saturday follows Friday: both days are named.
+ // One weekend covers both days: both are named.
  const warning=dialog.locator('.warning-note');
  await expect(warning).toContainText(he?`${who} לא עושה סופי שבוע`:`${who} doesn’t take weekends`);
  await expect(warning.locator('p').filter({hasText:he?'לא עושה סופי שבוע':'doesn’t take weekends'})).toHaveCount(2);

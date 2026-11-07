@@ -28,7 +28,8 @@ async function editTapped(page: Page) {
   if (await details.isVisible()) await details.click();
   await page.getByRole('dialog').getByRole('button', {name: /^(Edit|עריכה)$/}).click();
 }
-const editDuty = async (page: Page, day: string) => {await duty(page, day).click(); await editTapped(page);};
+// A second tap on the selected phone day closes it (owner round 2): only tap a day not already open.
+const editDuty = async (page: Page, day: string) => {if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) await duty(page, day).click(); await editTapped(page);};
 
 test('the holiday badge sits on the date line at normal row height and marks only the holiday dates, in English and Hebrew', async ({page, backend, openApp}) => {
   fridayOnlyHoliday(backend);
@@ -66,7 +67,9 @@ test('removing the extra points works on a combined weekend and on a hand-split 
   await expect(duty(page, '2026-11-20')).not.toHaveClass(/special/);
   // Split weekend: the Saturday half loses only its own extra; Friday keeps +1 and the split stays.
   await editDuty(page, '2026-11-28');
-  await expect(dialog.locator('.sheet-description')).toContainText('27 Nov – 28 Nov');
+  // A split half opens as its own day, with its own points (decision 2026-11-07).
+  await expect(dialog.locator('.sheet-description')).toHaveText('Sat 28 Nov · 1.5 pt');
+  await expect(dialog.locator('.split-row')).toContainText('Part of a split weekend');
   await dialog.getByRole('button', {name: 'Remove extra points from this duty', exact: true}).click();
   await expect(dialog).toBeHidden();
   expect(draftRow(backend, '2026-11-28')).toMatchObject({end_day: '2026-11-29', title: '', extra_points: 0, points: 0.5, primary_id: ids.e});

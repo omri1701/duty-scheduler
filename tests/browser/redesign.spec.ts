@@ -306,3 +306,50 @@ for (const lang of ['en', 'he'] as const) {
     await both(page, `access-inactive-${lang}`);
   });
 }
+
+// The weekend editor (decision 2026-11-07): one weekend, two days, the keep choice, a split half,
+// the calendar with a split weekend and Plan the month's split notice.
+for (const lang of ['en', 'he'] as const) {
+  const t = (en: string, he: string) => lang === 'en' ? en : he;
+  test(`weekend editor and split weekends ${lang}`, async ({page, openApp, backend}) => {
+    backend.raw.assignments = backend.raw.assignments.filter(r => r.day !== '2026-11-13');
+    for (const publication of [backend.raw.publications[0].id, null]) backend.raw.assignments.push(
+      {id: `fri-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-13', end_day: '2026-11-14', primary_id: ids.a, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5},
+      {id: `sat-${publication ?? 'draft'}`, publication_id: publication, day: '2026-11-14', end_day: '2026-11-15', primary_id: ids.b, secondary_id: null, locked: false, manager_override: false, title: '', extra_points: 0, saturday_extra_points: 0, points: 0.5});
+    await openApp('admin');
+    if (lang === 'he') await switchLanguage(page, 'he');
+    await tab(page, t('Schedule', 'לוח')).click();
+    await expect(page.locator('.calendar-grid')).toBeVisible();
+    await both(page, `schedule-split-${lang}`);
+    const open = async (day: string) => {
+      const cell = page.locator(`button[data-date="${day}"]`).filter({has: page.locator('.date-line')}), details = page.locator('[data-day-details] .day-duty');
+      if (!await cell.evaluate(el => el.classList.contains('selected-day'))) await cell.click();
+      await expect(page.getByRole('dialog').or(details)).toBeVisible();
+      if (await details.isVisible()) await details.click();
+      await page.getByRole('dialog').getByRole('button', {name: t('Edit', 'עריכה'), exact: true}).click();
+      await expect(page.locator('.duty-dialog')).toBeVisible();
+    };
+    const dialog = page.locator('.duty-dialog');
+    await open('2026-11-06');
+    await both(page, `weekend-one-${lang}`);
+    await dialog.getByRole('radio', {name: t('Two days', 'שני ימים'), exact: true}).click();
+    await expect(dialog.locator('.day-card')).toHaveCount(2);
+    await both(page, `weekend-two-${lang}`);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await open('2026-11-14');
+    await expect(dialog.locator('.split-row')).toBeVisible();
+    await both(page, `weekend-half-${lang}`);
+    await dialog.getByRole('button', {name: t('Join', 'איחוד'), exact: true}).click();
+    await expect(dialog.locator('.keep-option')).toHaveCount(2);
+    await both(page, `weekend-keep-${lang}`);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const primary = page.locator('.month-primary'), plan = t('Plan the month', 'תכנון החודש');
+    if (await primary.getAttribute('aria-label') === plan) await primary.click(); else await monthAction(page, plan);
+    await expect(page.locator('[data-split-note]')).toBeVisible();
+    await expect(page.locator('.allocation-dialog .plan-rows')).toBeVisible();
+    await page.mouse.move(0, 0);
+    await both(page, `plan-split-${lang}`);
+  });
+}

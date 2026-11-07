@@ -23,12 +23,13 @@ export const extraPoints = (d: Duty) => d.points - (d.weekendId ? (d.end === add
 
 const days = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 864e5);
 
-export function streakCells(duties: readonly Duty[], assignments: Record<string, Assignment>): Record<string, StreakCell> {
+/** `apart` keeps two adjacent duties as separate chips (the halves of a split weekend). */
+export function streakCells(duties: readonly Duty[], assignments: Record<string, Assignment>, apart?: (a: Duty, b: Duty) => boolean): Record<string, StreakCell> {
   const sorted = [...duties].sort((a, b) => a.start.localeCompare(b.start)), result: Record<string, StreakCell> = {};
   const primary = (d: Duty) => assignments[d.id]?.primary || '';
   for (let i = 0; i < sorted.length;) {
     let j = i;
-    while (j + 1 < sorted.length && sorted[j].end === sorted[j + 1].start && primary(sorted[j]) && primary(sorted[j]) === primary(sorted[j + 1])) j++;
+    while (j + 1 < sorted.length && sorted[j].end === sorted[j + 1].start && primary(sorted[j]) && primary(sorted[j]) === primary(sorted[j + 1]) && !apart?.(sorted[j], sorted[j + 1])) j++;
     const chain = sorted.slice(i, j + 1), specials = chain.filter(d => d.kind === 'special');
     const total = specials.reduce((sum, d) => sum + extraPoints(d), 0);
     const breakAfter = (k: number) => k < chain.length - 1 && dayOf(addDays(chain[k].end, -1)) === 6;

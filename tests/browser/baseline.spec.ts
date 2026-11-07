@@ -4,7 +4,8 @@ import {test, expect, monthAction, ids, MONTH, duty, drag, switchLanguage} from 
 const schedule = (page: Page) => page.getByRole('tab', {name: 'Schedule', exact: true}).click();
 /** A tap opens the duty sheet on PC; on phones it shows the day's details, whose row opens the sheet. */
 async function openSheet(page: Page, day: string) {
-  await duty(page, day).click();
+  // A second tap on the selected phone day closes it (owner round 2).
+  if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) await duty(page, day).click();
   const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
   await expect(sheet.or(details).first()).toBeVisible();
   if (!(await sheet.isVisible())) await details.click();
@@ -233,8 +234,9 @@ test('weekend editor saves split owners atomically', async ({page, openApp, back
   await openApp();
   await schedule(page);
   await editDuty(page, '2026-11-06');
-  await expect(page.getByRole('dialog', {name: 'Edit weekend'})).toBeVisible();
-  await page.getByRole('combobox', {name: 'Saturday engineer', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Weekend'})).toBeVisible();
+  await page.getByRole('radio', {name: 'Two days', exact: true}).click();
+  await page.getByRole('combobox', {name: 'Saturday primary engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Alex Atlas', exact: true}).click();
   const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
   if (await override.isVisible()) await override.check();

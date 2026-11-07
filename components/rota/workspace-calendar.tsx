@@ -11,7 +11,7 @@ import {useMobileLayout} from '@/hooks/use-mobile-layout';
 
 /** The month grid (decision 2026-11-06): names in member colours, the member's own duties
  * highlighted, today ringed; a tap goes to `onSelect`, a hold-and-drag proposes a swap. */
-export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCells, today, month, lang, t, fmt, nickname, meId, readOnly, requesting, interactions, onSelect, selectedDay, pickingFrom, notices}: {
+export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCells, today, month, lang, t, fmt, nickname, meId, readOnly, requesting, interactions, onSelect, selectedDay, pickingFrom, notices, flashDays}: {
   state: State; calendarState: State; calendarBlocks: Duty[]; dateCells: string[]; today: string; month: string; lang: Language; t: Translate; fmt: FormatDate;
   nickname: (id?: string) => string; meId: string; readOnly: boolean; requesting: boolean; interactions: CalendarInteractions;
   /** A tap or Enter on a day that isn't part of a swap in progress. */
@@ -21,11 +21,14 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
   /** An admin's draft swap waiting for its second duty. */
   pickingFrom?: string | null;
   notices?: ReactNode;
+  /** Days pointed at from elsewhere (the plan's split-weekend notice): they pulse once. */
+  flashDays?: readonly string[];
 }) {
   const {keyboardSource, dragFrom, dragOver, pendingDrop, swapSourceDays, publishedDuty, requestTarget, swapHint, swapBlock, dragContainer, ignoreDragClick, selectCalendarDuty} = interactions;
   const mobile = useMobileLayout();
-  // Display only: adjacent duties of one member read as a single bar.
-  const streaks = streakCells(calendarBlocks, calendarState.assignments);
+  // Display only: adjacent duties of one member read as a single bar; a split weekend's halves
+  // stay two regular day chips (decision 2026-11-07).
+  const streaks = streakCells(calendarBlocks, calendarState.assignments, (a, b) => !!a.weekendId && a.weekendId === b.weekendId);
   const cells = calendarCells(dateCells, calendarBlocks), draft = calendarState.months[month]?.status === 'draft';
   const locked = (b?: Duty) => !!b && draft && !!calendarState.assignments[b.id]?.locked;
   // A week with a lock or a +extra gives the phone a marks line under its dates, in every cell so the bars stay level.
@@ -75,6 +78,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
             mine ? 'mine' : '',
             d === today ? 'today' : '',
             selectedDay === d ? 'selected-day' : '',
+            flashDays?.includes(d) ? 'flash-day' : '',
             cell ? `streak-${cell.position}` : '',
             cell?.breakBefore ? 'streak-break-before' : '',
             cell?.breakAfter ? 'streak-break-after' : '',

@@ -100,6 +100,9 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   const [publishedEdit, setPublishedEdit] = useState<string | null>(null);
   // The tapped day (phone details) and the duty whose sheet is open; an admin's draft swap waiting for its second duty.
   const [selectedDay, setSelectedDay] = useState<string | null>(null), [sheetDuty, setSheetDuty] = useState<Duty | null>(null), [pickingFrom, setPickingFrom] = useState<string | null>(null);
+  // Split weekends the plan pointed at ("Show"): their days pulse briefly in the calendar.
+  const [flashDays, setFlashDays] = useState<string[]>([]);
+  useEffect(() => {if (!flashDays.length) return; const timer = setTimeout(() => setFlashDays([]), 2400); return () => clearTimeout(timer);}, [flashDays]);
   const t = (en: string, he: string) => (lang === 'en' ? en : he);
   const duties = useMemo(() => blocks(month, state.specials, state.splitWeekends), [month, state.specials, state.splitWeekends]);
   const monthDetails = state.months[month] ?? {deadline: addDays(month + '-01', -7), status: 'draft' as const};
@@ -319,7 +322,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
             <MonthStage ref={stage} month={month} rtl={lang === 'he'} onChange={changeMonth} preview={m => <MonthPreview month={m} state={calendarState} lang={lang}/>}>
                 <WorkspaceCalendar state={state} calendarState={calendarState} calendarBlocks={calendarBlocks} dateCells={dateCells} today={today} month={month} lang={lang} t={t} fmt={fmt}
                   nickname={nickname} meId={meId} readOnly={remote.readOnly} requesting={requesting} interactions={interactions} onSelect={selectDay}
-                  selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices}/>
+                  selectedDay={mobile ? selectedDay : null} pickingFrom={pickingFrom} notices={notices} flashDays={flashDays}/>
             </MonthStage>
             {mobile && selectedDay && <DayDetails date={selectedDay} duty={selectedDuty && ownerMonth(selectedDuty) === month ? selectedDuty : undefined} state={calendarState} lang={lang} t={t} meId={meId}
               interactive={!remote.readOnly} onOpen={b => setSheetDuty(b)}/>}
@@ -340,7 +343,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     <SwapRequestDialog key={`swap-request-${month}`} remote={remote} month={month} lang={lang} selection={requestSelection} onSelection={setRequestSelection}/>
     <DutySheet duty={sheetDuty} state={calendarState} lang={lang} t={t} meId={meId} open={!!sheetDuty} onClose={() => setSheetDuty(null)} actions={sheetActions(sheetDuty)} published={requesting && !!publication}/>
     <SettingsScreen remote={remote} open={settingsOpen} onOpenChange={setSettingsOpen} lang={lang} setLang={setLang} onExport={isManager ? exportBackup : undefined}/>
-    {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} monthLabel={monthLabel} lang={lang} t={t}/>}
+    {isManager && allocation.open && <AllocationDialog flow={allocation} state={state} month={month} monthLabel={monthLabel} lang={lang} t={t}
+      onShowSplits={fridays => {allocation.close(); setTab('schedule'); if (mobile) setSelectedDay(fridays[0]); setFlashDays(fridays.flatMap(f => [f, addDays(f, 1)]));}}/>}
     {isManager && <PublicationHistory key={`history-${month}`} remote={remote} month={month} open={historyOpen} onOpenChange={setHistoryOpen} lang={lang}/>}
     {selected && <DutyEditor key={selected.id} state={state} duty={selected} month={month} lang={lang} onClose={() => setSelected(null)} saving={remote.saving}
       onMonth={(m) => {goToMonth(m); setSelected(null);}} onSave={draft.editor.save} onRemoveSpecial={draft.editor.removeSpecial}/>}
