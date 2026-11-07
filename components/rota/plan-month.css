@@ -90,10 +90,6 @@
 .allocation-toast{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:12px;background:var(--ink);color:var(--bg);font-size:13px;line-height:1.5;box-shadow:var(--shadow-pop)}
 .allocation-toast button{flex-shrink:0;min-height:36px;padding:0 6px;font-weight:650;color:var(--on-ink-action);white-space:nowrap}
 .allocation-toast button:disabled{opacity:.5}
-.allocation-progress{display:flex;gap:12px;padding:12px 0;align-items:flex-start;font-size:13px}
-.allocation-progress svg{flex-shrink:0;margin-top:3px;color:var(--brand)}
-.allocation-progress strong{font-weight:600}
-.allocation-progress small{display:block;color:var(--ink-3);margin-top:5px;line-height:1.6}
 .allocation-footer{display:flex;justify-content:space-between;gap:10px 14px;align-items:center;flex-wrap:wrap;min-width:0}
 .allocation-footer>div{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .allocation-footer strong{font-weight:700}

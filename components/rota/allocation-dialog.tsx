@@ -1,7 +1,8 @@
 'use client';
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles, Split} from 'lucide-react';
+import {Check, ListRestart, LoaderCircle, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles, Split} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {BusyLabel} from '@/components/ui/busy-label';
 import {Avatar} from '@/components/ui/avatar';
 import {CountUp} from '@/components/ui/count-up';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
@@ -77,23 +78,28 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
     return t(`${list(ids)} ${ids.length > 1 ? 'get' : 'gets'} ${points(units)} pts`, `${list(ids)} – ${points(units)} נק׳`);
   }).join('; ');
   const unplacedUnits = Math.abs(f.unplaced.temporary) + Math.abs(f.unplaced.permanent);
-  const status = f.phase === 'loading' ? t('Loading the authoritative month…', 'טוען את נתוני החודש…')
-    : f.phase === 'confirming' ? t('Confirming targets…', 'מאשר את היעדים…')
-    : f.phase === 'generating' ? t('Finding the best arrangement…', 'מחפש את השיבוץ הטוב ביותר…')
-    : t('Verifying and saving your draft…', 'מאמת ושומר את הטיוטה…');
+  // Progress shows on the button that started it (decision 2026-11-07), never as a block below.
+  const [running, setRunning] = useState<'save' | 'generate' | null>(null);
+  const shows = (action: 'save' | 'generate') => f.busy && f.phase !== 'loading' && running === action;
+  const status = shows('generate') ? (f.closed ? t('Saving the allocation…', 'שומר את ההקצאה…') : t('Generating…', 'משבץ…')) : shows('save') ? t('Saving…', 'שומר…') : '';
   const kindLabel = kind === 'permanent' ? t('Permanent', 'קבוע') : t('Temporary', 'זמני');
   const rows = f.draft ? f.totals?.rows ?? [] : [];
   const slices = rows.map(r => ({...r, name: name(r.id), color: member(r.id)?.color ?? '#c8d3c4'}));
   return <EditorDialog open={f.open} onClose={f.close} saving={f.saving} lang={lang} className="allocation-dialog"
     title={t('Plan the month', 'תכנון החודש')} description={monthLabel} desktop="center" size="lg"
     footer={<div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong></div>
-      <div className="plan-actions">{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
-      // A failed read of the month is the only state with nothing to confirm: retry it here.
-      : f.retry ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
+      <div className="plan-actions">{f.retry && !f.busy ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
+      // A failed read of the month is the only state with nothing to confirm: retry it there.
       : <>
         {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
-        {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
-        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
+        {f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
+        : !f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved || f.busy} aria-busy={shows('save') || undefined} onClick={() => {setRunning('save'); f.confirm(false);}}>
+          {f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <>{shows('save') ? <LoaderCircle className="spin"/> : <Save/>}<BusyLabel busy={shows('save')} idle={t('Save', 'שמירה')} active={t('Saving…', 'שומר…')}/></>}</Button>}
+        <Button className="plan-generate" disabled={f.busy || !f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} aria-busy={shows('generate') || undefined} onClick={() => {setRunning('generate'); f.confirm(!f.closed);}}>
+          {shows('generate') ? <LoaderCircle className="spin"/> : <Sparkles/>}
+          <BusyLabel busy={shows('generate')} idle={f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')} active={f.closed ? t('Saving…', 'שומר…') : t('Generating…', 'משבץ…')}/>
+        </Button>
+        <span className="sr-only" role="status">{status}</span>
       </>}</div></div>}>
     <div className="allocation-scroll">
       <section className="plan-hero" aria-label={t('Monthly allocation total', 'סך ההקצאה החודשית')}>
@@ -211,7 +217,6 @@ export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, on
       {(f.structural || f.error) && <div className="warning-note" role="alert">{allocationMessage(f.structural || f.error, t)}</div>}
       {f.notice && <p className="allocation-caption" role="status">{f.notice}</p>}
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy || !canMakePermanent} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
-      {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
     </div>
   </EditorDialog>;
 }

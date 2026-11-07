@@ -3,7 +3,7 @@ import {initialCalendarMonth, calendarMonthLabel} from '@/lib/rota/calendar-date
 import {useMobileLayout} from '@/hooks/use-mobile-layout';
 import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {EnvironmentBadge, InspectionWarning} from '@/components/environment-indicator';
-import {Check, Eraser, History, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2} from 'lucide-react';
+import {Check, Eraser, History, LoaderCircle, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Avatar} from '@/components/ui/avatar';
 import {Segmented} from '@/components/ui/segmented';
@@ -252,7 +252,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   const planLabel = t('Plan the month', 'תכנון החודש'), closedReason = t('Coverage has started: manual edits and swaps only', 'הכיסוי החודשי התחיל: רק עריכה ידנית והחלפות');
   let primary: PrimaryAction | undefined, menu: MenuItem[] = [];
   if (isManager) {
-    const plan: PrimaryAction = {label: allocation.busy ? t('Generating…', 'משבץ…') : planLabel, icon: <Sparkles className={allocation.busy ? 'spin' : undefined}/>, onClick: allocation.show, busy: allocation.busy,
+    const generating = t('Generating…', 'משבץ…');
+    const plan: PrimaryAction = {label: planLabel, busyLabel: generating, icon: allocation.busy ? <LoaderCircle className="spin"/> : <Sparkles/>, onClick: allocation.show, busy: allocation.busy,
       disabled: remote.readOnly || (generationClosed && !monthDetails.generated) || !metrics.active.length, reason: generationClosed && !monthDetails.generated ? closedReason : !metrics.active.length ? t('Add active members first', 'יש להוסיף חברי צוות פעילים קודם') : undefined};
     if (monthDetails.status === 'published') primary = {label: t('Reopen', 'פתיחה לעריכה'), variant: 'secondary', icon: <History/>, disabled: remote.readOnly, onClick: async () => {
       if (!publication) return;
@@ -261,7 +262,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     else if (!viewingDraft) primary = undefined;
     else if (publishable) primary = {label: t('Publish', 'פרסום'), icon: <Check/>, disabled: remote.readOnly || allocation.busy, onClick: () => setPublishOpen(true)};
     else if (!monthDetails.generated) primary = plan;
-    else primary = {...plan, label: allocation.busy ? t('Generating…', 'משבץ…') : t('Review plan', 'בדיקת התוכנית'), dot: reviewNotes > 0, disabled: remote.readOnly || allocation.busy, reason: publishBlockers.join(' · ') || undefined};
+    else primary = {...plan, label: t('Review plan', 'בדיקת התוכנית'), dot: reviewNotes > 0, disabled: remote.readOnly || allocation.busy, reason: publishBlockers.join(' · ') || undefined};
     menu = [
       ...(viewingDraft && primary !== plan && primary?.label !== planLabel ? [{key: 'plan', label: planLabel, icon: <Sparkles/>, onSelect: allocation.show, disabled: plan.disabled || allocation.busy, reason: plan.reason}] : []),
       {key: 'versions', label: t('Versions', 'גרסאות'), icon: <History/>, onSelect: () => setHistoryOpen(true)},
