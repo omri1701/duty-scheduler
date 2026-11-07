@@ -1,143 +1,106 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
-import { TemporaryMemberDialog } from './temporary-member-dialog';
-import type { Member } from '@/lib/supabase/snapshot';
-import { Button } from '@/components/ui/button';
-import { TeamList } from '@/components/rota/team-list';
-import type { TeamWorkspace } from '@/hooks/use-team-workspace';
-import type { Balance } from '@/lib/supabase/balance';
-import { addDays, dayOf, type State } from '@/lib/rota/engine';
-import type { WorkspaceMetrics } from '@/lib/rota/workspace-data';
-import type { Language, Translate, UpdateDraft } from './workspace-types';
+import {useState} from 'react';
+import {toast} from 'sonner';
+import {UserPlus, Users} from 'lucide-react';
+import {TemporaryMemberDialog} from './temporary-member-dialog';
+import {MonthTitle} from './month-title';
+import {MemberSheet} from './member-sheet';
+import type {Member} from '@/lib/supabase/snapshot';
+import {Button} from '@/components/ui/button';
+import {Card, SectionTitle} from '@/components/ui/card';
+import {ListRow} from '@/components/ui/list-row';
+import {EmptyState} from '@/components/ui/empty-state';
+import {CountUp} from '@/components/ui/count-up';
+import {TeamList} from '@/components/rota/team-list';
+import type {TeamWorkspace} from '@/hooks/use-team-workspace';
+import {useBalance} from '@/hooks/use-balance';
+import {addDays, dayOf, type State} from '@/lib/rota/engine';
+import type {WorkspaceMetrics} from '@/lib/rota/workspace-data';
+import type {Language, Translate, UpdateDraft} from './workspace-types';
 import {userMessage} from '@/lib/messages';
-export function WorkspaceTeam({
-  remote,
-  state,
-  metrics,
-  meId,
-  isManager,
-  lang,
-  t,
-  update,
-}: {
-  remote: TeamWorkspace;
-  state: State;
-  metrics: WorkspaceMetrics;
-  meId: string;
-  isManager: boolean;
-  lang: Language;
-  t: Translate;
-  update: UpdateDraft;
+
+/** The Team tab (decision 2026-11-06): this month's coverage, the ordered team with points and
+ * the live balance, a member sheet, and join requests for admins. */
+export function WorkspaceTeam({remote, state, metrics, month, monthLabel, onMonth, meId, isManager, lang, t, update}: {
+  remote: TeamWorkspace; state: State; metrics: WorkspaceMetrics; month: string; monthLabel: string; onMonth: (offset: number) => void; meId: string; isManager: boolean; lang: Language; t: Translate; update: UpdateDraft;
 }) {
-  const { active, monthTotals, historyTotals } = metrics;
-  const [editing,setEditing]=useState<Member|null|undefined>(undefined);
-  const temporaryMembers=remote.snapshot?.members.filter(m=>m.is_temporary)??[];
-  const [balance,setBalance]=useState<{revision:number;value:Balance|null}|null>(null);
-  const revision=remote.snapshot?.revision,load=remote.balance;
-  useEffect(()=>{
-    if(revision==null)return;
-    let alive=true;
-    // Every published change advances the revision. An older database without
-    // the read RPC simply shows no number.
-    load().then(value=>{if(alive)setBalance({revision,value})},()=>{if(alive)setBalance({revision,value:null})});
-    return()=>{alive=false};
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load is recreated each render; revision is the trigger.
-  },[revision]);
-  return (
-    <><section className="team-panel">
-      <div className="section-heading">
-        <div>
-          <h3>{t('Team order', 'סדר הצוות')}</h3>
-          <p>{t('Most senior → newest', 'הוותיק ביותר ← החדש ביותר')}</p>
-        </div>
-        <span className="pill">
-          {active.length} {t('active engineers', 'מהנדסים פעילים')}
-        </span>
+  const {active, monthTotals, historyTotals, owned, assigned} = metrics;
+  const [editing, setEditing] = useState<Member | null | undefined>(undefined), [selected, setSelected] = useState<string | null>(null);
+  const temporaryMembers = remote.snapshot?.members.filter(m => m.is_temporary) ?? [];
+  // The last known nets stay on screen while a newer revision loads (hooks/use-balance.ts).
+  const balance = useBalance(remote) ?? null;
+  const points = owned.reduce((v, b) => v + b.points, 0);
+  const pending = remote.snapshot?.members.filter((m) => m.status === 'pending') ?? [];
+  const noWeekendIds = remote.snapshot?.members.filter((m) => m.no_weekends).map((m) => m.id) ?? [];
+  const member = state.team.find(p => p.id === selected) ?? null;
+  const fail = (e: unknown) => toast.error(userMessage((e as Error).message, t));
+  const setActive = (id: string, value: boolean) => {
+    update((s) => ({...s, team: s.team.map((p) => (p.id === id ? {...p, active: value} : p))}), false);
+    if (!value) toast(t('Existing duties are kept for review', 'שיבוצים קיימים נשמרים לבדיקה'));
+  };
+  return <>
+    <section className="team-screen">
+      <div className="month-bar">
+        <MonthTitle month={month} label={monthLabel} t={t} onChange={onMonth}/>
       </div>
-      {isManager&&!remote.readOnly&&<Button disabled={remote.saving} onClick={()=>setEditing(null)}>{t('Add Temporary Member','הוספת חבר זמני')}</Button>}
-      <TeamList
-        temporaryIds={temporaryMembers.map(m=>m.id)}
-        balance={balance?.value??null}
-        name={id=>remote.snapshot?.members.find(m=>m.id===id)?.name??t('Former teammate','חבר צוות לשעבר')}
-        onRename={id=>setEditing(temporaryMembers.find(m=>m.id===id))}
-        roles={remote.snapshot?.roles ?? []}
-                onRole={(id, role) => remote.setRole(id, role).catch((e) => toast.error(userMessage(e.message, t)))}
-        noWeekendIds={remote.snapshot?.members.filter((m) => m.no_weekends).map((m) => m.id) ?? []}
-        onNoWeekends={(id, noWeekends) =>
-          remote
-            .setNoWeekends(id, noWeekends)
-            .then(() => {
-              // Locked weekends in an open draft are kept, never deleted.
-              const drafts = Object.keys(state.months).filter((m) => state.months[m].status === 'draft');
-              const locked = Object.entries(state.assignments).some(([day, a]) => a.primary === id && a.locked &&
-                [5, 6].includes(dayOf(day)) && drafts.includes((dayOf(day) === 6 ? addDays(day, -1) : day).slice(0, 7)));
-              if (noWeekends && locked) toast.warning(t('A locked weekend is kept. Unlock it in the calendar to free it.', 'סוף שבוע נעול נשמר. אפשר לבטל את הנעילה בלוח כדי לשחרר אותו.'));
-            })
-            .catch((e) => toast.error(userMessage(e.message, t)))
-        }
-        selfId={meId}
-        readOnly={remote.readOnly||!isManager}
-        saving={remote.saving}
-        team={state.team}
-        revision={remote.snapshot?.revision ?? 0}
-        monthTotals={monthTotals}
-        historyTotals={historyTotals}
-        lang={lang}
-        onReorder={(team) => update((s) => ({ ...s, team }), false, false)}
-        onActive={(id, active) => {
-          update(
-            (s) => ({ ...s, team: s.team.map((p) => (p.id === id ? { ...p, active } : p)) }),
-            false,
-          );
-          toast(
-            t('Existing assignments are retained for review.', 'שיבוצים קיימים נשמרים לבדיקה.'),
-          );
-        }}
-      />
-      {remote && isManager && (
-        <div className="membership-requests">
-          <h3>{t('Join requests', 'בקשות הצטרפות')}</h3>
-          {remote.snapshot?.members.filter((m) => m.status === 'pending').length ? (
-            remote.snapshot.members
-              .filter((m) => m.status === 'pending')
-              .map((m) => (
-                <div className="membership-request" key={m.id}>
-                  <div>
-                    <strong>{m.name}</strong>
-                    <small>{m.email}</small>
-                  </div>
-                  <Button
-                    disabled={remote.readOnly}
-                    onClick={() =>
-                      remote
-                        .review(m.id, 'approved')
-                        .then(() => toast.success(t('Member approved', 'החבר אושר')))
-                        .catch((e) => toast.error(userMessage(e.message, t)))
-                    }
-                  >
-                    {t('Approve', 'אישור')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={remote.readOnly}
-                    onClick={() =>
-                      remote.review(m.id, 'rejected').catch((e) => toast.error(userMessage(e.message, t)))
-                    }
-                  >
-                    {t('Decline', 'דחייה')}
-                  </Button>
-                </div>
-              ))
-          ) : (
-            <p className="muted-copy">
-              {t(
-                'No pending requests. Teammates appear here after signing in.',
-                'אין בקשות ממתינות. חברי צוות יופיעו כאן לאחר התחברות.',
-              )}
-            </p>
-          )}
-        </div>
-      )}
-    </section>{editing!==undefined&&isManager&&!remote.readOnly&&<TemporaryMemberDialog member={editing} remote={remote} lang={lang} onClose={()=>setEditing(undefined)}/>}</>
-  );
+      <Card tone="brand" className="coverage-card">
+        <div className="coverage-number"><CountUp value={assigned} decimals={0}/><span>/ {owned.length}</span></div>
+        <div className="coverage-copy">{t('duties covered', 'תורנויות משובצות')}</div>
+        <div className="coverage-track"><span style={{width: `${owned.length ? (assigned / owned.length) * 100 : 0}%`}}/></div>
+        <div className="coverage-bottom"><span>{active.length} {t('engineers', 'מהנדסים')}</span><span>{points} {t('points', 'נקודות')}</span></div>
+      </Card>
+      <SectionTitle action={isManager && !remote.readOnly && <Button variant="ghost" size="pill" disabled={remote.saving} onClick={() => setEditing(null)}><UserPlus/>{t('Add temporary', 'הוספת זמני')}</Button>}>
+        {t('Team', 'הצוות')} · {active.length}
+      </SectionTitle>
+      <Card inset className="team-card">
+        <TeamList
+          temporaryIds={temporaryMembers.map(m => m.id)}
+          balance={balance}
+          name={id => remote.snapshot?.members.find(m => m.id === id)?.name ?? t('Former teammate', 'חבר צוות לשעבר')}
+          roles={remote.snapshot?.roles ?? []}
+          noWeekendIds={noWeekendIds}
+          selfId={meId}
+          readOnly={remote.readOnly || !isManager}
+          saving={remote.saving}
+          team={state.team}
+          revision={remote.snapshot?.revision ?? 0}
+          monthTotals={monthTotals}
+          historyTotals={historyTotals}
+          lang={lang}
+          onReorder={(team) => update((s) => ({...s, team}), false, false)}
+          onActive={setActive}
+          onSelect={setSelected}
+        />
+      </Card>
+      {isManager && <>
+        <SectionTitle>{t('Join requests', 'בקשות הצטרפות')}</SectionTitle>
+        <Card inset>
+          {pending.length ? pending.map((m) => <ListRow key={m.id} className="membership-request" title={m.name} subtitle={m.email}
+            trail={<span className="row-buttons">
+              <Button size="sm" disabled={remote.readOnly} onClick={() => remote.review(m.id, 'approved').then(() => toast.success(t('Approved', 'אושר'))).catch(fail)}>{t('Approve', 'אישור')}</Button>
+              <Button size="sm" variant="ghost" disabled={remote.readOnly} onClick={() => remote.review(m.id, 'rejected').catch(fail)}>{t('Decline', 'דחייה')}</Button>
+            </span>}/>)
+            : <EmptyState icon={<Users/>}>{t('No one is waiting', 'אין ממתינים')}</EmptyState>}
+        </Card>
+      </>}
+    </section>
+    <MemberSheet member={member} open={!!member} onClose={() => setSelected(null)} lang={lang} t={t} selfId={meId} admin={isManager && !remote.readOnly} saving={!!remote.saving}
+      roles={remote.snapshot?.roles ?? []} temporary={!!member && temporaryMembers.some(m => m.id === member.id)} noWeekends={!!member && noWeekendIds.includes(member.id)}
+      monthPoints={member ? monthTotals[member.id] ?? 0 : 0} allPoints={member ? historyTotals[member.id] ?? 0 : 0} balance={balance}
+      name={id => remote.snapshot?.members.find(m => m.id === id)?.name ?? t('Former teammate', 'חבר צוות לשעבר')} team={state.team}
+      onRole={role => {if (member) remote.setRole(member.id, role).catch(fail);}}
+      onNoWeekends={value => {
+        if (!member) return;
+        remote.setNoWeekends(member.id, value).then(() => {
+          // Locked weekends in an open draft are kept, never deleted.
+          const drafts = Object.keys(state.months).filter((m) => state.months[m].status === 'draft');
+          const locked = Object.entries(state.assignments).some(([day, a]) => a.primary === member.id && a.locked && [5, 6].includes(dayOf(day)) && drafts.includes((dayOf(day) === 6 ? addDays(day, -1) : day).slice(0, 7)));
+          if (value && locked) toast.warning(t('A locked weekend is kept. Unlock it in the calendar to free it.', 'סוף שבוע נעול נשמר. אפשר לבטל את הנעילה בלוח כדי לשחרר אותו.'));
+        }).catch(fail);
+      }}
+      onActive={value => {if (member) setActive(member.id, value);}}
+      // An admin's colour override travels with the team rows of the checked schedule save.
+      onColor={hex => {if (member) update((s) => ({...s, team: s.team.map((p) => (p.id === member.id ? {...p, color: hex} : p))}), false);}}
+      onRename={member && temporaryMembers.some(m => m.id === member.id) ? () => setEditing(temporaryMembers.find(m => m.id === member.id)) : undefined}/>
+    {editing !== undefined && isManager && !remote.readOnly && <TemporaryMemberDialog member={editing} remote={remote} lang={lang} onClose={() => setEditing(undefined)}/>}
+  </>;
 }

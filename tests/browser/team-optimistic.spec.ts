@@ -53,11 +53,12 @@ for (const lang of ['en','he'] as const) test(`optimistic drop survives latency,
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
  if (lang==='he') await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
+ await page.getByRole('tab').nth(3).click();
  const initial = await order(page), expected = [...initial.slice(1,3),initial[0],...initial.slice(3)];
  const stale = backend.snapshot(ids.admin), held = gate(), started = gate();
  let writes = 0, staleLoads = 0;
- const profile = {name:'Updated Atlas',color:'#abcdef',active:false,role:'admin'};
+ // Stays active: an inactive member now moves into the collapsed Inactive group.
+ const profile = {name:'Updated Atlas',color:'#b3dcf3',active:true,role:'admin'};
  await page.evaluate(selector => {
   Object.assign(window,{originalTeamNodes:[...document.querySelectorAll(selector)]});
  },selector);
@@ -84,9 +85,9 @@ for (const lang of ['en','he'] as const) test(`optimistic drop survives latency,
   held.release(); await (await staleResponse).finished();
   await expect(rows(page).filter({hasText:'Updated Atlas'})).toHaveCount(1);
   const updated = page.locator(`${selector}[data-gesture-key="${ids.a}"]`);
-  await expect(updated).toHaveClass(/inactive/);
-  await expect(updated.locator('.avatar')).toHaveCSS('background-color','rgb(171, 205, 239)');
-  await expect(updated.locator('.team-role select')).toHaveValue('admin');
+  await expect(updated).not.toHaveClass(/inactive/);
+  await expect(updated.locator('.avatar')).toHaveCSS('background-color','rgb(179, 220, 243)');
+  await expect(updated.locator('.team-tags')).toContainText(lang==='en'?'Admin':'מנהל');
   await page.waitForTimeout(350);
   expect(await order(page)).toEqual(expected);
   // The save has resolved but React only has the stale parent snapshot. Keep
@@ -123,7 +124,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await openApp();
  if(failure==='network')await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
+ await page.getByRole('tab').nth(3).click();
  const initial=await order(page), expected=[...initial.slice(1,3),initial[0],...initial.slice(3)];
  const held=gate(),started=gate();let writes=0;
  const external=[...initial].reverse();
@@ -165,7 +166,7 @@ for (const failure of ['network','revision conflict','external success'] as cons
 });
 
 for(const moveFocus of [false,true])test(`keyboard reorder survives delayed allocation refresh; moved focus ${moveFocus}`,async({page,openApp,backend})=>{
- await openApp();await page.getByRole('tab').nth(2).click();
+ await openApp();await page.getByRole('tab').nth(3).click();
  const handle=page.locator(`[data-gesture-key="${ids.admin}"] .team-grip`);
  const other=page.locator('[data-settings-button]');
  const held=gate();
@@ -182,7 +183,7 @@ for(const moveFocus of [false,true])test(`keyboard reorder survives delayed allo
 });
 
 test('failed keyboard reorder retains focus and respects reduced motion',async({page,openApp,backend})=>{
- await openApp();await page.getByRole('tab').nth(2).click();
+ await openApp();await page.getByRole('tab').nth(3).click();
  const initial=await order(page),handle=rows(page).first().locator('.team-grip');
  backend.failNextSave=true;
  await handle.focus();await page.keyboard.press('ArrowDown');
@@ -198,7 +199,7 @@ for(const width of [320,375,390,430])test(`inline grip fits ${width}px in Englis
  await page.setViewportSize({width,height:1000});await openApp();
  for(const lang of ['en','he']){
   if(lang==='he')await switchLanguage(page, 'he');
-  await page.getByRole('tab').nth(2).click();
+  await page.getByRole('tab').nth(3).click();
   const measurements=await rows(page).first().evaluate(el=>{
    const box=(selector:string)=>{const r=el.querySelector(selector)!.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};
    const row=el.getBoundingClientRect();
@@ -206,7 +207,7 @@ for(const width of [320,375,390,430])test(`inline grip fits ${width}px in Englis
   });
   const {row,handle,icon,rank,avatar}=measurements;
   expect(handle.width).toBeGreaterThanOrEqual(44);expect(handle.height).toBeGreaterThanOrEqual(44);
-  expect(icon.width).toBe(25);expect(Math.abs(handle.y+handle.height/2-(row.y+row.height/2))).toBeLessThanOrEqual(.5); // Bottom border contributes half a pixel.
+  expect(icon.width).toBe(18);expect(Math.abs(handle.y+handle.height/2-(row.y+row.height/2))).toBeLessThanOrEqual(.5); // Bottom border contributes half a pixel.
   expect(icon.y+icon.height/2).toBeCloseTo(rank.y+rank.height/2,1);
   expect(lang==='en'?icon.x<rank.x&&rank.x<avatar.x:icon.x>rank.x&&rank.x>avatar.x).toBe(true);
   expect(measurements.overflow).toBe(false);

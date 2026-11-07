@@ -11,7 +11,8 @@ test('returning authenticated users enter the calendar without Google OAuth', as
   await expect(page.getByRole('tab', {name: 'Schedule', exact: true})).toBeVisible();
   expect(backend.oauthRequests).toEqual([]);
   expect(settings).toEqual([]);
-  expect(backend.calls.every(call => call.name === 'duty_load' && call.user === ids.a)).toBe(true);
+  // Home reads the member's balance besides the workspace (decision 2026-11-06).
+  expect(backend.calls.every(call => ['duty_load', 'duty_balance'].includes(call.name) && call.user === ids.a)).toBe(true);
 });
 
 for (const [identity, heading] of [
@@ -44,7 +45,7 @@ for (const [identity, heading] of [
     expect((await exchange).postDataJSON()).toMatchObject({auth_code: 'synthetic-oauth-code', code_verifier: 'synthetic-verifier'});
     const selectedId = identity === 'rejected' || identity === 'inactive' ? ids.a : ids[identity];
     expect(backend.calls.slice(before).every(call => call.user === selectedId)).toBe(true);
-    expect(backend.calls.slice(before).map(call => call.name)).toEqual(['duty_load']);
+    expect(backend.calls.slice(before).map(call => call.name).filter(name => name !== 'duty_balance')).toEqual(['duty_load']);
     const stored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), storageKey);
     expect(stored.user.id).toBe(selectedId);
     expect(stored.user.id).not.toBe(ids.admin);

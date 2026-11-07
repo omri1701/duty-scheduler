@@ -1,4 +1,4 @@
-import {test, expect, duty, ids, type Backend, switchLanguage} from './fixtures';
+import {test, expect, duty, ids, type Backend, switchLanguage, monthAction, openDutySheet} from './fixtures';
 import type {Page} from '@playwright/test';
 
 // Fixture rows exist twice: the published copy and the working draft. The draft calendar is what the admin edits.
@@ -19,10 +19,21 @@ function splitHoliday(backend: Backend, locked = false) {
 const box = async (locator: ReturnType<Page['locator']>) => (await locator.boundingBox())!;
 // The desktop week keeps Sunday on the left in Hebrew; the phone grid flips. Mirroring follows the grid.
 const gridIsRtl = (page: Page) => page.locator('.calendar-grid').evaluate(e => getComputedStyle(e).direction === 'rtl');
+// The app opens on Home; the calendar is on Schedule.
+const schedule = (page: Page) => page.getByRole('tab', {name: 'Schedule', exact: true}).click();
+// A tap opens the duty sheet (on a phone, the day's details first); its Edit opens the editor.
+async function editTapped(page: Page) {
+  const details = page.locator('[data-day-details] .day-duty');
+  await expect(page.getByRole('dialog').or(details)).toBeVisible();
+  if (await details.isVisible()) await details.click();
+  await page.getByRole('dialog').getByRole('button', {name: /^(Edit|עריכה)$/}).click();
+}
+// A second tap on the selected phone day closes it (owner round 2): only tap a day not already open.
+const editDuty = async (page: Page, day: string) => {if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) await duty(page, day).click(); await editTapped(page);};
 
 test('the holiday badge sits on the date line at normal row height and marks only the holiday dates, in English and Hebrew', async ({page, backend, openApp}) => {
   fridayOnlyHoliday(backend);
-  await openApp();
+  await openApp(); await schedule(page);
   const weekend = duty(page, '2026-11-20'), badge = weekend.locator('.tiny-badge'), dateLine = weekend.locator('.date-line');
   await expect(badge).toHaveText('+2');
   await expect(weekend).toHaveClass(/holiday-friday/);
@@ -44,9 +55,9 @@ test('the holiday badge sits on the date line at normal row height and marks onl
 test('removing the extra points works on a combined weekend and on a hand-split weekend, locked or not', async ({page, backend, openApp}) => {
   splitHoliday(backend, true);
   for (const r of rows(backend, '2026-11-20')) r.locked = true;
-  await openApp();
+  await openApp(); await schedule(page);
   // Combined holiday weekend (+2 on both dates), locked: one combined duty stays, worth one point.
-  await duty(page, '2026-11-20').click();
+  await editDuty(page, '2026-11-20');
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', {name: 'Remove extra points from this duty', exact: true}).click();
   await expect(dialog).toBeHidden();
@@ -55,8 +66,10 @@ test('removing the extra points works on a combined weekend and on a hand-split 
   await expect(duty(page, '2026-11-20').locator('.tiny-badge')).toHaveCount(0);
   await expect(duty(page, '2026-11-20')).not.toHaveClass(/special/);
   // Split weekend: the Saturday half loses only its own extra; Friday keeps +1 and the split stays.
-  await duty(page, '2026-11-28').click();
-  await expect(dialog.locator('[data-slot="dialog-description"]')).toContainText('27 Nov – 28 Nov');
+  await editDuty(page, '2026-11-28');
+  // A split half opens as its own day, with its own points (decision 2026-11-07).
+  await expect(dialog.locator('.sheet-description')).toHaveText('Sat 28 Nov · 1.5 pt');
+  await expect(dialog.locator('.split-row')).toContainText('Part of a split weekend');
   await dialog.getByRole('button', {name: 'Remove extra points from this duty', exact: true}).click();
   await expect(dialog).toBeHidden();
   expect(draftRow(backend, '2026-11-28')).toMatchObject({end_day: '2026-11-29', title: '', extra_points: 0, points: 0.5, primary_id: ids.e});
@@ -67,12 +80,12 @@ test('removing the extra points works on a combined weekend and on a hand-split 
 });
 
 test('the special block dialog explains per-date extra points', async ({page, openApp}) => {
-  await openApp();
-  await page.getByRole('button', {name: 'Special block', exact: true}).click();
+  await openApp(); await schedule(page);
+  await monthAction(page, 'Special block');
   const dialog = page.getByRole('dialog');
-  await expect(dialog.locator('[data-slot="dialog-description"]')).toHaveText('Each date is a separate duty and adds the extra points; a weekend in the range stays one Friday–Sunday duty.');
+  await expect(dialog.locator('.sheet-description')).toHaveText('Each date is its own duty with the extra points; a weekend in the range stays one duty.');
   await expect(dialog.locator('.special-summary')).toContainText('2 points per weekday');
-  await expect(dialog.locator('.special-summary')).toContainText('Friday / Saturday: ½ + extra each, so a whole holiday weekend is 1 + 2 × extra.');
+  await expect(dialog.locator('.special-summary')).toContainText('Friday and Saturday: ½ + extra each.');
 });
 
 test('adjacent duties of one member render as one bar with one name, one title and one total, continuing across the row break and mirrored in RTL', async ({page, backend, openApp}) => {
@@ -81,7 +94,7 @@ test('adjacent duties of one member render as one bar with one name, one title a
   for (const day of ['2026-11-04', '2026-11-05', '2026-11-06', '2026-11-08', '2026-11-09']) for (const r of rows(backend, day)) r.primary_id = ids.b;
   for (const day of ['2026-11-03', '2026-11-10']) for (const r of rows(backend, day)) r.primary_id = ids.d;
   for (const day of ['2026-11-08', '2026-11-09']) for (const r of rows(backend, day)) {r.title = 'Holiday'; r.extra_points = 1; r.points = 2;}
-  await openApp();
+  await openApp(); await schedule(page);
   const chip = (day: string) => duty(page, day).locator('.assignment-chip');
   await expect(duty(page, '2026-11-04')).toHaveClass(/streak-start/);
   await expect(chip('2026-11-04')).toHaveText('Blair');
@@ -110,8 +123,8 @@ test('adjacent duties of one member render as one bar with one name, one title a
     expect(weekend.x).toBeGreaterThanOrEqual(weekendCell.x - 1); expect(weekend.x + weekend.width).toBeLessThanOrEqual(weekendCell.x + weekendCell.width + 1);
   }
   // Tapping a date inside the bar still edits that date's duty.
-  await duty(page, '2026-11-05').click();
-  await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('5 בנוב׳');
+  await editDuty(page, '2026-11-05');
+  await expect(page.getByRole('dialog').locator('.sheet-description')).toContainText('5 בנוב׳');
   await expect(page.getByRole('dialog').getByRole('combobox', {name: 'מהנדס ראשי', exact: true})).toBeVisible();
 });
 
@@ -124,7 +137,7 @@ const centre = (b: {x: number; width: number}) => b.x + b.width / 2;
 
 test('each row of a streak is one level bar with no join, its name centred once across the row', async ({page, backend, openApp}) => {
   crossingStreak(backend);
-  await openApp();
+  await openApp(); await schedule(page);
   const chip = (day: string) => duty(page, day).locator('.assignment-chip'), label = (day: string) => duty(page, day).locator('.streak-label');
   await expect(label('2026-11-05')).toHaveText('Blair');
   await expect(label('2026-11-08')).toHaveText('Blair');
@@ -153,14 +166,14 @@ test('each row of a streak is one level bar with no join, its name centred once 
   }
   // The centred name lets taps through: tapping it over the Friday column edits the weekend, not Thursday.
   const name = await box(label('2026-11-05'));
-  await page.mouse.click(centre(name), name.y + name.height / 2);
-  await expect(page.getByRole('dialog').locator('[data-slot="dialog-description"]')).toContainText('6 בנוב׳');
+  await page.mouse.click(centre(name), name.y + name.height / 2); await editTapped(page);
+  await expect(page.getByRole('dialog').locator('.sheet-description')).toContainText('6 בנוב׳');
 });
 
 test('the lock, the dates and the +extra never overlap on a locked holiday weekend, weekday or split weekend', async ({page, backend, openApp}, info) => {
   splitHoliday(backend, true);
   for (const day of ['2026-11-12', '2026-11-20']) for (const r of rows(backend, day)) r.locked = true;
-  await openApp();
+  await openApp(); await schedule(page);
   const overlap = (a: {x: number; y: number; width: number; height: number}, b: typeof a) =>
     a.x < b.x + b.width - 0.5 && b.x < a.x + a.width - 0.5 && a.y < b.y + b.height - 0.5 && b.y < a.y + a.height - 0.5;
   for (const lang of ['en', 'he'] as const) {
@@ -197,7 +210,7 @@ test('weekend bars centre the name: plain, locked holiday, a weekend ending a st
   for (const r of rows(backend, '2026-11-20')) r.locked = true;
   // Someone else on Thursday 26, so the split Friday stands alone.
   for (const r of rows(backend, '2026-11-26')) r.primary_id = ids.a;
-  await openApp();
+  await openApp(); await schedule(page);
   for (const lang of ['en', 'he'] as const) {
     if (lang === 'he') await switchLanguage(page, 'he');
     for (const width of info.project.name === 'mobile' ? [320, 375, 390] : [1440, 1024, 700]) {
@@ -217,7 +230,7 @@ test('single-day pills centre the name too: plain, with a second member, "(you)"
   for (const r of rows(backend, '2026-11-12')) r.locked = true;
   // Tuesday 17 is the signed-in admin's, between two other members, so it stays a single day.
   for (const [day, id] of [['2026-11-16', ids.a], ['2026-11-17', ids.admin], ['2026-11-18', ids.b]]) for (const r of rows(backend, day)) r.primary_id = id;
-  await openApp();
+  await openApp(); await schedule(page);
   await expect(duty(page, '2026-11-17').locator('.assignment-chip small')).toContainText('(you)');
   for (const lang of ['en', 'he'] as const) {
     if (lang === 'he') await switchLanguage(page, 'he');
@@ -239,12 +252,12 @@ test('adding a holiday on assigned days keeps every person, lock and emergency c
   draftRow(backend, '2026-11-04').secondary_id = ids.c;
   draftRow(backend, '2026-11-06').locked = true;
   const before = ['2026-11-04', '2026-11-05', '2026-11-06'].map(day => ({...draftRow(backend, day)}));
-  await openApp();
-  await page.getByRole('button', {name: 'Special block', exact: true}).click();
+  await openApp(); await schedule(page);
+  await monthAction(page, 'Special block');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.');
-  await page.getByLabel('First duty date', {exact: true}).fill('2026-11-04');
-  await page.getByLabel('Last duty date', {exact: true}).fill('2026-11-07');
+  await page.getByLabel('First day', {exact: true}).fill('2026-11-04');
+  await page.getByLabel('Last day', {exact: true}).fill('2026-11-07');
   await dialog.getByRole('button', {name: 'Add special block', exact: true}).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText('Special block added. The assigned people stay; check the points in Plan the month.')).toBeVisible();
@@ -253,4 +266,41 @@ test('adding a holiday on assigned days keeps every person, lock and emergency c
   expect(draftRow(backend, '2026-11-06')).toMatchObject({end_day: '2026-11-08', saturday_extra_points: 1, points: 3});
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule').at(-1)!.params.p_state).toMatchObject({lock_edits: ['2026-11-06', '2026-11-07']});
   await expect(duty(page, '2026-11-05')).toHaveAccessibleName(new RegExp(backend.raw.members.find(m => m.id === before[1].primary_id)!.name));
+});
+
+// Owner round 4: a weekday run into a weekend (Thu–Sat) and a run across the row break keep their
+// name centred, on top and readable, also in swap mode where the following cells are targets.
+for (const scheme of ['light', 'dark'] as const) test(`multi-day bars show their name on top and legible, also while a swap is picked (${scheme})`, async ({page, backend, openApp}) => {
+  backend.raw.months[0].status = 'published';
+  for (const day of ['2026-11-19', '2026-11-20']) for (const r of rows(backend, day)) r.primary_id = ids.e;
+  for (const day of ['2026-11-27', '2026-11-29', '2026-11-30']) for (const r of rows(backend, day)) r.primary_id = ids.c;
+  await page.emulateMedia({colorScheme: scheme});
+  await openApp('admin'); await schedule(page);
+  const legible = async () => {
+    for (const day of ['2026-11-19', '2026-11-27', '2026-11-29']) {
+      const label = duty(page, day).locator('.streak-label, .assignment-chip > .pill-text').first();
+      await expect(label, day).toBeVisible();
+      const check = await label.evaluate(el => {
+        // The label ignores the pointer (taps go to the day); let it be hit only for this probe.
+        (el as HTMLElement).style.pointerEvents = 'auto';
+        const r = el.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        (el as HTMLElement).style.pointerEvents = '';
+        const chip = el.closest('.assignment-chip')!, lum = (c: string) => {
+          const [r, g, b] = c.match(/[\d.]+/g)!.slice(0, 3).map(v => {const s = Number(v) / 255; return s <= .03928 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;});
+          return .2126 * r + .7152 * g + .0722 * b;
+        };
+        const fg = lum(getComputedStyle(el).color), bg = lum(getComputedStyle(chip).backgroundColor === 'rgba(0, 0, 0, 0)' ? getComputedStyle(chip, '::before').backgroundColor : getComputedStyle(chip).backgroundColor);
+        return {onTop: !!top && el.contains(top), text: el.textContent, contrast: (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05)};
+      });
+      expect(check.onTop, `${day} name on top`).toBe(true);
+      expect(check.text, day).toMatch(/\S/);
+      expect(check.contrast, `${day} contrast`).toBeGreaterThanOrEqual(4.5);
+    }
+  };
+  await legible();
+  // Picking a duty to swap turns the following cells into targets; the names stay on top.
+  await (await openDutySheet(page, '2026-11-10')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(duty(page, '2026-11-20')).toHaveClass(/drag-target/);
+  await legible();
 });

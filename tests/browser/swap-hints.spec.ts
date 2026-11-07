@@ -1,13 +1,18 @@
 // Swap-target hints (decision 2026-11-05): while a swap is chosen, a day the server would refuse
 // is greyed with a short reason (who and which day, never the note); the usable days stay green.
 import type {Page} from '@playwright/test';
-import {test, expect, ids, duty, dragTo, targetReady, NOW, switchLanguage} from './fixtures';
+import {test, expect, ids, duty, dragTo, targetReady, NOW, switchLanguage, openDutySheet} from './fixtures';
 
 type Lang = 'en' | 'he';
 const say = (lang: Lang) => (en: string, he: string) => lang === 'en' ? en : he;
 async function language(page: Page, lang: Lang) {
   await expect(page.locator('[data-settings-button]')).toBeVisible();
   if (lang === 'he') await switchLanguage(page, 'he');
+}
+// The duty sheet's Swap sets the source (decision 2026-11-06).
+async function startSwap(page: Page, day: string) {
+  await (await openDutySheet(page, day)).getByRole('button', {name: /^(Swap|החלפה)$/}).click();
+  await expect(duty(page, day)).toHaveAttribute('aria-pressed', 'true');
 }
 async function expectBlocked(page: Page, day: string, reason: string) {
   const cell = duty(page, day);
@@ -40,12 +45,12 @@ for (const lang of ['en', 'he'] as const) {
     backend.raw.constraints.push({member_id: ids.a, day: '2026-11-05', kind: 'no', note: 'Alex private note'},
       {member_id: ids.b, day: '2026-11-02', kind: 'no', note: 'Blair private note'});
     await openApp('a'); await language(page, lang);
-    await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+    await startSwap(page, '2026-11-02');
     await targetReady(page, '2026-11-05');
     await expectBlocked(page, '2026-11-05', t('You can’t take 5 Nov', 'אין לך אפשרות לקחת את 5 בנוב׳'));
     await expectBlocked(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את התורנות שלך'));
     await expectGreen(page, '2026-11-12');
-    await expect(page.locator('#published-swap-help')).toHaveText(t('Choose a green duty · Grey days say why · Escape cancels', 'בחרו תורנות ירוקה · ימים אפורים מסבירים למה · Escape לביטול'));
+    await expect(page.locator('#published-swap-help')).toHaveText(t('Choose the duty to swap with. Greyed days say why. Escape cancels.', 'בחרו את התורנות להחלפה. ימים אפורים מסבירים למה. Escape לביטול.'));
     // Keyboard: Space on a greyed day explains; a green day opens the request.
     await duty(page, '2026-11-05').focus(); await page.keyboard.press('Space');
     await expect(page.locator('[data-sonner-toast]').filter({hasText: t('You can’t take 5 Nov', 'אין לך אפשרות לקחת את 5 בנוב׳')})).toBeVisible();
@@ -54,7 +59,7 @@ for (const lang of ['en', 'he'] as const) {
     // Private notes are never shown.
     for (const note of ['Synthetic vacation', 'Alex private note', 'Blair private note']) await expect(page.locator('body')).not.toContainText(note);
     await duty(page, '2026-11-12').click();
-    await expect(page.getByRole('dialog', {name: t('Confirm swap request', 'אישור בקשת החלפה')})).toBeVisible();
+    await expect(page.getByRole('dialog', {name: t('Ask to swap', 'בקשת החלפה')})).toBeVisible();
     await expect(page.getByRole('button', {name: t('Confirm Request', 'אישור בקשה'), exact: true})).toBeEnabled();
     expect(backend.calls.filter(c => c.name === 'duty_request_swap')).toHaveLength(0);
   });
@@ -66,7 +71,7 @@ for (const lang of ['en', 'he'] as const) {
     backend.raw.constraints.push({member_id: ids.b, day: '2026-11-05', kind: 'no', note: 'Admin-only note'},
       {member_id: ids.c, day: '2026-11-03', kind: 'no', note: 'Another note'});
     await openApp('admin'); await language(page, lang);
-    await duty(page, '2026-11-03').click();
+    await (await openDutySheet(page, '2026-11-03')).getByRole('button', {name: t('Edit', 'עריכה'), exact: true}).click();
     await page.getByRole('dialog', {name: t('Edit duty', 'עריכת תורנות')}).getByRole('button', {name: t('Swap with another duty…', 'החלפה עם תורנות אחרת…'), exact: true}).click();
     await expect(duty(page, '2026-11-03')).toHaveAttribute('aria-pressed', 'true');
     await expectBlocked(page, '2026-11-05', t('Blair Birch can’t take 5 Nov', 'לBlair Birch אין אפשרות לקחת את 5 בנוב׳'));
@@ -91,9 +96,9 @@ for (const lang of ['en', 'he'] as const) {
     await page.clock.setFixedTime(new Date('2026-11-05T10:00:00Z'));
     await page.reload(); await language(page, lang);
     // From 5 November the calendar opens on December.
+    await page.getByRole('tab', {name: t('Schedule', 'לוח'), exact: true}).click();
     await page.getByRole('button', {name: t('Previous month', 'חודש קודם')}).click();
-    await duty(page, '2026-11-10').focus(); await page.keyboard.press('Enter');
-    await expect(duty(page, '2026-11-10')).toHaveAttribute('aria-pressed', 'true');
+    await startSwap(page, '2026-11-10');
     await expectBlocked(page, '2026-11-03', t('This day has passed', 'התורנות הזו כבר עברה'));
     await expectGreen(page, '2026-11-11');
     await expectTapHint(page, '2026-11-03', t('This day has passed', 'התורנות הזו כבר עברה'));
@@ -109,8 +114,7 @@ test('a greyed day is grey once: nothing is green or selectable while checking, 
   // Controlled timers drive the 30-second team refresh that rechecks the targets.
   await page.clock.install({time: new Date(NOW)});
   await openApp('a');
-  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
-  await expect(duty(page, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
+  await startSwap(page, '2026-11-02');
   // Still checking: neither green nor grey, and a tap neither opens a request nor explains.
   for (const day of ['2026-11-05', '2026-11-12']) {
     await expect(duty(page, day)).toHaveAttribute('data-swap-state', 'pending');
@@ -144,4 +148,28 @@ test('a greyed day is grey once: nothing is green or selectable while checking, 
   const seen = await page.evaluate(() => (window as unknown as {seen: string[]}).seen);
   expect(seen.length).toBeGreaterThan(0);
   expect(seen.filter(c => !/swap-blocked/.test(c) || /drag-target/.test(c)), 'blocked day flashed').toEqual([]);
+});
+
+// Owner round 4: the picked duty must read as picked, not as one more green target, in both themes.
+for (const scheme of ['light', 'dark'] as const) test(`the picked duty has its own ink ring and a swap mark, unlike the green targets (${scheme})`, async ({page, openApp, backend}) => {
+  backend.raw.months[0].status = 'published';
+  await page.emulateMedia({colorScheme: scheme});
+  await openApp('admin');
+  await (await openDutySheet(page, '2026-11-10')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const source = duty(page, '2026-11-10'), target = page.locator('.calendar-grid .drag-target').first();
+  await expect(source).toHaveClass(/drag-source/);
+  await expect(source.getByRole('img', {name: 'Swapping this duty', exact: true})).toBeVisible();
+  await expect(target).toBeVisible();
+  const look = await page.evaluate(() => {
+    const css = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+    const probe = document.createElement('i'); probe.style.color = 'var(--ink)'; document.body.append(probe);
+    const ink = getComputedStyle(probe).color; probe.remove();
+    return {source: css('.calendar-grid .drag-source').boxShadow, sourceBg: css('.calendar-grid .drag-source').backgroundColor,
+      target: css('.calendar-grid .drag-target').boxShadow, targetBg: css('.calendar-grid .drag-target').backgroundColor, ink};
+  });
+  // An ink ring (dark text colour in light, light in dark), not the targets' green ring or fill.
+  expect(look.source).toContain(look.ink);
+  expect(look.source).not.toBe(look.target);
+  expect(look.sourceBg).not.toBe(look.targetBg);
 });

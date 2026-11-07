@@ -1,8 +1,24 @@
+import type {Page} from '@playwright/test';
 import {test, expect, monthAction, ids, MONTH, duty, drag, switchLanguage} from './fixtures';
+
+const schedule = (page: Page) => page.getByRole('tab', {name: 'Schedule', exact: true}).click();
+/** A tap opens the duty sheet on PC; on phones it shows the day's details, whose row opens the sheet. */
+async function openSheet(page: Page, day: string) {
+  // A second tap on the selected phone day closes it (owner round 2).
+  if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) await duty(page, day).click();
+  const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
+  await expect(sheet.or(details).first()).toBeVisible();
+  if (!(await sheet.isVisible())) await details.click();
+  await expect(sheet).toBeVisible();
+}
+async function editDuty(page: Page, day: string) {
+  await openSheet(page, day);
+  await page.getByRole('dialog').getByRole('button', {name: 'Edit', exact: true}).click();
+}
 
 test('signed out, OAuth denial, provider configuration and PKCE handoff', async ({page, openApp, backend, baseURL}) => {
   await openApp('signed-out');
-  await expect(page.getByRole('heading', {level: 1})).toContainText('duty calendar');
+  await expect(page.getByRole('heading', {level: 1})).toContainText('duty rota');
   await page.goto('/?error_description=Synthetic%20OAuth%20denied');
   // Next.js also provides an accessibility route announcer outside the main region.
   await expect(page.getByRole('main').getByRole('alert')).toHaveText('Synthetic OAuth denied');
@@ -38,19 +54,21 @@ test('pending approval refresh and admin membership review', async ({page, openA
   await openApp('pending');
   backend.raw.members.find(m => m.id === ids.pending)!.status = 'approved';
   await page.getByRole('button', {name: 'Check approval'}).click();
+  await schedule(page);
   await expect(page.getByRole('button', {name: 'Next month'})).toBeVisible();
   // New page retains an independent identity; the backend is shared only inside this test.
   backend.raw.members.find(m => m.id === ids.pending)!.status = 'pending';
   const admin = await page.context().newPage();
   await openApp('admin', admin);
-  await admin.getByRole('tab', {name: 'Team & fairness', exact: true}).click();
+  await admin.getByRole('tab', {name: 'Team', exact: true}).click();
   await admin.getByRole('button', {name: 'Approve', exact: true}).click();
-  await expect(admin.getByText('No pending requests. Teammates appear here after signing in.')).toBeVisible();
+  await expect(admin.getByText('No one is waiting')).toBeVisible();
   expect(backend.calls.find(c => c.name === 'duty_review_member')?.params).toMatchObject({p_member: ids.pending, p_status: 'approved'});
 });
 
 test('calendar navigation, published visibility, weekends, special and emergency cover', async ({page, openApp}) => {
   await openApp('a');
+  await schedule(page);
   await expect(page.getByRole('heading', {name: 'November 2026'})).toBeVisible();
   await expect(duty(page, '2026-11-02')).toHaveAccessibleName(/Alex Atlas/);
   await expect(duty(page, '2026-11-02')).toContainText('+ Casey');
@@ -72,7 +90,8 @@ test('calendar navigation, published visibility, weekends, special and emergency
   await expect(page.getByRole('heading', {name: 'December 2026'})).toBeVisible();
   await page.getByRole('button', {name: 'Previous month'}).click();
   await expect(duty(page, '2026-11-02')).toHaveAccessibleName(/Alex Atlas/);
-  await page.getByRole('button', {name: 'My duties', exact: true}).click();
+  // Own duties are ringed (the My duties filter is gone) and offer a swap request.
+  await expect(duty(page, '2026-11-02')).toHaveClass(/\bmine\b/);
   await expect(duty(page, '2026-11-02')).toHaveAccessibleName(/Request swap/);
 });
 
@@ -80,29 +99,31 @@ test('generation starts empty, saves a draft and publishes after review', async 
   backend.raw.assignments = []; backend.raw.publications = [];
   backend.raw.months[0].current_publication_id = null; backend.raw.months[0].generated = false;
   await openApp();
+  await schedule(page);
   await expect(duty(page, '2026-11-02')).toHaveAccessibleName(/Unassigned/);
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule')).toHaveLength(0);
-  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeDisabled();
-  await page.getByRole('button', {name: 'Generate month', exact: true}).click();
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toHaveCount(0);
+  await page.getByRole('button', {name: 'Plan the month', exact: true}).click();
   await page.getByRole('button', {name: 'Confirm & generate', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden({timeout: 50_000});
-  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeEnabled();
+  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeEnabled();
   const save = backend.calls.find(c => c.name === 'duty_save_generation')!;
   expect(save.params.p_month).toBe(MONTH);
   expect(backend.raw.assignments.every(d => d.primary_id)).toBe(true);
   expect(backend.raw.assignments.find(d => d.day === '2026-11-04')!.primary_id).not.toBe(ids.a);
   await page.getByRole('button', {name: 'Publish', exact: true}).click();
-  await expect(page.getByRole('dialog', {name: 'Ready to publish?'})).toBeVisible();
-  await page.getByRole('button', {name: 'Publish schedule', exact: true}).click();
+  await expect(page.getByRole('dialog', {name: 'Publish?'})).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', {name: 'Publish', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('button', {name: 'Reopen draft'})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Reopen', exact: true})).toBeVisible();
   expect(backend.calls.filter(c => c.name === 'duty_save_schedule').at(-1)!.params.p_publish).toBe(MONTH);
 });
 
 test('duty editing, availability override, save failure and published draft separation', async ({page, openApp, backend}) => {
   await openApp();
+  await schedule(page);
   const original = backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id)!.primary_id;
-  await duty(page, '2026-11-04').click();
+  await editDuty(page, '2026-11-04');
   await page.getByRole('combobox', {name: 'Primary engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Alex Atlas · unavailable', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Save assignment'})).toBeDisabled();
@@ -117,13 +138,17 @@ test('duty editing, availability override, save failure and published draft sepa
   await expect(duty(page, '2026-11-04')).toHaveAccessibleName(/Alex Atlas/);
   expect(backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id === null)).toMatchObject({primary_id: ids.a, manager_override: true});
   expect(backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id)!.primary_id).toBe(original);
-  await page.getByRole('button', {name: 'Published', exact: true}).click();
+  await page.getByRole('radio', {name: 'Published', exact: true}).click();
   await expect(duty(page, '2026-11-04')).not.toHaveAccessibleName(/Alex Atlas/);
-  await expect(page.getByRole('button', {name: 'Special block', exact: true})).toBeHidden();
+  await page.getByRole('button', {name: 'Month actions', exact: true}).click();
+  await expect(page.getByRole('menuitem', {name: 'Versions', exact: true})).toBeVisible();
+  await expect(page.getByRole('menuitem', {name: 'Special block', exact: true})).toHaveCount(0);
+  await page.keyboard.press('Escape');
 });
 
 test('draft drag review applies primaries while preserving emergency cover', async ({page, openApp}, info) => {
   await openApp();
+  await schedule(page);
   await drag(page, info.project.name === 'mobile');
   await expect(page.getByRole('dialog', {name: 'Swap duties'})).toBeVisible();
   await page.getByRole('button', {name: 'Confirm swap', exact: true}).click();
@@ -168,9 +193,10 @@ test('publication and elapsed deadline close engineer availability', async ({pag
 
 test('version preview, cancelled restore and confirmed restore preserve live publication', async ({page, openApp, backend}) => {
   await openApp();
+  await schedule(page);
   const live = backend.raw.months[0].current_publication_id;
   await monthAction(page, 'Versions');
-  await expect(page.getByRole('dialog')).toContainText('v1 · Live');
+  await expect(page.getByRole('dialog').locator('strong', {hasText: 'v1'})).toContainText('Live');
   await expect(page.getByRole('dialog')).toContainText('Holiday coverage');
   await page.getByRole('button', {name: 'Restore as draft'}).click();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
@@ -183,7 +209,13 @@ test('version preview, cancelled restore and confirmed restore preserve live pub
 
 test('English/Hebrew RTL and keyboard dialog focus', async ({page, openApp}) => {
   await openApp();
+  await schedule(page);
+  // Enter on a day opens its duty sheet (phones: the day's details row first); Edit opens the editor.
   await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
+  await expect(sheet.or(details).first()).toBeVisible();
+  if (!(await sheet.isVisible())) {await details.focus(); await page.keyboard.press('Enter');}
+  await sheet.getByRole('button', {name: 'Edit', exact: true}).focus(); await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog', {name: 'Edit duty'})).toBeVisible();
   await page.keyboard.press('Tab');
   expect(await page.getByRole('dialog').evaluate(dialog => dialog.contains(document.activeElement))).toBe(true);
@@ -200,9 +232,11 @@ test('English/Hebrew RTL and keyboard dialog focus', async ({page, openApp}) => 
 
 test('weekend editor saves split owners atomically', async ({page, openApp, backend}) => {
   await openApp();
-  await duty(page, '2026-11-06').click();
-  await expect(page.getByRole('dialog', {name: 'Edit weekend'})).toBeVisible();
-  await page.getByRole('combobox', {name: 'Saturday engineer', exact: true}).click();
+  await schedule(page);
+  await editDuty(page, '2026-11-06');
+  await expect(page.getByRole('dialog', {name: 'Weekend'})).toBeVisible();
+  await page.getByRole('radio', {name: 'Two days', exact: true}).click();
+  await page.getByRole('combobox', {name: 'Saturday primary engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Alex Atlas', exact: true}).click();
   const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
   if (await override.isVisible()) await override.check();
@@ -225,9 +259,10 @@ test('versions a re-plan reversed are disabled with a note before the click', as
   backend.raw.months[0].current_publication_id = v2.id; backend.raw.months[0].publication_sequence = 2;
   backend.replanned = [v1.id];
   await openApp();
+  await schedule(page);
   await monthAction(page, 'Versions');
   const dialog = page.getByRole('dialog');
-  await expect(dialog).toContainText('v2 · Live');
+  await expect(dialog.locator('strong', {hasText: 'v2'})).toContainText('Live');
   await expect(page.getByRole('button', {name: 'Restore as draft'})).toBeEnabled();
   await expect(page.getByRole('button', {name: 'Delete version', exact: true})).toBeDisabled();
   await expect(dialog.getByRole('note')).toHaveText('Deleting this version would bring back v1, from before the month was re-planned. Reopen the month and change its plan instead.');
@@ -240,6 +275,7 @@ test('versions a re-plan reversed are disabled with a note before the click', as
 
 test('history deletion requires confirmation and closes the last live version', async ({page, openApp, backend}) => {
   await openApp();
+  await schedule(page);
   await monthAction(page, 'Versions');
   await page.getByRole('button', {name: 'Delete version', exact: true}).click();
   await expect(page.getByRole('dialog')).toContainText('Delete live v1?');
@@ -257,8 +293,12 @@ test('a weekend split by hand and joined back to one person is one weekend again
   const name = (id: string | null) => backend.raw.members.find(m => m.id === id)!.name;
   const owner = row('2026-11-06')[0].primary_id, target = '2026-11-13';
   const [someone, other] = backend.raw.members.filter(m => m.status === 'approved' && m.active && m.id !== owner);
-  const pick = async (day: string, field: string, person: string) => {
-    await duty(page, day).click();
+  // The redesigned editor (owner round 3): Two days splits the weekend in the same sheet, and a
+  // split half opens as its own day; giving it the other half's person joins them again.
+  const pick = async (day: string, field: string, person: string, two = false) => {
+    await schedule(page);
+    await editDuty(page, day);
+    if (two) await page.getByRole('radio', {name: 'Two days', exact: true}).click();
     await page.getByRole('combobox', {name: field, exact: true}).click();
     await page.getByRole('option', {name: person, exact: true}).click();
     const override = page.getByRole('checkbox', {name: 'Approve these exceptions as manager'});
@@ -266,13 +306,12 @@ test('a weekend split by hand and joined back to one person is one weekend again
     await page.getByRole('button', {name: 'Save assignment'}).click();
     await expect(page.getByRole('dialog')).toBeHidden();
   };
-  const saturday = (person: string) => pick('2026-11-06', 'Saturday engineer', person);
-  await pick(target, 'Friday primary engineer', other.name);
-  await saturday(someone.name);
+  await pick(target, 'Primary engineer', other.name);
+  await pick('2026-11-06', 'Saturday primary engineer', someone.name, true);
   expect(row('2026-11-07')).toHaveLength(1);
   await expect(duty(page, '2026-11-07')).toHaveCount(1);
   // Joined back: one Friday–Sunday duty, one calendar cell, no Saturday row.
-  await saturday(name(owner));
+  await pick('2026-11-07', 'Primary engineer', name(owner));
   expect(row('2026-11-07')).toHaveLength(0);
   expect(row('2026-11-06')).toMatchObject([{primary_id: owner, end_day: '2026-11-08'}]);
   await expect(duty(page, '2026-11-07')).toHaveCount(0);

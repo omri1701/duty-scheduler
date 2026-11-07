@@ -37,7 +37,7 @@ test('availability closes and clears selection when editing becomes disabled', a
 
 test('team drag binding retains pointer and touch reorder announcements', async ({page, openApp, backend}, info) => {
   await openApp();
-  await page.getByRole('tab', {name: 'Team & fairness', exact: true}).click();
+  await page.getByRole('tab', {name: 'Team', exact: true}).click();
   const from = page.getByRole('button', {name: 'Drag to reorder Avery Admin'});
   const to = page.getByRole('button', {name: 'Drag to reorder Alex Atlas'});
   await from.scrollIntoViewIfNeeded();

@@ -1,16 +1,7 @@
 import {test,expect,ids,duty,touchEvent,NOW, switchLanguage} from './fixtures';
 import type {Page} from '@playwright/test';
 
-test('native select cloning loses the live role selection',async({page})=>{
- const result=await page.evaluate(()=>{
-  const select=document.createElement('select');
-  select.add(new Option('Admin','admin'));select.add(new Option('Engineer','engineer'));
-  select.value='engineer';
-  const clone=select.cloneNode(true) as HTMLSelectElement;
-  return{source:select.value,clone:clone.value};
- });
- expect(result).toEqual({source:'engineer',clone:'admin'});
-});
+// Removed: the native <select> cloning check; team rows no longer carry a role <select> (the role lives in the member sheet).
 
 for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engineer and inactive row in ${lang}`,async({page,openApp,backend},info)=>{
  backend.raw.members.find(m=>m.id===ids.e)!.active=false;
@@ -18,16 +9,15 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
  await page.setViewportSize({width:info.project.name==='mobile'?390:1440,height:1200});
  await page.emulateMedia({reducedMotion:'no-preference'});await openApp();
  if(lang==='he')await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
- for(const id of [ids.admin,ids.a,ids.e]){
+ await page.getByRole('tab').nth(3).click();
+ // Inactive rows sit in the collapsed Inactive group and have no grip: only active rows drag.
+ for(const id of [ids.admin,ids.a]){
   const row=page.locator(`.gesture-grid [data-gesture-key="${id}"]`),handle=row.locator('.team-grip');
   const expected=await row.evaluate(el=>({
-   role:(el.querySelector('select') as HTMLSelectElement).selectedOptions[0].textContent,
    name:el.querySelector('.team-name')!.textContent,
    points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
    avatar:el.querySelector('.avatar')!.getAttribute('style'),
    rank:el.querySelector('.team-grip span')!.textContent,
-   active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
   }));
   // Admin rows carry the No weekends toggle: on a phone the last row can start below the fold.
   await handle.scrollIntoViewIfNeeded();
@@ -38,35 +28,26 @@ for(const lang of ['en','he'] as const)test(`drag preview preserves admin, engin
   await expect(ghost.locator('select,input,textarea')).toHaveCount(0);
   expect(await ghost.evaluate(el=>(el as HTMLElement).inert)).toBe(true);
   await expect(ghost).toHaveAttribute('aria-hidden','true');
-  expect(await ghost.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(id === ids.e ? .45 : 1);
-  const roleAlignment=await ghost.locator('.drag-control-value').evaluate(el=>{
-   const range=document.createRange();range.selectNodeContents(el);
-   const text=range.getBoundingClientRect(),box=el.getBoundingClientRect();
-   return Math.abs(text.y+text.height/2-(box.y+box.height/2));
-  });
-  expect(roleAlignment).toBeLessThanOrEqual(2);
+  expect(await ghost.evaluate(el=>Number(getComputedStyle(el).opacity))).toBe(1);
   for(const offset of [15,-15,30]){
    if(mobile)await touchEvent(page,'touchmove',x,y+offset);else await page.mouse.move(x,y+offset);
    const actual=await ghost.evaluate(el=>({
-    role:el.querySelector('.team-role .drag-control-value')!.textContent,
     name:el.querySelector('.team-name')!.textContent,
     points:[...el.querySelectorAll('.team-points')].map(e=>e.textContent),
     avatar:el.querySelector('.avatar')!.getAttribute('style'),
     rank:el.querySelector('.team-grip span')!.textContent,
-    active:el.querySelector('.active-checkbox [role=checkbox]')!.getAttribute('data-state'),
    }));
    expect(actual).toEqual(expected);
   }
   await page.screenshot({path:info.outputPath(`preview-${id}.png`)});
-  // Observe every animation frame through release; no transient first-option label.
+  // Observe every animation frame through release; no transient label.
   const frames=ghost.evaluate(async el=>{
    const labels=[];
-   while(el.isConnected){labels.push(el.querySelector('.team-role .drag-control-value')!.textContent);await new Promise<void>(r=>requestAnimationFrame(()=>r()))}
+   while(el.isConnected){labels.push(el.querySelector('.team-name')!.textContent);await new Promise<void>(r=>requestAnimationFrame(()=>r()))}
    return labels;
   });
   if(mobile)await touchEvent(page,'touchend',x,y+30);else await page.mouse.up();
-  expect((await frames).every(label=>label===expected.role)).toBe(true);
-  await expect(row.locator('select')).toHaveValue(id===ids.admin?'admin':'engineer');
+  expect((await frames).every(label=>label===expected.name)).toBe(true);
   expect(backend.raw.members).toEqual(original);
   await page.clock.setFixedTime(new Date(Date.parse(NOW)+1000));
  }
@@ -90,6 +71,7 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  if(availability)backend.raw.constraints.push({member_id:ids.a,day:'2026-11-07',kind:'no',note:'Weekend vacation'});
  const published=structuredClone(backend.raw.assignments.filter(d=>d.publication_id!==null));
  await openApp();if(lang==='he')await switchLanguage(page, 'he');
+ await page.getByRole('tab',{name:lang==='en'?'Schedule':'לוח',exact:true}).click();
  const mobile=info.project.name==='mobile',dialog=page.getByRole('dialog'),confirm=dialog.locator('button').filter({hasText:lang==='en'?'Confirm swap':'אישור החלפה'});
  await propose(page,mobile);
  await expect(dialog).toContainText(lang==='en'?'Alex Atlas 2 weekends in November':'Alex Atlas 2 סופי שבוע בחודש נובמבר');
@@ -101,7 +83,8 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  expect(box.width).toBe(24);expect(box.height).toBe(24);expect(labelBox.height).toBeGreaterThan(44);
  expect(box.y-labelBox.y).toBe(10);
  expect(lang==='he'?box.x>labelBox.x+labelBox.width/2:box.x<labelBox.x+labelBox.width/2).toBe(true);
- await page.keyboard.press('Tab');await checkbox.focus();expect(await checkbox.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('solid');
+ // Keyboard focus is visible: an outline or the focus ring (box-shadow).
+ await page.keyboard.press('Tab');await checkbox.focus();expect(await checkbox.evaluate(el=>{const css=getComputedStyle(el);return css.outlineStyle==='solid'||css.boxShadow!=='none'})).toBe(true);
  await page.keyboard.press('Space');await expect(confirm).toBeEnabled();
  const check=(await checkbox.locator('svg').boundingBox())!;
  expect(check.x+check.width/2).toBeCloseTo(box.x+12,0);expect(check.y+check.height/2).toBeCloseTo(box.y+12,0);
@@ -120,5 +103,6 @@ for(const lang of ['en','he'] as const)for(const availability of [false,true])te
  expect(saved.primary_id).toBe(ids.a);expect(saved.manager_override).toBe(true);
  expect(backend.raw.assignments.filter(d=>d.publication_id!==null)).toEqual(published);
  expect(backend.calls.filter(c=>c.name==='duty_save_schedule')).toHaveLength(1);
- await page.reload();await expect(duty(page,'2026-11-06')).toHaveAccessibleName(/Alex Atlas/);
+ // The fixture does not persist the language, so the reloaded app is English again.
+ await page.reload();await page.getByRole('tab',{name:/^(Schedule|לוח)$/}).click();await expect(duty(page,'2026-11-06')).toHaveAccessibleName(/Alex Atlas/);
 });

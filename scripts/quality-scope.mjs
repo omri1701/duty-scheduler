@@ -26,7 +26,7 @@ const mobile = ['mobile-interactions', 'mobile-layout', 'mobile-navigation', 'mo
 const editors = ['editor-dialogs', 'availability-polish', 'cleanup', 'duty-locks', 'mobile-layout'];
 const team = ['team-optimistic', 'team-reorder', 'temporary-members', 'cleanup', 'final-polish'];
 const settings = ['settings', 'cleanup', 'google-login', 'supabase-lifecycle', 'environment'];
-const startup = ['startup', 'startup-layout', 'startup-layout-capture', 'startup-performance-capture', 'environment', 'google-login'];
+const startup = ['startup', 'startup-layout', 'startup-performance-capture', 'environment', 'google-login'];
 
 // Explicit source -> spec map (exact file, or directory ending in "/"). Anything unmapped,
 // including shared shells (workspace.tsx, app/page.tsx), UI primitives and CSS, runs everything.
@@ -42,7 +42,16 @@ export const SPEC_MAP = {
   'components/rota/duty-editor.tsx': editors,
   'components/rota/editor-dialog.tsx': editors,
   'components/rota/mobile-navigation.tsx': mobile,
-  'components/rota/month-heading.tsx': calendar,
+  'components/rota/month-bar.tsx': ['month-bar', 'calendar-final-polish', 'month-navigation', 'redesign'],
+  'components/rota/duty-sheet.tsx': [...calendar, 'redesign'],
+  'components/rota/day-details.tsx': [...mobile, 'redesign'],
+  'components/rota/activity-bell.tsx': ['calendar-controls', 'redesign'],
+  'components/home/': ['startup', 'redesign'],
+  'components/shell/': [...mobile, 'startup', 'redesign'],
+  'components/brand/': ['startup', 'redesign'],
+  'lib/brand.ts': ['startup', 'redesign'],
+  'lib/theme/': [...settings, 'redesign'],
+  'hooks/use-theme.ts': [...settings, 'redesign'],
   'components/rota/navigation-presentation.tsx': mobile,
   'app/api/push/': ['settings'],
   'components/rota/publication-history.tsx': ['calendar-controls'],
@@ -55,10 +64,8 @@ export const SPEC_MAP = {
   'components/rota/team-list.tsx': team,
   'components/rota/temporary-member-dialog.tsx': team,
   'components/rota/workspace-availability.tsx': editors,
-  'components/rota/workspace-calendar.tsx': [...calendar, 'clear-board', 'iphone-draft-tools'],
-  'components/rota/workspace-summary.tsx': ['calendar-controls', 'calendar-final-polish'],
+  'components/rota/workspace-calendar.tsx': [...calendar, 'clear-board', 'month-bar'],
   'components/rota/workspace-team.tsx': team,
-  'components/rota/workspace-toolbar.tsx': ['toolbar-runtime', 'toolbar-zoom', 'calendar-final-polish', 'month-navigation'],
   'hooks/use-allocation-workflow.ts': allocation,
   'hooks/use-calendar-interactions.ts': calendar,
   'hooks/use-hold-drag.ts': [...calendar, 'mobile-layout'],
@@ -69,7 +76,7 @@ export const SPEC_MAP = {
   'lib/compensation/': allocation,
   'lib/push/': settings,
   'lib/date-format.ts': calendar,
-  'lib/rota/calendar-dates.ts': [...calendar, 'startup-layout', 'startup-layout-capture'],
+  'lib/rota/calendar-dates.ts': [...calendar, 'startup-layout'],
   'lib/rota/drag-presentation.ts': calendar,
   'lib/rota/engine.ts': [...calendar, 'startup-layout'],
   'lib/rota/gesture.ts': [...calendar, ...mobile],

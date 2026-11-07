@@ -2,6 +2,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {LockKeyhole} from 'lucide-react';
 import type {Translate} from './workspace-types';
+import {CountUp} from '@/components/ui/count-up';
 
 export type PieSlice = {id: string; name: string; color: string; target: number; temporary: number; permanent: number; locked: number};
 
@@ -74,7 +75,7 @@ export function PlanPie({slices, configured, total, active, onActive, rtl, t}: {
     <figcaption className="plan-pie-center" aria-hidden="true">
       {focus ? <div className="plan-pie-detail" key={focus.id}>
         <span className="plan-pie-name"><i style={{background: focus.color}}/>{focus.name}</span>
-        <strong dir="ltr">{points(focus.target)}</strong><span>{t('points', 'נקודות')}</span>
+        <strong dir="ltr"><CountUp value={focus.target / 2}/></strong><span>{t('points', 'נקודות')}</span>
         <ul>
           {!!focus.temporary && <li className="temporary"><bdi dir="ltr">{signed(focus.temporary)}</bdi> {t('temporary', 'זמני')}</li>}
           {!!focus.permanent && <li className="permanent"><bdi dir="ltr">{signed(focus.permanent)}</bdi> {t('permanent', 'קבוע')}</li>}
@@ -82,7 +83,7 @@ export function PlanPie({slices, configured, total, active, onActive, rtl, t}: {
           {!focus.temporary && !focus.permanent && !focus.locked && <li>{t('Fair share', 'חלק הוגן')}</li>}
         </ul>
       </div> : <div className="plan-pie-detail plan-pie-total" key="total">
-        <strong dir="ltr" className={configured === total ? undefined : 'off'}>{points(configured)}</strong>
+        <strong dir="ltr" className={configured === total ? undefined : 'off'}><CountUp value={configured / 2}/></strong>
         <span><bdi dir="ltr">/ {points(total)}</bdi> {t('points', 'נקודות')}</span>
         {!!locked && <small><bdi dir="ltr">{points(locked)}</bdi> {t('locked', 'נעולות')}</small>}
       </div>}

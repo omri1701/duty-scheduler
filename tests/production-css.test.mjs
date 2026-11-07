@@ -32,7 +32,7 @@ for (const [name, layout] of Object.entries(layouts)) {
     const html = name => `<link rel="stylesheet" href="/_next/static/immutable/chunks/${name}.css?dpl=test">`;
     const css = await readFile('app/globals.css', 'utf8');
     // Simulate an older cached stylesheet alongside a correctly emitted new asset.
-    const stale = css.slice(0, css.indexOf('/* Phone-only additions'));
+    const stale = css.slice(0, css.indexOf('/* ---------- shell ---------- */'));
     const fingerprint = `:root{--duty-css-source:"${await currentCssHash()}"}`;
     await writeFile(path.join(directory, 'static/immutable/chunks/current.css'), css + fingerprint);
     await writeFile(path.join(directory, 'static/immutable/chunks/old.css'), stale);

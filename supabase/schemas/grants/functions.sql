@@ -27,6 +27,9 @@ REVOKE ALL ON FUNCTION duty_private.reconcile_swaps(p_month text) FROM PUBLIC, a
 REVOKE ALL ON FUNCTION duty_private.rename_self(p_name text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.rename_self(p_name text, p_revision bigint) TO authenticated;
 
+REVOKE ALL ON FUNCTION duty_private.set_color(p_color text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT ALL ON FUNCTION duty_private.set_color(p_color text, p_revision bigint) TO authenticated;
+
 REVOKE ALL ON FUNCTION duty_private.request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) TO authenticated;
 
@@ -65,6 +68,10 @@ GRANT ALL ON FUNCTION public.duty_load() TO service_role;
 REVOKE ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) TO authenticated;
 GRANT ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) TO service_role;
+
+REVOKE ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) TO authenticated;
+GRANT ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) TO service_role;
 
 REVOKE ALL ON FUNCTION public.duty_request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION public.duty_request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) TO service_role;

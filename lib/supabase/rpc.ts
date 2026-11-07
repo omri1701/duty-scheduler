@@ -26,6 +26,8 @@ export type Functions = {
   duty_compensation: Operation<Revision & {p_operation: ManualOperation | {kind: 'reconcile'}; p_source_key: string | null; p_reason: string | null; p_fingerprint: string | null; p_cutoff: number | null}, unknown>;
   duty_set_constraints: Operation<Revision & {p_member: string; p_days: string[]; p_kind: string; p_note: string}>;
   duty_rename_self: Operation<Revision & {p_name: string}>;
+  // The caller's own calendar colour (decision 2026-11-06); everyone sees it, so it takes the revision.
+  duty_set_color: Operation<Revision & {p_color: string}>;
   duty_set_role: Operation<Revision & {p_member: string; p_role: string}>;
   duty_set_no_weekends: Operation<Revision & {p_member: string; p_no_weekends: boolean}>;
   duty_restore_publication: Operation<Revision & {p_publication: string}>;

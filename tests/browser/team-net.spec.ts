@@ -13,7 +13,7 @@ test.beforeEach(({backend})=>{
 });
 
 test('admin sees every projected net with a breakdown on focus, hover or tap, in English and Hebrew',async({page,openApp,backend},info)=>{
- await openApp();await page.getByRole('tab').nth(2).click();
+ await openApp();await page.getByRole('tab').nth(3).click();
  const name=(id:string)=>backend.raw.members.find(m=>m.id===id)!.name;
  await expect(net(page,ids.a)).toHaveText('−1net');
  await expect(net(page,ids.b)).toHaveText('+1net');
@@ -34,7 +34,7 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
  await page.mouse.click(5,5);await expect(breakdown).toBeHidden();
  await switchLanguage(page, 'he');
  await net(page,ids.a).focus();
- await expect(breakdown).toHaveAttribute('dir','rtl');
+ await expect(page.locator('.net-popover')).toHaveAttribute('dir','rtl');
  await expect(breakdown).toContainText('תורנות כוסתה על ידי');
  await expect(breakdown).toContainText('זמני');
  await page.keyboard.press('Escape');
@@ -45,7 +45,7 @@ test('admin sees every projected net with a breakdown on focus, hover or tap, in
 });
 
 test('an engineer sees only their own net balance',async({page,openApp})=>{
- await openApp('a');await page.getByRole('tab').nth(2).click();
+ await openApp('a');await page.getByRole('tab').nth(3).click();
  await expect(net(page,ids.a)).toHaveText('−1net');
  await expect(page.locator('.net-points button')).toHaveCount(1);
  await net(page,ids.a).click();

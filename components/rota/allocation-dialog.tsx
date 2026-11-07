@@ -1,12 +1,14 @@
 'use client';
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles} from 'lucide-react';
+import {Check, ListRestart, LockKeyhole, Minus, Plus, RotateCcw, RotateCw, Save, Sparkles, Split} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {Avatar} from '@/components/ui/avatar';
+import {CountUp} from '@/components/ui/count-up';
 import {Popover, PopoverAnchor, PopoverContent} from '@/components/ui/popover';
 import {EditorDialog} from './editor-dialog';
 import {PlanPie} from './plan-pie';
 import './plan-month.css';
-import type {State} from '@/lib/rota/engine';
+import {addDays, type State} from '@/lib/rota/engine';
 import type {AllocationWorkflow} from '@/hooks/use-allocation-workflow';
 import type {Kind} from '@/lib/allocation/types';
 import type {Language, Translate} from './workspace-types';
@@ -21,9 +23,16 @@ const signed = (units: number) => `${units > 0 ? '+' : '−'}${points(Math.abs(u
 /** Every error the plan shows names its reason (lib/messages.ts). */
 export const allocationMessage = userMessage;
 
-export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
-  flow: AllocationWorkflow; state: State; monthLabel: string; lang: Language; t: Translate;
+/** Hand-split weekends with neither half locked: Generate joins them back into one weekend. */
+export const unlockedSplits = (state: State, month: string) =>
+  (state.splitWeekends ?? []).filter(f => f.slice(0, 7) === month && !state.assignments[f]?.locked && !state.assignments[addDays(f, 1)]?.locked).sort();
+
+export function AllocationDialog({flow: f, state, month, monthLabel, lang, t, onShowSplits}: {
+  flow: AllocationWorkflow; state: State; month: string; monthLabel: string; lang: Language; t: Translate;
+  /** Closes the plan and points at the split weekends in the calendar. */
+  onShowSplits?: (fridays: string[]) => void;
 }) {
+  const splits = unlockedSplits(state, month);
   const member = (id: string) => state.team.find(p => p.id === id);
   const name = (id: string) => member(id)?.name ?? t('Former engineer', 'מהנדס לשעבר');
   // One kind for every +/− control: most changes are temporary (repaid later).
@@ -76,12 +85,20 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
   const rows = f.draft ? f.totals?.rows ?? [] : [];
   const slices = rows.map(r => ({...r, name: name(r.id), color: member(r.id)?.color ?? '#c8d3c4'}));
   return <EditorDialog open={f.open} onClose={f.close} saving={f.saving} lang={lang} className="allocation-dialog"
-    title={t('Plan the month', 'תכנון החודש')} description={`${monthLabel} · ${t('Set the points. We’ll find the dates.', 'קובעים נקודות. המתכנן מוצא את התאריכים.')}`}>
+    title={t('Plan the month', 'תכנון החודש')} description={monthLabel} desktop="center" size="lg"
+    footer={<div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong></div>
+      <div className="plan-actions">{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
+      // A failed read of the month is the only state with nothing to confirm: retry it here.
+      : f.retry ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
+      : <>
+        {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
+        {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
+        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
+      </>}</div></div>}>
     <div className="allocation-scroll">
       <section className="plan-hero" aria-label={t('Monthly allocation total', 'סך ההקצאה החודשית')}>
         <PlanPie slices={slices} configured={f.totals?.configured ?? 0} total={f.totals?.total ?? 0} active={active} onActive={setActive} rtl={lang === 'he'} t={t}/>
         <div className="plan-hero-side">
-          <p className="plan-hint">{t('Each slice is one person’s points. Point at a slice or a person for details.', 'כל פרוסה היא הנקודות של אדם אחד. מצביעים על פרוסה או על אדם כדי לראות פרטים.')}</p>
           <div className="plan-kind" role="group" aria-label={t('Change type for + and −', 'סוג השינוי ב־+ ו־−')}>
             {(['temporary', 'permanent'] as const).map(k => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>
               <strong>{k === 'permanent' ? t('Permanent', 'קבוע') : t('Temporary', 'זמני')}</strong>
@@ -110,6 +127,11 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {/* After Generate the plan is the review: uncovered dates and an unfinished search, in one line each. */}
       {f.outcome?.generated && !!f.totals?.uncovered.length && <p className="allocation-attention" role="note">{t('Uncovered: ', 'ללא כיסוי: ')}{f.totals.uncovered.map(d => shortDate(d, lang)).join(' · ')}</p>}
       {f.outcome?.generated && f.result && !f.result.search.allStagesProved && <p className="allocation-attention" role="note">{t('Best found; search limit reached.', 'התוצאה הטובה שנמצאה; מגבלת החיפוש הושגה.')}</p>}
+      {!f.closed && !f.busy && !!splits.length && <p className="allocation-attention plan-split-note" role="note" data-split-note>
+        <Split size={16} aria-hidden="true"/>
+        <span>{splits.length === 1 ? t('1 split weekend will go back to one weekend · Lock it to keep it', 'סוף שבוע מפוצל אחד יחזור להיות סוף שבוע אחד · אפשר לנעול אותו כדי לשמור') : t(`${splits.length} split weekends will go back to one weekend · Lock them to keep them`, `${splits.length} סופי שבוע מפוצלים יחזרו להיות סוף שבוע אחד · אפשר לנעול אותם כדי לשמור`)}</span>
+        {onShowSplits && <Button size="xs" variant="link" className="plan-split-show" onClick={() => onShowSplits(splits)}>{t('Show', 'הצגה')}</Button>}
+      </p>}
       {f.replanBlocked && <p className="allocation-attention" role="note">{allocationMessage(f.replanBlocked, t)}</p>}
       {!f.divisible && <p className="allocation-attention" role="note">{t('Generate will leave a gap: this month’s duties can’t make these exact points. Change by whole points or undo, or fill the gap by hand after Generate.', 'השיבוץ ישאיר פער: תורנויות החודש אינן יכולות להרכיב בדיוק את הנקודות האלה. אפשר לשנות בנקודות שלמות או לבטל, או למלא את הפער ידנית אחרי השיבוץ.')}</p>}
       {f.weekendTakers !== null && f.weekendTakers <= 1 && <p className="allocation-attention" role="note">{f.weekendTakers ? t('Only one member here takes weekends, so Generate may leave some weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'רק חבר אחד כאן עושה סופי שבוע, ולכן השיבוץ עלול להשאיר סופי שבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.') : t('No one here takes weekends, so Generate will leave the weekends empty. Fill them by hand after Generate, or clear No weekends for someone in Team.', 'אף אחד כאן לא עושה סופי שבוע, ולכן השיבוץ ישאיר את סופי השבוע ריקים. אפשר למלא אותם ידנית אחרי השיבוץ, או לבטל את „ללא סופי שבוע” למישהו בצוות.')}</p>}
@@ -141,10 +163,10 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
               onDragEnd={() => {setDragging(null); setOver(null);}}
               onKeyDown={e => {if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {e.preventDefault(); if (canGive(r.id)) setGiving(r.id);}}}
               onContextMenu={e => {e.preventDefault(); endPress(); if (canGive(r.id)) setGiving(r.id);}}
-              onPointerDown={e => {if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
+              onPointerDown={e => {e.stopPropagation(); if (e.pointerType === 'mouse') return; endPress(); press.current = {x: e.clientX, y: e.clientY, timer: setTimeout(() => {press.current = null; if (canGive(r.id)) setGiving(r.id);}, 500)};}}
               onPointerMove={e => {if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress();}}
               onPointerUp={endPress} onPointerCancel={endPress}>
-              <span className="avatar small" style={{background: member(r.id)?.color}}>{name(r.id).split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+              <Avatar name={name(r.id)} color={member(r.id)?.color} size={32}/>
               <span className="plan-member-text"><strong>{name(r.id)}</strong>
                 {!!(r.temporary || r.permanent || r.locked) && <span className="plan-chips">
                   {!!r.temporary && <span className="plan-chip temporary"><bdi dir="ltr">{signed(r.temporary)}</bdi> {t('temporary', 'זמני')}</span>}
@@ -160,7 +182,7 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
             </PopoverContent></Popover>
             <div className="plan-adjust" role="cell">
               <button type="button" disabled={f.busy || !down} aria-describedby={!down && !floor ? 'plan-no-receiver' : undefined} aria-label={`${t('Decrease', 'הפחתת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, -f.step, kind)}><Minus size={16}/></button>
-              <output className="plan-points" aria-live="polite" dir="ltr" aria-label={`${t('Points', 'נקודות')} · ${name(r.id)}`}>{points(r.target)}</output>
+              <output className="plan-points" aria-live="polite" dir="ltr" aria-label={`${t('Points', 'נקודות')} · ${name(r.id)}`}><CountUp value={r.target / 2}/></output>
               <button type="button" disabled={f.busy || !up} aria-describedby={ceiling ? capNote : !up ? 'plan-no-counterpart' : undefined} aria-label={`${t('Increase', 'הגדלת')} ${kindLabel} · ${name(r.id)}`} onClick={() => f.edit(r.id, f.step, kind)}><Plus size={16}/></button>
             </div>
             {f.noWeekends[r.id] && <p className="allocation-row-note" role="note">{t('No weekends', 'ללא סופי שבוע')}{!!r.permanent && <> · <bdi dir="ltr">{signed(r.permanent)}</bdi></>}</p>}
@@ -173,7 +195,6 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
           </div>;
         })}
       </div>}
-      <p className="allocation-caption">{t('Points = fair share, plus any repayment, plus the temporary and permanent changes. Locked duties count toward points.', 'נקודות = החלק ההוגן, בתוספת החזרים ובתוספת השינויים הזמניים והקבועים. תורנויות נעולות נספרות בנקודות.')}</p>
       {f.draft && <details className="allocation-details" open={unplacedUnits > 0}>
         <summary>{t('Adjustments & compensation', 'שינויים ופיצוי')}{!!owed.length && <span>{owed.length}</span>}</summary>
         {unplacedUnits > 0 && <p className="allocation-attention">{points(unplacedUnits)} {t('pts still need a counterpart', 'נק׳ עדיין דורשות הקצאה נגדית')}</p>}
@@ -192,15 +213,6 @@ export function AllocationDialog({flow: f, state, monthLabel, lang, t}: {
       {moved && <div className="allocation-toast" role="status" ref={toastRef}><span>{t(`${name(moved.toId)} took 1 point from ${name(moved.fromId)}`, `נקודה אחת הועברה מ־${name(moved.fromId)} אל ${name(moved.toId)}`)} · {t('temporary', 'זמני')}</span><button type="button" disabled={f.busy || !canMakePermanent} onClick={f.makePermanent}>{t('Make permanent', 'להפוך לקבוע')}</button></div>}
       {f.busy && <div className="allocation-progress" role="status"><Sparkles className="spin" size={18}/><div><strong>{status}</strong>{f.progress !== null && <p>{f.progress} {t('dates covered so far', 'תאריכים מכוסים עד כה')}</p>}<small>{t('Your saved assignments stay in place until a verified draft is saved.', 'השיבוצים השמורים נשארים עד לשמירת טיוטה מאומתת.')}</small></div></div>}
     </div>
-    <div className="allocation-footer"><div><strong>{f.totals ? `${points(f.totals.configured)} / ${points(f.totals.total)}` : '—'} {t('pts', 'נק׳')}</strong><small>{f.closed ? t('Save targets and locks', 'שמירת יעדים ונעילות') : t('Save to continue later · confirm to generate', 'שמירה להמשך · אישור לשיבוץ')}</small></div>
-      <div className="plan-actions">{f.phase === 'generating' ? <Button variant="outline" onClick={f.cancel}>{t('Cancel', 'ביטול')}</Button>
-      // A failed read of the month is the only state with nothing to confirm: retry it here.
-      : f.retry ? <Button onClick={f.refresh}><RotateCw/>{t('Try again', 'ניסיון נוסף')}</Button>
-      : <>
-        {/* Saves the whole plan without generating, through the same checked confirmation. After the cutoff the main action already saves. */}
-        {!f.closed && <Button variant="outline" className={`plan-save${f.saved ? ' saved' : ''}`} disabled={!f.canConfirm || f.saved} onClick={() => f.confirm(false)}>{f.saved ? <><Check/>{t('Saved', 'נשמר')}</> : <><Save/>{t('Save', 'שמירה')}</>}</Button>}
-        <Button disabled={!f.canConfirm || (!f.closed && !f.captured?.generationAllowed)} onClick={() => f.confirm(!f.closed)}><Sparkles/>{f.closed ? t('Save allocation', 'שמירת ההקצאה') : t('Confirm & generate', 'אישור ושיבוץ')}</Button>
-      </>}</div></div>
   </EditorDialog>;
 }
 

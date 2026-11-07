@@ -101,6 +101,7 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/push-unsupported/, 'This browser can’t receive notifications. Use Chrome on Android, or Duty from the Home Screen on iPhone (iOS 16.4 or later).', 'הדפדפן הזה לא יכול לקבל התראות. יש להשתמש ב־Chrome באנדרואיד, או ב־Duty ממסך הבית באייפון (iOS 16.4 ומעלה).'],
   [/push-permission-denied/, 'Notifications weren’t allowed. Allow them for Duty in the browser or phone settings, then try again.', 'ההתראות לא אושרו. יש לאפשר אותן ל־Duty בהגדרות הדפדפן או הטלפון ולנסות שוב.'],
   [/Choose English or Hebrew/, 'Choose English or Hebrew.', 'יש לבחור עברית או אנגלית.'],
+  [/Choose a colour from the palette/, 'Choose a colour from the palette.', 'יש לבחור צבע מהפלטה.'],
   [/Invalid notification settings|Invalid notification time/, 'Those notification settings couldn’t be saved. Refresh, then try again.', 'לא ניתן היה לשמור את הגדרות ההתראות. יש לרענן ולנסות שוב.'],
   [/Could not load notification settings/, 'Couldn’t load your notification settings. Try again.', 'לא ניתן היה לטעון את הגדרות ההתראות. יש לנסות שוב.'],
   // Solver and validation internals: Generate didn't finish; nothing was saved.

@@ -3,9 +3,11 @@ import type {Page} from '@playwright/test';
 
 async function fits(page: Page) {
   const size = await page.evaluate(() => ({width: innerWidth, document: document.documentElement.scrollWidth,
-    overflow: [...document.querySelectorAll<HTMLElement>('.workspace-controls,.main-tabs,[data-slot=tabs-content],.workspace-grid,.calendar-panel,.calendar-grid,.side-panel')].map(el => ({name: el.className, width: el.getBoundingClientRect().width, min: getComputedStyle(el).minWidth}))}));
+    overflow: [...document.querySelectorAll<HTMLElement>('.workspace-controls,.app-main,.main-wrap,.calendar-grid,.availability-grid,.team-list,.sheet')].map(el => ({name: el.className, width: el.getBoundingClientRect().width, min: getComputedStyle(el).minWidth}))}));
   expect(size.document, JSON.stringify(size)).toBeLessThanOrEqual(size.width);
 }
+// Tabs (decision 2026-11-06): Home · Schedule · Availability · Team.
+const tab = (page: Page, index: number) => page.getByRole('tab').nth(index);
 
 for (const width of [320, 375, 390, 430, 768, 1440]) {
   test(`layout at ${width}px: admin and engineer, English and Hebrew`, async ({page, openApp, backend}, info) => {
@@ -18,27 +20,32 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
       await openApp(identity);
       for (const language of ['en', 'he'] as const) {
         if (language === 'he') await switchLanguage(page, 'he');
-        if (width <= 600) await expect(page.locator('.main-tabs')).toHaveCSS('direction', language === 'he' ? 'rtl' : 'ltr');
-        const tabs = page.getByRole('tab');
-        await tabs.nth(0).click();
+        await expect(page.locator('.app-shell')).toHaveAttribute('dir', language === 'he' ? 'rtl' : 'ltr');
+        await fits(page);
+        await tab(page, 1).click();
         await fits(page);
         if (width === 390 && language === 'en') await page.screenshot({path: info.outputPath(`${identity}-schedule.png`), fullPage: true});
         await expect(duty(page, '2026-11-02')).toBeVisible();
         await expect(duty(page, '2026-11-06')).toHaveCSS('grid-column-start', 'span 2');
         await expect(duty(page, '2026-11-12').locator('.tiny-badge')).toBeVisible();
         if (identity === 'admin' && language === 'en') {
+          // A tap opens the duty sheet on PC and the day's details on phones; both stay inside the screen.
           await duty(page, '2026-11-02').click();
-          const dialog = page.getByRole('dialog');
+          const dialog = page.getByRole('dialog'), details = page.locator('[data-day-details]');
+          await expect(dialog.or(details).first()).toBeVisible();
+          if (!(await dialog.isVisible())) await details.locator('.day-duty').click();
           await expect(dialog).toBeVisible();
           await fits(page);
           const box = (await dialog.boundingBox())!;
           expect(box.x, JSON.stringify(await dialog.evaluate(el=>({translate:getComputedStyle(el).translate, transform:getComputedStyle(el).transform, left:getComputedStyle(el).left})))).toBeGreaterThanOrEqual(0);
           expect(box.x + box.width).toBeLessThanOrEqual(width);
           await page.keyboard.press('Escape');
+          await expect(dialog).toBeHidden();
         }
-        await tabs.nth(1).click();
+        await tab(page, 2).click();
         await fits(page);
-        await expect(page.locator('.availability-panel .picker')).toBeVisible();
+        // Admins choose whose availability to edit; engineers see only their own.
+        await expect(page.locator('.availability-screen .picker')).toHaveCount(identity === 'admin' ? 1 : 0);
         expect(await page.locator('.availability-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(7);
         if (width === 390) await page.screenshot({path: info.outputPath(`${identity}-availability-${language}.png`), fullPage: true});
         if (identity === 'a') {
@@ -49,6 +56,7 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
           await editor.focus();
           if (width <= 600) {
             await expect(page.locator('.availability-dialog')).toBeVisible();
+            // 16px keeps iOS from zooming into the field.
             await expect(editor).toHaveCSS('font-size', '16px');
           }
           await fits(page);
@@ -56,9 +64,11 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
           await expect(day).toHaveAttribute('aria-pressed', 'false');
           await expect(day).toBeFocused();
         }
-        await tabs.nth(2).click();
+        await tab(page, 3).click();
         await fits(page);
-        await expect(page.locator('.team-panel').getByText('Alexandria Verylongfamilyname Atlas', {exact: true})).toBeVisible();
+        // The signed-in member's row adds " · you" after the name.
+        await expect(page.locator('.team-list').getByText('Alexandria Verylongfamilyname Atlas')).toBeVisible();
+        await tab(page, 0).click();
       }
     }
     expect(backend.raw).toEqual(original);
@@ -70,9 +80,11 @@ for (const width of [320, 375, 390, 430, 768, 1440]) {
 test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({page, openApp}, info) => {
   test.skip(info.project.name !== 'mobile', 'Phone-specific controls.');
   await openApp();
-  await expect(page.getByRole('button', {name: 'Review plan', exact: true})).toBeVisible();
-  await expect(page.getByRole('button', {name: 'Publish', exact: true})).toBeVisible();
-  await monthAction(page, 'Change month deadline');
+  await page.getByRole('tab', {name: 'Schedule', exact: true}).click();
+  // One state-driven primary action (decision 2026-11-06) and the ⋯ menu.
+  await expect(page.locator('.month-primary')).toHaveText(/^(Review plan|Publish)$/);
+  await expect(page.getByRole('button', {name: 'Month actions', exact: true})).toBeVisible();
+  await monthAction(page, 'Constraints deadline');
   await expect(page.getByRole('dialog')).toBeVisible();
   await fits(page);
   await page.keyboard.press('Escape');
@@ -80,7 +92,7 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
   await expect(page.getByRole('dialog')).toBeVisible();
   await fits(page);
   await page.keyboard.press('Escape');
-  const navigation = await page.locator('.nav-row').boundingBox();
+  const navigation = await page.locator('.tabbar').boundingBox();
   expect(navigation!.y + navigation!.height).toBe(844);
   const capsule = (await page.locator('.mobile-navigation').boundingBox())!;
   expect(capsule.x).toBeGreaterThan(0);
@@ -91,13 +103,12 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(day).toHaveAttribute('aria-pressed', 'true');
-  const sheetStyle = await page.locator('.availability-dialog').evaluate(el => {
-    const css = getComputedStyle(el), box = el.getBoundingClientRect();
-    return {left: css.left, top: css.top, bottom: css.bottom, transform: css.transform, translate: css.translate, x: box.x, y: box.y, height: box.height};
-  });
-  expect(sheetStyle.x, JSON.stringify(sheetStyle)).toBe(12);
-  expect(await page.locator('.availability-dialog').evaluate(el => el.getBoundingClientRect().width)).toBe(366);
-  expect(Math.abs(sheetStyle.y + sheetStyle.height / 2 - 422)).toBeLessThan(1);
+  // A bottom sheet: edge to edge, resting on the bottom of the screen.
+  const sheet = page.locator('.availability-dialog');
+  const sheetBox = (await sheet.boundingBox())!;
+  expect(sheetBox.x).toBe(0);
+  expect(sheetBox.width).toBe(390);
+  expect(Math.abs(sheetBox.y + sheetBox.height - 844)).toBeLessThan(1);
   await page.screenshot({path: info.outputPath('availability-sheet.png')});
   await page.keyboard.press('Tab');
   expect(await page.getByRole('dialog').evaluate(el => el.contains(document.activeElement))).toBe(true);
@@ -106,9 +117,8 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
     Object.defineProperty(window.visualViewport!, 'height', {configurable: true, value: innerHeight - 300});
     window.visualViewport!.dispatchEvent(new Event('resize'));
   });
-  await expect(page.locator('.nav-row')).toBeHidden();
-  const sheet = await page.locator('.availability-dialog').boundingBox();
-  expect(sheet!.y + sheet!.height).toBeLessThanOrEqual(544);
+  await expect(page.locator('.tabbar')).toBeHidden();
+  await expect.poll(async () => {const b = (await sheet.boundingBox())!; return b.y + b.height;}).toBeLessThanOrEqual(544);
   await page.evaluate(() => {
     delete (window.visualViewport as unknown as {height?: number}).height;
     window.visualViewport!.dispatchEvent(new Event('resize'));
@@ -116,7 +126,7 @@ test('phone actions, bottom tabs, sheet focus and keyboard clearance', async ({p
   await page.keyboard.press('Escape');
   await expect(day).toBeFocused();
   await expect(day).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('.nav-row')).toBeVisible();
+  await expect(page.locator('.tabbar')).toBeVisible();
 });
 
 test('phone availability hold and drag saves and clears a date range', async ({page, openApp, backend}, info) => {

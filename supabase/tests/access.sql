@@ -45,6 +45,11 @@ begin
  select revision into rev from public.duty_workspace;perform public.duty_rename_self('My chosen name',rev);
  perform public.duty_join('Google Engineer Name');
  if (select name from public.duty_members where id=engineer_id)<>'My chosen name' or (select role from public.duty_members where id=engineer_id)<>'engineer' then raise exception 'Profile rename not isolated'; end if;
+ -- The member's own colour (decision 2026-11-06): any #rrggbb, lower-cased, own row only; bad values refused before any write.
+ select revision into rev from public.duty_workspace;perform public.duty_set_color('#B4E1B0',rev);
+ if (select color from public.duty_members where id=engineer_id)<>'#b4e1b0' or (select color from public.duty_members where id=admin_id)='#b4e1b0' then raise exception 'Colour not isolated'; end if;
+ select revision into rev from public.duty_workspace;
+ begin perform public.duty_set_color('green',rev); raise exception 'Bad colour accepted'; exception when raise_exception then if sqlerrm<>'Choose a colour from the palette' then raise; end if; end;
  select revision into rev from public.duty_workspace;
  begin perform public.duty_set_role(engineer_id,'admin',rev); raise exception 'Engineer privilege escalation'; exception when insufficient_privilege then null; end;
  perform set_config('request.jwt.claim.sub',admin_id::text,true);

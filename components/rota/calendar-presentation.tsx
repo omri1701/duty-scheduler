@@ -1,5 +1,4 @@
 import {Children,type ReactNode,type Ref,type ComponentProps} from 'react';
-import type {Translate} from './workspace-types';
 import {calendarOwnerMonth} from '@/lib/rota/calendar-dates';
 
 export function CalendarDay({date,month,combined=false,weekend=false,special=false,className='',style,...props}:ComponentProps<'button'>&{
@@ -10,32 +9,22 @@ export function CalendarDay({date,month,combined=false,weekend=false,special=fal
 }
 
 export function CalendarAssignment({loading=false,className='',children,...props}:ComponentProps<'div'>&{loading?:boolean}) {
-  return <div {...props} className={'assignment-chip '+(loading?'skeleton-content ': '')+className}>{loading?<span>—</span>:children}</div>;
-}
-
-export function CalendarFilters({t,value='team',onChange,loading=false,children}:{
-  t:Translate;value?:string;onChange?:(value:string)=>void;loading?:boolean;children?:ReactNode;
-}) {
-  return <div className="segmented">
-    {(['team','me'] as const).map(view=><button key={view} disabled={loading} aria-pressed={value===view} className={[value===view?'selected':'',loading?'skeleton-content':''].join(' ')} onClick={onChange?()=>onChange(view):undefined}>
-      {view==='team'?t('Whole team','כל הצוות'):t('My duties','התורנויות שלי')}
-    </button>)}
-    {children}
-  </div>;
+  return <div {...props} className={'assignment-chip '+(loading?'skel ': '')+className}>{loading?<span>—</span>:children}</div>;
 }
 
 // Public presentation only: both startup and the verified calendar use this
 // exact surface. Identity, permissions, interactions and data stay with callers.
-export function CalendarSurface({lang,toolbar,beforeGrid,children,footer,notices,gridRef,gridClassName=''}:{
-  lang:'en'|'he';toolbar:ReactNode;beforeGrid?:ReactNode;children:ReactNode;
-  footer:ReactNode;notices?:ReactNode;gridRef?:Ref<HTMLDivElement>;gridClassName?:string;
+export function CalendarSurface({lang,children,gridRef,gridClassName='',toolbar,notices,dir}:{
+  lang:'en'|'he';children:ReactNode;gridRef?:Ref<HTMLDivElement>;gridClassName?:string;toolbar?:ReactNode;notices?:ReactNode;
+  /** The week's direction: left-to-right on PC even in Hebrew (decision 2026-10-31), the language's on phones. */
+  dir:'ltr'|'rtl';
 }) {
   return <section className="calendar-panel">
-    <div className="calendar-top">{toolbar}</div>
-    {beforeGrid}
-    <CalendarWeekdays lang={lang}/>
-    <div ref={gridRef} className={'calendar-grid '+gridClassName}>{children}</div>
-    <div className="calendar-footer">{footer}</div>
+    {toolbar}
+    <div className="calendar-week" dir={dir}>
+      <CalendarWeekdays lang={lang}/>
+      <div ref={gridRef} className={'calendar-grid '+gridClassName}>{children}</div>
+    </div>
     {notices}
   </section>;
 }
@@ -47,7 +36,7 @@ export function CalendarWeekdays({lang}:{lang:'en'|'he'}) {
 }
 
 export function CalendarDateLine({date,end,children,loading=false,today}:{date:string;end?:string;children?:ReactNode;loading?:boolean;today?:string}) {
-  const number=(value:string)=>loading?<span className="skeleton-content">{Number(value.slice(-2))}</span>:<span className={value===today ? 'current-date' : undefined} aria-current={value===today ? 'date' : undefined}>{Number(value.slice(-2))}</span>;
+  const number=(value:string)=>loading?<span className="skel skel-text">{Number(value.slice(-2))}</span>:<span className={value===today ? 'current-date' : undefined} aria-current={value===today ? 'date' : undefined}>{Number(value.slice(-2))}</span>;
   // Marks (lock, +extra) render only when present: an empty wrapper would shift the date numbers.
   const marks=Children.toArray(children);
   return <div className={end?'date-line weekend-dates':'date-line'}>

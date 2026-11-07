@@ -1,416 +1,106 @@
-import { CheckCircle2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { addDays, monthNext, type State, type Duty } from '@/lib/rota/engine';
-import type { WorkspaceDraft } from '@/hooks/use-workspace-draft';
-import type { Language, Translate, FormatDate } from './workspace-types';
-type DialogCopy = { lang: Language; t: Translate };
+import {CheckCircle2} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Checkbox} from '@/components/ui/checkbox';
+import {Sheet} from '@/components/ui/sheet';
+import {Avatar} from '@/components/ui/avatar';
+import {Chip} from '@/components/ui/chip';
+import {addDays, monthNext, type State, type Duty} from '@/lib/rota/engine';
+import type {WorkspaceDraft} from '@/hooks/use-workspace-draft';
+import type {Language, Translate, FormatDate} from './workspace-types';
+type DialogCopy = {lang: Language; t: Translate};
 
-export function CancelDraftDialog({open,onOpenChange,saving,lang,t,monthLabel,onConfirm}: DialogCopy & {
+export function CancelDraftDialog({open, onOpenChange, saving, lang, t, monthLabel, onConfirm}: DialogCopy & {
   open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; monthLabel: string; onConfirm: () => Promise<void>;
 }) {
-  return <Dialog open={open} onOpenChange={value => {if (!saving) onOpenChange(value)}}>
-    <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving} onCloseAutoFocus={event => {
-      event.preventDefault();
-      document.querySelector<HTMLButtonElement>('[data-draft-action]')?.focus();
-    }} onOpenAutoFocus={event => {
-      event.preventDefault();
-      document.getElementById('keep-draft')?.focus();
-    }}>
-      <DialogHeader>
-        <DialogTitle>{t('Cancel draft?', 'לבטל את הטיוטה?')}</DialogTitle>
-        <DialogDescription>{monthLabel} · {t('Discard all unpublished changes and restore the latest published schedule? Published history and other months will be preserved.', 'לבטל את כל השינויים שלא פורסמו ולשחזר את הלוח האחרון שפורסם? היסטוריית הפרסומים וחודשים אחרים יישמרו.')}</DialogDescription>
-      </DialogHeader>
-      <div className="editor-actions">
-        <Button id="keep-draft" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t('Keep draft', 'שמירת הטיוטה')}</Button>
-        <Button disabled={saving} onClick={onConfirm}>{t('Discard draft', 'ביטול הטיוטה')}</Button>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  return <Sheet open={open} onOpenChange={value => {if (!saving) onOpenChange(value);}} lang={lang} kind="alert" role="alertdialog" closeDisabled={saving} busy={saving}
+    title={t('Cancel draft?', 'לבטל את הטיוטה?')} description={`${monthLabel} · ${t('Unpublished changes are discarded; the published schedule comes back.', 'שינויים שלא פורסמו יימחקו; הלוח שפורסם יחזור.')}`}
+    onOpenAutoFocus={event => {event.preventDefault(); document.getElementById('keep-draft')?.focus();}}
+    footer={<div className="sheet-actions"><Button id="keep-draft" variant="secondary" disabled={saving} onClick={() => onOpenChange(false)}>{t('Keep draft', 'שמירת הטיוטה')}</Button><Button variant="destructive" disabled={saving} onClick={onConfirm}>{t('Discard draft', 'ביטול הטיוטה')}</Button></div>}>
+    <span className="sr-only">{monthLabel}</span>
+  </Sheet>;
 }
 
-export function ClearBoardDialog({open,onOpenChange,saving,lang,t,monthLabel,count,onConfirm}: DialogCopy & {
+export function ClearBoardDialog({open, onOpenChange, saving, lang, t, monthLabel, count, onConfirm}: DialogCopy & {
   open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; monthLabel: string; count: number; onConfirm: () => Promise<void>;
 }) {
-  return <Dialog open={open} onOpenChange={value => {if (!saving) onOpenChange(value)}}>
-    <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving} onOpenAutoFocus={event => {
-      event.preventDefault();
-      document.getElementById('keep-board')?.focus();
-    }}>
-      <DialogHeader>
-        <DialogTitle>{count === 1 ? t('Clear 1 unlocked duty?', 'לנקות תורנות אחת שאינה נעולה?') : t(`Clear ${count} unlocked duties?`, `לנקות ${count} תורנויות שאינן נעולות?`)}</DialogTitle>
-        <DialogDescription>{monthLabel} · {t('Locked duties stay, and so do constraints, special duties and the plan.', 'תורנויות נעולות יישארו, וכך גם האילוצים, התורנויות המיוחדות והתוכנית.')}</DialogDescription>
-      </DialogHeader>
-      <div className="editor-actions">
-        <Button id="keep-board" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{t('Cancel', 'ביטול')}</Button>
-        <Button className="danger-action" variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  return <Sheet open={open} onOpenChange={value => {if (!saving) onOpenChange(value);}} lang={lang} kind="alert" role="alertdialog" closeDisabled={saving} busy={saving}
+    title={count === 1 ? t('Clear 1 unlocked duty?', 'לנקות תורנות אחת שאינה נעולה?') : t(`Clear ${count} unlocked duties?`, `לנקות ${count} תורנויות שאינן נעולות?`)}
+    description={`${monthLabel} · ${t('Locked duties, constraints, special blocks and the plan stay.', 'תורנויות נעולות, אילוצים, מקטעים מיוחדים והתוכנית נשארים.')}`}
+    onOpenAutoFocus={event => {event.preventDefault(); document.getElementById('keep-board')?.focus();}}
+    footer={<div className="sheet-actions"><Button id="keep-board" variant="secondary" disabled={saving} onClick={() => onOpenChange(false)}>{t('Cancel', 'ביטול')}</Button><Button className="danger-action" variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button></div>}>
+    <span className="sr-only">{monthLabel}</span>
+  </Sheet>;
 }
 
-export function DraftSwapDialog({
-  controller,
-  state,
-  duties,
-  lang,
-  t,
-  fmt,
-  nickname,
-  personName,
-}: DialogCopy & {
-  controller: WorkspaceDraft['swap'];
-  state: State;
-  duties: Duty[];
-  fmt: FormatDate;
-  nickname: (id?: string) => string;
-  personName: (id?: string) => string;
+export function DraftSwapDialog({controller, state, duties, lang, t, fmt, nickname, personName}: DialogCopy & {
+  controller: WorkspaceDraft['swap']; state: State; duties: Duty[]; fmt: FormatDate; nickname: (id?: string) => string; personName: (id?: string) => string;
 }) {
-  const {
-    selection: swap,
-    setSelection: setSwap,
-    override: swapOverride,
-    setOverride: setSwapOverride,
-    preview: swapPreview,
-    reason: swapReason,
-    confirm: confirmSwap,
-    saving,
-  } = controller;
-  return (
-    <Dialog open={!!swap} onOpenChange={(v) => !v && !saving && setSwap(null)}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} closeDisabled={saving}>
-        <DialogHeader>
-          <DialogTitle>{t('Swap duties', 'החלפת תורנויות')}</DialogTitle>
-          <DialogDescription>
-            {t(
-              'Primary engineers swap. Emergency cover stays on its dates.',
-              'המהנדסים הראשיים מתחלפים. כיסוי החירום נשאר בתאריכים שלו.',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        {swap && (
-          <>
-            <div className="swap-review">
-              {[swap.from, swap.to].map((id, i) => {
-                const b = duties.find((b) => b.id === id),
-                  other = i === 0 ? swap.to : swap.from;
-                return (
-                  <div key={id}>
-                    <strong>
-                      {fmt(id)}
-                      {b && b.end !== addDays(id, 1) ? ` – ${fmt(addDays(b.end, -1))}` : ''}
-                    </strong>
-                    <span>
-                      {nickname(state.assignments[id]?.primary)} →{' '}
-                      <b>{nickname(state.assignments[other]?.primary)}</b>
-                    </span>
-                    <small>
-                      {b?.points} {t('points', 'נקודות')}
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
-            {swapPreview && !swapPreview.ok && !swapPreview.conflicts?.length && !swapPreview.weekendConflicts?.length && !swapPreview.noWeekendConflicts?.length && (
-              <div className="warning-note">{swapReason(swapPreview.reason)}</div>
-            )}
-            {!!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length || swapPreview?.noWeekendConflicts?.length) && (
-              <div className="warning-note">
-                {!!swapPreview?.conflicts?.length && <p>
-                  {t('Availability conflicts: ', 'התנגשות עם אילוצים: ')}
-                  {swapPreview.conflicts
-                    .map(
-                      (c) =>
-                        `${personName(c.person)} · ${fmt(c.date)}${state.constraintNotes?.[c.person]?.[c.date] ? ' · ' + state.constraintNotes[c.person][c.date] : ''}`,
-                    )
-                    .join(' / ')}
-                </p>}
-                {swapPreview?.weekendConflicts?.map(c => {
-                  const monthLabel = new Intl.DateTimeFormat(lang === 'he' ? 'he-IL' : 'en-GB', {month:'long',timeZone:'UTC'}).format(new Date(c.month + '-01T12:00:00Z'));
-                  return <p key={c.person}>{t(
-                    `This swap gives ${personName(c.person)} ${c.count} weekends in ${monthLabel}. Approve exception?`,
-                    `ההחלפה נותנת ל${personName(c.person)} ${c.count} סופי שבוע בחודש ${monthLabel}. לאשר חריגה?`,
-                  )}</p>;
-                })}
-                {swapPreview?.noWeekendConflicts?.map(c => <p key={`${c.person}${c.date}`}>{t(
-                  `${personName(c.person)} doesn’t take weekends · ${fmt(c.date)}`,
-                  `${personName(c.person)} לא עושה סופי שבוע · ${fmt(c.date)}`,
-                )}</p>)}
-                <label className="check-label manager-override">
-                  <Checkbox disabled={saving} checked={swapOverride} onCheckedChange={(v) => setSwapOverride(!!v)} />
-                  {t('Approve these exceptions as manager', 'אישור החריגות כמנהל')}
-                </label>
-              </div>
-            )}
-            <Button disabled={saving || !swapPreview?.ok} onClick={confirmSwap}>
-              {t('Confirm swap', 'אישור החלפה')}
-            </Button>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+  const {selection: swap, setSelection: setSwap, override: swapOverride, setOverride: setSwapOverride, preview: swapPreview, reason: swapReason, confirm: confirmSwap, saving} = controller;
+  const member = (id?: string) => state.team.find(p => p.id === id);
+  const conflicts = !!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length || swapPreview?.noWeekendConflicts?.length);
+  return <Sheet open={!!swap} onOpenChange={(v) => !v && !saving && setSwap(null)} lang={lang} closeDisabled={saving} busy={saving}
+    title={t('Swap duties', 'החלפת תורנויות')} description={t('Emergency cover stays on its dates.', 'כיסוי החירום נשאר בתאריכים שלו.')}
+    footer={<div className="sheet-actions"><Button variant="secondary" disabled={saving} onClick={() => setSwap(null)}>{t('Cancel', 'ביטול')}</Button><Button disabled={saving || !swapPreview?.ok} onClick={confirmSwap}>{t('Confirm swap', 'אישור החלפה')}</Button></div>}>
+    {swap && <>
+      <div className="swap-review">
+        {[swap.from, swap.to].map((id, i) => {
+          const b = duties.find((b) => b.id === id), other = i === 0 ? swap.to : swap.from;
+          const from = member(state.assignments[id]?.primary), to = member(state.assignments[other]?.primary);
+          return <div key={id} className="card card-inset"><div className="row">
+            <span className="row-lead"><Avatar name={to?.name ?? '?'} color={to?.color} size={36}/></span>
+            <span className="row-body"><span className="row-title">{fmt(id)}{b && b.end !== addDays(id, 1) ? ` – ${fmt(addDays(b.end, -1))}` : ''}</span>
+              <span className="row-subtitle">{nickname(from?.id)} → <b>{nickname(to?.id)}</b></span></span>
+            <span className="row-trail"><Chip tone="neutral" size="sm">{b?.points} {t('pt', 'נק׳')}</Chip></span>
+          </div></div>;
+        })}
+      </div>
+      {swapPreview && !swapPreview.ok && !conflicts && <p className="note-line" data-tone="danger">{swapReason(swapPreview.reason)}</p>}
+      {conflicts && <div className="note-line" style={{display: 'block'}}>
+        {!!swapPreview?.conflicts?.length && <p>{t('Availability conflicts: ', 'התנגשות עם אילוצים: ')}{swapPreview.conflicts.map((c) => `${personName(c.person)} · ${fmt(c.date)}${state.constraintNotes?.[c.person]?.[c.date] ? ' · ' + state.constraintNotes[c.person][c.date] : ''}`).join(' / ')}</p>}
+        {swapPreview?.weekendConflicts?.map(c => {
+          const monthLabel = new Intl.DateTimeFormat(lang === 'he' ? 'he-IL' : 'en-GB', {month: 'long', timeZone: 'UTC'}).format(new Date(c.month + '-01T12:00:00Z'));
+          return <p key={c.person}>{t(`This swap gives ${personName(c.person)} ${c.count} weekends in ${monthLabel}. Approve exception?`, `ההחלפה נותנת ל${personName(c.person)} ${c.count} סופי שבוע בחודש ${monthLabel}. לאשר חריגה?`)}</p>;
+        })}
+        {swapPreview?.noWeekendConflicts?.map(c => <p key={`${c.person}${c.date}`}>{t(`${personName(c.person)} doesn’t take weekends · ${fmt(c.date)}`, `${personName(c.person)} לא עושה סופי שבוע · ${fmt(c.date)}`)}</p>)}
+        <label className="check-label manager-override"><Checkbox disabled={saving} checked={swapOverride} onCheckedChange={(v) => setSwapOverride(!!v)}/>{t('Approve these exceptions as manager', 'אישור החריגות כמנהל')}</label>
+      </div>}
+    </>}
+  </Sheet>;
 }
-export function SpecialDutyDialog({
-  form,
-  month,
-  lang,
-  t,
-  fmt,
-}: DialogCopy & { form: WorkspaceDraft['special']; month: string; fmt: FormatDate }) {
-  const {
-    open: specialOpen,
-    setOpen: setSpecialOpen,
-    title: specialTitle,
-    setTitle: setSpecialTitle,
-    start: specialStart,
-    setStart: setSpecialStart,
-    end: specialEnd,
-    setEnd: setSpecialEnd,
-    extra,
-    setExtra,
-    add: addSpecial,
-  } = form;
-  return (
-    <Dialog open={specialOpen} onOpenChange={setSpecialOpen}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
-        <DialogHeader>
-          <DialogTitle>{t('A special duty block', 'מקטע תורנות מיוחד')}</DialogTitle>
-          <DialogDescription>
-            {t(
-              'Each date is a separate duty and adds the extra points; a weekend in the range stays one Friday–Sunday duty.',
-              'כל תאריך הוא תורנות נפרדת ומוסיף את הנקודות הנוספות; סוף שבוע בטווח נשאר תורנות אחת שישי–ראשון.',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <label className="field-label">
-          {t('Name', 'שם')}
-          <input
-            maxLength={60}
-            value={specialTitle}
-            onChange={(e) => setSpecialTitle(e.target.value)}
-            placeholder={t('e.g. Holiday coverage', 'למשל: כיסוי חג')}
-          />
-        </label>
-        <div className="form-pair">
-          <label className="field-label">
-            {t('First duty date', 'יום תורנות ראשון')}
-            <input
-              type="date"
-              value={specialStart}
-              min={month + '-01'}
-              max={addDays(monthNext(month) + '-01', -1)}
-              onChange={(e) => {
-                setSpecialStart(e.target.value);
-                if (specialEnd < e.target.value) setSpecialEnd(e.target.value);
-              }}
-            />
-          </label>
-          <label className="field-label">
-            {t('Last duty date', 'יום תורנות אחרון')}
-            <input
-              type="date"
-              min={specialStart}
-              value={specialEnd}
-              onChange={(e) => setSpecialEnd(e.target.value)}
-            />
-          </label>
-        </div>
-        <label className="field-label">
-          {t('Extra points per day', 'נקודות נוספות לכל יום')}
-          <input
-            type="number"
-            min="0"
-            max="20"
-            step="0.5"
-            value={extra}
-            onChange={(e) => setExtra(e.target.value)}
-          />
-        </label>
-        <div className="special-summary">
-          <strong>
-            {1 + Number(extra) || 1} {t('points per weekday', 'נקודות לכל יום חול')}
-          </strong>
-          <span>
-            {t(
-              'Weekday: 1 + extra. Friday / Saturday: ½ + extra each, so a whole holiday weekend is 1 + 2 × extra.',
-              'יום חול: 1 + תוספת. שישי / שבת: ½ + תוספת לכל יום, כך שסוף שבוע חג שלם הוא 1 + 2 × תוספת.',
-            )}
-          </span>
-          <span>
-            {specialStart &&
-              specialEnd &&
-              `${fmt(specialStart)} 09:00 → ${fmt(addDays(specialEnd, 1))} 09:00`}
-          </span>
-        </div>
-        <p className="muted-copy">
-          {t(
-            'Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.',
-            'תורנויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.',
-          )}
-        </p>
-        <Button onClick={addSpecial}>{t('Add special block', 'הוספת מקטע מיוחד')}</Button>
-      </DialogContent>
-    </Dialog>
-  );
+
+export function SpecialDutyDialog({form, month, lang, t, fmt}: DialogCopy & {form: WorkspaceDraft['special']; month: string; fmt: FormatDate}) {
+  const {open: specialOpen, setOpen: setSpecialOpen, title: specialTitle, setTitle: setSpecialTitle, start: specialStart, setStart: setSpecialStart, end: specialEnd, setEnd: setSpecialEnd, extra, setExtra, add: addSpecial} = form;
+  return <Sheet open={specialOpen} onOpenChange={setSpecialOpen} lang={lang} title={t('Special block', 'מקטע מיוחד')} description={t('Each date is its own duty with the extra points; a weekend in the range stays one duty.', 'כל תאריך הוא תורנות משלו עם התוספת; סוף שבוע בטווח נשאר תורנות אחת.')}
+    footer={<div className="sheet-actions"><Button onClick={addSpecial}>{t('Add special block', 'הוספת מקטע מיוחד')}</Button></div>}>
+    <label className="field-label">{t('Name', 'שם')}<input maxLength={60} value={specialTitle} onChange={(e) => setSpecialTitle(e.target.value)} placeholder={t('e.g. Holiday coverage', 'למשל: כיסוי חג')}/></label>
+    <div className="form-pair">
+      <label className="field-label">{t('First day', 'יום ראשון')}<input type="date" value={specialStart} min={month + '-01'} max={addDays(monthNext(month) + '-01', -1)} onChange={(e) => {setSpecialStart(e.target.value); if (specialEnd < e.target.value) setSpecialEnd(e.target.value);}}/></label>
+      <label className="field-label">{t('Last day', 'יום אחרון')}<input type="date" min={specialStart} value={specialEnd} onChange={(e) => setSpecialEnd(e.target.value)}/></label>
+    </div>
+    <label className="field-label">{t('Extra points per day', 'נקודות נוספות לכל יום')}<input type="number" min="0" max="20" step="0.5" value={extra} onChange={(e) => setExtra(e.target.value)}/></label>
+    <div className="special-summary">
+      <strong>{1 + Number(extra) || 1} {t('points per weekday', 'נקודות לכל יום חול')}</strong>
+      <span>{t('Friday and Saturday: ½ + extra each.', 'שישי ושבת: ½ + תוספת לכל יום.')}</span>
+      <span>{specialStart && specialEnd && `${fmt(specialStart)} 09:00 → ${fmt(addDays(specialEnd, 1))} 09:00`}</span>
+    </div>
+    <p className="muted-copy">{t('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.', 'תורנויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.')}</p>
+  </Sheet>;
 }
-export function MonthSettingsDialog({
-  settings,
-  setSettings,
-  monthLabel,
-  monthDetails,
-  lang,
-  t,
-  onDeadline,
-}: DialogCopy & {
-  settings: boolean;
-  setSettings: (open: boolean) => void;
-  monthLabel: string;
-  monthDetails: State['months'][string];
-  onDeadline: (deadline: string) => void;
+
+export function MonthSettingsDialog({settings, setSettings, monthLabel, monthDetails, lang, t, onDeadline}: DialogCopy & {
+  settings: boolean; setSettings: (open: boolean) => void; monthLabel: string; monthDetails: State['months'][string]; onDeadline: (deadline: string) => void;
 }) {
-  return (
-    <Dialog open={settings} onOpenChange={setSettings}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'} onCloseAutoFocus={event => {
-        const trigger = document.querySelector<HTMLButtonElement>('[data-month-tool="deadline"]');
-        if (trigger?.getClientRects().length) {event.preventDefault(); trigger.focus();}
-      }}>
-        <DialogHeader>
-          <DialogTitle>
-            {t('Change month deadline', 'שינוי מועד אחרון לחודש')} · {monthLabel}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              'Choose when the team should finish entering next month’s constraints.',
-              'בחרו עד מתי הצוות יזין את האילוצים לחודש הבא.',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <label className="field-label">
-          {t('Constraints deadline', 'מועד אחרון לאילוצים')}
-          <input
-            type="date"
-            value={monthDetails.deadline}
-            onChange={(e) => {
-              if (e.target.value) onDeadline(e.target.value);
-            }}
-          />
-        </label>
-        <p className="muted-copy">
-          {t(
-            'Engineers can enter constraints until this date, in Israel time.',
-            'מהנדסים יוכלו להזין אילוצים עד לתאריך זה, לפי שעון ישראל.',
-          )}
-        </p>
-        <Button onClick={() => setSettings(false)}>{t('Done', 'סיום')}</Button>
-      </DialogContent>
-    </Dialog>
-  );
+  return <Sheet open={settings} onOpenChange={setSettings} lang={lang} kind="alert" title={t('Constraints deadline', 'מועד אחרון לאילוצים')} description={`${monthLabel} · ${t('Members enter constraints until this day (Israel time).', 'חברי הצוות מזינים אילוצים עד יום זה (שעון ישראל).')}`}
+    footer={<div className="sheet-actions"><Button onClick={() => setSettings(false)}>{t('Done', 'סיום')}</Button></div>}>
+    <label className="field-label">{t('Deadline', 'מועד אחרון')}<input type="date" value={monthDetails.deadline} onChange={(e) => {if (e.target.value) onDeadline(e.target.value);}}/></label>
+  </Sheet>;
 }
-export function PublishDialog({
-  publishOpen,
-  setPublishOpen,
-  monthLabel,
-  assigned,
-  saving,
-  lang,
-  t,
-  onPublish,
-}: DialogCopy & {
-  publishOpen: boolean;
-  setPublishOpen: (open: boolean) => void;
-  monthLabel: string;
-  assigned: number;
-  saving: boolean;
-  onPublish: () => Promise<void>;
+
+export function PublishDialog({publishOpen, setPublishOpen, monthLabel, assigned, saving, lang, t, onPublish}: DialogCopy & {
+  publishOpen: boolean; setPublishOpen: (open: boolean) => void; monthLabel: string; assigned: number; saving: boolean; onPublish: () => Promise<void>;
 }) {
-  return (
-    <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
-        <DialogHeader>
-          <DialogTitle>{t('Ready to publish?', 'מוכנים לפרסום?')}</DialogTitle>
-          <DialogDescription>
-            {monthLabel} · {assigned} {t('duties covered', 'תורנויות משובצות')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="publish-summary">
-          <CheckCircle2 size={30} />
-          <p>
-            {t(
-              'The schedule will be visible to approved team members.',
-              'הלוח יהיה זמין לחברי צוות שאושרו.',
-            )}
-          </p>
-        </div>
-        <p className="muted-copy">
-          {t(
-            'No notifications are sent yet. You can reopen and adjust this schedule any time.',
-            'עדיין לא נשלחות התראות. ניתן לפתוח ולערוך מחדש בכל עת.',
-          )}
-        </p>
-        <Button disabled={saving} onClick={onPublish}>
-          {t('Publish schedule', 'פרסום הלוח')}
-        </Button>
-      </DialogContent>
-    </Dialog>
-  );
-}
-export function WorkspaceHelpDialog({
-  help,
-  setHelp,
-  lang,
-  t,
-}: DialogCopy & { help: boolean; setHelp: (open: boolean) => void }) {
-  return (
-    <Dialog open={help} onOpenChange={setHelp}>
-      <DialogContent dir={lang === 'he' ? 'rtl' : 'ltr'}>
-        <DialogHeader>
-          <DialogTitle>{t('Your first working rota', 'לוח התורנויות הראשון שלך')}</DialogTitle>
-          <DialogDescription>
-            {t('Shared scheduling for your team', 'ניהול תורנויות משותף לצוות')}
-          </DialogDescription>
-        </DialogHeader>
-        <ol className="guide-list">
-          <li>
-            {t(
-              'Set availability and reorder the team from most senior to newest.',
-              'הזינו אילוצים וסדרו את הצוות מהוותיק ביותר לחדש ביותר.',
-            )}
-          </li>
-          <li>
-            {t(
-              'Add special blocks with dates and extra points, then generate the month.',
-              'הוסיפו מקטעים מיוחדים עם תאריכים ונקודות, ואז צרו שיבוץ לחודש.',
-            )}
-          </li>
-          <li>
-            {t(
-              'Tap to edit a duty or one weekend day. Hold and drag between duties to swap.',
-              'לחצו לעריכת תורנות או יום אחד בסוף השבוע. לחיצה ארוכה וגרירה מחליפה תורנויות.',
-            )}
-          </li>
-          <li>
-            {t(
-              'Each month starts fresh. Newer engineers are preferred for extra duties; all-month totals remain visible.',
-              'כל חודש מתחיל מחדש. מהנדסים חדשים יקבלו עדיפות לתורנויות נוספות; סיכומי כל החודשים מוצגים בצוות.',
-            )}
-          </li>
-        </ol>
-        <div className="inline-note">
-          {t(
-            'Your constraints are visible to you and the manager. Only approved members can see published schedules. Push notifications and calendar subscriptions are not connected yet. Swap requests require admin approval.',
-            'האילוצים גלויים רק לך ולמנהל. רק חברים שאושרו יכולים לראות לוחות שפורסמו. התראות ומנויי יומן עדיין לא מחוברים. בקשות החלפה דורשות אישור מנהל.',
-          )}
-        </div>
-        <Button onClick={() => setHelp(false)}>{t('Let’s plan', 'מתחילים לתכנן')}</Button>
-      </DialogContent>
-    </Dialog>
-  );
+  return <Sheet open={publishOpen} onOpenChange={setPublishOpen} lang={lang} kind="alert" closeDisabled={saving} busy={saving} title={t('Publish?', 'לפרסם?')} description={`${monthLabel} · ${assigned} ${t('duties covered', 'תורנויות משובצות')}`}
+    footer={<div className="sheet-actions"><Button variant="secondary" disabled={saving} onClick={() => setPublishOpen(false)}>{t('Not yet', 'עוד לא')}</Button><Button disabled={saving} onClick={onPublish}>{t('Publish', 'פרסום')}</Button></div>}>
+    <div className="publish-summary"><CheckCircle2 size={28}/><p>{t('The team sees it and gets notified. You can reopen it any time.', 'הצוות יראה אותו ויקבל התראה. אפשר לפתוח לעריכה בכל עת.')}</p></div>
+  </Sheet>;
 }

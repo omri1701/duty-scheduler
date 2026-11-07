@@ -1,6 +1,8 @@
-import {test, expect, ids, duty, drag, targetReady, switchLanguage} from './fixtures';
+import {test, expect, ids, duty, drag, targetReady, switchLanguage, openDutySheet} from './fixtures';
 
 const net = (page: import('@playwright/test').Page, id: string) => page.locator(`[data-gesture-key="${id}"] .net-points button`);
+// Cell → duty sheet → Edit opens the published editor (decision 2026-11-06).
+const edit = async (page: import('@playwright/test').Page, day: string) => (await openDutySheet(page, day)).getByRole('button', {name: /^(Edit|עריכה)$/}).click();
 const call = (backend: import('./fixtures').Backend) => backend.calls.filter(c => c.name === 'duty_edit_published_duty');
 
 test.beforeEach(({backend}) => {backend.raw.months[0].status = 'published';});
@@ -8,7 +10,7 @@ test.beforeEach(({backend}) => {backend.raw.months[0].status = 'published';});
 test('admin edits a published duty: Temporary by default, copyable summary, new version and Team debt', async ({page, context, openApp, backend}, info) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await openApp();
-  await duty(page, '2026-11-03').click();
+  await edit(page, '2026-11-03');
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await expect(dialog).toBeVisible();
   // Disabled before any change, and says why.
@@ -41,7 +43,7 @@ test('admin edits a published duty: Temporary by default, copyable summary, new 
   expect(backend.raw.publications.map(p => p.version)).toEqual([1, 2]);
   // The previous version stays as published history.
   expect(backend.raw.assignments.find(d => d.day === '2026-11-03' && d.publication_id === '20000000-0000-4000-8000-000000000010')!.primary_id).toBe(ids.b);
-  await page.getByRole('tab').nth(2).click();
+  await page.getByRole('tab', {name: 'Team', exact: true}).click();
   await expect(net(page, ids.b)).toHaveText('−1net');
   await expect(net(page, ids.c)).toHaveText('+1net');
   await net(page, ids.c).focus();
@@ -52,7 +54,7 @@ test('Hebrew: an unavailable engineer needs an override reason; Permanent record
   await openApp();
   await switchLanguage(page, 'he');
   const owner = backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id)!.primary_id;
-  await duty(page, '2026-11-04').click();
+  await edit(page, '2026-11-04');
   const dialog = page.getByRole('dialog', {name: 'עריכת תורנות'});
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await dialog.getByRole('combobox', {name: 'מהנדס', exact: true}).click();
@@ -83,7 +85,7 @@ test('Hebrew: an unavailable engineer needs an override reason; Permanent record
 
 test('a combined weekend edits both dates’ extras; engineers keep requesting swaps by tap', async ({page, browser, openApp, backend}) => {
   await openApp();
-  await duty(page, '2026-11-06').click();
+  await edit(page, '2026-11-06');
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await expect(dialog).toContainText('6 Nov – 7 Nov');
   await dialog.getByLabel('Saturday extra points').fill('1');
@@ -97,7 +99,7 @@ test('a combined weekend edits both dates’ extras; engineers keep requesting s
   try {
     const engineer = await context.newPage();
     await openApp('a', engineer);
-    await duty(engineer, '2026-11-02').click();
+    await (await openDutySheet(engineer, '2026-11-02')).getByRole('button', {name: 'Swap', exact: true}).click();
     await expect(engineer.getByRole('dialog')).toHaveCount(0);
     await expect(duty(engineer, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
   } finally {await context.close();}
@@ -105,7 +107,7 @@ test('a combined weekend edits both dates’ extras; engineers keep requesting s
 
 test('a newer version from another tab names the stale editor and blocks Publish until the duty is reopened', async ({page, openApp, backend}) => {
   await openApp();
-  await duty(page, '2026-11-03').click();
+  await edit(page, '2026-11-03');
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Casey Cedar', exact: true}).click();
@@ -121,7 +123,7 @@ test('a newer version from another tab names the stale editor and blocks Publish
   await expect(review.getByRole('button', {name: 'Publish change'})).toBeDisabled();
   expect(call(backend)).toHaveLength(1);
   await page.keyboard.press('Escape');
-  await duty(page, '2026-11-03').click();
+  await edit(page, '2026-11-03');
   const fresh = page.getByRole('dialog', {name: 'Edit duty'});
   await expect(fresh.getByRole('alert')).toHaveCount(0);
   await expect(fresh.getByRole('combobox', {name: 'Engineer', exact: true})).toHaveText('Alex Atlas');
@@ -134,7 +136,7 @@ test('a pending swap that includes the duty is named before the edit', async ({p
     from_day: '2026-11-03', from_end_day: '2026-11-04', to_day: '2026-11-05', to_end_day: '2026-11-06', explanation: '', status: 'awaiting_admin',
     accepted_by: at('2026-11-05').primary_id!, accepted_at: '2026-11-01T08:00:00Z', created_at: '2026-11-01T07:00:00Z', resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''}];
   await openApp();
-  await duty(page, '2026-11-05').click();
+  await edit(page, '2026-11-05');
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await expect(dialog.getByRole('note').filter({hasText: 'Pending swap'})).toHaveText('Pending swap with Blair Birch. Saving cancels it.');
   // A new engineer: the warning stays through review, and saving cancels the swap without an error.
@@ -152,7 +154,7 @@ test('a pending swap that includes the duty is named before the edit', async ({p
 test('an admin swaps any two members from the editor, or by dragging one duty onto another', async ({page, openApp}, info) => {
   await openApp();
   // Neither duty is the admin's: the editor's button selects the first, the next tap picks the second.
-  await duty(page, '2026-11-03').click();
+  await edit(page, '2026-11-03');
   await page.getByRole('dialog', {name: 'Edit duty'}).getByRole('button', {name: 'Swap with another duty…', exact: true}).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(duty(page, '2026-11-03')).toHaveAttribute('aria-pressed', 'true');
@@ -168,7 +170,7 @@ test('Permanent back to whoever held the duty before a Temporary change says it 
   // The server's answer for this duty: Casey held it before a Temporary change still in effect.
   backend.editReturns = [ids.c];
   await openApp();
-  await duty(page, '2026-11-03').click();
+  await edit(page, '2026-11-03');
   const dialog = page.getByRole('dialog', {name: 'Edit duty'});
   await dialog.getByRole('combobox', {name: 'Engineer', exact: true}).click();
   await page.getByRole('option', {name: 'Alex Atlas', exact: true}).click();

@@ -7,35 +7,49 @@ test('admin creates 12 temporary engineers, edits constraints/order/status and s
  const history=structuredClone(backend.raw.assignments.filter(a=>a.publication_id));
  backend.raw.assignments=structuredClone(history);
  backend.raw.months[0].generated=false;
- await openApp();await page.getByRole('tab',{name:'Team & fairness',exact:true}).click();
+ await openApp();await page.getByRole('tab',{name:'Team',exact:true}).click();
  for(let i=1;i<=12;i++){
-  await page.getByRole('button',{name:'Add Temporary Member',exact:true}).click();
-  const dialog=page.getByRole('dialog');
+  await page.getByRole('button',{name:'Add temporary',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Add temporary member'});
   await expect(dialog.getByRole('textbox')).toHaveCount(1);
-  await expect(dialog.getByRole('button',{name:'Add member',exact:true})).toBeDisabled();
+  await expect(dialog.getByRole('button',{name:'Add',exact:true})).toBeDisabled();
   await dialog.getByLabel('Name',{exact:true}).fill(`Temporary Engineer ${i}`);
-  await dialog.getByRole('button',{name:'Add member',exact:true}).click();
+  await dialog.getByRole('button',{name:'Add',exact:true}).click();
   await expect(dialog).toBeHidden();
  }
  const members=backend.raw.members.filter(m=>m.is_temporary),first=members[0];
  expect(members).toHaveLength(12);expect(members.every(m=>m.email===null&&m.active)).toBe(true);
  const firstRow=page.locator(`[data-gesture-key="${first.id}"]`);
  await expect(firstRow.getByText('Temporary',{exact:true})).toBeVisible();
- await expect(firstRow.getByRole('combobox')).toBeDisabled();
- await firstRow.getByRole('button',{name:`Edit name ${first.name}`,exact:true}).click();
- await page.getByRole('dialog').getByLabel('Name',{exact:true}).fill('Renamed Engineer');
- await page.getByRole('button',{name:'Save name',exact:true}).click();
+ // The member sheet shows a fixed Temporary role (no role choice) and the rename pencil.
+ await firstRow.locator('.team-row-inner').click();
+ const sheet=page.getByRole('dialog',{name:first.name});
+ await expect(sheet.getByRole('radio',{name:'Admin'})).toHaveCount(0);
+ await expect(sheet.getByText('Temporary',{exact:true}).first()).toBeVisible();
+ await sheet.getByRole('button',{name:'Edit name',exact:true}).click();
+ const rename=page.getByRole('dialog',{name:'Edit name'});
+ await rename.getByLabel('Name',{exact:true}).fill('Renamed Engineer');
+ await rename.getByRole('button',{name:'Save',exact:true}).click();await expect(rename).toBeHidden();
+ await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toBeHidden();
  await expect(firstRow.getByText('Renamed Engineer',{exact:true})).toBeVisible();
  await firstRow.locator('.team-grip').focus();await page.keyboard.press('ArrowUp');
  await expect(firstRow.locator('.team-grip')).toBeFocused();
  expect(backend.raw.members.find(m=>m.id===first.id)!.seniority).toBeLessThan(7);
  for(const id of [ids.a,ids.b,ids.c,ids.d,ids.e]){
-  const row=page.locator(`[data-gesture-key="${id}"]`);
-  await row.locator('.active-checkbox').getByRole('checkbox').click();await expect(row.locator('.active-checkbox').getByRole('checkbox')).not.toBeChecked();
+  await page.locator(`[data-gesture-key="${id}"] .team-row-inner`).click();
+  const active=page.getByRole('dialog').getByRole('switch',{name:/^Active /});
+  await active.click();await expect(active).not.toBeChecked();
+  await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toBeHidden();
  }
- // Deactivate/reactivate a temporary member without replacing its identity.
- await firstRow.locator('.active-checkbox').getByRole('checkbox').click();await expect(firstRow).toHaveClass(/inactive/);
- await firstRow.locator('.active-checkbox').getByRole('checkbox').click();await expect(firstRow).not.toHaveClass(/inactive/);
+ // Deactivate/reactivate a temporary member (row swipe) without replacing its identity.
+ async function swipe(label:string){
+  await firstRow.scrollIntoViewIfNeeded();
+  const box=(await firstRow.locator('.team-name').boundingBox())!,x=box.x+box.width/2,y=box.y+box.height/2;
+  await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x-80,y,{steps:8});await page.mouse.up();
+  await firstRow.locator('.swipe-action').filter({hasText:new RegExp(`^${label}$`)}).click();
+ }
+ await swipe('Deactivate');await expect(firstRow).toHaveClass(/inactive/);
+ await swipe('Activate');await expect(firstRow).not.toHaveClass(/inactive/);
  await page.getByRole('tab',{name:'Availability',exact:true}).click();
  await page.getByRole('combobox',{name:'Engineer',exact:true}).click();
  await page.getByRole('option',{name:'Renamed Engineer',exact:true}).click();
@@ -43,8 +57,8 @@ test('admin creates 12 temporary engineers, edits constraints/order/status and s
  await page.getByLabel('Description (optional)').fill('Private temporary absence');
  await page.getByRole('button',{name:'Save',exact:true}).click();
  await expect(page.getByRole('button',{name:/^5 Nov.*Unavailable.*Private temporary absence/})).toBeVisible();
- await page.getByRole('tab').first().click();
- await page.getByRole('button',{name:'Generate month',exact:true}).click();
+ await page.getByRole('tab',{name:'Schedule',exact:true}).click();
+ await page.getByRole('button',{name:'Plan the month',exact:true}).click();
  await expect(page.getByRole('button',{name:'Confirm & generate',exact:true})).toBeEnabled({timeout:30_000});
  await expect(page.locator('.plan-row')).toHaveCount(13);
  await page.getByRole('button',{name:'Confirm & generate',exact:true}).click();
@@ -60,26 +74,26 @@ test('admin creates 12 temporary engineers, edits constraints/order/status and s
  await page.reload();await expect(page.locator('.workspace-controls')).toBeEnabled();
  expect(backend.raw.assignments).toEqual(saved);
  await expect(duty(page,'2026-11-05')).not.toHaveAccessibleName(/Renamed Engineer/);
- await page.getByRole('tab',{name:'Team & fairness',exact:true}).click();
+ await page.getByRole('tab',{name:'Team',exact:true}).click();
  await expect(page.locator(`[data-gesture-key="${first.id}"]`).getByText('Renamed Engineer',{exact:true})).toBeVisible();
 });
 
 test('temporary member controls are absent for engineers',async({page,backend,openApp})=>{
  backend.raw.members.push({...backend.raw.members[1],id:'22000000-0000-4000-8000-000000000001',email:null,is_temporary:true,name:'Temporary colleague'});
- await openApp('a');await page.getByRole('tab',{name:'Team & fairness',exact:true}).click();
+ await openApp('a');await page.getByRole('tab',{name:'Team',exact:true}).click();
  await expect(page.getByText('Temporary',{exact:true})).toBeVisible();
- await expect(page.getByRole('button',{name:'Add Temporary Member',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Add temporary',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:/Edit name/})).toHaveCount(0);
 });
 
 test('Hebrew temporary member dialog supports keyboard, validation and retry at 320px',async({page,backend,openApp},info)=>{
  await page.setViewportSize({width:320,height:812});await openApp();
  await switchLanguage(page, 'he');
- await page.getByRole('tab').nth(2).click();
- await page.getByRole('button',{name:'הוספת חבר זמני',exact:true}).click();
+ await page.getByRole('tab').nth(3).click();
+ await page.getByRole('button',{name:'הוספת זמני',exact:true}).click();
  const dialog=page.getByRole('dialog');await expect(dialog).toHaveAttribute('dir','rtl');
  const input=dialog.getByLabel('שם',{exact:true});await expect(input).toBeFocused();
- await input.fill('   ');await expect(dialog.getByRole('button',{name:'הוספת חבר',exact:true})).toBeDisabled();
+ await input.fill('   ');await expect(dialog.getByRole('button',{name:'הוספה',exact:true})).toBeDisabled();
  await input.fill('מהנדס זמני');backend.failNextSave=true;await input.press('Enter');
  await expect(dialog.getByRole('alert')).toHaveText(/הלוח השתנה בכרטיסייה אחרת/);
  await expect(input).toHaveValue('מהנדס זמני');await input.press('Enter');await expect(dialog).toBeHidden();

@@ -10,7 +10,7 @@ export function assertCssSource(css, expected) {
   }
 }
 export function assertCssSources(stylesheets, expected) {
-  const workspace = stylesheets.filter(css=>css.includes('.month-toolbar') || css.includes('--duty-css-source'));
+  const workspace = stylesheets.filter(css=>css.includes('.member-tint') || css.includes('--duty-css-source'));
   if (!workspace.length) throw Error('Application has no fingerprinted workspace CSS');
   // Validate each asset: current CSS must not conceal another stale cascade.
   for (const css of workspace) assertCssSource(css,expected);

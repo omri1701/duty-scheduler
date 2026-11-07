@@ -1,12 +1,13 @@
 'use client';
 import {Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {BellRing, BellOff} from 'lucide-react';
+import {BellRing, BellOff, Info} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Checkbox} from '@/components/ui/checkbox';
+import {Card, SectionTitle} from '@/components/ui/card';
+import {Switch} from '@/components/ui/switch';
 import type {TeamWorkspace} from '@/hooks/use-team-workspace';
 import {getVapidPublicKey} from '@/lib/supabase/client';
 import {currentSubscription, describe, disablePush, enablePush, pushStatus, type PushStatus} from '@/lib/push/browser';
-import type {NotificationSettings, NotificationState, Switch} from '@/lib/push/settings';
+import type {NotificationSettings, NotificationState, Switch as SwitchKey} from '@/lib/push/settings';
 import {TimeWheels} from './time-wheel';
 import {userMessage} from '@/lib/messages';
 
@@ -20,8 +21,8 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
   const [settings, setSettings] = useState<NotificationState | null>(null);
   const [loadError, setLoadError] = useState(''), [error, setError] = useState(''), [note, setNote] = useState('');
   const [busy, setBusy] = useState<'' | 'enable' | 'disable' | 'save'>('');
-  // Reminder times (decision 2026-11-06): one row's wheels open at a time; a settled wheel saves
-  // after a short pause (hour and minute together), shows "Saved", and puts the time back on failure.
+  // Reminder times: one row's wheels open at a time; a settled wheel saves after a short pause
+  // (hour and minute together), shows "Saved", and puts the time back on failure.
   const [openTime, setOpenTime] = useState<TimeKey | null>(null), [savedTime, setSavedTime] = useState<TimeKey | null>(null);
   const settingsRef = useRef<NotificationState | null>(null), timeBase = useRef<NotificationState | null>(null), timeTimer = useRef(0), timeSeq = useRef(0);
   useLayoutEffect(() => {settingsRef.current = settings;});
@@ -126,67 +127,68 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
 
   const statusText: Record<PushStatus | 'loading', string> = {
     loading: t('Checking this device…', 'בודק את המכשיר…'),
-    on: t('Notifications are on for this device.', 'ההתראות פועלות במכשיר הזה.'),
-    off: t('Notifications are off on this device.', 'ההתראות כבויות במכשיר הזה.'),
-    install: t('On iPhone, notifications work only in Duty from the Home Screen. Add it there first (see below).', 'באייפון, התראות פועלות רק ב־Duty ממסך הבית. יש להוסיף אותו קודם (הסבר למטה).'),
-    unsupported: t('This browser can’t receive notifications. Use Chrome on Android, or Duty from the Home Screen on iPhone (iOS 16.4 or later).', 'הדפדפן הזה לא יכול לקבל התראות. יש להשתמש ב־Chrome באנדרואיד, או ב־Duty ממסך הבית באייפון (iOS 16.4 ומעלה).'),
-    blocked: t('Notifications are blocked for Duty. Allow them in the browser or phone settings, then come back here.', 'ההתראות חסומות עבור Duty. יש לאפשר אותן בהגדרות הדפדפן או הטלפון ולחזור לכאן.'),
-    unconfigured: t('Notifications aren’t set up on this server yet. Ask an admin.', 'ההתראות עדיין לא הוגדרו בשרת הזה. יש לפנות למנהל.'),
+    on: t('On for this device', 'פועלות במכשיר הזה'),
+    off: t('Off on this device', 'כבויות במכשיר הזה'),
+    install: t('On iPhone, add the app to the Home Screen first', 'באייפון, קודם להוסיף את האפליקציה למסך הבית'),
+    unsupported: t('This browser can’t receive notifications', 'הדפדפן הזה לא יכול לקבל התראות'),
+    blocked: t('Blocked in the browser or phone settings', 'חסומות בהגדרות הדפדפן או הטלפון'),
+    unconfigured: t('Not set up on this server yet', 'עדיין לא הוגדרו בשרת הזה'),
   };
   const canEnable = status === 'off' && !readOnly && !busy;
-  const rows: {key: Switch; label: string; help: string; time?: 'eveningTime' | 'morningTime'}[] = [
-    {key: 'deadlines', label: t('Constraint deadline', 'מועד אחרון לאילוצים'), help: t('3 days before; 1 day before if you haven’t entered any.', '3 ימים לפני; יום לפני אם עדיין לא הזנת אילוצים.')},
-    {key: 'published', label: t('A month is published', 'חודש פורסם'), help: t('When a new schedule comes out.', 'כשלוח חדש מתפרסם.')},
-    {key: 'swaps', label: t('Swap requests', 'בקשות החלפה'), help: t('New, accepted, declined or approved swaps you’re part of.', 'החלפות שלך: חדשות, שהתקבלו, שנדחו או שאושרו.')},
-    {key: 'edits', label: t('Changes to my published duties', 'שינויים בתורנויות שלי שפורסמו'), help: t('When an admin changes one of your duties.', 'כשמנהל משנה אחת מהתורנויות שלך.')},
-    {key: 'evening', label: t('Evening before my duty', 'ערב לפני התורנות'), help: t('Reminder the day before, at', 'תזכורת יום לפני, בשעה'), time: 'eveningTime'},
-    {key: 'morning', label: t('Morning of my duty', 'בוקר התורנות'), help: t('Reminder on the day, at', 'תזכורת ביום עצמו, בשעה'), time: 'morningTime'},
-    ...(remote.isAdmin ? [{key: 'members' as const, label: t('New member waiting', 'חבר צוות חדש ממתין'), help: t('Admins: someone signed up and needs approval.', 'למנהלים: מישהו נרשם וממתין לאישור.')}] : []),
+  const rows: {key: SwitchKey; label: string; help: string; time?: TimeKey}[] = [
+    {key: 'deadlines', label: t('Constraint deadline', 'מועד אחרון לאילוצים'), help: t('3 days before, and 1 day before if you entered none', '3 ימים לפני, ויום לפני אם לא הזנת')},
+    {key: 'published', label: t('Month published', 'חודש פורסם'), help: ''},
+    {key: 'swaps', label: t('Swap requests', 'בקשות החלפה'), help: ''},
+    {key: 'edits', label: t('Changes to my duties', 'שינויים בתורנויות שלי'), help: ''},
+    {key: 'evening', label: t('Evening before', 'ערב לפני'), help: '', time: 'eveningTime'},
+    {key: 'morning', label: t('Morning of', 'בבוקר'), help: '', time: 'morningTime'},
+    ...(remote.isAdmin ? [{key: 'members' as const, label: t('New member waiting', 'חבר צוות חדש ממתין'), help: ''}] : []),
   ];
   const locked = readOnly || !settings || !!busy;
 
   return <section className="settings-section settings-notifications" aria-labelledby="settings-notifications-title" aria-busy={!!busy || status === 'loading'}>
-    <h3 id="settings-notifications-title">{t('Notifications', 'התראות')}</h3>
-    <div className={'settings-device ' + status}>
-      <p role="status">{readOnly ? t('Notifications can’t be changed in read-only inspection.', 'אי אפשר לשנות התראות בבדיקה לקריאה בלבד.') : statusText[status]}
-        {status === 'on' && settings && settings.devices > 1 && ' ' + t(`${settings.devices} of your devices get them.`, `${settings.devices} מהמכשירים שלך מקבלים אותן.`)}</p>
-      <div className="settings-actions">
-        {status === 'on'
-          ? <Button variant="outline" disabled={readOnly || !!busy} onClick={disable}><BellOff/>{busy === 'disable' ? t('Turning off…', 'מכבה…') : t('Turn off on this device', 'כיבוי במכשיר הזה')}</Button>
-          : <Button disabled={!canEnable} onClick={enable} aria-describedby="settings-iphone-help"><BellRing/>{busy === 'enable' ? t('Enabling…', 'מפעיל…') : t('Enable notifications', 'הפעלת התראות')}</Button>}
+    <SectionTitle><span id="settings-notifications-title">{t('Notifications', 'התראות')}</span></SectionTitle>
+    <Card inset>
+      <div className={'row settings-device ' + status}>
+        <span className="row-lead"><span className="row-icon" data-tone={status === 'on' ? 'ok' : status === 'loading' || status === 'off' ? 'neutral' : 'warn'}>{status === 'on' ? <BellRing/> : <BellOff/>}</span></span>
+        <span className="row-body"><span className="row-title">{t('This device', 'המכשיר הזה')}</span><span className="row-subtitle" role="status">{readOnly ? t('Read-only inspection', 'בדיקה לקריאה בלבד') : statusText[status]}{status === 'on' && settings && settings.devices > 1 && ` · ${t(`${settings.devices} devices`, `${settings.devices} מכשירים`)}`}</span></span>
+        <span className="row-trail">
+          {status === 'on'
+            ? <Button variant="secondary" size="sm" disabled={readOnly || !!busy} onClick={disable}>{busy === 'disable' ? t('Turning off…', 'מכבה…') : t('Turn off', 'כיבוי')}</Button>
+            : <Button size="sm" disabled={!canEnable} onClick={enable} aria-describedby={status === 'install' ? 'settings-iphone-help' : undefined}>{busy === 'enable' ? t('Enabling…', 'מפעיל…') : t('Enable', 'הפעלה')}</Button>}
+        </span>
       </div>
-    </div>
-    {status !== 'on' && <div className="settings-help" id="settings-iphone-help">
-      <strong>{t('iPhone: Add to Home Screen first', 'אייפון: קודם להוסיף למסך הבית')}</strong>
-      <p>{t('In Safari, tap Share, then “Add to Home Screen”. Open Duty from the Home Screen icon and enable notifications here. Needs iOS 16.4 or later.',
-        'ב־Safari יש להקיש על „שיתוף” ואז „הוספה למסך הבית”. יש לפתוח את Duty מהסמל במסך הבית ולהפעיל כאן התראות. נדרש iOS 16.4 ומעלה.')}</p>
-    </div>}
-    {loadError && <p className="warning-note" role="alert">{loadError} <Button variant="ghost" size="sm" onClick={() => void load()}>{t('Try again', 'ניסיון נוסף')}</Button></p>}
+      {status === 'install' && <p className="row row-note" id="settings-iphone-help"><Info aria-hidden="true"/>{t('In Safari: Share, then “Add to Home Screen”, then open the app from there (iOS 16.4+).', 'ב־Safari: שיתוף, ואז „הוספה למסך הבית”, ואז לפתוח את האפליקציה משם (iOS 16.4 ומעלה).')}</p>}
+      {loadError && <p className="row row-note" data-tone="danger" role="alert">{loadError} <Button variant="ghost" size="xs" onClick={() => void load()}>{t('Try again', 'ניסיון נוסף')}</Button></p>}
+    </Card>
     {!readOnly && <fieldset className="settings-switches" disabled={!settings}>
-      <legend>{t('Notify me about', 'להודיע לי על')}</legend>
-      {rows.map(row => {
-        const time = row.time, on = !!settings?.[row.key], expanded = !!time && openTime === time && on;
-        return <Fragment key={row.key}>
-          <div className="settings-switch">
-            <label className="check-label">
-              <Checkbox disabled={locked} checked={on} onCheckedChange={value => void save({[row.key]: value === true})}/>
-              <span><strong>{row.label}</strong><small>{row.help}{time && ':'}</small></span>
-            </label>
-            {time && <div className="settings-time-cell">
-              {savedTime === time && <span className="settings-saved" role="status">{t('Saved', 'נשמר')}</span>}
-              {/* Quarter hours: the scheduler runs every 15 minutes (decision 2026-11-06). */}
-              <button type="button" id={`settings-${time}-button`} className="settings-time" dir="ltr" disabled={!settings || !on}
-                aria-label={`${row.label} · ${t('time', 'שעה')} ${settings?.[time] ?? ''}`} aria-expanded={expanded} aria-controls={`settings-${time}-wheels`}
-                onClick={() => setOpenTime(expanded ? null : time)}>{settings?.[time] ?? '––:––'}</button>
-            </div>}
-          </div>
-          {time && expanded && settings && <TimeWheels id={`settings-${time}-wheels`} value={settings[time]} onChange={value => queueTime(time, value)}
-            labels={{group: `${row.label} · ${t('time', 'שעה')}`, hour: `${t('Hour', 'שעה')} · ${row.label}`, minute: `${t('Minutes', 'דקות')} · ${row.label}`}}/>}
-        </Fragment>;
-      })}
-      <p className="muted-copy">{t('Times are Israel time. These choices apply to all your devices.', 'השעות לפי שעון ישראל. הבחירות חלות על כל המכשירים שלך.')}</p>
+      <legend className="sr-only">{t('Notify me about', 'להודיע לי על')}</legend>
+      <Card inset>
+        {rows.map(row => {
+          const time = row.time, on = !!settings?.[row.key], expanded = !!time && openTime === time && on;
+          const id = `settings-switch-${row.key}`;
+          return <Fragment key={row.key}>
+            <div className="row settings-switch">
+              <span className="row-body"><label className="row-title" htmlFor={id}>{row.label}</label>{row.help && <span className="row-subtitle">{row.help}</span>}</span>
+              <span className="row-trail">
+                {time && <span className="settings-time-cell">
+                  {savedTime === time && <span className="settings-saved" role="status">{t('Saved', 'נשמר')}</span>}
+                  {/* Quarter hours: the scheduler runs every 15 minutes (decision 2026-11-06). */}
+                  <button type="button" id={`settings-${time}-button`} className="settings-time" dir="ltr" disabled={!settings || !on}
+                    aria-label={`${row.label} · ${t('time', 'שעה')} ${settings?.[time] ?? ''}`} aria-expanded={expanded} aria-controls={`settings-${time}-wheels`}
+                    onClick={() => setOpenTime(expanded ? null : time)}>{settings?.[time] ?? '––:––'}</button>
+                </span>}
+                <Switch id={id} disabled={locked} checked={on} aria-label={row.label} onCheckedChange={value => void save({[row.key]: value === true})}/>
+              </span>
+            </div>
+            {time && expanded && settings && <TimeWheels id={`settings-${time}-wheels`} value={settings[time]} onChange={value => queueTime(time, value)}
+              labels={{group: `${row.label} · ${t('time', 'שעה')}`, hour: `${t('Hour', 'שעה')} · ${row.label}`, minute: `${t('Minutes', 'דקות')} · ${row.label}`}}/>}
+          </Fragment>;
+        })}
+      </Card>
+      <p className="settings-footnote">{t('Israel time · all your devices', 'שעון ישראל · כל המכשירים שלך')}</p>
     </fieldset>}
-    {error && <p className="warning-note" role="alert">{error}</p>}
-    {note && <p className="settings-note" role="status">{note}</p>}
+    {error && <p className="note-line" data-tone="danger" role="alert">{error}</p>}
+    {note && <p className="note-line" role="status">{note}</p>}
   </section>;
 }
