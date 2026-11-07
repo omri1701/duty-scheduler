@@ -1,5 +1,5 @@
 import type {Session, User} from '@supabase/supabase-js';
-import {readSnapshot, type Snapshot} from './snapshot.ts';
+import {findMe, readSnapshot, type Snapshot} from './snapshot.ts';
 import {errorMessage, type DutyClient, type Functions, type MutationArgs, type MutationName} from './rpc.ts';
 import {assertWritable, isReadOnly} from './write-policy.ts';
 
@@ -88,7 +88,7 @@ export function createWorkspace(callbacks: {
         if (scope !== current) return;
         // Presence, not approval/revision, distinguishes registration. Pending,
         // rejected and inactive members already have their own RLS-visible row.
-        if (!snapshot.members.some(member => member.id === user.id) && !isReadOnly(client)) {
+        if (!findMe(snapshot, user.id) && !isReadOnly(client)) {
           assertWritable(client);
           const {error} = await client.rpc('duty_join', {p_name: name});
           if (scope !== current) return;

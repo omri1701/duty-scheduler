@@ -7,7 +7,7 @@ CREATE FUNCTION duty_private.balance() RETURNS jsonb
 declare me text; manager boolean; actual jsonb; projected jsonb; instant bigint; lines jsonb; net jsonb;
 begin
  if not duty_private.is_member() then raise exception 'Member access required' using errcode='42501'; end if;
- me:=auth.uid()::text; manager:=duty_private.is_manager();
+ me:=duty_private.current_member_id()::text; manager:=duty_private.is_manager();
  actual:=duty_private.compensation_state();
  instant:=greatest(duty_private.compensation_now(),coalesce((actual->'events'->-1->>'at')::bigint,0));
  actual:=duty_private.compensation_reconcile(actual,instant,false);

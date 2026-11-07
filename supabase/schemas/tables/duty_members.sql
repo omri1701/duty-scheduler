@@ -9,7 +9,9 @@ CREATE TABLE public.duty_members (
     color text DEFAULT '#adc9ee'::text NOT NULL,
     joined_at timestamp with time zone DEFAULT now() NOT NULL,
     is_temporary boolean DEFAULT false NOT NULL,
-    auth_user_id uuid GENERATED ALWAYS AS (CASE WHEN is_temporary THEN NULL::uuid ELSE id END) STORED,
+    -- The sign-in that owns this row: its own id for a member who joined, the linked sign-up
+    -- for a former temporary member (duty_private.link_temporary_member), NULL while temporary.
+    auth_user_id uuid GENERATED ALWAYS AS (CASE WHEN is_temporary THEN NULL::uuid ELSE COALESCE(linked_user_id, id) END) STORED,
     -- Standing admin setting: Generate never places this member on a weekend duty
     -- (lib/scheduling/domain.ts, duty_private.generation_validate).
     no_weekends boolean DEFAULT false NOT NULL,
@@ -18,9 +20,14 @@ CREATE TABLE public.duty_members (
     weekends_from text,
     -- The member's own app language (decision 2026-11-06): the default on sign-in and on a
     -- new device, and the language of their notifications. NULL until they first choose.
-    -- Only duty_private.set_language writes it, for the caller's own row.
+    -- Only duty_private.set_language writes it, for the caller's own row (and a link carries
+    -- the sign-up's choice over).
     language text,
+    -- Set once, only by duty_private.link_temporary_member (decision 2026-11-07): the sign-up
+    -- that took over this former temporary member. The row keeps its id, so no history moves.
+    linked_user_id uuid,
     CONSTRAINT duty_members_identity_check CHECK ((is_temporary AND email IS NULL AND role = 'engineer' AND status = 'approved') OR (NOT is_temporary AND email IS NOT NULL)),
+    CONSTRAINT duty_members_link_check CHECK ((linked_user_id IS NULL OR NOT is_temporary)),
     CONSTRAINT duty_members_color_check CHECK ((color ~ '^#[0-9a-fA-F]{6}$'::text)),
     CONSTRAINT duty_members_name_check CHECK (((length(TRIM(BOTH FROM name)) >= 1) AND (length(TRIM(BOTH FROM name)) <= 80))),
     CONSTRAINT duty_members_seniority_check CHECK ((seniority >= 0)),
@@ -33,6 +40,9 @@ ALTER TABLE ONLY public.duty_members
 
 ALTER TABLE ONLY public.duty_members
     ADD CONSTRAINT duty_members_pkey PRIMARY KEY (id);
+
+-- One member row per sign-in, linked or not.
+CREATE UNIQUE INDEX duty_members_auth_user ON public.duty_members USING btree (auth_user_id);
 
 CREATE INDEX duty_members_role ON public.duty_members USING btree (role);
 

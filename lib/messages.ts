@@ -147,6 +147,7 @@ const SENTENCES: readonly (readonly [RegExp, string, string])[] = [
   [/Request not found|This request is no longer pending/, 'This request was already answered or cancelled.', 'הבקשה הזו כבר נענתה או בוטלה.'],
   [/Review missing allocation publication lineage/, 'This month’s plan wasn’t saved with its publication. Reopen the month and confirm its plan again.', 'התוכנית של החודש לא נשמרה עם הפרסום שלו. יש לפתוח מחדש את החודש ולאשר שוב את התוכנית.'],
   [/Temporary member required/, 'Choose a temporary member.', 'יש לבחור חבר זמני.'],
+  [/link-has-balance/, 'This sign-up already has balance entries. Approve or decline it instead.', 'להרשמה הזו כבר יש רישומים במאזן. אפשר לאשר או לדחות אותה במקום.'],
   [/The counterpart changed\. Refresh first|This publication changed\. Request a new swap/, 'The schedule changed since this request. Ask for a new swap.', 'הלוח השתנה מאז הבקשה. יש לבקש החלפה חדשה.'],
   [/The current engineer must accept before admin review|Both engineers must accept before admin review/, 'Both engineers have to accept before an admin reviews it.', 'שני המהנדסים צריכים לאשר לפני שמנהל יבדוק.'],
   // Personal calendar feed (decision 2026-11-06).

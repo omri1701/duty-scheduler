@@ -39,7 +39,7 @@ begin
   if conflicts and reason='' then raise exception 'Availability conflict. An admin must explicitly override with a reason.'; end if;
  end if;
  update public.duty_months set publication_sequence=publication_sequence+1 where month=m.month returning publication_sequence into next_version;
- insert into public.duty_publications(month,version,published_by) values(m.month,next_version,auth.uid()) returning id into publication;
+ insert into public.duty_publications(month,version,published_by) values(m.month,next_version,duty_private.current_member_id()) returning id into publication;
  insert into public.duty_assignments(publication_id,day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
  select publication,x.day,x.end_day,case when x.id=d.id then p_primary else x.primary_id end,x.secondary_id,
   case when x.id=d.id and changed then exists(select 1 from public.duty_constraints c where c.kind='no' and c.day>=x.day and c.day<x.end_day and c.member_id in (p_primary,x.secondary_id))
