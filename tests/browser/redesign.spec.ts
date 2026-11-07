@@ -210,6 +210,9 @@ for (const lang of ['en', 'he'] as const) {
     if (mobile) await page.locator('[data-day-details] .day-duty').click();
     await page.getByRole('dialog').getByRole('button', {name: t('Swap', 'החלפה'), exact: true}).click();
     await expect(page.locator('button[data-date="2026-11-03"]')).toHaveAttribute('data-swap-state', /^(ok|blocked)$/);
+    // The "choose the duty to swap with" toast lasts 3.2 s: capture after it has gone, every time,
+    // so neither capture depends on how long the previous one took.
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, {timeout: 10_000});
     await both(page, `swap-picking-${lang}`);
     await page.locator('button[data-date="2026-11-03"]').filter({has: page.locator('.date-line')}).focus();
     await page.keyboard.press('Space');
