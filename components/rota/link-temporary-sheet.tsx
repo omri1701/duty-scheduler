@@ -46,7 +46,10 @@ export function LinkTemporarySheet({pending: open, remote, lang, onClose}: {pend
   </>;
   const active = temporary.filter(m => m.active), inactive = temporary.filter(m => !m.active);
   return <>
+    {/* The two sheets are siblings, so Escape can reach the picker while the confirmation is up;
+        it then closes only the confirmation, whichever layer receives the key. */}
     <Sheet open={!!open} onOpenChange={next => {if (!next) close();}} lang={lang} className="link-sheet" closeDisabled={busy} busy={busy}
+      onEscapeKeyDown={event => {if (target) {event.preventDefault(); if (!busy) {setTarget(null); setError('');}}}}
       title={t('Link to a temporary member', 'קישור לחבר צוות זמני')}
       description={pending ? t(`${pending.name}’s sign-up merges with the member you choose. Their duties and history stay, and they can sign in.`, `ההרשמה של ${pending.name} תתאחד עם חבר הצוות שתבחרו. התורנויות וההיסטוריה נשמרות, ומעכשיו אפשר להתחבר.`) : undefined}>
       {pending && <div className="link-signup">
