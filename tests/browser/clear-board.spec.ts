@@ -79,9 +79,9 @@ test('Clear board is in Hebrew RTL and offers nothing on the published version o
   await page.getByRole('menuitem', {name: 'ניקוי הלוח', exact: true}).click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toHaveAttribute('dir', 'rtl');
-  await expect(dialog).toHaveAccessibleName(`לנקות ${count} תורנויות שאינן נעולות?`);
+  await expect(dialog).toHaveAccessibleName(`לנקות ${count} כוננויות שאינן נעולות?`);
   await dialog.getByRole('button', {name: 'ניקוי הלוח', exact: true}).click();
-  await expect(page.getByText(`${count} תורנויות נוקו.`, {exact: true})).toBeVisible();
+  await expect(page.getByText(`${count} כוננויות נוקו.`, {exact: true})).toBeVisible();
   await expect(page.getByRole('button', {name: 'שחזור', exact: true})).toBeVisible();
 
   const expectNoClear = async () => {await expect(await clearItem(page, 'ניקוי הלוח')).toHaveCount(0); await close(page);};

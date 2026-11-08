@@ -18,7 +18,7 @@ async function editDuty(page: Page, day: string) {
 
 test('signed out, OAuth denial, provider configuration and PKCE handoff', async ({page, openApp, backend, baseURL}) => {
   await openApp('signed-out');
-  await expect(page.getByRole('heading', {level: 1})).toContainText('duty rota');
+  await expect(page.getByRole('heading', {level: 1})).toContainText('MiKo');
   await page.goto('/?error_description=Synthetic%20OAuth%20denied');
   // Next.js also provides an accessibility route announcer outside the main region.
   await expect(page.getByRole('main').getByRole('alert')).toHaveText('Synthetic OAuth denied');

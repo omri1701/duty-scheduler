@@ -28,7 +28,6 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
  },[remote.loading]);
  const pending=!!remote.user,rejected=remote.me?.status==='rejected',inactive=remote.me?.status==='approved'&&!remote.me.active,local=remote.environment?.target==='local';
  if(remote.loading)return <StartupSkeleton lang={lang} environment={remote.environment}/>;
- const tagline=t('Your team’s duty rota','לוח התורנויות של הצוות');
  const title=rejected?t('Request declined','הבקשה נדחתה'):inactive?t('Membership inactive','החברות אינה פעילה'):t('Waiting for approval','ממתין לאישור');
  const copy=rejected?t('An admin declined this account.','מנהל דחה את החשבון הזה.'):inactive?t('An admin deactivated this membership.','מנהל השבית את החברות הזו.'):t('An admin approves new members. Check back soon.','מנהל מאשר חברים חדשים. כדאי לבדוק שוב בקרוב.');
  return <main ref={page} className="access-page" dir={lang==='he'?'rtl':'ltr'}>
@@ -40,9 +39,8 @@ export function AccessScreen({remote,lang,setLang}:{remote:TeamWorkspace;lang:'e
   </div>
   <div className="access-stack">
    <header className="access-hero">
-    <Logo size={56}/>
-    <span className="access-name">{APP_NAME.toLowerCase()}</span>
-    {pending?<p className="access-tagline">{tagline}</p>:<h1 className="access-tagline">{tagline}</h1>}
+    {/* The logo already says miko: no separate name, only one for assistive technology. */}
+    {pending?<p className="access-logo"><Logo size={168}/><span className="sr-only">{APP_NAME}</span></p>:<h1 className="access-logo"><Logo size={168}/><span className="sr-only">{APP_NAME}</span></h1>}
    </header>
    <section className="access-card" aria-live="polite">
     <InspectionWarning environment={remote.environment} lang={lang}/>

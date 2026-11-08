@@ -6,6 +6,11 @@ export const PROJECTS = {
 } as const;
 // LOCAL Docker API, kept below Windows' dynamic/excluded port range.
 export const LOCAL_API_URL = 'http://127.0.0.1:48321';
+// Hosted origins per environment: only the MiKo domains (2026-11-07); the old duty-scheduler-* hosts are gone.
+export const HOSTED_ORIGINS = {
+  dev: ['https://miko-dev.vercel.app'],
+  prod: ['https://miko-prod.vercel.app'],
+} as const;
 export type Target = 'local' | 'dev' | 'prod';
 export type Environment = {target: Target; badge: 'LOCAL' | 'DEV' | 'PROD' | null; readOnly: boolean; storageKey: string};
 export const READ_ONLY_MESSAGE = 'Production inspection: application writes are disabled. This is an application safeguard, not database-enforced read-only access.';
@@ -62,8 +67,8 @@ export function validatePublicKey(url: string, key: string) {
 export function resolveEnvironment(value: string, origin: string, deploymentOrigin?: string, devOrigin?: string, localTunnel?: string): Environment {
   const url = parse(value), runtime = parse(origin), target = connectionTarget(value);
   const local = isLoopback(runtime.hostname) && ['http:', 'https:'].includes(runtime.protocol);
-  const devHost = runtime.origin === 'https://duty-scheduler-dev.vercel.app';
-  const prodHost = runtime.origin === 'https://duty-scheduler-prod.vercel.app';
+  const devHost = (HOSTED_ORIGINS.dev as readonly string[]).includes(runtime.origin);
+  const prodHost = (HOSTED_ORIGINS.prod as readonly string[]).includes(runtime.origin);
   const deployment = deploymentOrigin === runtime.origin && runtime.protocol === 'https:' && runtime.hostname.endsWith('.vercel.app');
   const tunnel = target === 'dev' && devOrigin !== undefined && runtime.origin === validateDevOrigin(devOrigin);
   const localTunnelMatch = target === 'local' && localTunnel !== undefined && runtime.origin === validateDevOrigin(localTunnel);

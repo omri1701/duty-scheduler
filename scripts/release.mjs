@@ -8,8 +8,8 @@ import {historyQuery, referenceQuery, verifyHistory, verifyContractIdentity} fro
 import {verifyQualityEvidence} from './quality-evidence.mjs';
 
 export const environments = Object.freeze({
-  develop: {name: 'Development', ref: 'qhndiuahuxczujxxitsm', target: 'preview', domain: 'duty-scheduler-dev.vercel.app'},
-  master: {name: 'Production', ref: 'hpszwgnwxtxyxpcaivgj', target: 'production', domain: 'duty-scheduler-prod.vercel.app'},
+  develop: {name: 'Development', ref: 'qhndiuahuxczujxxitsm', target: 'preview', domain: 'miko-dev.vercel.app'},
+  master: {name: 'Production', ref: 'hpszwgnwxtxyxpcaivgj', target: 'production', domain: 'miko-prod.vercel.app'},
 });
 const project = 'prj_Jl2PBhK8DsvK183rKKWesr0821OY';
 const team = 'team_pbvqzViC50aeT2kaRNnTYkPt';

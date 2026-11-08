@@ -1,9 +1,10 @@
 # Supabase setup
 
 Frankfurt Production: **Duty Scheduler**, `hpszwgnwxtxyxpcaivgj`, `eu-central-1`,
-`https://duty-scheduler-prod.vercel.app`. Frankfurt Development: **Duty Scheduler
+`https://miko-prod.vercel.app`. Frankfurt Development: **Duty Scheduler
 Dev**, `qhndiuahuxczujxxitsm`, `eu-central-1`,
-`https://duty-scheduler-dev.vercel.app`. Accounts, OAuth configuration and data stay
+`https://miko-dev.vercel.app`. The app is named MiKo and runs only on these hosts
+(`lib/supabase/environment.ts` `HOSTED_ORIGINS`); the old `duty-scheduler-*` hosts are retired. Accounts, OAuth configuration and data stay
 separate. See [release workflow](DEPLOYMENT.md) for database-first CI/CD, scoped
 credentials, Production approval and recovery. Never reset these hosted projects.
 Native Next.js needs only a project URL and publishable key; no service-role key.
@@ -273,11 +274,11 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 4. Under **Clients**, create the **Production** OAuth client of type **Web application**
    with these values. Development needs a separate client and its own Frankfurt
    callback `https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback` and
-   origin `https://duty-scheduler-dev.vercel.app`.
+   origin `https://miko-dev.vercel.app`.
 
 | Setting | Value |
 |---|---|
-| Authorized JavaScript origin | `https://duty-scheduler-prod.vercel.app` |
+| Authorized JavaScript origin | `https://miko-prod.vercel.app` |
 | Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
@@ -288,17 +289,18 @@ In **Authentication → URL Configuration** set:
 
 | Setting | Value |
 |---|---|
-| Production Site URL | `https://duty-scheduler-prod.vercel.app` |
-| Production allowed redirect URL | `https://duty-scheduler-prod.vercel.app/` |
+| Production Site URL | `https://miko-prod.vercel.app` |
+| Production allowed redirect URL | `https://miko-prod.vercel.app/` |
 
-Development uses `https://duty-scheduler-dev.vercel.app` and its exact trailing-slash
-return, plus localhost. These are never added to Production.
+The app sends the browser back to its own origin with the exact trailing slash; local
+Production inspection also returns through `https://miko-prod.vercel.app/`. Development uses
+`https://miko-dev.vercel.app` and its exact trailing-slash return, plus localhost. These are never added to Production.
 
 ## 3. First login and explicit admin promotion
 
 After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
 
-Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their Duty session without Google OAuth. Signing out clears the Duty session without signing out of Google; choosing a different account still requires that identity's own membership approval.
+Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their MiKo session without Google OAuth. Signing out clears the MiKo session without signing out of Google; choosing a different account still requires that identity's own membership approval.
 
 The first account is **not** automatically made admin. Confirm the environment/project and the owner's actual `auth.users.id`, then execute [the operator-only first-admin script](../supabase/admin/promote-first-admin.sql). It verifies the exact confirmed Google identity and pending profile, refuses an existing admin, and atomically promotes the row and increments `duty_workspace.revision` under its lock. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
@@ -361,7 +363,7 @@ The applied DEV chain, in order, is:
 3. `20261018183148_draft_publication_lifecycle.sql` (new conversion and final RPCs).
 
 DEV now serves the compatible `9bd1b3e` application at
-`https://duty-scheduler-dev.vercel.app/`. The normal release function verified that
+`https://miko-dev.vercel.app/`. The normal release function verified that
 the complete matching history skips all three files. Schema/RLS/RPC/reference-data
 contracts matched successful database CI and fresh LOCAL replay. A hosted checked-RPC
 acceptance transaction exercised lifecycle, permissions, specials, boundary weekends
@@ -519,7 +521,7 @@ storage keys per actual Supabase URL/port; switching targets cannot reuse anothe
 project's session. Existing pre-selector sessions require a new login once.
 
 Badges appear on login and workspace: LOCAL blue, DEV green on localhost and
-`duty-scheduler-dev.vercel.app`, and PROD red only for localhost Production.
+`miko-dev.vercel.app`, and PROD red only for localhost Production.
 Deployed Production has no badge. Text contrasts against pastel backgrounds and
 both EN/HE layouts work on mobile. The URL/project and runtime origin determine
 the badge and policy. Unknown projects, URL paths/credentials, mode mismatches,
@@ -548,7 +550,7 @@ revokes only its own session, preserving other deployed/mobile sessions.
 
 Production keeps its existing Google redirects; no localhost redirect is added.
 For localhost inspection, Continue with Google opens a new tab and returns to
-`https://duty-scheduler-prod.vercel.app/?code=...`. Copy that return URL into the
+`https://miko-prod.vercel.app/?code=...`. Copy that return URL into the
 localhost login form promptly and submit. The one-time code is exchanged only
 with the originating localhost PKCE verifier, without copying access/refresh
 tokens. The deployed page may show a missing-verifier login error: the verifier

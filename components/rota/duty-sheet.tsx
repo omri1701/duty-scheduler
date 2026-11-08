@@ -37,13 +37,13 @@ export function DutySheet({duty, state, lang, t, meId, open, onClose, actions, p
     {b && <div className="duty-facts">
       <div className="duty-chips">
         <Chip tone="brand">{b.points === 1 ? t('1 point', 'נקודה אחת') : t(`${b.points} points`, `${b.points} נקודות`)}</Chip>
-        {published ? <Chip tone="ok">{t('Published', 'פורסם')}</Chip> : <Chip tone="neutral">{t('Draft', 'טיוטה')}</Chip>}
+        {published ? <Chip tone="brand">{t('Published', 'פורסם')}</Chip> : <Chip tone="neutral">{t('Draft', 'טיוטה')}</Chip>}
         {a?.locked && <Chip tone="neutral"><LockKeyhole/>{t('Locked', 'נעול')}</Chip>}
         {a?.override && <Chip tone="warn">{t('Admin exception', 'חריגת מנהל')}</Chip>}
       </div>
       <div className="card card-inset">
         <ListRow lead={primary ? <Avatar name={primary.name} color={primary.color} size={36}/> : <span className="avatar avatar-empty" aria-hidden="true">—</span>}
-          title={primary ? <>{primary.name}{primary.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</> : t('Unassigned', 'ללא שיבוץ')} subtitle={t('On duty', 'תורן/ית')}/>
+          title={primary ? <>{primary.name}{primary.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</> : t('Unassigned', 'ללא שיבוץ')} subtitle={t('On duty', 'כונן/ית')}/>
         {cover && <ListRow lead={<Avatar name={cover.name} color={cover.color} size={36}/>} title={<>{cover.name}{cover.id === meId && <span className="muted"> · {t('you', 'אני')}</span>}</>} subtitle={t('Emergency cover', 'כיסוי חירום')}/>}
       </div>
       {actions.swap?.reason && <p className="muted small">{actions.swap.reason}</p>}

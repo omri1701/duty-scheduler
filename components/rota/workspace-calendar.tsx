@@ -51,7 +51,7 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
   });
   return <CalendarSurface lang={lang} dir={mobile && lang === 'he' ? 'rtl' : 'ltr'} gridRef={preview ? undefined : dragContainer} gridClassName={'gesture-grid' + (picking ? ' picking' : '')} notices={notices}>
     <span id="published-swap-help" className="sr-only" aria-live="polite">
-      {requesting ? keyboardSource ? t('Choose the duty to swap with. Greyed days say why. Escape cancels.', 'בחרו את התורנות להחלפה. ימים אפורים מסבירים למה. Escape לביטול.') : '' : pickingFrom ? t('Choose the duty to swap with. Escape cancels.', 'בחרו את התורנות להחלפה. Escape לביטול.') : ''}
+      {requesting ? keyboardSource ? t('Choose the duty to swap with. Greyed days say why. Escape cancels.', 'בחרו את הכוננות להחלפה. ימים אפורים מסבירים למה. Escape לביטול.') : '' : pickingFrom ? t('Choose the duty to swap with. Escape cancels.', 'בחרו את הכוננות להחלפה. Escape לביטול.') : ''}
     </span>
     {cells.map(({date: d, period: b, combined}) => {
       const a = b ? calendarState.assignments[b.id] : undefined,
@@ -110,8 +110,8 @@ export function WorkspaceCalendar({state, calendarState, calendarBlocks, dateCel
           aria-label={`${b && swapSourceDays.has(b.id) && requesting ? t('Request swap: ', 'בקשת החלפה: ') : ''}${fmt(d)}${combined ? ' – ' + fmt(addDays(b!.end, -1)) : ''} ${p?.name ?? t('Unassigned', 'ללא שיבוץ')}${blocked ? ` · ${t('Unavailable', 'לא זמין')}: ${blocked}` : ''}`}
         >
           <CalendarDateLine today={today} date={d} end={combined ? addDays(b!.end, -1) : undefined}>
-            {source && <span className="swap-source-mark" role="img" aria-label={t('Swapping this duty', 'מחליפים את התורנות הזאת')}><ArrowLeftRight/></span>}
-            {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'תורנות נעולה')}><LockKeyhole size={11}/></span>}
+            {source && <span className="swap-source-mark" role="img" aria-label={t('Swapping this duty', 'מחליפים את הכוננות הזאת')}><ArrowLeftRight/></span>}
+            {locked(b) && <span className="duty-lock-indicator" role="img" aria-label={t('Locked duty', 'כוננות נעולה')}><LockKeyhole size={11}/></span>}
             {cell?.badge !== undefined && <span className="tiny-badge" dir="ltr">+{cell.badge}</span>}
           </CalendarDateLine>
           {b && (p || interactive) && <>

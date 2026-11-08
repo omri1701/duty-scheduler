@@ -62,10 +62,10 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
   return <label className="field-label">{label}<input type="number" inputMode="decimal" min={0} max={20} step={0.5} disabled={busy} value={value} onChange={e=>set(e.target.value)}/></label>;
  }
  return <EditorDialog onClose={onClose} saving={busy} lang={lang} className="duty-dialog published-edit-dialog"
-  title={step==='edit'?t('Edit duty','עריכת תורנות'):t('Review and copy','בדיקה והעתקה')}
+  title={step==='edit'?t('Edit duty','עריכת כוננות'):t('Review and copy','בדיקה והעתקה')}
   description={`${fmt(row.day)}${last!==row.day?` – ${fmt(last)}`:''} · ${t('Published','פורסם')} · ${points(dutyPoints(row,row.extra_points,row.saturday_extra_points??0))}`}
   onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${row.day}"]`)?.focus()}}>
-  {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את התורנות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את התורנות מחדש.')}</p>}
+  {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את הכוננות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את הכוננות מחדש.')}</p>}
   {/* Named before saving: saving cancels it (for a new engineer or new points). */}
   {!stale&&!!partners&&<p className="warning-note" role="note">{t(`Pending swap with ${partners}. Saving cancels it.`,`החלפה ממתינה עם ${partners}. השמירה תבטל אותה.`)}</p>}
   {step==='edit'?<>
@@ -80,10 +80,10 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
     <KindChoice lang={lang} kind={kind} busy={busy} onChange={setKind}/>
     <p className="muted-copy">{kind==='temporary'
      ?t(`${name(row.primary_id!)} owes ${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, repaid in later months.`,`${name(row.primary_id!)} חייב/ת ל־${name(primary)} ${points(owedUnits(row,extraValue||0,saturdayValue||0)/2)}, שיוחזרו בחודשים הבאים.`)
-     :returns===null?t('Checking this duty’s earlier changes…','בודקים את השינויים הקודמים בתורנות…')
-     :returns==='error'?t('Could not read this duty’s earlier changes. Close and open the duty again.','לא ניתן לקרוא את השינויים הקודמים בתורנות. יש לסגור ולפתוח אותה מחדש.')
-     :returning?t(`${name(primary)} gets the duty back: this undoes the Temporary change, so its debt cancels.`,`${name(primary)} מקבל/ת את התורנות בחזרה: השינוי הזמני מתבטל, וגם החוב שלו.`)
-     :t(`No debt. ${name(primary)} takes this duty for good.`,`ללא חוב. ${name(primary)} לוקח/ת את התורנות לצמיתות.`)}</p>
+     :returns===null?t('Checking this duty’s earlier changes…','בודקים את השינויים הקודמים בכוננות…')
+     :returns==='error'?t('Could not read this duty’s earlier changes. Close and open the duty again.','לא ניתן לקרוא את השינויים הקודמים בכוננות. יש לסגור ולפתוח אותה מחדש.')
+     :returning?t(`${name(primary)} gets the duty back: this undoes the Temporary change, so its debt cancels.`,`${name(primary)} מקבל/ת את הכוננות בחזרה: השינוי הזמני מתבטל, וגם החוב שלו.`)
+     :t(`No debt. ${name(primary)} takes this duty for good.`,`ללא חוב. ${name(primary)} לוקח/ת את הכוננות לצמיתות.`)}</p>
    </div>}
    {!!conflicts.length&&<div className="warning-note" role="alert">
     {conflicts.map(c=><p key={c.day}>{t(`${name(primary)} is unavailable on ${fmt(c.day)}`,`${name(primary)} לא זמין/ה ב־${fmt(c.day)}`)}{c.note?` · ${c.note}`:''}</p>)}
@@ -97,7 +97,7 @@ export function PublishedDutyEditor({remote,row:opened,lang,onClose,onSwap}:{rem
    {unchanged&&validExtras&&!stale&&<p className="muted-copy" role="note">{t('Choose another engineer or change the extra points to review a change.','יש לבחור מהנדס אחר או לשנות את הנקודות הנוספות כדי לבדוק שינוי.')}</p>}
    <div className="editor-actions"><Button disabled={!ready||busy} onClick={()=>setStep('review')}>{t('Review change','בדיקת השינוי')}</Button></div>
    {/* Any member's duty: the next press on the calendar picks the second duty. */}
-   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם תורנות אחרת…')}</Button>}
+   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם כוננות אחרת…')}</Button>}
   </>:<>
    <ReviewStep lang={lang} summary={summary} busy={busy} canPublish={!remote.readOnly&&ready} onBack={()=>setStep('edit')} onPublish={save}/>
   </>}

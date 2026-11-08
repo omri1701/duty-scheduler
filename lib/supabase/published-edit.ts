@@ -75,7 +75,7 @@ export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>str
  const change=(a:string,b:string)=>he?`${b} במקום ${a}`:`${a} → ${b}`;
  const extraText=(n:number)=>n?points(n):t('none','אין');
  const lines=[
-  t('Duty change (published schedule)','שינוי תורנות (לוח שפורסם)'),
+  t('Duty change (published schedule)','שינוי כוננות (לוח שפורסם)'),
   `${t('Date','תאריך')}: ${date(row.day)}${last!==row.day?` – ${date(last)}`:''}`,
   `${t('Engineer','מהנדס')}: ${changed?change(from,to):`${from} ${t('(unchanged)','(ללא שינוי)')}`}`,
   `${t('Points','נקודות')}: ${before===after?points(after):change(points(before),points(after))}`,
@@ -84,7 +84,7 @@ export function editSummary(row:DutyRow,edit:PublishedEdit,name:(id:string)=>str
  if(changed){
   lines.push(`${t('Type','סוג')}: ${edit.kind==='temporary'?t('Temporary','זמני'):t('Permanent','קבוע')}`);
   lines.push(`${t('Balance','מאזן')}: ${edit.kind==='temporary'?t(`${from} owes ${to} ${points(owed)}`,`${from} חייב/ת ל־${to} ${points(owed)}`)
-   :returning?t(`${to} gets the duty back: the earlier Temporary change is undone and its debt cancels`,`${to} מקבל/ת את התורנות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו`):t('No debt','ללא חוב')}`);
+   :returning?t(`${to} gets the duty back: the earlier Temporary change is undone and its debt cancels`,`${to} מקבל/ת את הכוננות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו`):t('No debt','ללא חוב')}`);
   if(edit.overrideReason.trim())lines.push(`${t('Availability override','חריגה מאילוץ')}: ${edit.overrideReason.trim()}`);
  }
  else lines.push(`${t('Balance','מאזן')}: ${t(`No debt; the extra counts for ${from}`,`ללא חוב; התוספת נזקפת ל־${from}`)}`);
@@ -148,7 +148,7 @@ export function weekendEditSummary(w:PublishedWeekend,edit:WeekendEdit,name:(id:
  const joined=edit.fridayPrimary===edit.saturdayPrimary,layout=(one:boolean)=>one?t('One weekend','סוף שבוע אחד'):t('Two days','שני ימים');
  const changes=weekendChanges(w,edit);
  const lines=[
-  t('Duty change (published schedule)','שינוי תורנות (לוח שפורסם)'),
+  t('Duty change (published schedule)','שינוי כוננות (לוח שפורסם)'),
   `${t('Date','תאריך')}: ${date(w.fri.day)} – ${date(w.sat.day)}`,
   `${t('Weekend','סוף שבוע')}: ${joined===w.joined?layout(joined):change(layout(w.joined),layout(joined))}`,
  ];

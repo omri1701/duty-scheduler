@@ -119,7 +119,7 @@ test('approval summary names both members, dates and points moved in English and
   'Blair — gives: 7 Nov 2026 – 8 Nov 2026 (1.5 pts) · takes: 2 Nov 2026 (1 pt) · change: −0.5 pts',
  ].join('\n'));
  const he=swapSummary({...input,lang:'he'}).split('\n');
- assert.equal(he[0],'החלפת תורנויות: Alex ⇄ Blair');
+ assert.equal(he[0],'החלפת כוננויות: Alex ⇄ Blair');
  assert.match(he[1],/מסירה: 2 Nov 2026 \(1 נק׳\) · קבלה: .*\(1.5 נק׳\) · שינוי: \+0.5 נק׳$/);
  assert.match(he[2],/שינוי: −0.5 נק׳$/);
  assert.match(swapSummary({...input,to:{label:'x',points:1},lang:'en'}),/change: 0 pts/);
@@ -156,5 +156,5 @@ test('swap hint text says who and which day, never the note, for engineers and a
  assert.equal(say({kind:'weekend',person:'dana'},'admin','avi'),'This would give Dana a second weekend');
  assert.equal(say({kind:'past'},'me','me'),'This day has passed');
  assert.equal(say({kind:'takes-target',person:'me',day:'2026-11-04'},'me','me','he'),'אין לך אפשרות לקחת את 04');
- assert.equal(say({kind:'takes-source',person:'dana'},'admin','avi','he'),'לDana אין אפשרות לקחת את התורנות של Avi');
+ assert.equal(say({kind:'takes-source',person:'dana'},'admin','avi','he'),'לDana אין אפשרות לקחת את הכוננות של Avi');
 });

@@ -24,7 +24,7 @@ export function LinkTemporarySheet({pending: open, remote, lang, onClose}: {pend
   const raw = remote.snapshot, temporary = raw?.members.filter(m => m.is_temporary) ?? [];
   const current = new Set(raw?.months.map(m => m.current_publication_id).filter(Boolean));
   const duties = (id: string) => raw?.assignments.filter(a => a.publication_id && current.has(a.publication_id) && a.primary_id === id).length ?? 0;
-  const dutyLine = (n: number) => n === 0 ? t('No duties yet', 'אין תורנויות עדיין') : n === 1 ? t('1 duty', 'תורנות אחת') : t(`${n} duties`, `${n} תורנויות`);
+  const dutyLine = (n: number) => n === 0 ? t('No duties yet', 'אין כוננויות עדיין') : n === 1 ? t('1 duty', 'כוננות אחת') : t(`${n} duties`, `${n} כוננויות`);
   const close = () => {if (!busy) {setTarget(null); setError(''); onClose();}};
   async function link() {
     if (!open || !target || busy || remote.readOnly) return;
@@ -51,7 +51,7 @@ export function LinkTemporarySheet({pending: open, remote, lang, onClose}: {pend
     <Sheet open={!!open} onOpenChange={next => {if (!next) close();}} lang={lang} className="link-sheet" closeDisabled={busy} busy={busy}
       onEscapeKeyDown={event => {if (target) {event.preventDefault(); if (!busy) {setTarget(null); setError('');}}}}
       title={t('Link to a temporary member', 'קישור לחבר צוות זמני')}
-      description={pending ? t(`${pending.name}’s sign-up merges with the member you choose. Their duties and history stay, and they can sign in.`, `ההרשמה של ${pending.name} תתאחד עם חבר הצוות שתבחרו. התורנויות וההיסטוריה נשמרות, ומעכשיו אפשר להתחבר.`) : undefined}>
+      description={pending ? t(`${pending.name}’s sign-up merges with the member you choose. Their duties and history stay, and they can sign in.`, `ההרשמה של ${pending.name} תתאחד עם חבר הצוות שתבחרו. הכוננויות וההיסטוריה נשמרות, ומעכשיו אפשר להתחבר.`) : undefined}>
       {pending && <div className="link-signup">
         <Avatar name={pending.name} size={40}/>
         <span className="row-body"><span className="row-title">{pending.name}</span><span className="row-subtitle" dir="ltr">{pending.email}</span></span>
@@ -61,7 +61,7 @@ export function LinkTemporarySheet({pending: open, remote, lang, onClose}: {pend
     </Sheet>
     <Sheet open={!!open && !!target} onOpenChange={next => {if (!next && !busy) {setTarget(null); setError('');}}} lang={lang} kind="alert" role="alertdialog" closeDisabled={busy} busy={busy} className="link-confirm"
       title={pending && target ? t(`Link ${pending.name}'s sign-up to temporary member ${target.name}?`, `לקשר את ההרשמה של ${pending.name} לחבר הצוות הזמני ${target.name}?`) : ''}
-      description={t('Their duties, points, nets and constraints become theirs. This can’t be undone.', `התורנויות, הנקודות, המאזנים והאילוצים של ${target?.name ?? ''} יעברו ל${pending?.name ?? ''}. אי אפשר לבטל את זה.`)}
+      description={t('Their duties, points, nets and constraints become theirs. This can’t be undone.', `הכוננויות, הנקודות, המאזנים והאילוצים של ${target?.name ?? ''} יעברו ל${pending?.name ?? ''}. אי אפשר לבטל את זה.`)}
       footer={<div className="sheet-actions">
         <Button variant="secondary" disabled={busy} onClick={() => {setTarget(null); setError('');}}>{t('Cancel', 'ביטול')}</Button>
         <Button disabled={busy || remote.readOnly} onClick={() => void link()}>{busy ? t('Linking…', 'מקשר…') : t('Link', 'קישור')}</Button>

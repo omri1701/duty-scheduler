@@ -16,9 +16,9 @@ test('runtime config validates project, public key, origin, mode and inspection 
    [PROJECTS.dev,'sb_publishable_synthetic','http://localhost:5173',{DUTY_SUPABASE_TARGET:'prod'},503],
    [PROJECTS.prod,'sb_publishable_synthetic','http://localhost:5173',{},503],
    [PROJECTS.prod,'sb_publishable_synthetic','http://localhost:5173',{DUTY_PRODUCTION_INSPECTION:'confirmed',DUTY_SUPABASE_TARGET:'prod'},200],
-   [PROJECTS.prod,'sb_publishable_synthetic','https://duty-scheduler-dev.vercel.app',{},503],
-   [PROJECTS.prod,'sb_publishable_synthetic','https://duty-scheduler-prod.vercel.app',{VERCEL_ENV:'production'},200],
-   [PROJECTS.prod,'sb_publishable_synthetic','https://duty-scheduler-prod.vercel.app',{VERCEL_ENV:'preview'},503],
+   [PROJECTS.prod,'sb_publishable_synthetic','https://miko-dev.vercel.app',{},503],
+   [PROJECTS.prod,'sb_publishable_synthetic','https://miko-prod.vercel.app',{VERCEL_ENV:'production'},200],
+   [PROJECTS.prod,'sb_publishable_synthetic','https://miko-prod.vercel.app',{VERCEL_ENV:'preview'},503],
    [PROJECTS.prod,'sb_publishable_synthetic','https://duty-production-immutable.vercel.app',{VERCEL_ENV:'production',VERCEL_URL:'duty-production-immutable.vercel.app'},200],
    [PROJECTS.prod,'sb_publishable_synthetic','https://duty-production-immutable.vercel.app',{VERCEL_ENV:'preview',VERCEL_URL:'duty-production-immutable.vercel.app'},503],
    [PROJECTS.dev,'sb_publishable_synthetic','https://duty-preview.vercel.app',{VERCEL_ENV:'preview',VERCEL_URL:'duty-preview.vercel.app'},200],
@@ -59,8 +59,8 @@ test('mobile config trusts only its explicit DEV proxy and stays disabled in Pro
    [origin,{}, {VERCEL_ENV:'development'},503],
    [origin,{}, {DUTY_SUPABASE_TARGET:'local'},503],
    [origin,{}, {SUPABASE_URL:PROJECTS.prod,DUTY_SUPABASE_TARGET:'prod',DUTY_PRODUCTION_INSPECTION:'confirmed'},503],
-   ['https://duty-scheduler-dev.vercel.app',{}, {VERCEL_ENV:'preview'},200],
-   ['https://duty-scheduler-prod.vercel.app',{}, {NODE_ENV:'production',VERCEL_ENV:'production',SUPABASE_URL:PROJECTS.prod,DUTY_SUPABASE_TARGET:'prod'},200],
+   ['https://miko-dev.vercel.app',{}, {VERCEL_ENV:'preview'},200],
+   ['https://miko-prod.vercel.app',{}, {NODE_ENV:'production',VERCEL_ENV:'production',SUPABASE_URL:PROJECTS.prod,DUTY_SUPABASE_TARGET:'prod'},200],
   ]) {
    for(const name of names)delete process.env[name];
    Object.assign(process.env,{SUPABASE_URL:PROJECTS.dev,SUPABASE_PUBLISHABLE_KEY:'sb_publishable_synthetic',DUTY_SUPABASE_TARGET:'dev',NODE_ENV:'development',DUTY_DEV_ORIGIN:origin},extra);

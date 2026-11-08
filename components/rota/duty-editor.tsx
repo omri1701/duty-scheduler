@@ -58,7 +58,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
   const a=get(h==='sat'?'sat':'fri'),locked=!!a.locked;
   return <Button className="duty-lock-toggle" variant={locked?'secondary':'ghost'} size="icon-sm" disabled={busy||!a.primary} aria-pressed={locked} aria-label={locked?aria.unlock:aria.lock} title={locked?aria.unlock:aria.lock} onClick={()=>update(h,x=>({...x,locked:!locked}))}>{locked?<LockKeyhole size={16}/>:<LockKeyholeOpen size={16}/>}</Button>
  }
- const dutyLock={lock:t('Lock duty','נעילת תורנות'),unlock:t('Unlock duty','ביטול נעילת תורנות')};
+ const dutyLock={lock:t('Lock duty','נעילת כוננות'),unlock:t('Unlock duty','ביטול נעילת כוננות')};
  /** A regular day's card: its date and points, the person, its lock and its emergency cover. */
  function card(h:Half|'both'){
   const a=get(h==='sat'?'sat':'fri'),own=h!=='both'&&mode==='two';
@@ -74,9 +74,9 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
   </DayCard>
  }
  const showWeekend=weekend&&mode!=='half';
- const onCard=<DayHeading>{t('On duty','בתורנות')}</DayHeading>;
+ const onCard=<DayHeading>{t('On duty','בכוננות')}</DayHeading>;
  function dayHeading(d:string,p:number){return <DayHeading points={pts(p)}>{dateLabel(d)}</DayHeading>}
- return <EditorDialog onClose={close} saving={busy} lang={lang} className="duty-dialog" title={showWeekend?t('Weekend','סוף שבוע'):duty.title||t('Edit duty','עריכת תורנות')} description={showWeekend?`${range} · ${pts(halfPoints('fri')+halfPoints('sat'))}`:`${dateLabel(duty.start)} · ${pts(duty.points)}`} onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${duty.id}"]`)?.focus()}}>
+ return <EditorDialog onClose={close} saving={busy} lang={lang} className="duty-dialog" title={showWeekend?t('Weekend','סוף שבוע'):duty.title||t('Edit duty','עריכת כוננות')} description={showWeekend?`${range} · ${pts(halfPoints('fri')+halfPoints('sat'))}`:`${dateLabel(duty.start)} · ${pts(duty.points)}`} onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${duty.id}"]`)?.focus()}}>
  {carry?<div className="inline-note">{t('Edit this weekend in the month containing Friday.','יש לערוך את סוף השבוע בחודש שבו חל יום שישי.')}<Button onClick={()=>onMonth(ownerMonth(duty))}>{t('Open month','פתיחת החודש')}</Button></div>:<>
  {showWeekend&&<WeekendLayoutSwitch lang={lang} layout={layout} disabled={busy} onChange={setLayout}/>}
  {mode==='half'&&<SplitJoinRow lang={lang} disabled={busy} onJoin={join}/>}
@@ -84,7 +84,7 @@ export function DutyEditor({state,duty,month,lang,onClose,onMonth,onSave,onRemov
  {duplicate&&<div className="warning-note">{t('Primary and emergency engineers must be different on each day.','המהנדס הראשי ומהנדס החירום חייבים להיות שונים בכל יום.')}</div>}
  {needsOverride&&<div className="warning-note">{!!conflicts.length&&<p>{conflicts.join(' / ')}</p>}{!!extraWeekends.length&&<p>{extraWeekends.map(name).join(', ')} · {t('This adds another weekend this month.','השיבוץ מוסיף סוף שבוע נוסף בחודש.')}</p>}{skipped.map(text=><p key={text}>{text}</p>)}<label className="check-label duty-override manager-override"><Checkbox disabled={busy} checked={override} onCheckedChange={v=>setOverride(!!v)}/>{t('Approve these exceptions as manager','אישור החריגות כמנהל')}</label></div>}
  <div className="editor-actions"><Button disabled={duplicate||choosing||(needsOverride&&!override)||busy} onClick={()=>submit(()=>onSave(s=>change(s,needsOverride&&override),weekend?[friday,saturday]:[duty.id]))}>{t('Save assignment','שמירת השיבוץ')}</Button></div>
- {duty.kind==='special'&&<Button variant="ghost" disabled={busy} onClick={()=>submit(onRemoveSpecial)}><Trash2/>{t('Remove extra points from this duty','הסרת הנקודות הנוספות מתורנות זו')}</Button>}
+ {duty.kind==='special'&&<Button variant="ghost" disabled={busy} onClick={()=>submit(onRemoveSpecial)}><Trash2/>{t('Remove extra points from this duty','הסרת הנקודות הנוספות מכוננות זו')}</Button>}
  </>}
  </EditorDialog>
 }

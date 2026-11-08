@@ -75,7 +75,7 @@ test('the summary states dates, engineers, points, kind and who owes whom, in En
  assert.match(editSummary(tuesday,{primary:'a',extra:1,saturdayExtra:0,kind:'temporary',overrideReason:'ignored'},name,'en'),
   /Engineer: Alex Atlas \(unchanged\)\nPoints: 1 point → 2 points\nExtra: none → 1 point\nBalance: No debt; the extra counts for Alex Atlas$/);
  const hebrew=editSummary(row('2026-11-03','2026-11-04',.5),{primary:'b',extra:.5,saturdayExtra:0,kind:'temporary',overrideReason:''},name,'he');
- assert.match(hebrew,/^שינוי תורנות \(לוח שפורסם\)\nתאריך: יום ג׳ 03\/11\/2026$/m);
+ assert.match(hebrew,/^שינוי כוננות \(לוח שפורסם\)\nתאריך: יום ג׳ 03\/11\/2026$/m);
  assert.match(hebrew,/^מהנדס: Blair Birch במקום Alex Atlas$/m);
  assert.match(hebrew,/^נקודות: 1.5 נקודות$/m);assert.match(hebrew,/^תוספת: 0.5 נקודות$/m);
  assert.doesNotMatch(hebrew,/[←→]/);
@@ -87,6 +87,6 @@ test('the summary states dates, engineers, points, kind and who owes whom, in En
 test('a Permanent edit back to who held the duty before a Temporary change says it undoes that change (H1)',()=>{
  const edit={primary:'a',extra:0,saturdayExtra:0,kind:'permanent',overrideReason:''},held=row('2026-11-03','2026-11-04',0,0,'b');
  assert.match(editSummary(held,edit,name,'en',true),/Type: Permanent\nBalance: Alex Atlas gets the duty back: the earlier Temporary change is undone and its debt cancels$/);
- assert.match(editSummary(held,edit,name,'he',true),/Alex Atlas מקבל\/ת את התורנות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו$/);
+ assert.match(editSummary(held,edit,name,'he',true),/Alex Atlas מקבל\/ת את הכוננות בחזרה: השינוי הזמני הקודם מתבטל וגם החוב שלו$/);
  assert.match(editSummary(held,edit,name,'en'),/Balance: No debt$/);
 });

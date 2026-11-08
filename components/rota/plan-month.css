@@ -68,7 +68,7 @@
 .plan-chip.permanent{background:var(--plan-permanent-soft);color:var(--plan-permanent)}
 .plan-adjust{display:flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:var(--surface-3);direction:ltr;flex-shrink:0}
 .plan-adjust button{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--surface);color:var(--brand-ink);box-shadow:0 1px 3px rgba(0,0,0,.18);transition:transform .15s var(--plan-spring),background .15s}
-:root[data-theme=dark] .plan-adjust button{color:var(--brand)}
+:root[data-theme=dark] .plan-adjust button{color:var(--brand-fg)}
 .plan-adjust button:hover:not(:disabled){background:var(--brand-soft)}
 .plan-adjust button:active:not(:disabled){transform:scale(.86)}
 .plan-adjust button:disabled{opacity:.3;background:transparent;box-shadow:none}

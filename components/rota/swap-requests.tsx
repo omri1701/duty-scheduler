@@ -55,7 +55,7 @@ export function useSwapActions(remote:TeamWorkspace,lang:'en'|'he'){
  const temporary=new Set(raw.members.filter(m=>m.is_temporary).map(m=>m.id));
  const name=(id:string)=>raw.members.find(m=>m.id===id)?.name??t('Former member','חבר צוות קודם');
  const explain=(p:SwapProblem,step:'request'|'accept'|'approve')=>(p.person===me?t('This swap would give you a second weekend this month.','ההחלפה הזו תיתן לך סוף שבוע שני החודש.'):t(`This swap would give ${name(p.person)} a second weekend this month.`,`ההחלפה הזו תיתן ל${name(p.person)} סוף שבוע שני החודש.`))+' '+
-  ({request:t('Choose another duty.','יש לבחור תורנות אחרת.'),accept:t('Decline it instead.','אפשר לסרב לה במקום.'),approve:t('Reject it instead.','אפשר לדחות אותה במקום.')}[step]);
+  ({request:t('Choose another duty.','יש לבחור כוננות אחרת.'),accept:t('Decline it instead.','אפשר לסרב לה במקום.'),approve:t('Reject it instead.','אפשר לדחות אותה במקום.')}[step]);
  // Dialogs read the latest copy: a refresh (another tab, a republish) can reassign, invalidate or resolve the request while it is open.
  const latest=(r:SwapRequest|undefined)=>r&&(raw.swapRequests??[]).find(x=>x.id===r.id);
  const current=latest(review??undefined),reviewable=current?.status==='awaiting_admin';
@@ -124,7 +124,7 @@ export function SwapCard({r,swaps,remote,lang}:{r:SwapRequest;swaps:SwapActions;
  // the same actions as the buttons, which stay for keyboard and screen readers.
  const [openSwipe,setOpenSwipe]=useState<string|null>(null);
  const off=remote.readOnly||!pending;
- const leading:SwipeAction|undefined=off?undefined:incoming&&!refused?{label:t('Accept','קבלה'),icon:<Check/>,tone:'ok',onSelect:()=>swaps.startAccept(r)}
+ const leading:SwipeAction|undefined=off?undefined:incoming&&!refused?{label:t('Accept','קבלה'),icon:<Check/>,tone:'brand',onSelect:()=>swaps.startAccept(r)}
   :admin?{label:t('Approve','אישור'),icon:<ShieldCheck/>,tone:'brand',onSelect:()=>swaps.openApprove(r)}:undefined;
  const trailing:SwipeAction|undefined=off?undefined:incoming?{label:t('Decline','סירוב'),icon:<X/>,tone:'danger',onSelect:()=>swaps.decline(r)}
   :admin?{label:t('Reject','דחייה'),icon:<X/>,tone:'danger',onSelect:()=>swaps.reject(r)}
@@ -170,7 +170,7 @@ export function SwapRequestDialog({remote,month,lang,selection,onSelection}:{rem
  const requestConflicts=useSwapConflicts(remote,eligible?source!.id:undefined,eligible?target!.id:undefined);
  const name=(id:string)=>raw.members.find(m=>m.id===id)?.name??t('Former member','חבר צוות קודם');
  const member=(id:string)=>raw.members.find(m=>m.id===id);
- const explain=(p:SwapProblem)=>(p.person===me?t('This swap would give you a second weekend this month.','ההחלפה הזו תיתן לך סוף שבוע שני החודש.'):t(`This swap would give ${name(p.person)} a second weekend this month.`,`ההחלפה הזו תיתן ל${name(p.person)} סוף שבוע שני החודש.`))+' '+t('Choose another duty.','יש לבחור תורנות אחרת.');
+ const explain=(p:SwapProblem)=>(p.person===me?t('This swap would give you a second weekend this month.','ההחלפה הזו תיתן לך סוף שבוע שני החודש.'):t(`This swap would give ${name(p.person)} a second weekend this month.`,`ההחלפה הזו תיתן ל${name(p.person)} סוף שבוע שני החודש.`))+' '+t('Choose another duty.','יש לבחור כוננות אחרת.');
  async function act(operation:()=>Promise<void>,success:string){try{await operation();toast.success(success);return true}catch(e){toast.error(userMessage((e as Error).message,t));return false}}
  function close(){onSelection(null);setExplanation('')}
  return <Sheet open={!!selection} onOpenChange={v=>!v&&close()} lang={lang} title={proposing?t('Propose swap','הצעת החלפה'):t('Ask to swap','בקשת החלפה')}
@@ -178,12 +178,12 @@ export function SwapRequestDialog({remote,month,lang,selection,onSelection}:{rem
   footer={<div className="sheet-actions"><Button variant="secondary" onClick={close}>{t('Cancel','ביטול')}</Button><Button disabled={remote.readOnly||!eligible||remote.saving||!!problem||!requestConflicts||requestConflicts.length>0} onClick={async()=>{if(source&&target&&await act(()=>remote.requestSwap(source.id,target.id,explanation),proposing?t('Proposed to both engineers','הוצע לשני המהנדסים'):t('Request sent','הבקשה נשלחה')))close()}}>{proposing?t('Send to both','שליחה לשניהם'):t('Confirm Request','אישור בקשה')}</Button></div>}>
   <div className="swap-review">{[source,target].map((d,i)=>d&&<div key={d.id} className="card card-inset"><div className="row">
    <span className="row-lead"><Avatar name={name(d.primary_id!)} color={member(d.primary_id!)?.color} size={36}/></span>
-   <span className="row-body"><span className="row-title">{spanOf(d.day,d.end_day,lang)}</span><span className="row-subtitle">{name(d.primary_id!)}{!proposing&&` · ${i===0?t('your duty','התורנות שלך'):t('requested duty','התורנות המבוקשת')}`}</span></span>
+   <span className="row-body"><span className="row-title">{spanOf(d.day,d.end_day,lang)}</span><span className="row-subtitle">{name(d.primary_id!)}{!proposing&&` · ${i===0?t('your duty','הכוננות שלך'):t('requested duty','הכוננות המבוקשת')}`}</span></span>
    <span className="row-trail"><Chip tone="neutral" size="sm">{d.points} {t('pt','נק׳')}</Chip></span>
   </div></div>)}</div>
   {problem&&<p className="note-line" role="note">{explain(problem)}</p>}
-  {!eligible&&<p className="note-line" data-tone="danger" role="alert">{t('These duties changed or are no longer eligible. Cancel and choose again.','התורנויות השתנו או אינן מתאימות עוד. בטלו ובחרו שוב.')}</p>}
-  {conflictAlert(requestConflicts,t('This swap can’t be sent until the availability changes. Choose other duties instead.','אי אפשר לשלוח את ההחלפה עד שהזמינות תשתנה. בחרו תורנויות אחרות במקום.'),name,t,lang)}
+  {!eligible&&<p className="note-line" data-tone="danger" role="alert">{t('These duties changed or are no longer eligible. Cancel and choose again.','הכוננויות השתנו או אינן מתאימות עוד. בטלו ובחרו שוב.')}</p>}
+  {conflictAlert(requestConflicts,t('This swap can’t be sent until the availability changes. Choose other duties instead.','אי אפשר לשלוח את ההחלפה עד שהזמינות תשתנה. בחרו כוננויות אחרות במקום.'),name,t,lang)}
   <label className="field-label">{t('Explanation (optional)','הסבר (אופציונלי)')}<textarea rows={2} maxLength={1000} value={explanation} onChange={e=>setExplanation(e.target.value)}/></label>
  </Sheet>;
 }

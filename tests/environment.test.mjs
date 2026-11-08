@@ -1,25 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {PROJECTS,LOCAL_API_URL,resolveEnvironment,validatePublicKey,validateDevOrigin,configuredDevOrigin,configuredLocalTunnel} from '../lib/supabase/environment.ts';
+import {PROJECTS,LOCAL_API_URL,HOSTED_ORIGINS,resolveEnvironment,validatePublicKey,validateDevOrigin,configuredDevOrigin,configuredLocalTunnel} from '../lib/supabase/environment.ts';
 import {selectConfiguration} from '../scripts/dev-environment.mjs';
 
 test('all five display cases derive from the project URL and runtime origin',()=>{
  for(const [url,origin,badge,readOnly] of [
   ['http://127.0.0.1:48321','http://localhost:5173','LOCAL',false],
   [PROJECTS.dev,'http://localhost:5173','DEV',false],
-  [PROJECTS.dev,'https://duty-scheduler-dev.vercel.app','DEV',false],
+  [PROJECTS.dev,'https://miko-dev.vercel.app','DEV',false],
   [PROJECTS.prod,'http://localhost:5173','PROD',true],
-  [PROJECTS.prod,'https://duty-scheduler-prod.vercel.app',null,false],
+  [PROJECTS.prod,'https://miko-prod.vercel.app',null,false],
  ]){const result=resolveEnvironment(url,origin);assert.equal(result.badge,badge);assert.equal(result.readOnly,readOnly);}
 });
 
 test('unknown projects, unsafe URLs and mismatched hosting fail closed',()=>{
  for(const [url,origin] of [
   ['https://unknown.supabase.co','http://localhost:5173'],
-  [PROJECTS.prod,'https://duty-scheduler-dev.vercel.app'],
-  [PROJECTS.dev,'https://duty-scheduler-prod.vercel.app'],
-  ['http://127.0.0.1:48321','https://duty-scheduler-dev.vercel.app'],
+  [PROJECTS.prod,'https://miko-dev.vercel.app'],
+  [PROJECTS.dev,'https://miko-prod.vercel.app'],
+  ['http://127.0.0.1:48321','https://miko-dev.vercel.app'],
   [PROJECTS.dev,'https://unknown.example'],
   [PROJECTS.prod,'http://host.docker.internal:8787'],
   [PROJECTS.dev+'/bad','http://localhost:5173'],
@@ -28,7 +28,27 @@ test('unknown projects, unsafe URLs and mismatched hosting fail closed',()=>{
  assert.equal(resolveEnvironment(PROJECTS.dev,'https://duty-preview.vercel.app','https://duty-preview.vercel.app').badge,'DEV');
  assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://unknown.vercel.app'));
  assert.equal(resolveEnvironment(PROJECTS.prod,'https://duty-production-immutable.vercel.app','https://duty-production-immutable.vercel.app').badge,null);
- assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://duty-scheduler-dev.vercel.app','https://duty-scheduler-dev.vercel.app'));
+ assert.throws(()=>resolveEnvironment(PROJECTS.prod,'https://miko-dev.vercel.app','https://miko-dev.vercel.app'));
+});
+
+test('only the MiKo hosts resolve, each to its own environment; old and look-alike hosts fail closed',()=>{
+ for(const origin of ['https://miko-dev.vercel.app']){
+  assert.deepEqual([resolveEnvironment(PROJECTS.dev,origin).badge,resolveEnvironment(PROJECTS.dev,origin).readOnly],['DEV',false]);
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(LOCAL_API_URL,origin),/do not match/);
+ }
+ for(const origin of ['https://miko-prod.vercel.app']){
+  assert.deepEqual([resolveEnvironment(PROJECTS.prod,origin).badge,resolveEnvironment(PROJECTS.prod,origin).readOnly],[null,false]);
+  assert.throws(()=>resolveEnvironment(PROJECTS.dev,origin),/do not match/);
+  assert.throws(()=>resolveEnvironment(PROJECTS.dev,origin,origin),/do not match/);
+ }
+ // Retired and look-alike hosts are not hosted origins: old names, wrong scheme, a port, or a different name.
+ for(const origin of ['https://duty-scheduler-prod.vercel.app','https://miko.vercel.app','http://miko-prod.vercel.app','https://miko-prod.vercel.app:8443','https://miko-preview.vercel.app','https://miko-prod.vercel.app.evil.example','https://xmiko-prod.vercel.app'])
+  assert.throws(()=>resolveEnvironment(PROJECTS.prod,origin));
+ for(const origin of ['https://duty-scheduler-dev.vercel.app','https://xmiko-dev.vercel.app'])
+  assert.throws(()=>resolveEnvironment(PROJECTS.dev,origin));
+ assert.deepEqual(Object.keys(HOSTED_ORIGINS),['dev','prod']);
 });
 
 test('mode selection rejects mismatches and requires fresh Production confirmation',()=>{

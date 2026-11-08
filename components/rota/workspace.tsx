@@ -198,7 +198,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
   function exportBackup() {
     const a = document.createElement('a');
     const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}));
-    a.href = url; a.download = 'duty-team-backup.json'; a.click();
+    a.href = url; a.download = 'miko-team-backup.json'; a.click();
     URL.revokeObjectURL(url);
   }
   useEffect(() => {
@@ -237,11 +237,11 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     const actions: DutySheetActions = {};
     if (requesting) {
       if (!publication) actions.swap = {onClick: () => {}, reason: t('Not published yet', 'עדיין לא פורסם')};
-      else if (interactions.swapSourceDays.has(b.id)) actions.swap = {onClick: () => {setSheetDuty(null); interactions.setKeyboardSource(b.id); toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את התורנות להחלפה'), {id: 'swap-pick'});}};
-      else actions.swap = {onClick: () => {}, reason: !a?.primary ? t('No one is on this duty', 'אין תורן/ית בתורנות הזו') : b.start < today ? t('This day has passed', 'היום הזה עבר') : a.primary !== meId && !isManager ? t('Only your own duties can be swapped', 'אפשר להחליף רק תורנויות שלך') : t('This duty can’t be swapped now', 'אי אפשר להחליף את התורנות הזו כרגע')};
+      else if (interactions.swapSourceDays.has(b.id)) actions.swap = {onClick: () => {setSheetDuty(null); interactions.setKeyboardSource(b.id); toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את הכוננות להחלפה'), {id: 'swap-pick'});}};
+      else actions.swap = {onClick: () => {}, reason: !a?.primary ? t('No one is on this duty', 'אין כונן/ית בכוננות הזו') : b.start < today ? t('This day has passed', 'היום הזה עבר') : a.primary !== meId && !isManager ? t('Only your own duties can be swapped', 'אפשר להחליף רק כוננויות שלך') : t('This duty can’t be swapped now', 'אי אפשר להחליף את הכוננות הזו כרגע')};
       if (isManager) actions.edit = {onClick: () => {setSheetDuty(null); setPublishedEdit(b.id);}, reason: remote.readOnly ? t('Read-only', 'לקריאה בלבד') : monthDetails.status !== 'published' ? t('Publish or cancel the draft first', 'יש לפרסם או לבטל את הטיוטה קודם') : !editablePublishedDuty(remote.snapshot!, month, today, b.id) ? t('This day has passed', 'היום הזה עבר') : undefined};
     } else {
-      actions.swap = a?.primary ? {onClick: () => {setSheetDuty(null); setPickingFrom(b.id); toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את התורנות להחלפה'), {id: 'swap-pick'});}} : {onClick: () => {}, reason: t('No one is on this duty yet', 'אין עדיין תורן/ית בתורנות הזו')};
+      actions.swap = a?.primary ? {onClick: () => {setSheetDuty(null); setPickingFrom(b.id); toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את הכוננות להחלפה'), {id: 'swap-pick'});}} : {onClick: () => {}, reason: t('No one is on this duty yet', 'אין עדיין כונן/ית בכוננות הזו')};
       actions.edit = {onClick: () => {setSheetDuty(null); draft.editor.openDuty(b);}, reason: remote.readOnly ? t('Read-only', 'לקריאה בלבד') : undefined};
     }
     return actions;
@@ -276,8 +276,8 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
     ];
   }
   const status = isManager
-    ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
-    : publication ? {text: t('Published', 'פורסם'), tone: 'ok' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
+    ? monthDetails.status === 'published' ? {text: t('Published', 'פורסם'), tone: 'brand' as const} : reopened ? {text: t('Reopened', 'נפתח מחדש'), tone: 'warn' as const} : {text: t('Draft', 'טיוטה'), tone: 'neutral' as const}
+    : publication ? {text: t('Published', 'פורסם'), tone: 'brand' as const} : {text: t('Not published yet', 'עדיין לא פורסם'), tone: 'neutral' as const};
   const selectedDuty = selectedDay ? calendarBlocks.find(b => b.start <= selectedDay && selectedDay < b.end) : undefined;
   // The chevrons play the calendar's month transition (month-stage.tsx). The name and the calendar
   // swipe separately (owner round 4): a name swipe refreshes the calendar in place, blurred to
@@ -299,7 +299,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
       <span>{t('Publish waits: ', 'הפרסום ממתין: ')}{publishBlockers.join(' · ')}</span>
       {confirmedTotals && <Button size="xs" variant="link" disabled={allocation.busy} onClick={allocation.show}>{t('Open plan', 'פתיחת התוכנית')}</Button>}
     </p>}
-    {isManager && viewingDraft && !!metrics.conflicts.length && <p className="note-line" data-tone="warn">{t(`${metrics.conflicts.length} duties conflict with availability`, `${metrics.conflicts.length} תורנויות מתנגשות עם אילוצים`)}</p>}
+    {isManager && viewingDraft && !!metrics.conflicts.length && <p className="note-line" data-tone="warn">{t(`${metrics.conflicts.length} duties conflict with availability`, `${metrics.conflicts.length} כוננויות מתנגשות עם אילוצים`)}</p>}
   </>;
   const openSchedule = (m: string) => {if (m !== month) goToMonth(m); setTab('schedule');};
   return <>
@@ -326,7 +326,7 @@ export function RotaWorkspace({remote, lang, setLang}: {remote: TeamWorkspace; l
                 if (isManager && details?.status === 'draft') setCalendarChoice({month: m, status: details.status, version: 'published'});
                 setTab('schedule');
                 interactions.setKeyboardSource(day);
-                toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את התורנות להחלפה'), {id: 'swap-pick'});
+                toast.info(t('Now choose the duty to swap with', 'עכשיו בוחרים את הכוננות להחלפה'), {id: 'swap-pick'});
               }}/>
           </TabsContent>
           <TabsContent value="schedule" forceMount style={{display: tab === 'schedule' ? undefined : 'none'}}>

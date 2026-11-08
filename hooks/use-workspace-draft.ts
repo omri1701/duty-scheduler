@@ -77,12 +77,12 @@ export function useWorkspaceDraft({
     setClearOpen(false);
     setSelected(null);
     selectSwap(null);
-    clearToast.current = toast.success(count === 1 ? t('Cleared 1 duty.', 'תורנות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} תורנויות נוקו.`), {
+    clearToast.current = toast.success(count === 1 ? t('Cleared 1 duty.', 'כוננות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} כוננויות נוקו.`), {
       duration: 10000,
       action: {
         label: t('Undo', 'שחזור'),
         onClick: async () => {
-          if (await latest.current((s) => restoreCleared(s, month, cleared, generated))) toast.success(t('Duties restored.', 'התורנויות שוחזרו.'));
+          if (await latest.current((s) => restoreCleared(s, month, cleared, generated))) toast.success(t('Duties restored.', 'הכוננויות שוחזרו.'));
         },
       },
     });
@@ -103,7 +103,7 @@ export function useWorkspaceDraft({
     const end = addDays(specialEnd, 1),
       x = {
         id: crypto.randomUUID(),
-        title: specialTitle.trim() || t('Special duty', 'תורנות מיוחדת'),
+        title: specialTitle.trim() || t('Special duty', 'כוננות מיוחדת'),
         start: specialStart,
         end,
         extra: Number(extra),
@@ -126,7 +126,7 @@ export function useWorkspaceDraft({
       return;
     }
     if (dates(x.start, x.end).some(d => (dayOf(d) === 6 ? addDays(d, -1) : d).slice(0, 7) !== month)) {
-      toast.error(t('Special blocks must stay within this month’s owned duties.', 'מקטעים מיוחדים חייבים להישאר בתורנויות השייכות לחודש זה.'));
+      toast.error(t('Special blocks must stay within this month’s owned duties.', 'מקטעים מיוחדים חייבים להישאר בכוננויות השייכות לחודש זה.'));
       return;
     }
     if (state.specials.some((s) => overlap(s, x))) {
@@ -170,13 +170,13 @@ export function useWorkspaceDraft({
   const swapReason = (reason: string) =>
     ({
       published: t('Reopen the draft first.', 'יש לפתוח טיוטה תחילה.'),
-      'same-duty': t('Choose another duty.', 'יש לבחור תורנות אחרת.'),
+      'same-duty': t('Choose another duty.', 'יש לבחור כוננות אחרת.'),
       'other-month': t('Swap within the starting month.', 'ניתן להחליף בתוך חודש ההתחלה.'),
-      unassigned: t('Both duties need an engineer.', 'יש לשבץ מהנדס בשתי התורנויות.'),
+      unassigned: t('Both duties need an engineer.', 'יש לשבץ מהנדס בשתי הכוננויות.'),
       locked: t('Unlock these duties before swapping.', 'יש לבטל נעילה לפני החלפה.'),
       'same-person': t(
         'These duties already have the same engineer.',
-        'שתי התורנויות משובצות לאותו מהנדס.',
+        'שתי הכוננויות משובצות לאותו מהנדס.',
       ),
       duplicate: t(
         'A primary engineer cannot also be the emergency cover.',
@@ -204,7 +204,7 @@ export function useWorkspaceDraft({
     try {
       if (!(await update((s) => ({ ...s, assignments: result.assignments })))) return;
       selectSwap(null);
-      toast.success(t('Duties swapped.', 'התורנויות הוחלפו.'));
+      toast.success(t('Duties swapped.', 'הכוננויות הוחלפו.'));
     } finally {
       setSwapSaving(false);
     }

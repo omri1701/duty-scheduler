@@ -109,10 +109,10 @@ function DutyCarousel({duties, today, lang, t, name, onSwap, onSchedule}: {dutie
   };
   const rtl = lang === 'he', Prev = rtl ? ChevronRight : ChevronLeft, Next = rtl ? ChevronLeft : ChevronRight;
   if (!shown.length) return <Card className="hero hero-empty">
-    <EmptyState icon={<Inbox/>}>{t('No duties scheduled for you yet', 'עדיין אין לך תורנויות')}</EmptyState>
+    <EmptyState icon={<Inbox/>}>{t('No duties scheduled for you yet', 'עדיין אין לך כוננויות')}</EmptyState>
   </Card>;
   return <div className="hero-carousel">
-    <div ref={track} className="hero-track" role="list" aria-label={t('Your next duties', 'התורנויות הבאות שלך')}>
+    <div ref={track} className="hero-track" role="list" aria-label={t('Your next duties', 'הכוננויות הבאות שלך')}>
       {shown.map((d, i) => {
         const when = dutyWhen(d.row.day, today, lang), weekend = d.row.end_day !== addDays(d.row.day, 1);
         const last = weekend ? shortDate(addDays(d.row.end_day, -1), lang) : null;
@@ -136,10 +136,10 @@ function DutyCarousel({duties, today, lang, t, name, onSwap, onSchedule}: {dutie
       })}
     </div>
     {shown.length > 1 && <div className="hero-nav">
-      <Button variant="ghost" size="icon-sm" className="hero-arrow" aria-label={t('Previous duty', 'התורנות הקודמת')} disabled={page === 0} onClick={() => go(page - 1)}><Prev/></Button>
+      <Button variant="ghost" size="icon-sm" className="hero-arrow" aria-label={t('Previous duty', 'הכוננות הקודמת')} disabled={page === 0} onClick={() => go(page - 1)}><Prev/></Button>
       <div className="hero-dots">{shown.map((d, i) => <button key={d.row.id} type="button" className={i === page ? 'on' : ''} aria-current={i === page ? 'true' : undefined}
-        aria-label={t(`Duty ${i + 1} of ${shown.length}`, `תורנות ${i + 1} מתוך ${shown.length}`)} onClick={() => go(i)}><span/></button>)}</div>
-      <Button variant="ghost" size="icon-sm" className="hero-arrow" aria-label={t('Next duty', 'התורנות הבאה')} disabled={page === shown.length - 1} onClick={() => go(page + 1)}><Next/></Button>
+        aria-label={t(`Duty ${i + 1} of ${shown.length}`, `כוננות ${i + 1} מתוך ${shown.length}`)} onClick={() => go(i)}><span/></button>)}</div>
+      <Button variant="ghost" size="icon-sm" className="hero-arrow" aria-label={t('Next duty', 'הכוננות הבאה')} disabled={page === shown.length - 1} onClick={() => go(page + 1)}><Next/></Button>
     </div>}
   </div>;
 }

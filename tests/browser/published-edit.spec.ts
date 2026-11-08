@@ -55,7 +55,7 @@ test('Hebrew: an unavailable engineer needs an override reason; Permanent record
   await switchLanguage(page, 'he');
   const owner = backend.raw.assignments.find(d => d.day === '2026-11-04' && d.publication_id)!.primary_id;
   await edit(page, '2026-11-04');
-  const dialog = page.getByRole('dialog', {name: 'עריכת תורנות'});
+  const dialog = page.getByRole('dialog', {name: 'עריכת כוננות'});
   await expect(dialog).toHaveAttribute('dir', 'rtl');
   await dialog.getByRole('combobox', {name: 'מהנדס', exact: true}).click();
   await page.getByRole('option', {name: 'Alex Atlas · לא זמין', exact: true}).click();
@@ -74,7 +74,7 @@ test('Hebrew: an unavailable engineer needs an override reason; Permanent record
   // Availability notes are private: never part of the copied record.
   await expect(summary).not.toHaveValue(/Synthetic vacation/);
   await page.getByRole('button', {name: 'חזרה'}).click();
-  await expect(page.getByRole('dialog', {name: 'עריכת תורנות'}).getByLabel('נימוק חובה לתיעוד')).toHaveValue('Covering a family event');
+  await expect(page.getByRole('dialog', {name: 'עריכת כוננות'}).getByLabel('נימוק חובה לתיעוד')).toHaveValue('Covering a family event');
   await page.getByRole('button', {name: 'בדיקת השינוי'}).click();
   await page.getByRole('button', {name: 'פרסום השינוי'}).click();
   await expect(page.getByRole('dialog')).toBeHidden();

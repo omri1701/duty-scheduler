@@ -1,41 +1,63 @@
-// Renders the PWA icon set and the iOS startup screens from the brand mark (lib/brand.ts,
-// components/brand/logo.tsx) with the pinned Playwright Chromium, so every asset comes from one
-// definition. Run after changing the mark or the brand colour: node scripts/render-icons.mjs
+// Renders every logo asset from the one source, public/brand/logo.png (a round logo, transparent
+// outside; make it with node scripts/cut-logo.mjs <image>), with the pinned Playwright Chromium:
+// in-app sizes (PNG + WebP), favicon, Home Screen and maskable icons and iOS startup screens on
+// full-bleed navy. Only ever downscales, in halving steps, so nothing is blurred. File names never
+// change, so installed Home Screen apps keep finding them. Run: node scripts/render-icons.mjs
 import {chromium} from '@playwright/test';
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
+import {BRAND_COLOR, LOGO_SIZES} from '../lib/brand.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const BRAND = '#17604f', DARK = '#0f2a24', ACCENT = '#c7ef7a';
-const mark = (size, {padding = 0, rounded = true, background = BRAND} = {}) => `
-<div style="width:${size}px;height:${size}px;display:grid;place-items:center;background:${rounded ? 'transparent' : background}">
- <div style="position:relative;width:${size - padding * 2}px;height:${size - padding * 2}px;border-radius:${rounded ? (size - padding * 2) * .22 : 0}px;background:${background};display:flex;align-items:flex-end;justify-content:center;color:#fff;font:800 ${(size - padding * 2) * .74}px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;letter-spacing:-.04em">
-  <span style="margin-bottom:${(size - padding * 2) * .1}px;margin-left:${-(size - padding * 2) * .06}px">d</span>
-  <span style="position:absolute;right:${(size - padding * 2) * .16}px;bottom:${(size - padding * 2) * .2}px;width:${(size - padding * 2) * .2}px;height:${(size - padding * 2) * .2}px;border-radius:50%;background:${ACCENT}"></span>
- </div>
-</div>`;
-const page_ = html => `<!doctype html><meta charset="utf-8"><body style="margin:0;background:transparent">${html}</body>`;
+const out = file => resolve(root, 'public', file);
+const source = `data:image/png;base64,${readFileSync(out('brand/logo.png')).toString('base64')}`;
+// The logo's diameter as a share of the image. Maskable keeps the whole circle inside Android's
+// 80% safe zone; iOS and "any" icons only round the corners; tiny favicons use nearly all of it.
+const FILL = {favicon: .96, icon: .88, maskable: .8, splash: .5};
 
 const browser = await chromium.launch();
-const context = await browser.newContext({deviceScaleFactor: 1});
-const page = await context.newPage();
-async function shot(file, html, width, height, omitBackground = true) {
-  await page.setViewportSize({width, height});
-  await page.setContent(page_(html));
-  await page.evaluate(() => document.fonts.ready);
-  const buffer = await page.screenshot({omitBackground, clip: {x: 0, y: 0, width, height}});
-  writeFileSync(resolve(root, 'public', file), buffer);
-  console.log(file, width + 'x' + height);
+const page = await browser.newPage();
+await page.setContent('<!doctype html><body></body>');
+await page.evaluate(async src => {
+  const img = new Image(); img.src = src; await img.decode();
+  // Downscale in halving steps (each high-quality), then once to the exact size.
+  window.scaled = size => {
+    let canvas = new OffscreenCanvas(img.naturalWidth, img.naturalHeight); canvas.getContext('2d').drawImage(img, 0, 0);
+    while (canvas.width / 2 >= size) {
+      const next = new OffscreenCanvas(Math.round(canvas.width / 2), Math.round(canvas.height / 2)), x = next.getContext('2d');
+      x.imageSmoothingQuality = 'high'; x.drawImage(canvas, 0, 0, next.width, next.height); canvas = next;
+    }
+    const last = new OffscreenCanvas(size, size), x = last.getContext('2d');
+    x.imageSmoothingQuality = 'high'; x.drawImage(canvas, 0, 0, size, size); return last;
+  };
+  window.encode = async (canvas, type) => [...new Uint8Array(await (await canvas.convertToBlob({type, quality: .92})).arrayBuffer())];
+  window.render = async (width, height, fill, background, type) => {
+    const c = new OffscreenCanvas(width, height), x = c.getContext('2d');
+    if (background) {x.fillStyle = background; x.fillRect(0, 0, width, height);}
+    const size = Math.round(Math.min(width, height) * fill);
+    x.drawImage(window.scaled(size), Math.round((width - size) / 2), Math.round((height - size) / 2));
+    return window.encode(c, type);
+  };
+}, source);
+async function save(file, width, height, fill, background = BRAND_COLOR, type = 'image/png') {
+  writeFileSync(out(file), Buffer.from(await page.evaluate(a => window.render(...a), [width, height, fill, background, type])));
+  console.log(file, `${width}x${height}`);
 }
-await shot('icon-192.png', mark(192), 192, 192);
-await shot('icon-512.png', mark(512), 512, 512);
-await shot('icon-maskable-512.png', mark(512, {padding: 64, rounded: false}), 512, 512, false);
-await shot('apple-touch-icon.png', mark(180, {rounded: false}), 180, 180, false);
-// iOS startup screens: the mark centred on the brand colour, one per common iPhone size (points × 3 or × 2).
-mkdirSync(resolve(root, 'public/splash'), {recursive: true});
+// In-app logo (components/brand/logo.tsx picks one by display size × pixel ratio).
+for (const size of LOGO_SIZES) for (const type of ['png', 'webp']) await save(`brand/logo-${size}.${type}`, size, size, 1, null, `image/${type}`);
+await save('favicon-32.png', 32, 32, FILL.favicon, null);
+await save('favicon-48.png', 48, 48, FILL.favicon, null);
+// favicon.svg stays for browsers and links that still ask for it: the 64px logo inside.
+const fav = Buffer.from(await page.evaluate(a => window.render(...a), [64, 64, FILL.favicon, null, 'image/png'])).toString('base64');
+writeFileSync(out('favicon.svg'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><image href="data:image/png;base64,${fav}" width="64" height="64"/></svg>\n`);
+console.log('favicon.svg');
+await save('icon-192.png', 192, 192, FILL.icon);
+await save('icon-512.png', 512, 512, FILL.icon);
+await save('icon-maskable-512.png', 512, 512, FILL.maskable);
+await save('apple-touch-icon.png', 180, 180, FILL.icon);
+// iOS startup screens, one per common iPhone size (points × 3 or × 2).
+mkdirSync(out('splash'), {recursive: true});
 const splash = [[1290, 2796], [1179, 2556], [1170, 2532], [1284, 2778], [1125, 2436], [828, 1792], [750, 1334], [1242, 2208]];
-for (const [w, h] of splash) {
-  await shot(`splash/${w}x${h}.png`, `<div style="width:${w}px;height:${h}px;display:grid;place-items:center;background:${DARK}">${mark(Math.round(w * .22))}</div>`, w, h, false);
-}
+for (const [w, h] of splash) await save(`splash/${w}x${h}.png`, w, h, FILL.splash);
 await browser.close();

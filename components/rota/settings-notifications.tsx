@@ -139,7 +139,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     {key: 'deadlines', label: t('Constraint deadline', 'מועד אחרון לאילוצים'), help: t('3 days before, and 1 day before if you entered none', '3 ימים לפני, ויום לפני אם לא הזנת')},
     {key: 'published', label: t('Month published', 'חודש פורסם'), help: ''},
     {key: 'swaps', label: t('Swap requests', 'בקשות החלפה'), help: ''},
-    {key: 'edits', label: t('Changes to my duties', 'שינויים בתורנויות שלי'), help: ''},
+    {key: 'edits', label: t('Changes to my duties', 'שינויים בכוננויות שלי'), help: ''},
     {key: 'evening', label: t('Evening before', 'ערב לפני'), help: '', time: 'eveningTime'},
     {key: 'morning', label: t('Morning of', 'בבוקר'), help: '', time: 'morningTime'},
     ...(remote.isAdmin ? [{key: 'members' as const, label: t('New member waiting', 'חבר צוות חדש ממתין'), help: ''}] : []),
@@ -150,7 +150,7 @@ export function NotificationSettingsPanel({remote, lang, open}: {remote: TeamWor
     <SectionTitle><span id="settings-notifications-title">{t('Notifications', 'התראות')}</span></SectionTitle>
     <Card inset>
       <div className={'row settings-device ' + status}>
-        <span className="row-lead"><span className="row-icon" data-tone={status === 'on' ? 'ok' : status === 'loading' || status === 'off' ? 'neutral' : 'warn'}>{status === 'on' ? <BellRing/> : <BellOff/>}</span></span>
+        <span className="row-lead"><span className="row-icon" data-tone={status === 'on' ? 'brand' : status === 'loading' || status === 'off' ? 'neutral' : 'warn'}>{status === 'on' ? <BellRing/> : <BellOff/>}</span></span>
         <span className="row-body"><span className="row-title">{t('This device', 'המכשיר הזה')}</span><span className="row-subtitle" role="status">{readOnly ? t('Read-only inspection', 'בדיקה לקריאה בלבד') : statusText[status]}{status === 'on' && settings && settings.devices > 1 && ` · ${t(`${settings.devices} devices`, `${settings.devices} מכשירים`)}`}</span></span>
         <span className="row-trail">
           {status === 'on'

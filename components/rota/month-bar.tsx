@@ -13,7 +13,7 @@ export type PrimaryAction = {label: string; /** Shown in place while busy (decis
 /** The month heading with its chevrons, the status chip, one primary action and a ⋯ menu for
  * rare actions (decision 2026-11-06). Everyone sees the heading; the actions are the admin's. */
 export function MonthBar({month, label, status, t, onChange, primary, menu, loading = false, children, onSwipe, arrival}: {
-  month: string; label: string; status?: {text: string; tone: 'ok' | 'neutral' | 'warn'}; t: Translate; onChange?: (offset: number) => void;
+  month: string; label: string; status?: {text: string; tone: 'brand' | 'neutral' | 'warn'}; t: Translate; onChange?: (offset: number) => void;
   primary?: PrimaryAction; menu?: MenuItem[]; loading?: boolean; children?: ReactNode; onSwipe?: (offset: number) => void; arrival?: 'roll' | 'blur';
 }) {
   const rtl = t('ltr', 'rtl') === 'rtl';

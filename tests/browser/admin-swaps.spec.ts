@@ -169,7 +169,7 @@ for (const lang of ['en', 'he'] as const) test(`availability is rechecked at con
   await page.reload(); await language(page, lang);
   await page.getByRole('button', {name: t('Approve', 'אישור'), exact: true}).click();
   const dialog = page.getByRole('dialog', {name: t('Approve swap', 'אישור החלפה')});
-  await expect(dialog.getByLabel(t('Swap summary', 'סיכום ההחלפה'))).toContainText(t('Duty swap: Alex Atlas ⇄ Blair Birch', 'החלפת תורנויות: Alex Atlas ⇄ Blair Birch'));
+  await expect(dialog.getByLabel(t('Swap summary', 'סיכום ההחלפה'))).toContainText(t('Duty swap: Alex Atlas ⇄ Blair Birch', 'החלפת כוננויות: Alex Atlas ⇄ Blair Birch'));
   await expect(dialog.getByRole('alert')).toContainText(t('Approving requires an explicit override with a reason.', 'האישור מחייב חריגה מפורשת עם נימוק.'));
   const approve = dialog.getByRole('button', {name: t('Approve & publish', 'אישור ופרסום')});
   await expect(approve).toBeDisabled();

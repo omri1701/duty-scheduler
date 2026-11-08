@@ -48,14 +48,14 @@ for (const lang of ['en', 'he'] as const) {
     await startSwap(page, '2026-11-02');
     await targetReady(page, '2026-11-05');
     await expectBlocked(page, '2026-11-05', t('You can’t take 5 Nov', 'אין לך אפשרות לקחת את 5 בנוב׳'));
-    await expectBlocked(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את התורנות שלך'));
+    await expectBlocked(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את הכוננות שלך'));
     await expectGreen(page, '2026-11-12');
-    await expect(page.locator('#published-swap-help')).toHaveText(t('Choose the duty to swap with. Greyed days say why. Escape cancels.', 'בחרו את התורנות להחלפה. ימים אפורים מסבירים למה. Escape לביטול.'));
+    await expect(page.locator('#published-swap-help')).toHaveText(t('Choose the duty to swap with. Greyed days say why. Escape cancels.', 'בחרו את הכוננות להחלפה. ימים אפורים מסבירים למה. Escape לביטול.'));
     // Keyboard: Space on a greyed day explains; a green day opens the request.
     await duty(page, '2026-11-05').focus(); await page.keyboard.press('Space');
     await expect(page.locator('[data-sonner-toast]').filter({hasText: t('You can’t take 5 Nov', 'אין לך אפשרות לקחת את 5 בנוב׳')})).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expectTapHint(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את התורנות שלך'));
+    await expectTapHint(page, '2026-11-03', t('Blair Birch can’t take your day', 'לBlair Birch אין אפשרות לקחת את הכוננות שלך'));
     // Private notes are never shown.
     for (const note of ['Synthetic vacation', 'Alex private note', 'Blair private note']) await expect(page.locator('body')).not.toContainText(note);
     await duty(page, '2026-11-12').click();
@@ -72,17 +72,17 @@ for (const lang of ['en', 'he'] as const) {
       {member_id: ids.c, day: '2026-11-03', kind: 'no', note: 'Another note'});
     await openApp('admin'); await language(page, lang);
     await (await openDutySheet(page, '2026-11-03')).getByRole('button', {name: t('Edit', 'עריכה'), exact: true}).click();
-    await page.getByRole('dialog', {name: t('Edit duty', 'עריכת תורנות')}).getByRole('button', {name: t('Swap with another duty…', 'החלפה עם תורנות אחרת…'), exact: true}).click();
+    await page.getByRole('dialog', {name: t('Edit duty', 'עריכת כוננות')}).getByRole('button', {name: t('Swap with another duty…', 'החלפה עם כוננות אחרת…'), exact: true}).click();
     await expect(duty(page, '2026-11-03')).toHaveAttribute('aria-pressed', 'true');
     await expectBlocked(page, '2026-11-05', t('Blair Birch can’t take 5 Nov', 'לBlair Birch אין אפשרות לקחת את 5 בנוב׳'));
-    await expectBlocked(page, '2026-11-04', t('Casey Cedar can’t take Blair Birch’s day', 'לCasey Cedar אין אפשרות לקחת את התורנות של Blair Birch'));
+    await expectBlocked(page, '2026-11-04', t('Casey Cedar can’t take Blair Birch’s day', 'לCasey Cedar אין אפשרות לקחת את הכוננות של Blair Birch'));
     await expectGreen(page, '2026-11-09');
     await expectTapHint(page, '2026-11-05', t('Blair Birch can’t take 5 Nov', 'לBlair Birch אין אפשרות לקחת את 5 בנוב׳'));
     await expect(page.locator('body')).not.toContainText('Admin-only note');
     await page.keyboard.press('Escape');
     // Dropping on a greyed day explains instead of opening a proposal.
     await hold(page, '2026-11-03', '2026-11-04', info.project.name === 'mobile');
-    await expect(page.locator('[data-sonner-toast]').filter({hasText: t('Casey Cedar can’t take Blair Birch’s day', 'לCasey Cedar אין אפשרות לקחת את התורנות של Blair Birch')})).toBeVisible();
+    await expect(page.locator('[data-sonner-toast]').filter({hasText: t('Casey Cedar can’t take Blair Birch’s day', 'לCasey Cedar אין אפשרות לקחת את הכוננות של Blair Birch')})).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await hold(page, '2026-11-03', '2026-11-09', info.project.name === 'mobile');
     await expect(page.getByRole('dialog', {name: t('Propose swap', 'הצעת החלפה')})).toBeVisible();
@@ -98,9 +98,9 @@ for (const lang of ['en', 'he'] as const) {
     // The fixtures open every load on November (the app's own default is the current month, decision 2026-11-07).
     await page.getByRole('tab', {name: t('Schedule', 'לוח'), exact: true}).click();
     await startSwap(page, '2026-11-10');
-    await expectBlocked(page, '2026-11-03', t('This day has passed', 'התורנות הזו כבר עברה'));
+    await expectBlocked(page, '2026-11-03', t('This day has passed', 'הכוננות הזו כבר עברה'));
     await expectGreen(page, '2026-11-11');
-    await expectTapHint(page, '2026-11-03', t('This day has passed', 'התורנות הזו כבר עברה'));
+    await expectTapHint(page, '2026-11-03', t('This day has passed', 'הכוננות הזו כבר עברה'));
     // Members never ask the server about a past pair.
     expect(backend.calls.filter(c => c.name === 'duty_swap_availability' && c.params.p_to === backend.raw.assignments.find(d => d.day === '2026-11-03' && d.publication_id)!.id)).toHaveLength(0);
   });

@@ -86,7 +86,7 @@ export function PublishedWeekendEditor({remote,weekend:opened,focusDay,lang,onCl
  const dayName=(h:Half)=>h==='fri'?t('Friday','שישי'):t('Saturday','שבת');
  function card(h:Half|'both'){
   const own=h!=='both'&&mode==='two';
-  const heading=own?<DayHeading points={pts(Number(get(h).points)||0)}>{fmt(h==='fri'?w.fri.day:w.sat.day)}</DayHeading>:<DayHeading>{t('On duty','בתורנות')}</DayHeading>;
+  const heading=own?<DayHeading points={pts(Number(get(h).points)||0)}>{fmt(h==='fri'?w.fri.day:w.sat.day)}</DayHeading>:<DayHeading>{t('On duty','בכוננות')}</DayHeading>;
   return <DayCard half={h} heading={heading}>
    {h==='both'&&choosing?<KeepChoice lang={lang} disabled={busy} onKeep={keep} options={(['fri','sat'] as const).map(k=>{const kept=get(k).primary,other=get(k==='fri'?'sat':'fri').primary,p=raw.members.find(x=>x.id===kept);
     return {half:k,person:p&&{name:p.name,color:p.color},title:t(`Keep ${name(kept)}`,`להשאיר את ${name(kept)}`),detail:`${name(other)} −${Number(get(k==='fri'?'sat':'fri').points)||0}`}})}/>
@@ -102,10 +102,10 @@ export function PublishedWeekendEditor({remote,weekend:opened,focusDay,lang,onCl
  const total=(Number(fri.points)||0)+(Number(sat.points)||0);
  const temporaryText=changes.map(c=>t(`${name(c.from)} owes ${name(c.to)} ${pts(c.owed)} (${fmt(c.day)})`,`${name(c.from)} חייב/ת ל־${name(c.to)} ${pts(c.owed)} (${fmt(c.day)})`)).join(' · ');
  return <EditorDialog onClose={onClose} saving={busy} lang={lang} className="duty-dialog published-edit-dialog"
-  title={step==='edit'?(mode==='half'?t('Edit duty','עריכת תורנות'):t('Weekend','סוף שבוע')):t('Review and copy','בדיקה והעתקה')}
+  title={step==='edit'?(mode==='half'?t('Edit duty','עריכת כוננות'):t('Weekend','סוף שבוע')):t('Review and copy','בדיקה והעתקה')}
   description={mode==='half'&&step==='edit'?`${fmt(focusDay)} · ${t('Published','פורסם')} · ${pts(Number(get(focus).points)||0)}`:`${fmt(w.fri.day)} – ${fmt(w.sat.day)} · ${t('Published','פורסם')} · ${pts(total)}`}
   onCloseAutoFocus={event=>{event.preventDefault();document.querySelector<HTMLButtonElement>(`[data-gesture-key="${focusDay}"]`)?.focus()}}>
-  {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את התורנות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את התורנות מחדש.')}</p>}
+  {stale&&<p className="warning-note" role="alert">{t('This month changed after you opened this duty: a newer version was published or a draft was reopened. Close and open the duty again.','החודש השתנה אחרי שפתחת את הכוננות: פורסמה גרסה חדשה או נפתחה טיוטה. יש לסגור ולפתוח את הכוננות מחדש.')}</p>}
   {!stale&&!!partners&&<p className="warning-note" role="note">{t(`Pending swap with ${partners}. Saving cancels it.`,`החלפה ממתינה עם ${partners}. השמירה תבטל אותה.`)}</p>}
   {step==='edit'?<>
    {mode!=='half'&&<WeekendLayoutSwitch lang={lang} layout={layout} disabled={busy} onChange={setLayout}/>}
@@ -131,7 +131,7 @@ export function PublishedWeekendEditor({remote,weekend:opened,focusDay,lang,onCl
    </div>}
    {unchanged&&valid&&!stale&&!choosing&&<p className="muted-copy" role="note">{t('Choose another engineer, split the weekend or change the points to review a change.','יש לבחור מהנדס אחר, לפצל את סוף השבוע או לשנות את הנקודות כדי לבדוק שינוי.')}</p>}
    <div className="editor-actions"><Button disabled={!ready||busy} onClick={()=>setStep('review')}>{t('Review change','בדיקת השינוי')}</Button></div>
-   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם תורנות אחרת…')}</Button>}
+   {onSwap&&<Button variant="ghost" disabled={busy} onClick={onSwap}><ArrowLeftRight/>{t('Swap with another duty…','החלפה עם כוננות אחרת…')}</Button>}
   </>:<ReviewStep lang={lang} summary={summary} busy={busy} canPublish={!remote.readOnly&&ready} onBack={()=>setStep('edit')} onPublish={save}/>}
  </EditorDialog>;
 }

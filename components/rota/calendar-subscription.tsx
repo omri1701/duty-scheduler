@@ -59,7 +59,7 @@ export function CalendarSubscription({lang, memberId, readOnly}: {lang: 'en' | '
   const since = loaded?.status ? new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'he-IL', {day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jerusalem'}).format(new Date(loaded.status.createdAt)) : '';
   return <section className="calendar-subscription" aria-labelledby="calendar-subscription-title">
     <h3 id="calendar-subscription-title"><CalendarPlus aria-hidden="true"/>{t('Subscribe to my calendar', 'הרשמה ללוח השנה שלי')}</h3>
-    <p className="muted-copy">{t('See your own published duties in Google or Apple Calendar. Swaps, edits and new months appear by themselves.', 'התורנויות שפורסמו לך יופיעו ביומן Google או Apple. החלפות, עריכות וחודשים חדשים יתעדכנו מעצמם.')}</p>
+    <p className="muted-copy">{t('See your own published duties in Google or Apple Calendar. Swaps, edits and new months appear by themselves.', 'הכוננויות שפורסמו לך יופיעו ביומן Google או Apple. החלפות, עריכות וחודשים חדשים יתעדכנו מעצמם.')}</p>
     {readOnly ? <p className="muted-copy">{t('Not available in this read-only view.', 'לא זמין בתצוגה לקריאה בלבד.')}</p>
       : !loaded ? <p className="muted-copy" role="status">{t('Checking your calendar link…', 'בודקים את הקישור ללוח השנה…')}</p>
       : loaded.token ? <>
@@ -86,6 +86,6 @@ export function CalendarSubscription({lang, memberId, readOnly}: {lang: 'en' | '
     </div>}
     {error && <p className="warning-note" role="alert">{error}</p>}
     {!readOnly && <p className="muted-copy">{t('Google Calendar can take a few hours to show changes; Apple Calendar checks about every hour. Anyone with the link can see your duties, so reset it if it was shared by mistake.',
-      'ביומן Google השינויים עשויים להופיע רק אחרי כמה שעות; יומן Apple בודק בערך פעם בשעה. כל מי שיש לו את הקישור יכול לראות את התורנויות שלך, לכן כדאי לאפס אותו אם שותף בטעות.')}</p>}
+      'ביומן Google השינויים עשויים להופיע רק אחרי כמה שעות; יומן Apple בודק בערך פעם בשעה. כל מי שיש לו את הקישור יכול לראות את הכוננויות שלך, לכן כדאי לאפס אותו אם שותף בטעות.')}</p>}
   </section>;
 }

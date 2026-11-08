@@ -24,6 +24,6 @@ export function DayDetails({date, duty, state, lang, t, meId, onOpen, interactiv
       </span>
       <span className="row-trail"><Chip tone="neutral" size="sm">{duty.points} {t('pt', 'נק׳')}</Chip>{a?.locked && <LockKeyhole className="muted" size={16} aria-label={t('Locked', 'נעול')}/>}</span>
       {interactive && <ChevronRight className="row-chevron" aria-hidden="true"/>}
-    </button> : <p className="muted small">{t('No duty on this day', 'אין תורנות ביום זה')}</p>}
+    </button> : <p className="muted small">{t('No duty on this day', 'אין כוננות ביום זה')}</p>}
   </section>;
 }

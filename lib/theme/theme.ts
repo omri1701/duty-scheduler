@@ -6,8 +6,10 @@ export type Theme = 'light' | 'dark';
 export const THEME_KEY = 'duty-theme';
 /** The PC sidebar collapsed to icons, remembered per device (owner review 2026-11-07). */
 export const SIDEBAR_KEY = 'duty-sidebar';
+/** The page colour per theme: the status bar / notch area (theme-color metas and the .safe-top strip). */
+export const THEME_COLOR = {light: '#f2f3f5', dark: '#000000'} as const;
 
-export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';if(p)document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',d?'#000000':'#f2f3f5')});if(localStorage.getItem('${SIDEBAR_KEY}')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement('meta');m.name='theme-color';document.head.appendChild(m);}m.setAttribute('content',d?'${THEME_COLOR.dark}':'${THEME_COLOR.light}');if(localStorage.getItem('${SIDEBAR_KEY}')==='collapsed')document.documentElement.dataset.sidebar='collapsed';}catch(e){}})();`;
 
 export function readPreference(): ThemePreference {
   try {
@@ -24,8 +26,12 @@ export function resolveTheme(preference: ThemePreference): Theme {
 export function applyTheme(preference: ThemePreference) {
   const theme = resolveTheme(preference);
   document.documentElement.dataset.theme = theme;
-  // Every theme-color tag (one per scheme), so a chosen theme colours the status bar even when the device's differs.
-  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach(meta => meta.setAttribute('content', theme === 'dark' ? '#000000' : '#f2f3f5'));
+  // The theme-color tag (THEME_SCRIPT made it before the first paint), so the status bar follows the chosen
+  // theme even when the device's differs; Auto re-runs this when the device changes (hooks/use-theme.ts).
+  // The .safe-top strip follows --bg.
+  const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!metas.length) {const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);}
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach(meta => {meta.removeAttribute('media'); meta.setAttribute('content', THEME_COLOR[theme]);});
   return theme;
 }
 

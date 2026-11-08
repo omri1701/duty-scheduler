@@ -48,7 +48,7 @@ export async function signInWithGoogle(){
  if(!response.ok)throw Error('Could not check Google sign-in. Please try again.');
  const settings=await response.json() as {external?:{google?:boolean}};
  if(settings.external?.google!==true)throw Error('Google sign-in is not enabled yet. The manager needs to finish the Google setup in Supabase.');
- const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{queryParams:{prompt:'select_account'},redirectTo:environment.readOnly?'https://duty-scheduler-prod.vercel.app/':window.location.origin+'/',skipBrowserRedirect:environment.readOnly}});
+ const {data,error}=await client.auth.signInWithOAuth({provider:'google',options:{queryParams:{prompt:'select_account'},redirectTo:environment.readOnly?'https://miko-prod.vercel.app/':window.location.origin+'/',skipBrowserRedirect:environment.readOnly}});
  if(error)throw error;
  if(environment.readOnly&&data.url)window.open(data.url,'_blank','noopener,noreferrer');
 }
@@ -58,7 +58,7 @@ export async function completeInspectionLogin(returnUrl:string){
  if(!environment.readOnly)throw Error('Not an inspection session.');
  const callback=new URL(returnUrl);
  const code=callback.searchParams.get('code');
- if(callback.origin!=='https://duty-scheduler-prod.vercel.app'||callback.pathname!=='/'||!code||callback.username||callback.password)throw Error('Invalid Google return URL.');
+ if(callback.origin!=='https://miko-prod.vercel.app'||callback.pathname!=='/'||!code||callback.username||callback.password)throw Error('Invalid Google return URL.');
  // The one-time code only works with this localhost session's PKCE verifier.
  const flowId=callback.searchParams.get('sb_flow_id');
  const {error}=await client.auth.exchangeCodeForSession(code,flowId?{flowId}:undefined);

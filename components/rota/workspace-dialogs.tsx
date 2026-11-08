@@ -24,8 +24,8 @@ export function ClearBoardDialog({open, onOpenChange, saving, lang, t, monthLabe
   open: boolean; onOpenChange: (open: boolean) => void; saving: boolean; monthLabel: string; count: number; onConfirm: () => Promise<void>;
 }) {
   return <Sheet open={open} onOpenChange={value => {if (!saving) onOpenChange(value);}} lang={lang} kind="alert" role="alertdialog" closeDisabled={saving} busy={saving}
-    title={count === 1 ? t('Clear 1 unlocked duty?', 'לנקות תורנות אחת שאינה נעולה?') : t(`Clear ${count} unlocked duties?`, `לנקות ${count} תורנויות שאינן נעולות?`)}
-    description={`${monthLabel} · ${t('Locked duties, constraints, special blocks and the plan stay.', 'תורנויות נעולות, אילוצים, מקטעים מיוחדים והתוכנית נשארים.')}`}
+    title={count === 1 ? t('Clear 1 unlocked duty?', 'לנקות כוננות אחת שאינה נעולה?') : t(`Clear ${count} unlocked duties?`, `לנקות ${count} כוננויות שאינן נעולות?`)}
+    description={`${monthLabel} · ${t('Locked duties, constraints, special blocks and the plan stay.', 'כוננויות נעולות, אילוצים, מקטעים מיוחדים והתוכנית נשארים.')}`}
     onOpenAutoFocus={event => {event.preventDefault(); document.getElementById('keep-board')?.focus();}}
     footer={<div className="sheet-actions"><Button id="keep-board" variant="secondary" disabled={saving} onClick={() => onOpenChange(false)}>{t('Cancel', 'ביטול')}</Button><Button className="danger-action" variant="destructive" disabled={saving || !count} onClick={onConfirm}>{t('Clear board', 'ניקוי הלוח')}</Button></div>}>
     <span className="sr-only">{monthLabel}</span>
@@ -39,7 +39,7 @@ export function DraftSwapDialog({controller, state, duties, lang, t, fmt, nickna
   const member = (id?: string) => state.team.find(p => p.id === id);
   const conflicts = !!(swapPreview?.conflicts?.length || swapPreview?.weekendConflicts?.length || swapPreview?.noWeekendConflicts?.length);
   return <Sheet open={!!swap} onOpenChange={(v) => !v && !saving && setSwap(null)} lang={lang} closeDisabled={saving} busy={saving}
-    title={t('Swap duties', 'החלפת תורנויות')} description={t('Emergency cover stays on its dates.', 'כיסוי החירום נשאר בתאריכים שלו.')}
+    title={t('Swap duties', 'החלפת כוננויות')} description={t('Emergency cover stays on its dates.', 'כיסוי החירום נשאר בתאריכים שלו.')}
     footer={<div className="sheet-actions"><Button variant="secondary" disabled={saving} onClick={() => setSwap(null)}>{t('Cancel', 'ביטול')}</Button><Button disabled={saving || !swapPreview?.ok} onClick={confirmSwap}>{t('Confirm swap', 'אישור החלפה')}</Button></div>}>
     {swap && <>
       <div className="swap-review">
@@ -70,7 +70,7 @@ export function DraftSwapDialog({controller, state, duties, lang, t, fmt, nickna
 
 export function SpecialDutyDialog({form, month, lang, t, fmt}: DialogCopy & {form: WorkspaceDraft['special']; month: string; fmt: FormatDate}) {
   const {open: specialOpen, setOpen: setSpecialOpen, title: specialTitle, setTitle: setSpecialTitle, start: specialStart, setStart: setSpecialStart, end: specialEnd, setEnd: setSpecialEnd, extra, setExtra, add: addSpecial} = form;
-  return <Sheet open={specialOpen} onOpenChange={setSpecialOpen} lang={lang} title={t('Special block', 'מקטע מיוחד')} description={t('Each date is its own duty with the extra points; a weekend in the range stays one duty.', 'כל תאריך הוא תורנות משלו עם התוספת; סוף שבוע בטווח נשאר תורנות אחת.')}
+  return <Sheet open={specialOpen} onOpenChange={setSpecialOpen} lang={lang} title={t('Special block', 'מקטע מיוחד')} description={t('Each date is its own duty with the extra points; a weekend in the range stays one duty.', 'כל תאריך הוא כוננות משלו עם התוספת; סוף שבוע בטווח נשאר כוננות אחת.')}
     footer={<div className="sheet-actions"><Button onClick={addSpecial}>{t('Add special block', 'הוספת מקטע מיוחד')}</Button></div>}>
     <label className="field-label">{t('Name', 'שם')}<input maxLength={60} value={specialTitle} onChange={(e) => setSpecialTitle(e.target.value)} placeholder={t('e.g. Holiday coverage', 'למשל: כיסוי חג')}/></label>
     <div className="form-pair">
@@ -83,7 +83,7 @@ export function SpecialDutyDialog({form, month, lang, t, fmt}: DialogCopy & {for
       <span>{t('Friday and Saturday: ½ + extra each.', 'שישי ושבת: ½ + תוספת לכל יום.')}</span>
       <span>{specialStart && specialEnd && `${fmt(specialStart)} 09:00 → ${fmt(addDays(specialEnd, 1))} 09:00`}</span>
     </div>
-    <p className="muted-copy">{t('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.', 'תורנויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.')}</p>
+    <p className="muted-copy">{t('Assigned duties on these dates keep their people; only the points change, and Plan the month shows the difference.', 'כוננויות משובצות בתאריכים אלה נשארות עם אותם אנשים; רק הנקודות משתנות, ותכנון החודש מציג את ההפרש.')}</p>
   </Sheet>;
 }
 
@@ -99,7 +99,7 @@ export function MonthSettingsDialog({settings, setSettings, monthLabel, monthDet
 export function PublishDialog({publishOpen, setPublishOpen, monthLabel, assigned, saving, lang, t, onPublish}: DialogCopy & {
   publishOpen: boolean; setPublishOpen: (open: boolean) => void; monthLabel: string; assigned: number; saving: boolean; onPublish: () => Promise<void>;
 }) {
-  return <Sheet open={publishOpen} onOpenChange={setPublishOpen} lang={lang} kind="alert" closeDisabled={saving} busy={saving} title={t('Publish?', 'לפרסם?')} description={`${monthLabel} · ${assigned} ${t('duties covered', 'תורנויות משובצות')}`}
+  return <Sheet open={publishOpen} onOpenChange={setPublishOpen} lang={lang} kind="alert" closeDisabled={saving} busy={saving} title={t('Publish?', 'לפרסם?')} description={`${monthLabel} · ${assigned} ${t('duties covered', 'כוננויות משובצות')}`}
     footer={<div className="sheet-actions"><Button variant="secondary" disabled={saving} onClick={() => setPublishOpen(false)}>{t('Not yet', 'עוד לא')}</Button><Button disabled={saving} onClick={onPublish}>{t('Publish', 'פרסום')}</Button></div>}>
     <div className="publish-summary"><CheckCircle2 size={28}/><p>{t('The team sees it and gets notified. You can reopen it any time.', 'הצוות יראה אותו ויקבל התראה. אפשר לפתוח לעריכה בכל עת.')}</p></div>
   </Sheet>;

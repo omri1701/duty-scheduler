@@ -7,8 +7,8 @@ need no SQL Editor execution. Application behavior and visual snapshots are unch
 
 | Branch | GitHub Environment | Vercel target / domain | Supabase (Frankfurt) |
 |---|---|---|---|
-| `develop` | Development | Preview / `duty-scheduler-dev.vercel.app` | `qhndiuahuxczujxxitsm` |
-| `master` | Production | Production / `duty-scheduler-prod.vercel.app` | `hpszwgnwxtxyxpcaivgj` |
+| `develop` | Development | Preview / `miko-dev.vercel.app` | `qhndiuahuxczujxxitsm` |
+| `master` | Production | Production / `miko-prod.vercel.app` | `hpszwgnwxtxyxpcaivgj` |
 
 The initial Production release completed on 12 October 2026. Both environments
 use Frankfurt (`eu-central-1`), PostgreSQL 17 and the baselines
@@ -143,7 +143,7 @@ explicitly set the non-secret build flag `ENABLE_EXPERIMENTAL_COREPACK=1`
 so Vercel installs the exact `packageManager` version, including pnpm 12's lockfile.
 Development is bound to `develop`. After a verified READY Preview and another
 branch-head check, Actions explicitly calls the team-scoped Vercel Alias API for
-`duty-scheduler-dev.vercel.app` in the existing team. Metadata alone is not the
+`miko-dev.vercel.app` in the existing team. Metadata alone is not the
 promotion mechanism. Production retains automatic assignment through the
 Production deployment; its domain has no branch binding. Both releases require
 the domain's Alias API record to match the verified deployment ID and project,

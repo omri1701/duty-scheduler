@@ -103,12 +103,12 @@ export function swapTargetBlock(raw:Snapshot,month:string,source:DutyRow,target:
 export function swapBlockText(block:SwapBlock,{me,sourceOwner,name,day,lang}:{me:string;sourceOwner:string|null;name:(id:string)=>string;day:(d:string)=>string;lang:'en'|'he'}){
  const he=lang==='he';
  switch(block.kind){
-  case 'past':return he?'התורנות הזו כבר עברה':'This day has passed';
+  case 'past':return he?'הכוננות הזו כבר עברה':'This day has passed';
   case 'inactive':return he?'כונן החירום כבר אינו פעיל':'Emergency cover is no longer active';
   case 'takes-target':return block.person===me?(he?`אין לך אפשרות לקחת את ${day(block.day)}`:`You can’t take ${day(block.day)}`)
    :he?`ל${name(block.person)} אין אפשרות לקחת את ${day(block.day)}`:`${name(block.person)} can’t take ${day(block.day)}`;
   case 'takes-source':{
-   const whose=sourceOwner===me?(he?'התורנות שלך':'your day'):he?`התורנות של ${name(sourceOwner??'')}`:`${name(sourceOwner??'')}’s day`;
+   const whose=sourceOwner===me?(he?'הכוננות שלך':'your day'):he?`הכוננות של ${name(sourceOwner??'')}`:`${name(sourceOwner??'')}’s day`;
    return block.person===me?(he?`אין לך אפשרות לקחת את ${whose}`:`You can’t take ${whose}`)
     :he?`ל${name(block.person)} אין אפשרות לקחת את ${whose}`:`${name(block.person)} can’t take ${whose}`;
   }
@@ -133,5 +133,5 @@ export function swapSummary({requester,other,from,to,lang}:{requester:string;oth
  const side=(name:string,gives:typeof from,takes:typeof from,delta:number)=>he
   ?`${name} — מסירה: ${gives.label} (${pointsText(gives.points,lang)}) · קבלה: ${takes.label} (${pointsText(takes.points,lang)}) · שינוי: ${signed(delta,lang)}`
   :`${name} — gives: ${gives.label} (${pointsText(gives.points,lang)}) · takes: ${takes.label} (${pointsText(takes.points,lang)}) · change: ${signed(delta,lang)}`;
- return [`${he?'החלפת תורנויות':'Duty swap'}: ${requester} ⇄ ${other}`,side(requester,from,to,change),side(other,to,from,-change)].join('\n');
+ return [`${he?'החלפת כוננויות':'Duty swap'}: ${requester} ⇄ ${other}`,side(requester,from,to,change),side(other,to,from,-change)].join('\n');
 }

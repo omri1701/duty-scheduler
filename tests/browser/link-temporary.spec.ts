@@ -58,7 +58,11 @@ for (const lang of ['en', 'he'] as const) {
     const request = page.locator('.membership-request').filter({hasText: 'Dana Levi'});
     await expect(request.getByRole('button')).toHaveText([t('Approve', 'אישור'), t('Link to a temporary member…', 'קישור לחבר צוות זמני…'), t('Decline', 'דחייה')]);
     const before = await request.boundingBox();
-    await request.scrollIntoViewIfNeeded();
+    // A full-page capture shows the whole team anyway; only the floating tab bar follows the scroll,
+    // which a late layout shift made vary between runs. Capture from the top, once layout is settled.
+    await page.evaluate(() => Promise.all([...document.images].map(img => img.decode().catch(() => {}))));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => new Promise<number>(done => requestAnimationFrame(() => requestAnimationFrame(() => done(scrollY)))))).toBe(0);
     await both(page, `link-request-${lang}`);
 
     // The picker: active temporary members, then the inactive ones in their own group. Keyboard only.
@@ -82,7 +86,7 @@ for (const lang of ['en', 'he'] as const) {
     const confirm = page.getByRole('alertdialog');
     await expect(confirm).toContainText(t('Link Dana Levi\'s sign-up to temporary member Dana?', 'לקשר את ההרשמה של Dana Levi לחבר הצוות הזמני Dana?'));
     await expect(confirm).toContainText('pending@example.invalid');
-    await expect(confirm).toContainText(t('Their duties, points, nets and constraints become theirs.', 'התורנויות, הנקודות, המאזנים והאילוצים של Dana יעברו לDana Levi.'));
+    await expect(confirm).toContainText(t('Their duties, points, nets and constraints become theirs.', 'הכוננויות, הנקודות, המאזנים והאילוצים של Dana יעברו לDana Levi.'));
     await both(page, `link-confirm-${lang}`);
     await page.keyboard.press('Escape');
     await expect(confirm).toBeHidden();
