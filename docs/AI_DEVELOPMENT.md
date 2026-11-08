@@ -1,165 +1,84 @@
 # AI development
 
-## Start in IntelliJ
+## Setup and effective settings
 
-Use Codex in JetBrains AI Chat, sign in with ChatGPT, open this repository and
-trust the project after reviewing its configuration. Start a new Codex session
-after pulling instruction/config changes. Project configuration is loaded only
-for trusted projects; IDE selections, launch overrides and managed settings can
-override defaults. Verify the effective model and available agents/skills in your
-installed client before relying on routing.
+Open this repository in IntelliJ's Codex integration and review/trust its project
+configuration. Authentication is a manual setup step: use an existing ChatGPT
+session or sign in yourself if needed. Restart the Codex session after pulling
+instruction/config changes. Future prompts need only the task and its specific
+requirements; [AGENTS.md](../AGENTS.md) owns the universal working rules.
 
-The setup uses no external model provider, API key, AI SDK or AI CI calls.
-`forced_login_method = "chatgpt"` requests subscription authentication in supported
-local Codex clients; account limits still apply. Do not add API credentials as a
-fallback. ChatGPT's GitHub connection does not automatically configure IntelliJ's
-Git credentials or connectors.
+`.codex/config.toml` retains `gpt-6.1-sol` with `low` reasoning as the economical
+default. Select higher effort in the client for work that needs deeper reasoning;
+explicit task/client settings take precedence. Markdown cannot switch the running
+primary model. `forced_login_method = "chatgpt"` restricts local Codex authentication
+to ChatGPT; no API key, external provider, AI SDK or AI CI calls are needed.
 
-## Architecture and routing
+Project settings load only for trusted projects. IDE launch options and managed
+settings can override them; verify the effective settings in the installed client.
+Model/account availability is not established by this repository. If configured
+reviewers are unavailable, perform the focused review locally and report the gap.
+ChatGPT's GitHub connector and shell Git credentials are separate connections;
+use whichever is already authorized, otherwise report the manual setup step.
 
-| Component | Responsibility | Model / effort |
-| --- | --- | --- |
-| Primary Codex session | Scope, implementation, checks and final decision | `gpt-6.1-sol` / `low` |
-| `qa` | Focused review of complex scheduling or cross-layer behavior | `gpt-6-luna` / `high` |
-| `security` | Review material auth, RPC, permissions, private-data or migration changes | `gpt-6.1-sol` / `high` |
+## Where specialized instructions live
 
-Root `AGENTS.md` supplies the routing policy; `.codex/config.toml` sets defaults
-and caps active child agents at one. `.codex/agents/*.toml` defines the two
-read-only reviewers. No custom developer or architect is needed yet.
+Skill descriptions are discovered initially; bodies load only when relevant.
 
-Follow root routing for review scope and handoff; ordinary tasks stay in the
-primary session. Reviewer read-only settings are defaults subject to live parent
-overrides, not proof of enforced read-only execution.
-
-| Skill under `.agents/skills/` | Trigger |
+| Existing skill | Specialized knowledge |
 | --- | --- |
-| `scheduling-regression` | Generation, points, weekends, constraints or month ownership |
-| `code-change-validation` | Code/config edits, diff reviews or authorized PR delivery; select relevant checks |
-| `security-review` | Auth/RLS/RPC, permissions, private data, migrations or CI trust boundaries |
-| `feature-delivery` | Explicitly authorized end-to-end Git delivery through a PR; no implicit commit/push permission |
+| `code-change-validation` | Check selection and visual baseline approval |
+| `scheduling-regression` | Scheduling invariants and deterministic regressions |
+| `security-review` | Auth/database checks, migrations and release trust boundaries |
+| `feature-delivery` | Authorized branch/commit/push/PR workflow |
 
-Skill metadata is discovered initially; full instructions load when selected.
-Skills do not spawn agents themselves, and checks already completed for the same
-diff are reused. A skill can be invoked explicitly with `$skill-name` in a
-supporting client. Root instructions route known tasks even if implicit matching
-does not choose a skill automatically.
+The existing `qa` (`gpt-6-luna` / `high`) and `security` (`gpt-6.1-sol` / `high`)
+agents are optional reviewers under the root delegation rule. Enabling agents
+does not require using them; concurrency is capped at one child, excluding the
+primary. Reviewer files retain `sandbox_mode = "read-only"` conservatively, but
+current custom-agent documentation says sandbox settings do not override parent
+permissions. Their no-edit instruction is explicit, not a separate sandbox guarantee.
 
-## What is automatic, and what is not
+## Claude Code
 
-- Codex can choose skills and delegate based on the root policy when the installed
-  runtime supports project agents. Routing is model judgment, not a guaranteed
-  deterministic dispatcher. Missing capabilities fall back to one disclosed local
-  review, not hidden retries or an external provider.
-- The primary session does not automatically change its own model/effort because
-  a Markdown instruction requests it. For complex implementation, select Medium
-  or High before starting. The review agents have their own configured settings.
-- The exact model IDs are documented by OpenAI, but account/client entitlement
-  cannot be established from repository configuration. If a model is absent,
-  select an available OpenAI model in your client and update the affected defaults
-  and validation contract intentionally; do not silently substitute a provider.
-- JetBrains uses its own integration. Agent discovery, selectors, activity and
-  usage reporting depend on its bundled Codex version. If unsupported, update it
-  or use a current ChatGPT-authenticated Codex CLI in IntelliJ's terminal.
-- Permissions, login, project trust, browser/device checks and final merge remain
-  human-controlled. Commits/pushes/PR creation require task authorization; PR
-  authorization never includes merging or live database changes.
+Claude Code runs alongside Codex. `CLAUDE.md` imports AGENTS.md, so both share one
+rule set. `.claude/skills/` mirrors `.agents/skills/` byte for byte: edit both
+copies together; the validator rejects drift, `` !`command` `` lines in skills and
+any `@` import other than CLAUDE.md's `@AGENTS.md`. `.claude/agents/qa.md` and
+`security.md` restate the Codex reviewers with only Read, Grep and Glob tools and
+inherit the session model. Claude's built-in `/security-review` shares the project
+skill's name; confirm which one runs before relying on it. Restart the session
+after pulling instruction changes.
 
-## Quality gates
+## Validation and GitHub gates
 
-`.github/workflows/quality.yml` runs on PRs to `develop`, pushes to `develop` and
-manual dispatch. It pins action commits, Node and the package-manager version,
-installs the frozen lockfile, validates AI metadata, runs the regression tests,
-type checking, a lint regression gate and the production build. It uses a read-only GitHub token,
-no application secrets, no AI and no deployment. GitHub Actions usage is subject
-to your GitHub plan; no paid service was added.
+Run `python3 scripts/validate-ai-config.py` with Python 3.11+ (`python` on Windows
+if appropriate). It checks TOML, the existing skills, references and instruction
+budgets offline; it cannot prove runtime/model availability or effective settings.
+AI/docs-only edits need no application build or tests. Changes to the validator
+itself are executable changes and remain subject to full GitHub Quality.
 
-`pnpm lint` and `node scripts/lint-regressions.mjs` pass without error allowances.
-`scripts/lint-baseline.json` is empty after resolving the React Hooks debt; never
-regenerate or add allowances to pass CI. Hook rules also apply to the retained UI
-components.
+GitHub owns CI. The required `quality` check still aggregates scope, application,
+eight browser shards/report and disposable database checks. PRs run unit/tsc/lint/build
+plus browser specs mapped from the changed files, run in the same eight shards (database job only for SQL or
+Supabase paths); allowlisted documentation/AI-only PRs skip application/database
+jobs. Unknown/global paths, branch pushes and manual runs require full checks.
+The selector runs from the PR's base commit; see the README's test section. Delivery stops after push and PR creation/update;
+CI failures are handled when the user supplies results or explicitly asks to
+"check CI" (one `gh pr checks` read, per AGENTS.md). Do not infer green CI or
+merge readiness from local validation. Release gates and database-first ordering
+remain documented in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Existing deterministic multi-seed tests cover scheduling variation; production
-generation uses fresh cryptographic seeds. Database RLS/OAuth and
-real-device gestures are not covered by this CI. Follow the existing Supabase
-setup document for isolated database checks; never use the live project.
+## Troubleshooting and references
 
-Run `python3 scripts/validate-ai-config.py` (Python 3.11+) for offline TOML,
-skill metadata and project contract checks. It is not the Codex runtime parser
-and does not prove account access or successful delegation. Application commands
-remain in README.md/package.json. After the first successful workflow run, an
-owner should require its `quality` check and PR review in branch protection;
-adding a workflow alone does not prevent merging failures.
+For ignored defaults, check client version, project trust and IDE/managed overrides.
+Use `codex --version` and `codex --help` to find supported diagnostics; installed
+CLI and JetBrains capabilities can differ. Do not start another model session or
+interactive login merely to probe configuration.
 
-Select local checks with code-change-validation; it distinguishes application PRs
-from documentation/AI infrastructure. Every PR requires successful Quality CI on
-its final head. CI triggers and application coverage are unchanged.
+Checked with Codex CLI 0.160.1 and official documentation on 2026-10-20:
 
-## Verified evidence and runtime limits
-
-Audit date: 2026-10-10, base `develop` at `6aab26b`.
-
-The audit aligned `.gitignore` with the four existing skills: `feature-delivery`
-was tracked but its directory remained ignored, causing ordinary staging to fail.
-
-- [#2](https://github.com/omri1701/duty-scheduler/pull/2) established the setup but
-  explicitly lacked runtime, skill-selection, delegation and token evidence.
-- [#4](https://github.com/omri1701/duty-scheduler/pull/4),
-  [#5](https://github.com/omri1701/duty-scheduler/pull/5),
-  [#6](https://github.com/omri1701/duty-scheduler/pull/6) and
-  [#7](https://github.com/omri1701/duty-scheduler/pull/7) report focused reviews and
-  preserved browser baselines; [#8](https://github.com/omri1701/duty-scheduler/pull/8)
-  reports a Security-found stale join-error race reproduced, fixed and re-reviewed.
-  GitHub Actions confirms successful Quality runs on all six final PR heads.
-  Fetched discussions contain no reviewer transcripts or skill execution traces.
-  PR descriptions support reported outcomes, not verified agent/model execution.
-- Installed JetBrains-bundled Codex CLI `0.160.1`: its bundled catalog advertises
-  both configured models and efforts. No inference or account-entitlement test ran.
-  App-server `skills/list` discovered all four project skills enabled without errors;
-  discovery does not establish invocation or effectiveness.
-- App-server `config/read` with repository `cwd` and `includeLayers: true` showed
-  the standalone CLI project layer disabled for missing project trust. Consequently
-  its repository model/login/concurrency defaults were not effective in that probe.
-  This does not establish IntelliJ's active session settings. Persistent trust and
-  authentication were left unchanged; the CLI diagnostic reported ChatGPT auth.
-
-When defaults appear ignored, check `codex --version`, then inspect the effective
-config and each layer's `disabledReason` through
-[app-server configuration inspection](https://learn.chatgpt.com/docs/app-server).
-Trust the reviewed project in the client used for work and start a fresh session;
-verify effective settings there. Schema/metadata validation alone cannot do this.
-Historical session logs and token measurements were not available for this audit;
-shorter instructions must not be reported as measured token savings. Keep the
-single-primary workflow and current reviewers until measured task outcomes justify
-more orchestration; use the small comparison below before changing model defaults.
-
-## Small routing and usage check
-
-In a fresh chat on a disposable local branch, ask:
-
-> Add one deterministic regression in tests/engine.test.mjs showing that February
-> 29, 2028 is covered exactly once with the regular weekday points. Reuse existing
-> helpers, leave application code unchanged, and run the affected test file.
-> Do not commit or push. Report selected skills, agents and checks.
-
-Expected: scheduling-regression plus code-change-validation, one primary agent,
-no reviewer for this small test-only change. To separately exercise delegation,
-follow up: "Use qa to review this test-only diff; do not modify files."
-This should create one QA reviewer, not Security or a chain of agents.
-
-Record client/runtime version, actual model/effort, files read, tool calls,
-elapsed time and client-reported input/cached/output/reasoning tokens when
-available, including child usage. If IntelliJ lacks counters, record that gap;
-do not infer token totals from message length. Compare the same task on the same
-base with identical settings. Fewer retries and completed-task usage matter more
-than a smaller parent transcript.
-
-## Official references
-
-Checked 2026-10-10 against official guidance; update when the runtime changes:
-
-- [Project instructions](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
 - [Configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
-- [Custom agents and delegation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-- [Skill format and discovery](https://learn.chatgpt.com/docs/build-skills)
-- [Models and reasoning](https://learn.chatgpt.com/docs/models)
-- [IDE integrations](https://learn.chatgpt.com/docs/codex/ide)
+- [Custom agents and inherited permissions](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+- [Project instructions](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+- [Skill discovery](https://learn.chatgpt.com/docs/build-skills)

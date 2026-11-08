@@ -2,7 +2,7 @@ import {test, expect, ids, touchEvent} from './fixtures';
 
 test('profile reopening resets edits and captures the latest saved name', async ({page, openApp, backend}) => {
   await openApp();
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   const name = page.getByRole('textbox', {name: 'Display name'});
   await expect(name).toHaveValue('Avery Admin');
   await name.fill('Unsaved edit');
@@ -14,7 +14,7 @@ test('profile reopening resets edits and captures the latest saved name', async 
   await expect(name).toHaveValue('Unsaved edit');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
-  await page.getByRole('button', {name: 'My profile', exact: true}).click();
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
   await expect(name).toHaveValue('Updated Admin');
 });
 
@@ -37,7 +37,7 @@ test('availability closes and clears selection when editing becomes disabled', a
 
 test('team drag binding retains pointer and touch reorder announcements', async ({page, openApp, backend}, info) => {
   await openApp();
-  await page.getByRole('tab', {name: 'Team & fairness', exact: true}).click();
+  await page.getByRole('tab', {name: 'Team', exact: true}).click();
   const from = page.getByRole('button', {name: 'Drag to reorder Avery Admin'});
   const to = page.getByRole('button', {name: 'Drag to reorder Alex Atlas'});
   await from.scrollIntoViewIfNeeded();

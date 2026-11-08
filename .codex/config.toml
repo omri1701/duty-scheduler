@@ -4,5 +4,6 @@ model_reasoning_effort = "low"
 forced_login_method = "chatgpt"
 
 [agents]
+# Availability only: AGENTS.md keeps routine tasks in the primary session.
 enabled = true
 max_concurrent_threads_per_session = 1

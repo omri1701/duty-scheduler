@@ -11,7 +11,7 @@ test('Production connect/refresh never onboard and every mutation is blocked bef
  const workspace=createWorkspace({snapshot:()=>{},saving:()=>{},error:()=>{}});
  await workspace.connect(client,{id:'synthetic',email:'synthetic@example.invalid'});
  await workspace.refresh();
- for(const name of ['duty_save_schedule','duty_set_constraints','duty_rename_self','duty_set_role','duty_restore_publication','duty_delete_publication','duty_request_swap','duty_resolve_swap','duty_review_member','future_unknown_write'])await assert.rejects(workspace.mutate(name,{}),/Production inspection/);
+ for(const name of ['duty_save_schedule','duty_set_constraints','duty_rename_self','duty_set_color','duty_set_role','duty_restore_publication','duty_delete_publication','duty_request_swap','duty_resolve_swap','duty_review_member','future_unknown_write'])await assert.rejects(workspace.mutate(name,{}),/Production inspection/);
  assert.deepEqual(calls,['duty_load','duty_load']);
 });
 
@@ -26,7 +26,7 @@ test('central transport blocks GET and POST mutations, table writes and Auth onb
 });
 
 test('inspection sign-out preserves unrelated Production refresh sessions',async()=>{
- for(const [origin,scope] of [['http://localhost:5173','local'],['https://duty-scheduler-prod.vercel.app','global']]){
+ for(const [origin,scope] of [['http://localhost:5173','local'],['https://miko-prod.vercel.app','global']]){
   const client={auth:{signOut:async options=>{assert.deepEqual(options,{scope});return {error:null}}}};
   registerEnvironment(client,resolveEnvironment(PROJECTS.prod,origin));
   await signOutSafely(client);
@@ -36,7 +36,7 @@ test('inspection sign-out preserves unrelated Production refresh sessions',async
 });
 
 test('deployed Production and Development retain checked writes',async()=>{
- for(const [url,origin] of [[PROJECTS.prod,'https://duty-scheduler-prod.vercel.app'],[PROJECTS.dev,'http://localhost:5173']]){
+ for(const [url,origin] of [[PROJECTS.prod,'https://miko-prod.vercel.app'],[PROJECTS.dev,'http://localhost:5173']]){
   let sent=0;
   await guardedFetch(url,resolveEnvironment(url,origin),async()=>{sent++;return new Response('{}')})(url+'/rest/v1/rpc/duty_join',{method:'POST'});
   assert.equal(sent,1);

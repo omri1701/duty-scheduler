@@ -1,7 +1,17 @@
 import {test as base, expect, type Page} from '@playwright/test';
-import {addDays, blocks} from '../../lib/rota/engine';
-import {canManage, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {addDays, blocks, dayOf, specialAt} from '../../lib/rota/engine';
+import {canManage, findMe, fromSnapshot, type Snapshot, type DutyRow, type SwapRequest} from '../../lib/supabase/snapshot';
+import {canonicalDuties, coverageStart} from '../../lib/scheduling/calendar';
+import {validateGeneration, type PrimaryAssignments} from '../../lib/scheduling/validate';
+import {snapshotKey} from '../../lib/scheduling/domain';
+import type {AllocationDraft} from '../../lib/allocation/types';
+import type {Approval, GenerationInput} from '../../lib/scheduling/types';
 import {PROJECTS,resolveEnvironment} from '../../lib/supabase/environment';
+import type {Balance} from '../../lib/supabase/balance';
+import {dutyPoints, owedUnits} from '../../lib/supabase/published-edit';
+import type {CompensationEvent} from '../../lib/compensation/types';
+import {supportedPushEndpoint, BASE64URL_KEY} from '../../lib/push/endpoint';
+import {DEFAULT_SETTINGS, SWITCHES, validTime, type NotificationSettings} from '../../lib/push/settings';
 
 export const NOW = '2026-10-09T10:00:00Z', MONTH = '2026-11';
 export const ids = Object.fromEntries(['admin', 'a', 'b', 'c', 'd', 'e', 'pending'].map((key, i) => [key, `20000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`]));
@@ -12,10 +22,12 @@ type Call = {name: string; params: Record<string, unknown>; user: string};
 export function seed(): Snapshot {
   const members = Object.entries(ids).map(([key, id], i) => ({id, name: ['Avery Admin', 'Alex Atlas', 'Blair Birch', 'Casey Cedar', 'Drew Dale', 'Eden Elm', 'Pat Pending'][i], email: `${key}@example.invalid`, role: key === 'admin' ? 'admin' : 'engineer', status: key === 'pending' ? 'pending' : 'approved', active: true, seniority: i, color: ['#adc9ee', '#f0ba95', '#c9b1de', '#9bcfbe', '#eacb96', '#b6c8d1', '#adc9ee'][i]}));
   // Fixed rows independent of the generator: snapshots catch renderer changes too.
-  const duties: DutyRow[] = blocks(MONTH, [{id: 'holiday', title: 'Holiday coverage', start: '2026-11-12', end: '2026-11-13', extra: 2}, {id: 'weekend-holiday', title: 'Weekend holiday', start: '2026-11-20', end: '2026-11-22', extra: 2}]).map((b, i) => ({
+  const specials = [{id: 'holiday', title: 'Holiday coverage', start: '2026-11-12', end: '2026-11-13', extra: 2}, {id: 'weekend-holiday', title: 'Weekend holiday', start: '2026-11-20', end: '2026-11-22', extra: 2}];
+  const duties: DutyRow[] = blocks(MONTH, specials).map((b, i) => ({
     id: `duty-${i}`, publication_id: pub, day: b.start, end_day: b.end,
     primary_id: members[i % 6].id, secondary_id: b.start === '2026-11-02' ? ids.c : null,
-    manager_override: false, title: b.title ?? '', extra_points: b.title ? 2 : 0, points: b.points,
+    locked: false, manager_override: false, title: b.title ?? '', extra_points: specialAt(specials, b.start)?.extra ?? 0,
+    saturday_extra_points: b.end === addDays(b.start, 2) ? specialAt(specials, addDays(b.start, 1))?.extra ?? 0 : 0, points: b.points,
   }));
   duties.find(d => d.day === '2026-11-02')!.primary_id = ids.a;
   duties.find(d => d.day === '2026-11-03')!.primary_id = ids.b;
@@ -34,14 +46,70 @@ export class Backend {
   runtimeOrigin?: string;
   raw = seed();
   calls: Call[] = [];
+  authGate?: Promise<void>;
+  configGate?: Promise<void>;
+  loadGate?: Promise<void>;
+  /** Holds duty_swap_availability responses, to observe the still-checking state. */
+  availabilityGate?: Promise<void>;
+  authFailure = false;
   invalidated = false;
   failNextSave = false;
+  /** Display-only projection served by duty_balance; null serves zero for everyone. */
+  balance: Balance | null = null;
+  /** Versions a re-plan reversed, served by duty_replanned_versions. */
+  replanned: string[] = [];
+  /** duty_edit_returns: who a Permanent edit would give the duty back to (H1). */
+  editReturns: string[] = [];
   googleEnabled = false;
+  allocations = new Map<string, {draft: AllocationDraft; locks: NonNullable<GenerationInput['locks']>; approvals: Approval[]; generation?: unknown}>();
+  generationNow = Date.parse(NOW);
+  failGenerationSave = false;
+  /** Compensation ledger served with the generation context; empty by default. */
+  events: readonly CompensationEvent[] = [];
+  /** A reopened published month: its working copy's source publication, and why its plan can't be replaced. */
+  sourcePublication: string | null = null;
+  replanBlocked: string | null | undefined = undefined;
   oauthRequests: URL[] = [];
-  snapshot(user: string) {
-    const raw = structuredClone(this.raw), admin = canManage(raw, user);
-    const member = raw.members.find(m => m.id === user)!;
-    if (member.status !== 'approved' || !member.active) return {...raw, revision: null, members: [member], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
+  /** Personal calendar feeds by member, as duty_calendar_status returns them; resets counts tokens made. */
+  calendars = new Map<string, {createdAt: string; language: 'en' | 'he'}>();
+  calendarResets = 0;
+  /** Shows the first-sign-in welcome cards (normally marked seen so specs start on Home). */
+  showWelcome = false;
+  /** Served by /api/config when set; absent means notifications aren't set up. */
+  vapidPublicKey?: string;
+  /** Personal settings and devices (duty_notification_settings, duty_push_subscriptions). */
+  notificationSettings = new Map<string, NotificationSettings>();
+  devices: {member: string; endpoint: string; p256dh: string; auth: string}[] = [];
+  /** The next N duty_set_notification_settings calls fail (nothing saved). */
+  failNotificationSettings = 0;
+  /** Languages saved through duty_set_language. Served back by duty_load only when
+   * persistLanguage is set, so older specs that switch language and reload keep English. */
+  languages = new Map<string, 'en' | 'he'>();
+  persistLanguage = false;
+  generationEnvelope(month: string) {
+    const state = fromSnapshot(this.raw, ids.admin);
+    const calendar = {specials: state.specials, splitWeekends: state.splitWeekends};
+    const metadata = this.allocations.get(month);
+    const members = this.raw.members.map(m => ({id: m.id, active: m.active, approved: m.status === 'approved', eligible: m.active && m.status === 'approved', ...(m.no_weekends ? {noWeekends: true} : {})}));
+    return {revision: this.raw.revision, actualAtMs: this.generationNow, coverageStartMs: coverageStart(month, calendar),
+      generationAllowed: this.generationNow < coverageStart(month, calendar), fingerprint: `fixture-${this.raw.revision}`, accountingFingerprint: this.events.length ? `events-${this.events.length}` : 'empty-events', actual: {events: this.events},
+      ...(this.replanBlocked !== undefined ? {replanBlocked: this.replanBlocked} : {}),
+      facts: {month, members, seniority: this.raw.members.filter(m => m.active && m.status === 'approved').sort((a, b) => a.seniority - b.seniority).map(m => m.id),
+        duties: canonicalDuties(month, calendar).map(d => ({id: d.id, startDate: d.startDate, endDate: d.endDate, units: d.units,
+          primary: state.assignments[d.id]?.primary || null, secondary: state.assignments[d.id]?.secondary || null,
+          title: (specialAt(state.specials, d.startDate) ?? (d.dates.length === 2 ? specialAt(state.specials, d.dates[1]) : undefined))?.title ?? '',
+          extra: specialAt(state.specials, d.startDate)?.extra ?? 0, weekendId: d.weekendId ?? null,
+          ...(d.saturdayUnits !== undefined && d.saturdayUnits !== 1 ? {saturdayExtra: (d.saturdayUnits - 1) / 2} : {})})),
+        neighbors: [], constraints: state.constraints, allocation: metadata?.draft ?? null, allocationId: metadata ? 'fixture-allocation' : null,
+        sourcePublicationId: this.sourcePublication, generation: metadata?.generation ?? null, locks: canonicalDuties(month, calendar).flatMap(d => state.assignments[d.id]?.locked ? [{dutyId: d.id, engineer: state.assignments[d.id].primary}] : []), approvals: metadata?.approvals ?? []}};
+  }
+  snapshot(signIn: string) {
+    const raw = structuredClone(this.raw), admin = canManage(raw, signIn);
+    // A sign-up linked to a temporary member owns that member's id (decision 2026-11-07).
+    const member = findMe(raw, signIn)!, user = member?.id ?? signIn;
+    // Mirrors the migrated column default; legacy rows are covered by unit tests.
+    raw.assignments = raw.assignments.map(d => ({...d, locked: d.locked ?? false}));
+    if (!member || member.status !== 'approved' || !member.active) return {...raw, revision: null, members: member ? [member] : [], months: [], constraints: [], assignments: [], publications: [], swapRequests: []};
     if (!admin) {
       raw.members = raw.members.filter(m => m.status === 'approved');
       raw.constraints = raw.constraints.filter(c => c.member_id === user);
@@ -49,22 +117,133 @@ export class Backend {
       raw.assignments = raw.assignments.filter(d => live.has(d.publication_id));
       raw.publications = raw.publications.filter(p => live.has(p.id));
     }
-    raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
+    raw.swapRequests = raw.swapRequests!.filter(r => r.requester_id === user || r.proposed_by === user || (r.other_id === user && r.status === 'awaiting_engineer') || (admin && r.status === 'awaiting_admin'));
     return raw;
   }
-  rpc(name: string, p: Record<string, unknown>, user: string) {
+  rpc(name: string, p: Record<string, unknown>, signIn: string) {
+    // Every own-row RPC acts on the caller's member row, as duty_private.current_member_id() does.
+    const user = findMe(this.raw, signIn)?.id ?? signIn;
     this.calls.push({name, params: p, user});
-    if (name === 'duty_join') return null;
-    if (name === 'duty_load') return this.snapshot(user);
+    if (name === 'duty_join') {
+      if (!findMe(this.raw, signIn)) {
+        const member=seed().members.find(m=>m.id===user);
+        if (!member) throw Error('Unknown synthetic identity');
+        this.raw.members.push({...member,name:String(p.p_name),role:'engineer',status:'pending',active:false});
+      }
+      return null;
+    }
+    if (name === 'duty_load') return this.snapshot(signIn);
+    // Personal RPCs (decision 2026-11-06): own rows only, no workspace revision.
+    if (name === 'duty_set_language') {
+      expect(['en', 'he']).toContain(p.p_language);
+      this.languages.set(user, p.p_language as 'en' | 'he');
+      if (this.persistLanguage) {const member = this.raw.members.find(m => m.id === user); if (member) member.language = p.p_language as 'en' | 'he';}
+      return null;
+    }
+    if (['duty_notification_settings', 'duty_set_notification_settings', 'duty_save_push_subscription'].includes(name)) {
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
+    }
+    const settingsState = () => ({...(this.notificationSettings.get(user) ?? DEFAULT_SETTINGS), devices: this.devices.filter(d => d.member === user).length});
+    if (name === 'duty_notification_settings') return settingsState();
+    if (name === 'duty_set_notification_settings') {
+      if (this.failNotificationSettings > 0) {this.failNotificationSettings--; throw Error('Synthetic stale notification settings: not saved.');}
+      const next = p.p_settings as NotificationSettings;
+      expect(Object.keys(next).sort()).toEqual([...SWITCHES, 'eveningTime', 'morningTime'].sort());
+      expect(SWITCHES.every(key => typeof next[key] === 'boolean') && validTime(next.eveningTime) && validTime(next.morningTime)).toBe(true);
+      this.notificationSettings.set(user, next);
+      return settingsState();
+    }
+    if (name === 'duty_save_push_subscription') {
+      expect(supportedPushEndpoint(p.p_endpoint)).toBe(true);
+      expect(BASE64URL_KEY.p256dh.test(String(p.p_p256dh)) && BASE64URL_KEY.auth.test(String(p.p_auth))).toBe(true);
+      this.devices = this.devices.filter(d => d.endpoint !== p.p_endpoint);
+      this.devices.push({member: user, endpoint: String(p.p_endpoint), p256dh: String(p.p_p256dh), auth: String(p.p_auth)});
+      return null;
+    }
+    if (name === 'duty_delete_push_subscription') {
+      this.devices = this.devices.filter(d => !(d.endpoint === p.p_endpoint && d.member === user));
+      return null;
+    }
+    if (name === 'duty_replanned_versions') {
+      if (!canManage(this.raw, signIn)) throw Error('Admin access required');
+      return this.replanned.filter(id => this.raw.publications.some(v => v.id === id && v.month === p.p_month));
+    }
+    if (name === 'duty_balance') {
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('Member access required');
+      const all = this.balance ?? {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+      // Mirrors the database scope: members receive only their own row and relationships.
+      return canManage(this.raw, signIn) ? all : {net: user in all.net ? {[user]: all.net[user]} : {}, lines: all.lines.filter(l => l.memberId === user)};
+    }
+    if (name === 'duty_edit_returns') {
+      expect(canManage(this.raw, signIn)).toBe(true);
+      return this.editReturns;
+    }
+    if (name === 'duty_swap_availability') {
+      // Mirrors duty_private.swap_availability: parties or admins, who and when, never the note.
+      const a = this.raw.assignments.find(d => d.id === p.p_from)!, b = this.raw.assignments.find(d => d.id === p.p_to)!;
+      const manager = canManage(this.raw, signIn);
+      expect(manager || [a.primary_id, b.primary_id].includes(user)).toBe(true);
+      const inside = (d: DutyRow, day: string) => day >= d.day && day < d.end_day;
+      return this.raw.constraints.filter(c => c.kind === 'no' && (([b.primary_id, a.secondary_id].includes(c.member_id) && inside(a, c.day)) ||
+        ([a.primary_id, b.secondary_id].includes(c.member_id) && inside(b, c.day)))).map(c => ({member: manager || [a.primary_id, b.primary_id].includes(c.member_id) ? c.member_id : null, day: c.day}));
+    }
+    if (name === 'duty_calendar_status' || name === 'duty_calendar_reset' || name === 'duty_calendar_language') {
+      // Mirrors duty_private.calendar_*: own feed only, approved active members, never the hash.
+      const member = this.raw.members.find(m => m.id === user);
+      if (!member || member.status !== 'approved' || !member.active) throw Error('calendar-member-required');
+      if (name === 'duty_calendar_status') return this.calendars.get(user) ?? null;
+      expect(['en', 'he']).toContain(p.p_language);
+      const language = p.p_language as 'en' | 'he';
+      if (name === 'duty_calendar_language') {const feed = this.calendars.get(user); if (feed) feed.language = language; return null;}
+      const createdAt = new Date(Date.parse(NOW) + ++this.calendarResets * 1000).toISOString();
+      this.calendars.set(user, {createdAt, language});
+      return {token: this.calendarResets.toString(16).padStart(64, 'c'), createdAt, language};
+    }
     expect(p.p_revision).toBe(this.raw.revision);
-    const admin = canManage(this.raw, user);
-    if (name === 'duty_save_schedule') {
+    const admin = canManage(this.raw, signIn);
+    if (name === 'duty_generation_context') {
+      expect(admin).toBe(true); return this.generationEnvelope(String(p.p_month));
+    } else if (name === 'duty_confirm_allocation') {
+      expect(admin).toBe(true); expect(p.p_fingerprint).toBe(`fixture-${this.raw.revision}`);
+      // As the checked RPC: a copy keeps its source publication only while saved unchanged.
+      if (snapshotKey(this.allocations.get(String(p.p_month))?.draft ?? null) !== snapshotKey(p.p_allocation)) this.sourcePublication = null;
+      this.allocations.set(String(p.p_month), {draft: p.p_allocation as AllocationDraft, locks: p.p_locks as NonNullable<GenerationInput['locks']>, approvals: p.p_approvals as Approval[]});
+      for (const d of this.raw.assignments.filter(d => d.publication_id === null && (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0, 7) === p.p_month)) d.locked = (p.p_locks as NonNullable<GenerationInput['locks']>).some(l => l.dutyId === d.day);
+      this.raw.revision!++; return this.generationEnvelope(String(p.p_month));
+    } else if (name === 'duty_save_generation') {
+      expect(admin).toBe(true); expect(p.p_fingerprint).toBe(`fixture-${this.raw.revision}`);
+      if (this.failGenerationSave) {this.failGenerationSave = false; throw Error('Synthetic stale generation. Refresh and review.');}
+      const month = String(p.p_month), assignments = p.p_assignments as PrimaryAssignments, meta = this.allocations.get(month)!;
+      const envelope = this.generationEnvelope(month), f = envelope.facts;
+      const metrics = validateGeneration({month, sourceRevision: String(this.raw.revision), calendar: {specials: fromSnapshot(this.raw, ids.admin).specials, splitWeekends: fromSnapshot(this.raw, ids.admin).splitWeekends}, members: f.members,
+        targets: Object.fromEntries(Object.entries(meta.draft.targetsUnits).map(([id, u]) => [id, u / 2])), constraints: f.constraints, locks: meta.locks, approvals: meta.approvals,
+        secondary: Object.fromEntries(f.duties.filter(d => d.secondary).map(d => [d.id, d.secondary!]))}, assignments);
+      if (!envelope.generationAllowed) throw Error('Synthetic stale generation-window-closed');
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0, 7) === month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      this.raw.assignments.push(...f.duties.map(d => ({id: `generated-${d.id}`, publication_id: null, day: d.startDate, end_day: d.endDate, primary_id: assignments[d.id].primary,
+        secondary_id: d.secondary, title: d.title, extra_points: d.extra, saturday_extra_points: d.saturdayExtra ?? 0, points: d.units / 2, locked: f.locks.some(l => l.dutyId === d.id), manager_override: false})));
+      let m = this.raw.months.find(m => m.month === month);
+      if (!m) {m = {month, deadline: addDays(month + '-01', -7), status: 'draft', generated: true, current_publication_id: null, publication_sequence: 0}; this.raw.months.push(m);}
+      m.generated = true; meta.generation = {seed: p.p_seed, metrics};
+      this.raw.revision!++; return this.generationEnvelope(month);
+    } else if (name === 'duty_save_schedule') {
       expect(admin).toBe(true);
       if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
-      const state = p.p_state as {duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
-      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
-      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: `saved-${i}`, publication_id: null, points: (d.end_day === addDays(d.day, 2) ? 1 : [5, 6].includes(new Date(d.day + 'T12:00Z').getUTCDay()) ? .5 : 1) + d.extra_points})));
+      const state = p.p_state as {team:{id:string;color:string;active:boolean}[];duties: Omit<DutyRow, 'id' | 'publication_id' | 'points'>[]; months: Record<string, {deadline: string; status: 'draft' | 'published'; generated: boolean}>};
+      state.team.forEach((member, seniority) => Object.assign(this.raw.members.find(m => m.id === member.id)!, member, {seniority}));
+      this.raw.members.sort((a,b) => a.seniority - b.seniority);
+      const draftIds = new Map(this.raw.assignments.filter(d => d.publication_id === null).map(d => [d.day, d.id]));
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7);
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !state.months[owns(d)] || state.months[owns(d)].status === 'published' && p.p_publish !== owns(d));
+      // Mirrors the stored points column: every holiday date adds its own extra.
+      this.raw.assignments.push(...state.duties.map((d, i) => ({...d, id: draftIds.get(d.day) ?? `saved-${i}`, publication_id: null,
+        points: d.end_day === addDays(d.day, 2) ? 1 + d.extra_points + (d.saturday_extra_points ?? 0) : ([5, 6].includes(dayOf(d.day)) ? .5 : 1) + d.extra_points})));
       for (const [month, value] of Object.entries(state.months)) {
+        const metadata = this.allocations.get(month);
+        if (metadata) metadata.locks = this.raw.assignments.filter(d => d.publication_id === null && d.locked && owns(d) === month).map(d => ({dutyId: d.day, engineer: d.primary_id!}));
         let m = this.raw.months.find(m => m.month === month);
         if (!m) {m = {month, ...value, current_publication_id: null, publication_sequence: 0}; this.raw.months.push(m);}
         Object.assign(m, value);
@@ -75,21 +254,59 @@ export class Backend {
       const days = p.p_days as string[];
       this.raw.constraints = this.raw.constraints.filter(c => c.member_id !== p.p_member || !days.includes(c.day));
       if (p.p_kind !== 'clear') this.raw.constraints.push(...days.map(day => ({member_id: p.p_member as string, day, kind: p.p_kind as 'no' | 'prefer', note: p.p_note as string})));
+    } else if (name === 'duty_add_temporary_member') {
+      expect(admin).toBe(true);
+      if (this.failNextSave) {this.failNextSave=false;throw Error('Synthetic stale revision. Refresh and try again.');}
+      const id = `22000000-0000-4000-8000-${String(this.raw.revision).padStart(12,'0')}`;
+      this.raw.members.push({id,name:String(p.p_name).trim(),email:null,is_temporary:true,role:'engineer',status:'approved',active:true,seniority:this.raw.members.length,color:'#adc9ee'});
+      this.raw.revision!++; return id;
+    } else if (name === 'duty_rename_temporary_member') {
+      expect(admin).toBe(true);
+      const member=this.raw.members.find(m=>m.id===p.p_member&&m.is_temporary)!;
+      expect(member).toBeTruthy();member.name=String(p.p_name).trim();
+    } else if (name === 'duty_set_no_weekends') {
+      expect(admin).toBe(true); expect(typeof p.p_no_weekends).toBe('boolean');
+      const member = this.raw.members.find(m => m.id === p.p_member && m.status === 'approved')!;
+      expect(member).toBeTruthy(); member.no_weekends = p.p_no_weekends as boolean;
     } else if (name === 'duty_rename_self') {
       this.raw.members.find(m => m.id === user)!.name = p.p_name as string;
+    } else if (name === 'duty_set_color') {
+      // Mirrors duty_private.set_color: the caller's own row, a #rrggbb value, a revision bump.
+      expect(String(p.p_color)).toMatch(/^#[0-9a-f]{6}$/);
+      const member = this.raw.members.find(m => m.id === user)!;
+      expect(member.status).toBe('approved');
+      member.color = p.p_color as string;
+    } else if (name === 'duty_link_temporary_member') {
+      // Mirrors duty_private.link_temporary_member: the temporary row keeps its id and gains the sign-in.
+      expect(admin).toBe(true);
+      const signup = this.raw.members.find(m => m.id === p.p_pending && m.status === 'pending' && !m.is_temporary)!, temporary = this.raw.members.find(m => m.id === p.p_temporary && m.is_temporary)!;
+      expect(signup).toBeTruthy(); expect(temporary).toBeTruthy();
+      this.raw.members = this.raw.members.filter(m => m !== signup);
+      Object.assign(temporary, {is_temporary: false, auth_user_id: signup.id, email: signup.email, language: signup.language ?? temporary.language ?? null});
     } else if (name === 'duty_review_member') {
       expect(admin).toBe(true);
       this.raw.members.find(m => m.id === p.p_member)!.status = p.p_status as string;
     } else if (name === 'duty_restore_publication') {
       expect(admin).toBe(true);
       const publication = this.raw.publications.find(v => v.id === p.p_publication)!;
-      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null);
-      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === publication.id).map(d => ({...d, id: d.id + '-restored', publication_id: null})));
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === publication.month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      this.raw.assignments.push(...this.raw.assignments.filter(d => d.publication_id === publication.id && owns(d)).map(d => ({...d, id: d.id + '-restored', publication_id: null})));
       this.raw.months.find(m => m.month === publication.month)!.status = 'draft';
+    } else if (name === 'duty_cancel_draft') {
+      expect(admin).toBe(true);
+      if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
+      const m = this.raw.months.find(m => m.month === p.p_month)!;
+      expect(m.status).toBe('draft'); expect(m.current_publication_id).toBeTruthy();
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === m.month;
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      m.status = 'published'; m.generated = true;
     } else if (name === 'duty_request_swap') {
-      const from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
-      expect(from.primary_id).toBe(user); expect(to.primary_id).not.toBe(user);
-      this.raw.swapRequests!.unshift({id: `request-${this.raw.revision}`, month: MONTH, source_publication_id: from.publication_id, requester_id: user, other_id: to.primary_id!, from_day: from.day, from_end_day: from.end_day, to_day: to.day, to_end_day: to.end_day, explanation: p.p_explanation as string, status: 'awaiting_engineer', accepted_by: null, accepted_at: null, created_at: NOW, resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: ''});
+      let from = this.raw.assignments.find(d => d.id === p.p_from)!, to = this.raw.assignments.find(d => d.id === p.p_to)!;
+      // Admins may propose for others; an admin party becomes the requester.
+      if (from.primary_id !== user) {expect(admin).toBe(true); if (to.primary_id === user) [from, to] = [to, from];}
+      expect(to.primary_id).not.toBe(from.primary_id);
+      this.raw.swapRequests!.unshift({id: `request-${this.raw.revision}`, month: MONTH, source_publication_id: from.publication_id, requester_id: from.primary_id!, other_id: to.primary_id!, from_day: from.day, from_end_day: from.end_day, to_day: to.day, to_end_day: to.end_day, explanation: p.p_explanation as string, status: 'awaiting_engineer', accepted_by: null, accepted_at: null, created_at: NOW, resolved_at: null, resolved_by: null, result_publication_id: null, override_reason: '', proposed_by: from.primary_id === user ? null : user, requester_accepted_at: null});
     } else if (name === 'duty_delete_publication') {
       expect(admin).toBe(true);
       const publication = this.raw.publications.find(v => v.id === p.p_publication)!;
@@ -102,12 +319,22 @@ export class Backend {
       }
     } else if (name === 'duty_resolve_swap') {
       const r = this.raw.swapRequests!.find(r => r.id === p.p_request)!, action = p.p_action as string;
+      if (this.failNextSave) {this.failNextSave = false; throw Error('Synthetic stale revision. Refresh and try again.');}
       if (this.invalidated) {r.status = 'invalidated'; this.invalidated = false; this.raw.revision!++; return 'invalidated';}
-      if (['accept', 'decline'].includes(action)) {expect(user).toBe(r.other_id); expect(r.status).toBe('awaiting_engineer');}
-      if (['approve', 'reject'].includes(action)) {expect(admin).toBe(true); expect(r.status).toBe('awaiting_admin');}
-      if (action === 'cancel') expect(user).toBe(r.requester_id);
+      // Mirrors resolve_swap: the caller's own open side, then an admin answers a temporary member's.
+      const temporary = (id: string) => !!this.raw.members.find(m => m.id === id)?.is_temporary;
+      const open = {requester: !!r.proposed_by && !r.requester_accepted_at, other: !r.accepted_by};
+      const side = user === r.other_id && open.other ? 'other' : user === r.requester_id && open.requester ? 'requester'
+        : admin && open.requester && temporary(r.requester_id) ? 'requester' : admin && open.other && temporary(r.other_id) ? 'other' : null;
+      if (['accept', 'decline'].includes(action)) {expect(r.status).toBe('awaiting_engineer'); expect(side).not.toBeNull();}
+      if (action === 'approve') {expect(admin).toBe(true); expect(r.status).toBe('awaiting_admin');}
+      if (action === 'reject') expect(admin).toBe(true);
+      if (action === 'cancel') expect(user).toBe(r.proposed_by ?? r.requester_id);
       r.status = ({accept: 'awaiting_admin', decline: 'declined', approve: 'approved', reject: 'rejected', cancel: 'cancelled'} as Record<string, SwapRequest['status']>)[action];
-      if (action === 'accept') {r.accepted_by = user; r.accepted_at = NOW;}
+      if (action === 'accept') {
+        if (side === 'requester') r.requester_accepted_at = NOW; else {r.accepted_by = r.other_id; r.accepted_at = NOW;}
+        if (!r.accepted_by || (r.proposed_by && !r.requester_accepted_at)) r.status = 'awaiting_engineer';
+      }
       if (action === 'approve') {
         const current = this.raw.months[0].current_publication_id;
         const rows = this.raw.assignments.filter(d => d.publication_id === current).map(d => ({...d}));
@@ -116,12 +343,73 @@ export class Backend {
         r.result_publication_id = this.publish(MONTH, rows);
       }
       r.override_reason = p.p_override_reason as string;
+    } else if (name === 'duty_edit_published_duty') {
+      expect(admin).toBe(true);
+      const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
+      // The database's own refusal of a superseded version.
+      if (!m) throw Error('Synthetic stale: This publication changed. Refresh first.');
+      const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
+      const row = rows.find(d => d.day === p.p_day)!, primary = p.p_primary as string, before = structuredClone(row);
+      const changed = primary !== row.primary_id;
+      const conflict = changed && this.raw.constraints.some(c => c.member_id === primary && c.kind === 'no' && c.day >= row.day && c.day < row.end_day);
+      if (conflict && !String(p.p_override_reason).trim()) throw Error('Availability conflict. An admin must explicitly override with a reason.');
+      Object.assign(row, {primary_id: primary, extra_points: p.p_extra_points, saturday_extra_points: p.p_saturday_extra_points, manager_override: changed ? conflict : row.manager_override,
+        points: dutyPoints(row, p.p_extra_points as number, p.p_saturday_extra_points as number)});
+      // Display-only stand-in for the ledger: Temporary moves the published points as a change line.
+      if (changed && p.p_kind === 'temporary') {
+        const units = owedUnits(before, p.p_extra_points as number, p.p_saturday_extra_points as number);
+        const balance = this.balance ??= {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+        balance.net[before.primary_id!] -= units; balance.net[primary] += units;
+        balance.lines.push({memberId: before.primary_id!, counterpartId: primary, units: -units, kind: 'change', date: null, month: m.month},
+          {memberId: primary, counterpartId: before.primary_id!, units, kind: 'change', date: null, month: m.month});
+      }
+      // Saving cancels a pending swap of the duty, as the database does.
+      for (const r of this.raw.swapRequests ?? []) if (['awaiting_engineer', 'awaiting_admin'].includes(r.status) && [r.from_day, r.to_day].includes(row.day)) Object.assign(r, {status: 'invalidated', accepted_by: null, accepted_at: null});
+      const publication = this.publish(m.month, rows);
+      this.raw.revision!++;
+      return {publication, version: m.publication_sequence};
+    } else if (name === 'duty_edit_published_weekend') {
+      // One weekend or two days (decision 2026-11-07): same person joins, different people split.
+      expect(admin).toBe(true);
+      const m = this.raw.months.find(m => m.current_publication_id === p.p_publication);
+      if (!m) throw Error('Synthetic stale: This publication changed. Refresh first.');
+      const rows = this.raw.assignments.filter(d => d.publication_id === m.current_publication_id).map(d => ({...d}));
+      const friday = p.p_friday as string, saturday = addDays(friday, 1), covering = (day: string) => rows.find(d => d.day <= day && d.end_day > day)!;
+      const f = covering(friday), s = covering(saturday), wasJoined = f === s;
+      const halves = [{day: friday, row: f, extra: f.extra_points, to: p.p_friday_primary as string, next: p.p_friday_extra as number},
+        {day: saturday, row: s, extra: wasJoined ? f.saturday_extra_points ?? 0 : s.extra_points, to: p.p_saturday_primary as string, next: p.p_saturday_extra as number}];
+      const changed = halves.filter(h => h.to !== h.row.primary_id);
+      if (!changed.length && (halves[0].to === halves[1].to) === wasJoined && halves.every(h => h.next === h.extra)) throw Error('Nothing changed');
+      const conflict = changed.some(h => this.raw.constraints.some(c => c.member_id === h.to && c.kind === 'no' && c.day === h.day));
+      if (conflict && !String(p.p_override_reason).trim()) throw Error('Availability conflict. An admin must explicitly override with a reason.');
+      const joined = halves[0].to === halves[1].to, base = {...f, title: f.title || s.title, manager_override: conflict};
+      const next: DutyRow[] = joined
+        ? [{...base, day: friday, end_day: addDays(friday, 2), primary_id: halves[0].to, secondary_id: f.secondary_id ?? s.secondary_id, extra_points: halves[0].next, saturday_extra_points: halves[1].next, points: 1 + halves[0].next + halves[1].next}]
+        : halves.map(h => ({...base, day: h.day, end_day: addDays(h.day, 1), primary_id: h.to, secondary_id: h.row.secondary_id, extra_points: h.next, saturday_extra_points: 0, points: .5 + h.next}));
+      // Display-only stand-in for the ledger: Temporary moves each date's shared points.
+      if (p.p_kind === 'temporary') for (const h of changed) {
+        const units = Math.min(1 + 2 * h.extra, 1 + 2 * h.next), from = h.row.primary_id!;
+        const balance = this.balance ??= {net: Object.fromEntries(this.raw.members.map(m => [m.id, 0])), lines: []};
+        balance.net[from] -= units; balance.net[h.to] += units;
+        balance.lines.push({memberId: from, counterpartId: h.to, units: -units, kind: 'change', date: null, month: m.month},
+          {memberId: h.to, counterpartId: from, units, kind: 'change', date: null, month: m.month});
+      }
+      for (const r of this.raw.swapRequests ?? []) if (['awaiting_engineer', 'awaiting_admin'].includes(r.status) && [r.from_day, r.to_day].some(d => d === friday || d === saturday)) Object.assign(r, {status: 'invalidated', accepted_by: null, accepted_at: null});
+      const publication = this.publish(m.month, [...rows.filter(d => d !== f && d !== s), ...next].sort((a, b) => a.day.localeCompare(b.day)));
+      this.raw.revision!++;
+      return {publication, version: m.publication_sequence, joined};
     } else throw Error(`Unexpected RPC: ${name}`);
     this.raw.revision!++;
     return null;
   }
-  publish(month: string, rows = this.raw.assignments.filter(d => d.publication_id === null)) {
+  publish(month: string, rows?: DutyRow[]) {
     const m = this.raw.months.find(m => m.month === month)!;
+    if (!rows) {
+      const owns = (d: DutyRow) => (dayOf(d.day) === 6 ? addDays(d.day, -1) : d.day).slice(0,7) === month;
+      rows = this.raw.assignments.filter(d => d.publication_id === null && owns(d));
+      this.raw.assignments = this.raw.assignments.filter(d => d.publication_id !== null || !owns(d));
+      m.status = 'published';
+    }
     const id = `publication-${++m.publication_sequence}`;
     this.raw.publications.push({id, month, version: m.publication_sequence, published_at: NOW, published_by: ids.admin});
     this.raw.assignments.push(...rows.map(d => ({...d, id: `${id}-${d.day}`, publication_id: id})));
@@ -130,12 +418,14 @@ export class Backend {
   }
 }
 
-type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page) => Promise<Page>};
+/** month: the schedule month every load of the page opens on, through the `?month=` deep link (the app opens
+ * on the current month, October under NOW; the fixtures' data is November). null: the app's own default. */
+type Fixtures = {backend: Backend; openApp: (identity?: Identity, page?: Page, options?: {waitForReady?: boolean; oauthReturn?: boolean; month?: string | null}) => Promise<Page>};
 export const test = base.extend<Fixtures>({
   backend: async ({}, provide) => {await provide(new Backend());},
   openApp: async ({page, backend, baseURL}, provide) => {
     const attached = new Set<Page>(), errors: string[] = [], unexpected: string[] = [];
-    await provide(async (identity = 'admin', target = page) => {
+    await provide(async (identity = 'admin', target = page, {waitForReady = true, oauthReturn = false, month = MONTH} = {}) => {
       if (!attached.has(target)) {
         attached.add(target);
         target.on('pageerror', error => errors.push(error.message));
@@ -149,30 +439,38 @@ export const test = base.extend<Fixtures>({
       const key = ['rejected', 'inactive'].includes(identity) ? 'a' : identity;
       if (identity === 'rejected') backend.raw.members.find(m => m.id === ids.a)!.status = 'rejected';
       if (identity === 'inactive') backend.raw.members.find(m => m.id === ids.a)!.active = false;
-      let user = {id: ids[key], email: `${key}@example.invalid`, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
-      const token = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: user.id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
+      let user = {id: ids[key], email: `${key}@example.invalid`, email_confirmed_at: NOW, is_anonymous: false, aud: 'authenticated', role: 'authenticated', created_at: NOW, app_metadata: {provider: 'google', providers: ['google']}, user_metadata: {full_name: `Engineer ${key.toUpperCase()}`}};
+      const tokenFor = (id: string) => [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({sub: id, exp: 4102444800, role: 'authenticated'})).toString('base64url'), 'synthetic'].join('.');
+      const token = tokenFor(user.id);
       const origin=backend.runtimeOrigin??new URL(baseURL!).origin;
       const storageKey=resolveEnvironment(backend.url,origin).storageKey;
-      await target.addInitScript(({user, token, signedOut, storageKey}) => {
+      await target.addInitScript(({user, token, signedOut, storageKey, oauthReturn, showWelcome, month}) => {
+        // Every load, reloads included, opens the fixture month unless the URL names one.
+        const url = new URL(location.href);
+        if (month && !url.searchParams.has('month')) {url.searchParams.set('month', month); history.replaceState(history.state, '', url);}
         localStorage.clear();
-        if (!signedOut) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
-      }, {user, token, signedOut: identity === 'signed-out',storageKey});
+        if (!showWelcome) localStorage.setItem('duty-welcome-seen', '1');
+        if (oauthReturn) localStorage.setItem(storageKey+'-code-verifier',JSON.stringify('synthetic-verifier'));
+        if (!signedOut && !oauthReturn) localStorage.setItem(storageKey, JSON.stringify({access_token: token, refresh_token: 'synthetic-only', expires_at: 4102444800, expires_in: 3600, token_type: 'bearer', user}));
+      }, {user, token, signedOut: identity === 'signed-out',storageKey,oauthReturn,showWelcome: backend.showWelcome,month});
       await target.route('**/*', async route => {
         const url = new URL(route.request().url());
-        if (url.pathname === '/api/config') return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only'}});
+        if (url.pathname === '/api/config') {await backend.configGate; return route.fulfill({json: {url: backend.url, key: 'sb_publishable_synthetic_only', ...(backend.vapidPublicKey ? {vapidPublicKey: backend.vapidPublicKey} : {})}});}
         if (url.origin === backend.url) {
           if (url.pathname === '/auth/v1/settings') return route.fulfill({json: {external: {google: backend.googleEnabled}}});
           if (url.pathname === '/auth/v1/authorize') {
             backend.oauthRequests.push(url);
             return route.fulfill({contentType: 'text/html', body: '<h1>Synthetic OAuth handoff</h1>'});
           }
-          if (url.pathname === '/auth/v1/user') return route.fulfill({json: user});
-          if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) {
-            user={...user,id:ids.admin,email:'admin@duty.local'};
-            return route.fulfill({json:{access_token:token,refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
+          if (url.pathname === '/auth/v1/user') {await backend.authGate; return backend.authFailure ? route.fulfill({status:401,json:{message:'Synthetic session expired',code:'bad_jwt'}}) : route.fulfill({json: user});}
+          if (url.pathname === '/auth/v1/token' && ((url.searchParams.get('grant_type')==='password' && backend.url.startsWith('http://127.0.0.1:')) || (url.searchParams.get('grant_type')==='pkce' && backend.googleEnabled))) {
+            if (url.searchParams.get('grant_type')==='password' || identity==='signed-out') user={...user,id:ids.admin,email:'admin@duty.local'};
+            return route.fulfill({json:{access_token:tokenFor(user.id),refresh_token:'synthetic-only',expires_at:4102444800,expires_in:3600,token_type:'bearer',user}});
           }
           if (url.pathname === '/auth/v1/logout') return route.fulfill({status: 204});
           if (url.pathname.startsWith('/rest/v1/rpc/')) {
+            if (url.pathname.endsWith('/duty_load')) await backend.loadGate;
+            if (url.pathname.endsWith('/duty_swap_availability')) await backend.availabilityGate;
             try {return await route.fulfill({json: backend.rpc(url.pathname.split('/').at(-1)!, route.request().postDataJSON() ?? {}, user.id)});}
             catch (error) {
               const message = (error as Error).message;
@@ -186,18 +484,42 @@ export const test = base.extend<Fixtures>({
         unexpected.push(url.origin + url.pathname);
         return route.abort('blockedbyclient');
       });
-      await target.goto(backend.runtimeOrigin??'/');
-      await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : 'Sign out', exact: true})).toBeVisible();
+      await target.goto((backend.runtimeOrigin??'/')+(oauthReturn?'?code=synthetic-oauth-code':''));
+      // The workspace's Sign out lives in Settings (decision 2026-11-06); the access screen keeps its own.
+      const workspace = !['pending', 'rejected', 'inactive', 'signed-out'].includes(identity);
+      if (waitForReady) await expect(target.getByRole('button', {name: identity === 'signed-out' ? backend.url.startsWith('http:')?'Sign in locally':'Continue with Google' : workspace ? 'Settings' : 'Sign out', exact: true})).toBeVisible();
+      if (waitForReady && canManage(backend.raw, user.id)) await expect(target.locator('.workspace-controls')).toBeEnabled();
       return target;
     });
+    // Finish intercepted responses before Playwright disposes the page/request context.
+    await Promise.all([...attached].filter(target => !target.isClosed()).map(target => target.unrouteAll({behavior: 'wait'})));
     expect(errors, 'browser errors / unexpected RPC contract').toEqual([]);
     expect(unexpected, 'no external network access').toEqual([]);
   },
 });
 export {expect};
-export const duty = (page: Page, day: string) => page.locator(`button[data-gesture-key="${day}"]`).filter({has: page.locator('.date-line')});
+export const duty = (page: Page, day: string) => page.locator(`button[data-date="${day}"]`).filter({has: page.locator('.date-line')});
+/** A published swap target is neither green nor greyed until its availability is known. */
+export async function targetReady(page: Page, day: string) {
+  await expect(duty(page, day)).toHaveAttribute('data-swap-state', /^(ok|blocked)$/);
+}
+/** Opens the duty sheet for a day on the Schedule tab: Enter opens it on PC; phones show the day's details first. */
+export async function openDutySheet(page: Page, day: string) {
+  const he = await page.locator('html').getAttribute('lang') === 'he';
+  const tab = page.getByRole('tab', {name: he ? 'לוח' : 'Schedule', exact: true});
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click();
+  // A second tap on the selected phone day closes it (owner round 2): only tap a day not already open.
+  if (!await duty(page, day).evaluate(el => el.classList.contains('selected-day'))) {await duty(page, day).focus(); await page.keyboard.press('Enter');}
+  const sheet = page.getByRole('dialog'), details = page.locator('[data-day-details] .day-duty');
+  await expect(sheet.or(details)).toBeVisible();
+  if (!await sheet.isVisible()) await details.click();
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
 export async function keyboardRequest(page: Page) {
-  await duty(page, '2026-11-02').focus(); await page.keyboard.press('Enter');
+  await (await openDutySheet(page, '2026-11-02')).getByRole('button', {name: 'Swap', exact: true}).click();
+  await expect(duty(page, '2026-11-02')).toHaveAttribute('aria-pressed', 'true');
+  await targetReady(page, '2026-11-03');
   await duty(page, '2026-11-03').focus(); await page.keyboard.press('Space');
   await expect(page.getByRole('dialog')).toBeVisible();
 }
@@ -205,18 +527,26 @@ export async function confirmRequest(page: Page) {
   await page.getByRole('button', {name: 'Confirm Request', exact: true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
 }
-export async function drag(page: Page, touch = false) {
-  const from = duty(page, '2026-11-02'), to = duty(page, '2026-11-03');
+export async function drag(page: Page, touch = false, fromDay = '2026-11-02', toDay = '2026-11-03') {
+  const from = duty(page, fromDay), to = duty(page, toDay);
   await from.scrollIntoViewIfNeeded();
   const a = (await from.boundingBox())!, b = (await to.boundingBox())!;
   const x = a.x + a.width / 2, y = a.y + a.height / 2, tx = b.x + b.width / 2, ty = b.y + b.height / 2;
+  await dragTo(page, x, y, tx, ty, touch, toDay);
+  await expect(page.getByRole('dialog')).toBeVisible();
+}
+/** Holds, waits until the target's availability is known (published swaps), then drops. */
+export async function dragTo(page: Page, x: number, y: number, tx: number, ty: number, touch: boolean, toDay: string) {
+  const published = async () => (await duty(page, toDay).getAttribute('aria-describedby')) === 'published-swap-help';
   if (touch) {
     await touchEvent(page, 'touchstart', x, y); await page.waitForTimeout(400);
+    if (await published()) await targetReady(page, toDay);
     await touchEvent(page, 'touchmove', tx, ty); await touchEvent(page, 'touchend', tx, ty);
   } else {
-    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(tx, ty, {steps: 8}); await page.mouse.up();
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 8, y, {steps: 2});
+    if (await published()) await targetReady(page, toDay);
+    await page.mouse.move(tx, ty, {steps: 8}); await page.mouse.up();
   }
-  await expect(page.getByRole('dialog')).toBeVisible();
 }
 export async function touchEvent(page: Page, type: string, x: number, y: number) {
   await page.evaluate(({type, x, y}) => {
@@ -224,4 +554,33 @@ export async function touchEvent(page: Page, type: string, x: number, y: number)
     const touch = new Touch({identifier: 1, target, clientX: x, clientY: y});
     target.dispatchEvent(new TouchEvent(type, {bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [touch], changedTouches: [touch]}));
   }, {type, x, y});
+}
+
+/** Switch the signed-in app's language. It lives only in Settings (decision 2026-11-06):
+ * open Settings, choose the language, close. Does nothing when already in that language. */
+export async function switchLanguage(page: Page, lang: 'en' | 'he') {
+  if (await page.locator('html').getAttribute('lang') === lang) return;
+  await page.locator('[data-settings-button]').click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('radio', {name: lang === 'he' ? 'עברית' : 'English', exact: true}).check();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('html')).toHaveAttribute('dir', lang === 'he' ? 'rtl' : 'ltr');
+}
+
+/** Sign out of the workspace: Settings, then Sign out. */
+export async function signOutFromSettings(page: Page) {
+  await page.getByRole('button', {name: 'Settings', exact: true}).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Sign out', exact: true}).click();
+}
+
+/** A ⋯ menu action (decision 2026-11-06), in either language; falls back to a plain button. */
+export async function monthAction(page: Page, name: string) {
+  const menu = page.getByRole('button', {name: /^(Month actions|פעולות לחודש)$/});
+  if (await menu.isVisible()) {
+    await menu.click();
+    await page.getByRole('menuitem', {name, exact: true}).click();
+  } else {
+    await page.getByRole('button', {name, exact: true}).click();
+  }
 }

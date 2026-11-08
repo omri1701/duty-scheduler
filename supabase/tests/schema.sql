@@ -2,18 +2,18 @@
 DO $schema$
 DECLARE t record; f record;
 BEGIN
-  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 11 THEN
-    RAISE EXCEPTION 'Expected exactly 11 application tables';
+  IF (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'duty_%') <> 18 THEN
+    RAISE EXCEPTION 'Expected exactly 18 application tables';
   END IF;
   IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 30 THEN
-    RAISE EXCEPTION 'Expected exactly 30 application functions';
+      WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%')) <> 135 THEN
+    RAISE EXCEPTION 'Expected exactly 135 application functions';
   END IF;
   IF (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 21
+      WHERE n.nspname='public' AND c.contype='f' AND c.conrelid::regclass::text LIKE 'duty_%') <> 30
     OR EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
       WHERE n.nspname='public' AND c.conrelid::regclass::text LIKE 'duty_%' AND NOT c.convalidated) THEN
-    RAISE EXCEPTION 'Expected 21 validated application foreign keys';
+    RAISE EXCEPTION 'Expected 30 validated application foreign keys';
   END IF;
   IF EXISTS (SELECT 1 FROM auth.users) OR EXISTS (SELECT 1 FROM auth.identities) THEN
     RAISE EXCEPTION 'Clean database requires zero Auth users and identities';
@@ -27,10 +27,19 @@ BEGIN
       RAISE EXCEPTION 'Unexpected client table privileges: %',t.relname;
     END IF;
   END LOOP;
+  -- anon has USAGE on duty_private only to reach the calendar feed lookup, so the schema
+  -- must never hold anything but functions (no table, view, sequence or type to reach).
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='duty_private')
+    OR EXISTS (SELECT 1 FROM pg_type y JOIN pg_namespace n ON n.oid=y.typnamespace WHERE n.nspname='duty_private') THEN
+    RAISE EXCEPTION 'duty_private must contain only functions';
+  END IF;
   FOR f IN SELECT p.oid,p.proname,p.prosecdef,p.proconfig,n.nspname FROM pg_proc p
     JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='duty_private' OR (n.nspname='public' AND p.proname LIKE 'duty_%') LOOP
-    IF has_function_privilege('anon',f.oid,'EXECUTE') THEN RAISE EXCEPTION 'Anonymous execute: %',f.proname; END IF;
+    -- Calendar apps cannot sign in: the personal feed lookup (and its public wrapper) is the
+    -- only application function the anonymous role may execute.
+    IF has_function_privilege('anon',f.oid,'EXECUTE') <> (f.oid IN ('duty_private.calendar_feed(text)'::regprocedure,'public.duty_calendar_feed(text)'::regprocedure))
+      THEN RAISE EXCEPTION 'Anonymous execute: %',f.proname; END IF;
     IF f.proconfig IS NULL OR NOT ('search_path=""'=ANY(f.proconfig)) THEN
       RAISE EXCEPTION 'Unsafe search_path: %',f.proname;
     END IF;
@@ -51,7 +60,11 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.duty_members) OR EXISTS (SELECT 1 FROM public.duty_assignments)
     OR EXISTS (SELECT 1 FROM public.duty_constraints) OR EXISTS (SELECT 1 FROM public.duty_months)
-    OR EXISTS (SELECT 1 FROM public.duty_publications) OR EXISTS (SELECT 1 FROM public.duty_swap_requests) THEN
+    OR EXISTS (SELECT 1 FROM public.duty_publications) OR EXISTS (SELECT 1 FROM public.duty_swap_requests)
+    OR EXISTS (SELECT 1 FROM public.duty_compensation_events) OR EXISTS (SELECT 1 FROM public.duty_allocations)
+    OR EXISTS (SELECT 1 FROM public.duty_notification_settings) OR EXISTS (SELECT 1 FROM public.duty_push_subscriptions)
+    OR EXISTS (SELECT 1 FROM public.duty_push_notifications) OR EXISTS (SELECT 1 FROM public.duty_push_deliveries)
+    OR EXISTS (SELECT 1 FROM public.duty_calendar_feeds) THEN
     RAISE EXCEPTION 'Operational data must be empty';
   END IF;
 END

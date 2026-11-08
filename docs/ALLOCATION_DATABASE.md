@@ -1,0 +1,278 @@
+# Allocation and generation database boundary
+
+Application Generate now uses these RPCs through the single allocation popup and
+cancellable allocation/scheduling Workers. The [specification](GENERATE_ALGORITHM.md)
+remains authoritative. No hosted migration or deployment is authorized by this implementation.
+
+The workspace shares identity/save locking and reload recovery with ordinary
+mutations, while preserving the explicitly captured generation revision. An
+unchanged authoritative context avoids another calendar read; reconciliation
+that advances the revision reloads it. A missing owner draft is created only on
+explicit confirmation, then the known resulting revision is captured and the
+reviewed source facts are compared before confirmation. Stale writes are never retried.
+
+## Persistence
+
+`duty_allocations` holds one snapshot per owner/draft or publication, using the
+existing NULL-publication convention. It stores the original ordinary baseline,
+confirmed half-unit targets, repayment references, one net temporary and one net
+permanent change per member, the drag pairs, the derived transfer list,
+explicit primary locks, rule-specific approvals, captured accounting/calendar
+fingerprints, generation seed/metrics and publication ancestry. The
+`20261030230832_per_person_allocation_changes.sql` migration adds
+`duty_private.allocation_transfers`, replaces `allocation_compile` and
+`confirm_allocation`, and converts working drafts recorded as click histories
+(their transfers become routing pairs, their nets are recomputed); a draft the
+new rules cannot express keeps its shape and needs a new proposal, and published
+snapshots and restored copies are not touched. The
+`20261031033000_uneven_month_credit.sql` migration adds
+`duty_private.allocation_uneven` and the uneven-credit checks to
+`allocation_compile`, `confirm_allocation`, `allocation_bind` and `balance`
+without touching stored rows. The `20261031165238_permanent_month_cap.sql`
+migration adds the Permanent ceiling (fair + Permanent ≤ the month's total units) and
+the Temporary bound (|Temporary| ≤ the month's total units) to `allocation_compile`
+(`permanent-above-month-total`, `temporary-above-month-total`); stored plans already
+satisfy both. It also lets the stored allocation carry `hand`, the members edited by
+hand (distinct current participants, else `invalid-hand-edits`), so a reopened plan
+balances like the session that saved it; plans without it still confirm. Only managers can
+read it; clients cannot write it. Calendar snapshots do not include this table.
+
+`duty_assignments.locked` persists a primary lock even before the first allocation.
+The duty editor saves it atomically with the primary through `duty_save_schedule`;
+its optional `lock_edits` date list explicitly reviews the edited duty (both days
+for a weekend). Other writes still cannot remove or change locked work silently.
+Generation facts derive locks from the owned current duty rows, and schedule saves
+keep allocation lock metadata synchronized. Changing/unlocking a primary retires
+only approvals referring to the changed lock; an override boolean never grants a
+solver exception. Existing generation validation continues to reject conflicting
+locks, target floors and missing exact approvals. The Generate popup no longer
+edits locks or exceptions. Published/history copies retain duty lock flags.
+
+The additive `20261028204239_duty_editor_locks.sql` migration backfills flags from
+existing allocation locks without rewriting duty identities or primary/history
+data. Apply it through the normal database-first release process before the UI;
+this feature does not authorize hosted changes.
+
+Publish freezes the snapshot alongside the owned duties in the same transaction.
+Restore copies it into the draft. Cancel Draft deletes only its working snapshot.
+Deleting the last version first preserves its working snapshot. Approved swaps
+copy history, update affected lock identities and retain unrelated approvals;
+changed approval scopes require review before later generation/publication.
+Swaps account authoritative workload changes without enforcing old solver targets.
+
+## Checked RPC contracts
+
+All three public invoker wrappers call checked implementations with an empty
+search path, manager authorization before and after the existing workspace lock,
+and the explicitly captured `p_revision`. Private helpers are not client-callable.
+
+* `duty_generation_context(p_month, p_revision)` reconciles earned contributions
+  at post-lock server time and returns revision, fingerprints, operational opening,
+  generation eligibility, canonical duties/weights, participation/seniority,
+  availability kinds, secondaries, locks/approvals, confirmed allocation, actual
+  accounting and a separate projection through opening. No availability notes are
+  returned. Neighbor guards include both current publications and open working
+  drafts of the preceding/following owner, including Friday-owned boundary work.
+* `duty_confirm_allocation(p_month, p_allocation, p_locks, p_approvals,
+  p_revision, p_fingerprint)` persists explicitly reviewed input for an open draft.
+  It independently checks denomination, membership, nominal totals, actual source
+  claims, exclusive source intervals, the per-member changes (each kind balanced,
+  explaining every target exactly, fair + Permanent ≥ 0, offered + Permanent
+  ≥ 0, fair + Permanent ≤ the month's total units and |Temporary| ≤ the month's total units), counterpart conservation, locked floors and exact exception scopes, and
+  requires the transfer list to equal `duty_private.allocation_transfers` under the
+  current seniority: the same derivation as the browser (pairs first, then netted),
+  so no transfer list can show relief the per-person nets do not. When the
+  partition is uneven, `p_allocation.uneven` must equal exactly what
+  `duty_private.allocation_uneven(facts, baseline, changes)` derives: the fitted
+  excess over the plain equal split that each creditor still carries after its
+  net permanent loss, owed by the members still below the split after their net
+  permanent gain (debtors with the fewest points most senior first, creditors
+  with the most points most senior first), paired under the current seniority.
+  A missing, stale, inflated, redirected or extra entry fails with
+  `invalid-uneven-credit`, and ordinary transfers may not use the reserved
+  `uneven/` identity. The partition check accepts any holder of each fitted
+  share, so the credit follows whoever the confirmed baseline makes carry the
+  larger share; its total is invariant. `allocation_compile` then carries that
+  part of the creditor's own share for the debtor at confirm and publication, so
+  the published intent is an ordinary temporary claim and `duty_balance` reports
+  it as kind `uneven`. Publication applies the confirmed list as stored; only
+  confirm re-derives, so a seniority reorder after confirmation re-pairs the
+  credit on the next review instead of blocking the month, and the browser keeps
+  the confirmed baseline on a new proposal. Snapshots saved before this check
+  simply have no credit. Half-point debts are exact bigint half-units
+  throughout: nothing rounds, forgives or expires them. Halves net across
+  people where every claim does, in `duty_private.compensation_normalize`
+  (the same opposing/cycle/chain steps as the TypeScript core, checked by
+  `compensation-parity.mjs`), so `duty_balance` reports a half owed through an
+  intermediary as one `routed` relationship between the chain's ends and the
+  intermediary is clear; a settled half never moves, and a reserved half that
+  nets holds its reservation for review (`supabase/tests/balance.sql`). The
+  ledger's manual `adjust` operation (reduce or settle a selected claim, reason
+  required, admin only) can settle a lone half; no screen exposes it yet.
+  Client publication metadata (a month without a
+  confirmed allocation) may not use the reserved `allocation/` intent ids or
+  `uneven/` counterparts, so nothing a manager authors can appear as system
+  credit. An independent
+  canonical-weight partition search verifies minimum ordinary squared cost; the
+  baseline cannot be inflated to manufacture creditor relief or changed later while
+  the calendar/participants remain unchanged. Manager point deviations are the
+  members' net temporary/permanent changes.
+* `duty_save_generation(p_month, p_assignments, p_revision, p_fingerprint,
+  p_seed)` accepts only a primary-assignment map and preserved secondaries. It
+  independently verifies every scheduling invariant and allocation budget. It
+  accepts valid partial drafts without changing confirmed numbers. Server time is
+  sampled after locking and immediately before mutation; equality with canonical
+  opening rejects the result atomically. Partial coverage never bypasses Publish.
+
+`lib/supabase/generation.ts` converts the authoritative response to the pure
+scheduling/allocation contracts, replays accounting, and preserves the captured
+revision/fingerprint on writes. These operations are excluded from the generic
+workspace mutation API so it cannot silently substitute a newer revision.
+The existing read-only inspection guard applies, including context reconciliation.
+
+## Accounting and lineage
+
+The server compiles allocation tokens from the saved baseline, real unreserved
+claims and the derived transfers. A transfer out of a member takes planned
+repayment tokens (newest first) only as far as that member's target was lowered;
+a change that keeps the target moves ordinary responsibility. Drafts post no
+discretionary ledger events. Publish
+binds compiled routes and repayments to disjoint real primary duty capacity, then
+uses the existing authoritative transition/normalization/reservation validator.
+A temporary A→B followed by permanent B→C charges A→B once, funded by C's work.
+Deferral retains the original source path and uses its available normalized suffix
+for retained repayment. Reverse burdens reserve existing obligations instead of
+netting them away before completion; since `20261031213827_deferred_repayment_by_debtor`
+a deferred repayment handed to a member who owes the same creditor is one too, so it
+reserves that member's own debt instead of failing `review-normalized-deferral-route`.
+Since `20261101060243_permanent_legs_owe_nothing` permanent legs owe nothing in a
+route. A point a member received permanently and hands on temporarily to someone who
+owes them is that person's repayment, instead of failing
+`review-compound-reverse-obligation`; a temporary leg before the reverse leg (someone
+else's debt) still needs review. A route back to its own carrier drops the permanent
+legs out of it instead of publishing an intent from a member to themselves; that
+member's own debt returning to them fails `review-circular-route`. The plan names
+any of these before Generate, which stays disabled until the plan can be booked.
+Secondary coverage contributes no capacity.
+
+Copied intent IDs never create another origin. Still-live unchanged reservations
+retain their IDs; restored or rearranged still-outstanding repayment can rebind
+using fresh IDs and the retained source publication. Completed sources are never
+reserved again. A stale, corrected, held, externally reserved or unfunded source
+requires explicit refresh/review; targets are not silently changed. Approved swaps
+retain the existing cancellation/rerouting accounting instead of forcing repayment
+onto replacement work. Ledger snapshots survive publication deletion.
+
+**Re-planning a published month** (decision 2026-11-01, migration
+`20261101121634_replan_published_month`). A new plan for a published month starts
+from the ledger without that month's own entries: `duty_private.compensation_replan`
+(mirrored by `lib/compensation/replan.ts`) reverses every lot the month's
+publications booked with an audited `correct` event (`replan/<publication>/<lot>`,
+reason "Re-planned <month>") and then deletes the publication
+(`replan/<publication>/delete`), which cancels its pending repayments.
+`generation_context` returns that ledger for a published month (and
+`replanBlocked`), `confirm_allocation` and `save_generation` check a changed plan
+against it, and `compensation_publication` appends the same events for real, in the
+publishing transaction, before booking the new plan as the month's first version.
+Nothing is rewritten: the old publication, its events and the corrections stay in the
+history. A deleted or re-planned month counts as nothing (migration
+`20261107111000_deleted_month_counts_as_nothing`, decision 2026-11-07): another published
+month's pending repayment of those lots is released (`release`), the lots are reversed, and
+the released work is booked as an ordinary `claim` the other way (the repaid creditor owes
+the debtor, key `replan/…/reverse/<contribution>`, same audit reason). That claim belongs to
+the later month: deleting or re-planning it reverses the claim too. It is refused when
+another month's repayment of one of those lots has settled (`review-replan-later:<month>`),
+once the month has started (`review-replan-started`), or after a hand settlement of one
+(`review-replan-settled`).
+An unchanged copy keeps its published provenance and rebinds as before.
+
+Across history (migration `20261101124753_replan_history`): a month whose only version
+was deleted keeps its own debts live (its repayments are cancelled), and a new plan
+reverses them too, so they are never counted twice. Since migration
+`20261107004222_delete_only_version_reverses_lots` (decision 2026-11-07) the deletion itself
+reverses them with the same audited corrections (reason "Deleted the published <month>
+version"), so with no version left every net is zero; the kept draft copy gets a new
+allocation identity and no source publication, so publishing it books its plan again.
+Only when that is impossible (worked or settled by hand: `review-replan-*`) do the lots
+stay live as described here. Re-plan keys carry the ledger
+position (`replan/<publication|none>/<sequence>/…`), so a month can be re-planned
+again. When reversing the lots changes a debt another month's pending repayment is reserved
+on (a reversal nets against the oldest opposing debt), that repayment is released and its
+planned work booked once as a debt the other way, as above
+(`duty_private.compensation_release_held`, migration
+`20261107121200_held_repayment_becomes_debt`). `compensation_publication` does the same after
+every publication event, so deleting a later version back to an earlier one, or an Edit duty
+that undoes a debt, never leaves a repayment held and counting for nothing. A version from before a
+re-plan can't become current again (`duty_private.compensation_replanned`): restoring
+it, deleting the version that re-planned it, or publishing a copy of it is refused
+with "<Month> was re-planned after this version, so its points can't come back.
+Reopen the month and change its plan instead." Re-planning reaches any plan.
+
+Review fixes (migration `20261101192755_replan_order_and_deleted_start`): the plan
+screen, `confirm_allocation`, `save_generation` and Publish all re-plan at the current
+instant and project the ledger to opening afterwards, so a repayment settling before
+opening never moves the re-plan keys a plan repays (`invalid-repayment-source` and a
+Refresh loop before). A month whose only version was deleted counts as started by its
+last version: once its first duty is worked a new plan is refused
+(`review-replan-started`), the worked days keep their debts, and Publish waits with the
+reason before the click. `review-replan-later:unknown` (a repayment from the month's
+points settled by a month no longer published) has its own message.
+
+Changing allocation transfer provenance over an existing publication otherwise requires
+lineage review. The checked boundary deliberately refuses to create fresh baseline
+origins over already-published work; authoritative physical replacements and the
+existing audited manual accounting operations remain available. Compound reverse
+routes (a temporary leg before the reverse leg), circular routes and ambiguous
+normalized deferrals likewise require review.
+
+Baseline validation is an exact decision over owned canonical weights,
+independent of the scheduling solver and its proofs. Those weights come from
+`duty_private.generation_duties` and the stored `points` column, which apply the
+same formula as `canonicalDuties`: weekday 1 + extra, Friday or Saturday 0.5 + its
+own extra, combined holiday weekend the sum of its two dates (`extra_points` for
+Friday, `saturday_extra_points` for Saturday; migration
+`20261031130000_holiday_weekends`). Compensation gives each weekend date its own
+atom (`saturdayUnits` on a combined published duty). `allocation_fit` searches
+remaining duty-count vectors, so identical duties are never re-explored: lumpy
+12-engineer special months that took 8–60+ s in the original per-duty search now
+take milliseconds. Outside its exact integer domain (a non-positive weight, over 64
+duties, or n·total ≥ 2²⁵) the original search still decides. Database
+transaction/statement limits must fail the whole request rather than accept an
+unverified baseline. `supabase/tests/baseline-fit.mjs` checks both searches against
+an independent exhaustive oracle on small and realistic weight sets.
+
+## Disposable local validation
+
+Use the pinned CLI and database-only LOCAL setup in [Supabase setup](SUPABASE_SETUP.md).
+Never pass a linked target or hosted connection string.
+
+```sh
+node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+node supabase/tests/generation.mjs supabase_db_duty-scheduler
+node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
+node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
+node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
+node supabase/tests/monkey.mjs supabase_db_duty-scheduler 100 1   # steps, seed; resets the database at the end
+```
+
+`monkey.mjs` (decision 2026-11-01) drives random action sequences through the checked
+RPCs over four months, only where the UI allows them: plan and re-plan with extreme
+edits, Confirm & generate, publish, reopen, cancel, restore or delete any version, edit,
+lock and unlock duties, swaps (request, accept, approve), availability and deadlines,
+in any order. Each step is skipped where the UI disables it, with the same checks
+(publish blockers, `duty_replanned_versions`, `swapProblem`; the swap dialogs' availability
+alert names both parties' and cover's conflicts). Every action must succeed, and after each
+the ledger must replay exactly, balance and have no live chain. A refusal the UI did not
+prevent is a finding; its message must not be the generic fallback.
+
+The generation fixture rolls back every synthetic case. It covers authorization,
+malformed/stale inputs, independent schedule/ordinary-baseline checks, scoped locks,
+rollback during publication, partial drafts, cutoff, copied/deleted lineage,
+exclusive source budgets, routed publication, exact TypeScript replay, the
+per-person floors and Permanent ceiling, refusal of a transfer list that differs from the derivation,
+SQL/TypeScript derivation parity on random states and the click-history conversion. Separate
+sessions exercise competing saves, demotion and cutoff during real lock waits.
+The existing fresh/upgrade, security, swap and compensation tests remain required;
+`scripts/database-upgrade.mjs` checks populated upgrade preservation and disposable
+logical backup/restore against the exact base. These tests do not activate the UI
+or establish hosted release readiness.

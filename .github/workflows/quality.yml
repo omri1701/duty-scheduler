@@ -10,23 +10,100 @@ on:
 permissions:
   contents: read
 
+env:
+  CI: "true"
+  TZ: UTC
+
 jobs:
-  quality:
-    name: quality
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    # Cancel obsolete tests, never an in-flight database/application deployment.
+  scope:
     concurrency:
-      group: quality-${{ github.ref }}
+      group: quality-scope-${{ github.ref }}
       cancel-in-progress: true
-    env:
-      CI: "true"
-      TZ: UTC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      application: ${{ steps.select.outputs.application }}
+      database: ${{ steps.select.outputs.database }}
+      browser: ${{ steps.select.outputs.browser }}
+      specs: ${{ steps.select.outputs.specs }}
+      base: ${{ steps.database-base.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0 # Compare immutable migrations with the exact PR/push base.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      # The PR under test must not choose its own checks: run the selector from the
+      # trusted base commit. It selects every check when scripts/** or workflows change.
+      - name: Select PR checks with the base commit's selector
+        id: scope
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # A base without the selector (the first release after it was added) selects
+          # nothing here, so the next step falls back to every check (fail closed).
+          if git cat-file -e "$PR_BASE:scripts/quality-scope.mjs" 2>/dev/null; then
+            git show "$PR_BASE:scripts/quality-scope.mjs" > "$RUNNER_TEMP/quality-scope.mjs"
+            node "$RUNNER_TEMP/quality-scope.mjs"
+          else
+            echo "Base commit has no scripts/quality-scope.mjs: running every check."
+          fi
+      - name: Normalize selection (fail closed)
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          APPLICATION: ${{ steps.scope.outputs.application }}
+          DATABASE: ${{ steps.scope.outputs.database }}
+          BROWSER: ${{ steps.scope.outputs.browser }}
+          SPECS: ${{ steps.scope.outputs.specs }}
+        run: |
+          # Only explicit narrow values relax a check; branch runs always select everything.
+          set -f
+          application=true database=true browser=full specs=
+          if [ "$EVENT" = pull_request ]; then
+            if [ "$APPLICATION" = false ]; then
+              test "$DATABASE" = false
+              test "$BROWSER" = none
+              application=false database=false browser=none
+            else
+              if [ "$DATABASE" = false ]; then database=false; fi
+              if [ "$BROWSER" = none ]; then browser=none; fi
+              if [ "$BROWSER" = selected ] && [ -n "$SPECS" ]; then
+                for spec in $SPECS; do [[ "$spec" =~ ^tests/browser/[A-Za-z0-9_-]+\.spec\.ts$ ]]; done
+                browser=selected specs="$SPECS"
+              fi
+            fi
+          fi
+          printf 'application=%s\ndatabase=%s\nbrowser=%s\nspecs=%s\n' "$application" "$database" "$browser" "$specs" | tee -a "$GITHUB_OUTPUT"
+      - name: Validate AI configuration
+        run: python3 scripts/validate-ai-config.py
+      - name: Verify generated database baseline
+        run: node scripts/database-baseline.mjs --check
+      - name: Select database upgrade base
+        id: database-base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-${PUSH_BASE:-$(git rev-parse HEAD^)}}"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          node scripts/database-policy.mjs "$base"
+
+  application:
+    concurrency:
+      group: quality-application-${{ github.ref }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.application == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24.19.0"
@@ -43,21 +120,176 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
-      - name: Validate AI configuration
-        run: python3 scripts/validate-ai-config.py
       - name: Regression tests
         run: node --test tests/*.test.mjs
-      - name: Verify generated database baseline
-        run: node scripts/database-baseline.mjs --check
-      - name: Select database upgrade base
-        id: database-base
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+      - name: Reject lint regressions
+        run: node scripts/lint-regressions.mjs
+      - name: Production build
+        run: pnpm build
+
+  browser:
+    name: browser ${{ matrix.shard }}/8
+    concurrency:
+      group: quality-browser-${{ github.ref }}-${{ matrix.shard }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.browser != 'none'
+    strategy:
+      fail-fast: false # Every shard reports, so the merged report is complete.
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false # Reads the exact packageManager version in package.json.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      # Duration-balanced split by file:line (scripts/browser-shard.mjs); each test runs in exactly one
+      # shard. Selected runs limit it to the changed-area specs (already validated by the scope job);
+      # a shard left with no tests skips the build and passes.
+      - name: Select this shard's tests
+        id: tests
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BASE: ${{ github.event.before }}
+          SHARD: ${{ matrix.shard }}
+          SPECS: ${{ needs.scope.outputs.browser == 'selected' && needs.scope.outputs.specs || '' }}
         run: |
-          base="${PR_BASE:-${PUSH_BASE:-$(git rev-parse HEAD^)}}"
-          echo "sha=$base" >> "$GITHUB_OUTPUT"
-          node scripts/database-policy.mjs "$base"
+          set -f
+          node scripts/browser-shard.mjs "$SHARD" 8 $SPECS > "$RUNNER_TEMP/shard-tests.txt"
+          if [ -s "$RUNNER_TEMP/shard-tests.txt" ]; then echo "empty=false" >> "$GITHUB_OUTPUT"; else echo "empty=true" >> "$GITHUB_OUTPUT"; echo "No tests in shard $SHARD." >> "$GITHUB_STEP_SUMMARY"; fi
+      # Shards build the same commit in parallel rather than waiting for application.
+      - name: Production build
+        if: steps.tests.outputs.empty == 'false'
+        run: pnpm build
+      - name: Browser and visual regression shard
+        if: steps.tests.outputs.empty == 'false'
+        env:
+          VISUAL_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DUTY_E2E_BLOB: "1"
+        # The pinned image supplies Chromium and fonts; do not also run playwright install.
+        run: |
+          set -f
+          pnpm test:e2e:ci $(cat "$RUNNER_TEMP/shard-tests.txt")
+      - name: Retain shard report for merging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Retain shard screenshot gallery for merging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review-shard-${{ matrix.shard }}
+          path: work/visual-review/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  browser-report:
+    concurrency:
+      group: quality-browser-report-${{ github.ref }}
+      cancel-in-progress: true
+    needs: [scope, browser]
+    if: ${{ !cancelled() && needs.scope.outputs.browser != 'none' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false # Reads the exact packageManager version in package.json.
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: visual-review-shard-*
+          path: work/visual-review-shards
+      - name: Merge shard reports into one browser report
+        run: pnpm exec playwright merge-reports --reporter html ./all-blob-reports
+      - name: Merge shard screenshot galleries
+        if: ${{ !cancelled() }}
+        run: node scripts/visual-review-reporter.mjs --merge-shards
+      - name: Retain screenshot comparison gallery
+        id: visual-review
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review
+          path: work/visual-review/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Link screenshot review in Quality summary
+        if: ${{ !cancelled() }}
+        env:
+          VISUAL_REVIEW_URL: ${{ steps.visual-review.outputs.artifact-url }}
+        run: node scripts/visual-review-reporter.mjs --ci-summary
+      - name: Retain merged browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-baseline
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  database:
+    concurrency:
+      group: quality-database-${{ github.ref }}
+      cancel-in-progress: true
+    needs: scope
+    if: needs.scope.outputs.database == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # Compare immutable migrations with the exact PR/push base.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.19.0"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false # Reads the exact packageManager version in package.json.
+      - name: Install locked dependencies for database integration tests
+        run: pnpm install --frozen-lockfile
       - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
           version: 2.119.0
@@ -72,41 +304,82 @@ jobs:
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/access.sql
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swaps.sql
           docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/balance.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/non-weekend.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/calendar-feed.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/published-edit.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/published-split.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/push.sql
+          docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/link-temporary.sql
+          # Parity runs the real compensation/settlement SQL RPC fixtures too.
+          node supabase/tests/compensation-parity.mjs supabase_db_duty-scheduler
+          node supabase/tests/generation.mjs supabase_db_duty-scheduler
+          node supabase/tests/published-edit-lifecycle.mjs supabase_db_duty-scheduler
+          node supabase/tests/ledger-hunt.mjs supabase_db_duty-scheduler
+          node supabase/tests/baseline-fit.mjs supabase_db_duty-scheduler
+          node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
+          node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler
+          node supabase/tests/generation-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/compensation-upgrade.mjs supabase_db_duty-scheduler
+          node supabase/tests/compensation-races.mjs supabase_db_duty-scheduler
           node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
           node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+          node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
       - name: Incremental upgrade preserves existing data
         env:
-          DATABASE_BASE: ${{ steps.database-base.outputs.sha }}
+          DATABASE_BASE: ${{ needs.scope.outputs.base }}
         run: node scripts/database-upgrade.mjs "$DATABASE_BASE" supabase_db_duty-scheduler
       - name: Isolated deployment ordering and failure verification
-        run: node scripts/release-local-test.mjs supabase_db_duty-scheduler
+        run: |
+          node supabase/tests/lifecycle-release.mjs supabase_db_duty-scheduler
+          node scripts/release-local-test.mjs supabase_db_duty-scheduler --discard-container
       - name: Retain database contract for this exact commit
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: database-contract-${{ github.sha }}
+          name: database-contract-${{ github.sha }}-${{ github.run_attempt }}
           path: work/database-contract.json
           retention-days: 7
           if-no-files-found: error
-      - name: Type check
-        run: pnpm exec tsc --noEmit
-      - name: Reject lint regressions
-        run: node scripts/lint-regressions.mjs
-      - name: Production build
-        run: pnpm build
-      - name: Browser and visual regression baseline
-        # Reuses build and JS dependencies. The pinned image supplies Chromium
-        # and fonts once; do not also run playwright install.
-        run: pnpm test:e2e:ci
-      - name: Retain browser report and failure traces
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: browser-baseline
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
+      - name: Discard disposable database without replay or backup
+        if: always()
+        run: supabase stop --project-id duty-scheduler --no-backup
+
+  # Preserve the existing branch-protection check. Fail closed on missing checks:
+  # every selected job must succeed and every unselected job must be skipped.
+  quality:
+    name: quality
+    needs: [scope, application, browser, browser-report, database]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require selected checks
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ needs.scope.result }}
+          RUN_APPLICATION: ${{ needs.scope.outputs.application }}
+          RUN_DATABASE: ${{ needs.scope.outputs.database }}
+          RUN_BROWSER: ${{ needs.scope.outputs.browser }}
+          APPLICATION: ${{ needs.application.result }}
+          BROWSER: ${{ needs.browser.result }}
+          BROWSER_REPORT: ${{ needs.browser-report.result }}
+          DATABASE: ${{ needs.database.result }}
+        run: |
+          test "$SCOPE" = success
+          require() { if [ "$2" = true ]; then test "$1" = success; else test "$1" = skipped; fi; }
+          if [ "$EVENT" != pull_request ]; then
+            test "$RUN_APPLICATION" = true
+            test "$RUN_DATABASE" = true
+            test "$RUN_BROWSER" = full
+          fi
+          case "$RUN_BROWSER" in full|selected|none) ;; *) exit 1 ;; esac
+          browser=true
+          if [ "$RUN_BROWSER" = none ]; then browser=false; fi
+          require "$APPLICATION" "$RUN_APPLICATION"
+          require "$DATABASE" "$RUN_DATABASE"
+          require "$BROWSER" "$browser"
+          require "$BROWSER_REPORT" "$browser"
 
   deploy-development:
     needs: quality
@@ -123,19 +396,4 @@ jobs:
     with:
       branch: develop
       sha: ${{ github.sha }}
-
-  deploy-production:
-    needs: quality
-    if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      github.ref == 'refs/heads/master' && vars.PRODUCTION_DEPLOYMENT_ENABLED == 'true'
-    uses: ./.github/workflows/deploy.yml
-    secrets: inherit # Production secrets remain behind its Environment approval.
-    permissions:
-      contents: read
-      actions: read
-      deployments: read
-      pull-requests: read
-    with:
-      branch: master
-      sha: ${{ github.sha }}
+      quality-run-id: ${{ github.run_id }}

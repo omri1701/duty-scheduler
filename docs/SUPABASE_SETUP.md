@@ -1,14 +1,268 @@
 # Supabase setup
 
 Frankfurt Production: **Duty Scheduler**, `hpszwgnwxtxyxpcaivgj`, `eu-central-1`,
-`https://duty-scheduler-prod.vercel.app`. Frankfurt Development: **Duty Scheduler
+`https://miko-prod.vercel.app`. Frankfurt Development: **Duty Scheduler
 Dev**, `qhndiuahuxczujxxitsm`, `eu-central-1`,
-`https://duty-scheduler-dev.vercel.app`. Accounts, OAuth configuration and data stay
+`https://miko-dev.vercel.app`. The app is named MiKo and runs only on these hosts
+(`lib/supabase/environment.ts` `HOSTED_ORIGINS`); the old `duty-scheduler-*` hosts are retired. Accounts, OAuth configuration and data stay
 separate. See [release workflow](DEPLOYMENT.md) for database-first CI/CD, scoped
 credentials, Production approval and recovery. Never reset these hosted projects.
 Native Next.js needs only a project URL and publishable key; no service-role key.
 The [canonical database architecture](../supabase/README.md) installs the two clean
 baseline migrations plus required reference rows, without operational data.
+
+## Temporary members: local development
+
+On `feat/temporary-members`, stop the existing development server and run
+`pnpm install`, then `pnpm start:local`. Docker Desktop must be running. This starts
+the isolated LOCAL services and applies pending migrations while preserving local
+data. Open `http://localhost:5173`, verify the **LOCAL** badge, and sign in with
+the existing local admin credentials from the localhost setup section below.
+Add temporary engineers through **Team & fairness → Add Temporary Member**.
+Names are the only required input. Enter constraints from **Availability**,
+deactivate unwanted test engineers individually, and generate November before its
+existing owner-month opening cutoff. Keep your admin active. Generation saves
+automatically; verify by reloading.
+
+Migration `20261026200905_temporary_members.sql` makes email nullable only for
+temporary approved engineers. `duty_members.id` remains the stable member key for
+all existing assignment, constraint, publication and compensation references.
+The generated `auth_user_id` is the existing ID for regular members and NULL for
+temporary members; its Auth FK retains deletion protection for regular accounts.
+Temporary members cannot gain an admin role, pass member authorization or sign in.
+No Auth users/identities are created.
+
+Migration `20261107153905_link_temporary_member.sql` (decision 2026-11-07) lets an admin
+link a pending sign-up to a temporary member through the checked RPC
+`duty_link_temporary_member(p_pending, p_temporary, p_revision)`: manager check, revision
+check, manager recheck, both rows locked, the target must be temporary and the source a
+pending, unlinked, non-temporary engineer, and no ledger lot may name the sign-up. Members
+can never claim a temporary member. The temporary row keeps its id (no history is rewritten)
+and sets `linked_user_id`; `auth_user_id` is generated as `COALESCE(linked_user_id, id)` for
+non-temporary rows and is unique. The sign-up's email, language and any saved notification
+settings, devices or calendar feed move to it, and the pending row is deleted. Because a
+member id no longer always equals `auth.uid()`, every own-row check (RPCs and RLS) uses
+`duty_private.current_member_id()`; never compare a member id with `auth.uid()`. The ledger
+actor and `manual/<uid>/` source keys stay sign-in ids (opaque audit text). On the client,
+`findMe` (`lib/supabase/snapshot.ts`) resolves the caller's row by `auth_user_id`.
+`supabase/tests/link-temporary.sql` covers the link, refusals, swaps moving to the person,
+the merged sign-in view, a linked admin publishing, and Decline.
+
+New members (joining or temporary) get the next of 15 default colors by member
+count. Migration `20261029222841_member_palette_15.sql` appended `#dbb677`,
+`#f1c3ba` and `#a5dfac` to the original 12; existing members keep their colors.
+
+Focused database verification (empty disposable LOCAL database only):
+
+```powershell
+node scripts/database-baseline.mjs --verify-local supabase_db_duty-scheduler
+node supabase/tests/temporary-members.mjs supabase_db_duty-scheduler
+node supabase/tests/allocation-fit.mjs supabase_db_duty-scheduler
+```
+
+`temporary-members.mjs` rolls back all fixtures, checks denied RPC/direct writes and private
+notes, creates 12 members, changes constraints/status, runs the real allocation
+planner and HiGHS for November, saves/reloads/publishes, and checks retained history
+and compensation. It creates no fake identities for temporary engineers.
+`allocation-fit.mjs` checks that the browser-fitted baseline for a lumpy holiday
+month is accepted by `duty_confirm_allocation` and the equal split is refused. Existing
+data upgrade preservation is also checked by `scripts/database-upgrade.mjs`.
+These commands never target the populated `duty-scheduler-app` database.
+
+Migration `20261106234300_kept_baseline_after_split.sql` (decision 2026-11-07) adds
+`duty_private.allocation_kept_baseline` (private, no role may execute it) and redefines
+`duty_private.confirm_allocation`: a stored baseline saved again unchanged only has to still split
+exactly into the month's duties, so a weekend split by hand (half-point duties) no longer refuses the
+saved plan as `invalid-ordinary-baseline`. A new or changed baseline is still checked as the month's
+ordinary fit. No table, data or grant changes; `allocation-fit.mjs` covers both paths.
+
+Migration `20261107001755_split_weekend_plans_as_weekend.sql` (decision 2026-11-07) redefines
+`duty_private.confirm_allocation` again: a split weekend, locked or not, never changes planning, so
+the ordinary-baseline checks and `allocation_uneven` see each split as the weekend it came from (its
+halves' sum), exactly as the browser's planning context does. Generate's own checks
+(`generation_validate`, `save_generation`) keep the real duties. No table, data or grant changes.
+
+Migration `20261107004222_delete_only_version_reverses_lots.sql` (decision 2026-11-07): deleting a
+month's only published version now reverses every live lot the month booked, with the re-plan's
+audited corrections (`compensation_replan` gains an optional audit reason, so it is dropped and
+recreated with the same grants), and gives the kept draft copy a new allocation identity, so
+publishing it books its plan again. Worked, used or hand-settled points stay booked as before.
+`published-edit-lifecycle.mjs` and `allocation-fit.mjs` cover it.
+
+Hosted Development activation requires the normal reviewed database-first release
+after merge into `develop`; this feature PR does not apply hosted migrations.
+
+## Non-weekend members
+
+Migration `20261105154400_non_weekend_members.sql` adds `duty_members.no_weekends`
+(default false, so existing members are unchanged) and the admin-only checked RPC
+`duty_set_no_weekends(p_member, p_no_weekends, p_revision)`: approved members only,
+revision-checked, no direct table writes. The column is readable like the rest of the
+member row. Manager-only generation facts carry `noWeekends: true` for flagged
+members only, so other members' facts and fingerprints are unchanged, and
+`duty_private.save_generation` refuses Generate output that places such a member on
+a weekend not locked to them (`non-weekend-primary`). Publication and manual edits
+are unchanged. Migration `20261105154401_non_weekend_rejoin_level.sql` adds
+`duty_members.weekends_from` (YYYY-MM, null for everyone existing): clearing the setting
+records the month after every month generated or published so far, and generation facts
+carry it as `weekendsFrom`, so the weekend rotation lets the member rejoin level, like a new
+member. Only the same checked RPC writes it. Focused checks (empty disposable LOCAL database only):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/non-weekend.sql
+node supabase/tests/generation.mjs supabase_db_duty-scheduler
+```
+
+## Personal calendar feed
+
+Migration `20261106013149_calendar_feed.sql` adds `duty_calendar_feeds` (one row per member:
+SHA-256 `token_hash`, `language`, `created_at`; RLS lets a member read only their own row; no
+client writes) and four checked RPCs. `duty_calendar_reset(p_language)` creates or replaces the
+caller's token (approved active members only, no workspace revision: it is personal) and returns
+the raw 64-hex token once; `duty_calendar_status()` and `duty_calendar_language(p_language)` read
+and update the caller's own row. `duty_calendar_feed(p_token)` is the **only** application
+function the anonymous role may execute: the `/api/calendar/<token>.ics` route handler calls it
+with the publishable key, never a service-role key. It hashes the token itself (a stored hash
+opens nothing) and returns only that member's own current published duties (primary or emergency
+cover, 92 days back to 400 days ahead of today in Israel, never constraints, notes, names or
+member IDs), or NULL for an unknown, reset, inactive, declined or temporary member. For that,
+`anon` gets USAGE on `duty_private`; `tests/schema.sql` fails if `anon` can execute any other
+application function. Focused checks (empty disposable LOCAL database only):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/calendar-feed.sql
+node --test tests/calendar-feed.test.mjs
+```
+
+The route answers `private, max-age=60` with an ETag (304 when unchanged) and asks calendar apps to refresh every 15 minutes (Apple honours it; Google refreshes on its own schedule), `no-store` 404s,
+a per-instance limit of 30 requests per feed per 5 minutes (429) and 503 when the database is
+unreachable. Hosted feeds need the deployment to be reachable without Vercel Authentication:
+calendar servers cannot pass it, so a protected Development deployment cannot serve feeds.
+
+## Web push notifications
+
+Migrations `20261106104701_push_notifications.sql` and `20261106125504_push_efficiency.sql` (decision
+2026-11-06) add `duty_members.language` (NULL until the member chooses; only `duty_set_language`
+writes it, for the caller's own row) and four tables that members read only for their own rows:
+notification switches, devices (push subscriptions), the notification log and its deliveries.
+Writes go through checked RPCs (`duty_notification_settings`, `duty_set_notification_settings`,
+`duty_save_push_subscription`, `duty_delete_push_subscription`),
+none of which reads or advances the workspace revision. Reminder times are quarter hours.
+
+- **Event alerts** (publish, swaps, published edits, a new member): AFTER triggers on
+  months, swap requests and members record them in the same transaction, and a deferred trigger
+  (`duty_push_dispatch_now`) hands them to pg_net at commit, once per transaction. pg_net sends
+  after the commit, so the change never waits for the push service and a push problem never fails it.
+- **Deadlines and reminders**: `duty_private.push_tick()` runs from pg_cron every 15 minutes
+  (`*/15 * * * *`, 96 runs a day) in Asia/Jerusalem; it also settles finished pg_net responses,
+  retries refusals and sends anything still due, 50 per request, to `/api/push/dispatch` with a
+  shared secret from Vault.
+- **Cost of a run**: with nothing due it is a handful of indexed queries (settle, schedule, the
+  idle check, purges): no Vault read and **no HTTP request**. It keeps 90 days of notifications
+  (deliveries go with them) and 7 days of its own `cron.job_run_details` rows.
+- **No duplicates**: each notification has a unique key, so every run is idempotent; only refusals
+  the sender made before sending anything are retried. Notifications still unsent after six hours
+  expire. Without pg_net, pg_cron or the Vault secrets nothing is sent and nothing fails.
+
+### Setup in one command
+
+```powershell
+pnpm push:setup local
+```
+
+For the isolated LOCAL stack that `pnpm start:local` and `pnpm local:reset` use (database container
+`supabase_db_duty-scheduler-app`), once its migrations are applied: adds `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `DUTY_PUSH_SECRET` to the gitignored `.env.local` (existing
+values are kept), enables pg_net and pg_cron when absent, and writes the Vault secrets and the 15-minute
+job targeting `http://host.docker.internal:5173/api/push/dispatch`. It is idempotent, touches no
+application data and never connects to a hosted project (`--container` and `--url` override the
+defaults). `VAPID_SUBJECT` is the phone tunnel origin (`DUTY_DEV_ORIGIN`) or else the app's URL: Apple
+refuses every send (403 BadJwtToken) signed with a placeholder such as `example.com` or `.invalid`, so a
+placeholder is replaced, `/api/config` offers push only with a usable subject, and the sender refuses one
+(503 with the reason). A push service's refusal is returned with its reason and logged as host, kind,
+status and reason only. Restart `pnpm start:local` afterwards. `pnpm local:reset` drops pg_cron and the Vault
+secrets with the rest of the database, so once the keys are in `.env.local` every `pnpm start:local`,
+`local:setup` and `local:reset` re-applies them by itself (a failure there only warns).
+
+```powershell
+pnpm push:setup dev
+pnpm push:setup prod
+```
+
+These change nothing. They print numbered, paste-ready steps with freshly generated values: the four
+Vercel variables for that environment (Preview for DEV, Production for PROD; server-only), the
+redeploy, the filled-in [`supabase/admin/push-scheduler.sql`](../supabase/admin/push-scheduler.sql) for
+that project's SQL editor (DEV includes the Vercel protection-bypass line; `--bypass <secret>` fills it
+in, and the SQL refuses to run with a placeholder left in), and a read-only check query. Order per
+environment, DEV first: the normal database-first release applies the migrations, then the Vercel
+variables and redeploy, then the SQL. Check with Settings → Enable notifications, then trigger a real alert
+from a second account (for example a swap request).
+
+Focused checks (empty disposable LOCAL database only; the sending checks stub pg_net):
+
+```powershell
+docker cp supabase/tests supabase_db_duty-scheduler:/tmp/duty-tests
+docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/push.sql
+node --test tests/push.test.mjs
+pnpm exec playwright test settings.spec.ts
+```
+
+## Unmerged migrations in local development
+
+`pnpm start:dev` connects to hosted **DEV**; it does not apply branch migrations there.
+Use `pnpm start:local` to test unmerged database features. It runs the same setup as
+`pnpm local:setup`: starts the separate LOCAL stack and applies pending incremental
+migrations with `supabase migration up --local`, preserving existing local data.
+Stop the existing development server before starting another on port 5173. Check
+`/api/config`'s Supabase URL and the environment badge to verify the actual target.
+
+A missing `duty_cancel_draft(p_month text, p_revision bigint)` RPC on hosted DEV
+means its incremental migration has not been released there; local setup cannot
+change a hosted database. Follow the approved [database-first release](DEPLOYMENT.md)
+after merge. Do not push feature migrations to hosted environments or reset them.
+The calendar changes require both `20261017185214_cancel_month_draft.sql` and
+`20261017211958_today_inclusive_published_swaps.sql`. A hosted database with only
+the two baseline migrations supports neither the new cancellation RPC nor the
+today-inclusive swap behavior. After explicit approval to merge and migrate hosted DEV, merge
+the reviewed PR into `develop`; its exact-head Quality run invokes the
+Development release: dry-run/push pending migrations, verify history and database
+contract, then deploy the matching app. Inspect that run's database and deployment
+results before testing hosted DEV. Do not run a feature-branch hosted migration
+push separately; see [release and retry details](DEPLOYMENT.md#development-and-production).
+If the function exists, verify authenticated EXECUTE grants and the PostgREST
+schema cache before changing the client. Never restore drafts from client data.
+
+`pnpm exec node supabase/tests/calendar-rpc.mjs` verifies Cancel Draft through real
+LOCAL Auth/PostgREST, including manager grants, exact parameter discovery,
+December/January ownership, revision races and transactional failure rollback.
+It requires unused synthetic far-future months, cleans only its own fixtures and
+refuses hosted API targets. The disposable SQL suite also checks Israel-midnight
+swap eligibility with a transaction-local frozen clock and rolls everything back.
+
+With `pnpm start:local` running, `pnpm test:runtime:local` checks the real served
+app through local password Auth and PostgREST, without backend interception. It
+checks desktop 1024/1280/1440px and iPhone WebKit 375/390/430px in both languages,
+CSS source fingerprints, computed toolbar layout, real Chromium tab zoom at
+100/125/150/200%, the popup menu, ordinary reload and fresh
+browser sessions. Captures and computed evidence go to
+`work/runtime-investigation/corrected`. Add `-- --exercise-cancel` to exercise
+cancellation on the current synthetic LOCAL month: it publishes if necessary,
+regenerates, cancels through the browser, verifies removal of working rows and
+the unchanged published assignments/status,
+and preserved history/other assignments, verifies New/Published/Reopened states
+at all widths/zooms and leaves a reopened draft for review.
+This optional write test refuses hosted targets and non-synthetic members. With
+only the two default local members, it fills uncovered duties through the checked
+schedule RPC before the initial publication; it does not relax scheduling rules.
+Each state also traverses 24 consecutive months forward and back using visible
+44px navigation targets, including keyboard recovery without reloading. Set
+`DUTY_RUNTIME_URL` to an independently running LOCAL review server when port 5173
+must keep serving the iPhone's hosted DEV connection; the check still refuses
+hosted databases. Browser regressions include completed Swap Requests: replacing
+that month-keyed section directly inside the fieldset could collapse Chromium's
+preceding size-query toolbar. A stable fieldset child isolates those replacements.
 
 ## 1. Create the Google OAuth client
 
@@ -20,11 +274,11 @@ Follow [Supabase's current Google setup](https://supabase.com/docs/guides/auth/s
 4. Under **Clients**, create the **Production** OAuth client of type **Web application**
    with these values. Development needs a separate client and its own Frankfurt
    callback `https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback` and
-   origin `https://duty-scheduler-dev.vercel.app`.
+   origin `https://miko-dev.vercel.app`.
 
 | Setting | Value |
 |---|---|
-| Authorized JavaScript origin | `https://duty-scheduler-prod.vercel.app` |
+| Authorized JavaScript origin | `https://miko-prod.vercel.app` |
 | Authorized redirect URI | `https://hpszwgnwxtxyxpcaivgj.supabase.co/auth/v1/callback` |
 
 ## 2. Configure Supabase
@@ -35,15 +289,18 @@ In **Authentication → URL Configuration** set:
 
 | Setting | Value |
 |---|---|
-| Production Site URL | `https://duty-scheduler-prod.vercel.app` |
-| Production allowed redirect URL | `https://duty-scheduler-prod.vercel.app/` |
+| Production Site URL | `https://miko-prod.vercel.app` |
+| Production allowed redirect URL | `https://miko-prod.vercel.app/` |
 
-Development uses `https://duty-scheduler-dev.vercel.app` and its exact trailing-slash
-return, plus localhost. These are never added to Production.
+The app sends the browser back to its own origin with the exact trailing slash; local
+Production inspection also returns through `https://miko-prod.vercel.app/`. Development uses
+`https://miko-dev.vercel.app` and its exact trailing-slash return, plus localhost. These are never added to Production.
 
 ## 3. First login and explicit admin promotion
 
 After both dashboards are configured, open the app and choose **Continue with Google**. Supabase creates the real login identity; the app creates a pending engineer profile using the Google display name. Nothing is generated or assigned automatically.
+
+Each explicit **Continue with Google** requests account selection (`prompt=select_account`), including when Google remembers only one account, so users can choose an existing account or **Use another account**. Returning authenticated users restore their MiKo session without Google OAuth. Signing out clears the MiKo session without signing out of Google; choosing a different account still requires that identity's own membership approval.
 
 The first account is **not** automatically made admin. Confirm the environment/project and the owner's actual `auth.users.id`, then execute [the operator-only first-admin script](../supabase/admin/promote-first-admin.sql). It verifies the exact confirmed Google identity and pending profile, refuses an existing admin, and atomically promotes the row and increments `duty_workspace.revision` under its lock. There is no email reservation table. Reloading or **Check approval** then enters the workspace.
 
@@ -57,13 +314,14 @@ distinct callbacks and separate clients; keep localhost confined to Development.
 | Table | Purpose |
 |---|---|
 | `auth.users` (Supabase-owned) | Verified login identities; not application-managed sample users. |
-| `duty_members` | Profile, role FK, approval-status FK, active flag, seniority order and color. Deactivation retains history. |
+| `duty_members` | Profile, role FK, approval-status FK, active flag, seniority order and color (each member's own, through `duty_set_color`; admins through the team rows of `duty_save_schedule`). Deactivation retains history. |
 | `duty_workspace` | One revision counter for atomic saves and stale-edit detection. |
 | `duty_months` | Deadline, status FK, generated flag, current publication FK and monotonic version sequence. |
 | `duty_constraints` | Engineer/date, constraint-type FK and a private note. |
 | `duty_assignments` | Duty dates, primary/emergency member FKs, title, extra points, computed total points and publication FK. NULL publication means draft. |
 | `duty_publications` | Version ID, month FK, sequence number, publisher FK and timestamp. |
-| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent, resolution and override audit reason. |
+| `duty_swap_requests` | Requester/consent/admin-visible requests, original slot snapshots/FKs, current counterpart, persisted consent (and the requester's own consent when an admin proposed the swap), proposing admin, resolution and override audit reason. |
+| `duty_compensation_events` | Append-only manager-visible accounting events; exact half-point units, immutable source snapshots and participation history. No stored balances or historical debt import. |
 | `duty_roles` | Engineer/admin definitions and the admin capability. |
 | `duty_member_statuses` | Pending, approved and declined definitions. |
 | `duty_month_statuses` | Draft and published definitions. |
@@ -73,9 +331,121 @@ The former `manager_identity`, `duty_specials` and `duty_split_weekends` tables 
 
 A regular duty spans one date; an intact weekend spans Friday through Sunday and is one stored row. Split or special weekend dates use separate rows in the same duty table. Extra points belong to the duty date and survive changing the assigned engineer. Selecting a special range in the UI sets those dates' extra points together.
 
-Publishing creates a new immutable version and copies its duty rows, keeping actual foreign keys rather than a JSON snapshot. Admins can preview old versions in a seven-column calendar, restore one to a draft or delete one after confirmation. Restoring preserves the current publication until Publish is clicked; a boundary weekend may also reopen an adjacent month's draft. Deleting the live version selects the newest remaining version; deleting the last version unpublishes that month. Version numbers are not reused.
+Publishing validates all owned dates, creates a new immutable version with foreign-key duty rows, removes the month's working rows and marks it Published in one transaction. Published months read directly from the current version. Reopen copies that version into a working draft; historical restoration uses the same checked operation with the selected version. Both preserve the live publication and touch only that month's Friday-owned duties. Engineers always see the current publication; managers can switch between their draft and the publication. Deleting the live version selects the newest remaining version. Deleting the last version keeps an existing draft or copies the deleted version into a draft first. Version numbers are not reused.
+
+New publications contain only duties owned by that month: weekdays by date and both
+weekend halves by Friday, including a split/special Saturday in the next month.
+`duty_cancel_draft(p_month, p_revision)` is separate from historical version restoration.
+It requires an active approved manager, takes the existing workspace revision lock,
+rechecks manager authorization after acquiring the lock, reads the current publication
+pointer, and deletes only that owner's working rows in one transaction. It restores Published status without
+changing the pointer, sequence, history, requests, membership, availability, or any
+other month's rows/status. It never copies publication rows back into working data.
+Titles, extra points, emergency cover, manual overrides and split/combined weekends
+are all encoded in assignments, so deleting those rows removes the entire draft.
+Availability, deadlines, team settings, requests and approvals are independent and
+survive cancellation. Availability edits do not reopen a published schedule.
+The client sends no restoration rows or publication ID. All checked manager writes
+revalidate authorization after the workspace lock; stale revisions fail atomically.
+
+### PR #28 lifecycle migration — DEV cutover
+
+On 2026-10-19 the owner authorized the complete three-file chain and a coordinated
+DEV maintenance cutover without merging PR #28. All three files were applied to
+Frankfurt DEV with the pinned CLI, preserving their committed versions and names.
+No fallback deletion was necessary. Keep visual approvals separate; this exception
+does not authorize a merge, future feature releases or any Production operation.
+
+The applied DEV chain, in order, is:
+
+1. `20261017185214_cancel_month_draft.sql` (unchanged historical prerequisite).
+2. `20261017211958_today_inclusive_published_swaps.sql` (unchanged prerequisite).
+3. `20261018183148_draft_publication_lifecycle.sql` (new conversion and final RPCs).
+
+DEV now serves the compatible `9bd1b3e` application at
+`https://miko-dev.vercel.app/`. The normal release function verified that
+the complete matching history skips all three files. Schema/RLS/RPC/reference-data
+contracts matched successful database CI and fresh LOCAL replay. A hosted checked-RPC
+acceptance transaction exercised lifecycle, permissions, specials, boundary weekends
+and published swaps, then rolled back all probe writes. This SQL check does not
+verify Google authentication or replace browser acceptance. Vercel Authentication
+remains enabled; real deployed login acceptance is recorded separately in PR #28.
+
+Future releases follow [DEPLOYMENT.md](DEPLOYMENT.md). Production still needs its
+own data preflight, release authorization, trusted Quality evidence and Environment
+approval. App rollback does not reverse this SQL; use a reviewed forward fix or
+approved recovery procedure.
+
+Conversion takes the workspace lock and compares each Published month's owned
+working rows with its current publication, excluding row IDs. Exact redundant
+copies are deleted; every nonempty workspace advances its revision once to
+invalidate old snapshots, including requests waiting on the migration lock.
+Reopened drafts and never-published drafts retain their rows and IDs. Publications,
+legacy adjacent rows within historical versions, publication pointers/sequences,
+membership, private availability, deadlines, requests and approvals remain intact.
+Friday ownership decides whether a boundary Saturday is working data for the month.
+
+Conversion aborts atomically for divergent Published working rows, missing owning
+months/publication pointers, or requests referencing a disposable working row.
+Completed swaps may explain divergent copies, but that alone is insufficient to
+discard them. Identify affected months in a read-only preflight and review them
+individually before approving conversion; do not automatically overwrite, delete,
+or relabel ambiguous data without explicit environment-specific authorization.
+DEV's repeated preflight found no blockers, and before/after digests confirmed
+preservation of existing schedules, requests, constraints, deadlines and members.
+
+`supabase/tests/lifecycle-upgrade.mjs` executes this exact migration on complete
+synthetic published/reopened/never-published schedules, history, cross-year weekend
+specials, availability, requests and approvals. It proves both conversion preservation
+and refusal/rollback for ambiguous rows. `lifecycle-races.mjs` uses separate real
+PostgreSQL sessions, including a held-lock demotion with a predicted new revision.
 
 ## Permissions and validation
+
+Duty Lock/Unlock uses `20261028204239_duty_editor_locks.sql`. It adds a checked
+primary lock flag to duty rows, preserves existing allocation locks and copies
+flags through publication/restore. Editor Save remains the single atomic,
+revision-checked write. The disposable `supabase/tests/generation.mjs` suite covers
+pre-allocation locks, repeated generation, primary replacement, unlock, stale and
+unauthorized writes, and upgrade preservation. Use LOCAL for unmerged migrations;
+release ordering remains database first, with no feature-branch hosted migration.
+
+An older `duty_save_schedule` can accept unknown JSON fields while ignoring
+`locked`. The client refuses lock edits when loaded duty rows lack lock support,
+and verifies the saved primary, emergency cover, span and lock against the
+authoritative reload before reporting success. A missing migration is a visible
+error; it must not look like a saved lock.
+
+For the real LOCAL browser/Auth/PostgREST lock workflow, with no screenshots or
+backend interception, run `pnpm build` then
+`pnpm exec node scripts/verify-duty-locks-local.mjs`. It applies pending migrations
+only to LOCAL, uses a separate preview on port 5174 (leaving port 5173 alone),
+and exercises Lock/Save/indicator/reload/regeneration, Unlock/Save, dismissal,
+and an HTTP-success write that fails to retain the lock. It removes only its
+unused synthetic test month and temporary failure trigger. Boolean evidence is
+written to `work/duty-locks-local/result.json`.
+
+Allocation/generation persistence adds manager-only context, confirmation and
+generation-save RPCs, used by the allocation popup and Worker generation workflow. See the
+[database contract and disposable tests](ALLOCATION_DATABASE.md). Its additive
+migration preserves existing identities, notes, schedules and publication history;
+it does not infer old allocations or backfill compensation.
+
+Per-person allocation changes (`20261030230832_per_person_allocation_changes.sql`)
+add `duty_private.allocation_transfers` and replace the allocation compile and
+confirm functions: each member's net temporary/permanent change, the drag pairs
+and the derived transfer list are checked server-side, with the floors. The
+migration also converts working drafts recorded as click histories; see
+[the database contract](ALLOCATION_DATABASE.md#persistence). Apply it only
+through the normal database-first release; LOCAL takes it with `pnpm local:reset`.
+
+Compensation persistence adds a checked manager-only `duty_compensation` RPC and
+optional reviewed publication metadata to the existing schedule RPC. See the
+[accounting contract and local SQL checks](COMPENSATION_CORE.md#publication-and-persistence-boundary).
+The migration preserves users and unrelated data, initializes zero compensation
+and records current publication facts without historical backfill. It rejects
+off-half-point published weights atomically for review. This feature does not
+authorize hosted migration or deployment; use the normal reviewed release.
 
 The [browser regression baseline](../README.md#browser-and-visual-regression-baseline)
 uses intercepted synthetic auth/RPC responses and blocks external browser requests.
@@ -90,7 +460,7 @@ permission and transaction checks below; never run those against real members.
 - Constraints use the deadline date in Asia/Jerusalem, inclusive of that day. Publication closes the month's engineer edits; admins can reopen a draft.
 - Refresh runs on focus and every 30 seconds while the app is visible.
 
-Fresh projects use only the two generated baseline migrations documented in
+Fresh projects replay the two frozen baseline migrations and subsequent incremental migrations documented in
 [database architecture](../supabase/README.md). Historical migrations are archived
 outside active CLI discovery. Tokyo's already-applied history remains unchanged;
 never push the replacement history or run a reset there.
@@ -111,20 +481,23 @@ pnpm build
 
 Stop the running Next server before switching. All commands use native Next.js on
 `http://localhost:5173`, bind to loopback, and never rewrite `.env.local` or run
-hosted migrations. `pnpm dev` / `pnpm dev:dev` default to Frankfurt Development;
-`pnpm dev:select` optionally prompts for a target.
+hosted migrations. `pnpm start:local`, `pnpm start:dev` and `pnpm start:prod` pick the target; local and dev also
+open the ngrok phone link when it is configured (otherwise they run on the PC only).
 
 | Command | Target / behavior |
 |---|---|
-| `pnpm dev:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next. |
-| `pnpm dev:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
-| `pnpm dev:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
+| `pnpm start:local` | Starts the isolated Docker Auth/API database, applies current-branch migrations, prepares test accounts, then starts Next and, if ngrok is configured, the phone link; see [phone testing against LOCAL](#phone-testing-against-local). |
+| `pnpm start:dev` | Existing Development URL/public key from `.env.local`, optionally `.env.dev.local`, or shell environment. Normal checked writes and Google login. |
+| `pnpm start:prod` | Production public key from ignored `.env.prod.local` (`SUPABASE_PROD_PUBLISHABLE_KEY=sb_publishable_...`) or the same shell variable. Type `INSPECT PRODUCTION` each run in an interactive terminal. URL is fixed to the existing Frankfurt Production project. |
 | `pnpm local:setup` | Starts/prepares and verifies local Auth, onboarding, workspace reads and denied direct table writes without starting Next. |
 | `pnpm local:reset` | **Discards only the isolated local app database**, replays the current branch and recreates synthetic accounts. Use after incompatible branch migration changes or to restore pending fixtures. |
 
 LOCAL requires Docker Desktop and the pinned CLI (`pnpm dlx supabase@2.119.0`).
 It uses ignored `work/local-supabase`, project `duty-scheduler-app`, ports
-58320?58324, and container `supabase_db_duty-scheduler-app`. This stack is separate
+48320–48324 (below Windows' dynamic/excluded range), and container
+`supabase_db_duty-scheduler-app`. A stack still running on the former ports
+58320–58324 is refused; stop it once, keeping its data, with
+`pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler-app`. This stack is separate
 from Quality's empty `duty-scheduler` SQL-test database. Auth/API/Studio/mail run;
 unneeded analytics, pooling, Realtime, Storage and Edge services are excluded.
 No hosted links, service-role keys, Google secrets or live data are copied.
@@ -140,12 +513,15 @@ hosted Google authentication and identity checks stay unchanged. Accounts:
 is `Duty-local-only-1701!`. Operator approval of the two fixtures runs only inside
 the exact local Docker container. No browser bypass or hosted bootstrap exists.
 You can approve the pending account normally; setup preserves that later approval.
-The fixtures do not create schedules. Sessions and PKCE verifiers use separate
+`pnpm local:reset` also adds ten fictional approved, active temporary members
+(Avi, Dana, Yossi, Noa, Eitan, Maya, Lior, Tamar, Omer, Shira, in seniority order)
+through the local admin's checked `duty_add_temporary_member` RPC, skipping
+existing names, for a 12-engineer LOCAL team. The fixtures do not create schedules. Sessions and PKCE verifiers use separate
 storage keys per actual Supabase URL/port; switching targets cannot reuse another
 project's session. Existing pre-selector sessions require a new login once.
 
 Badges appear on login and workspace: LOCAL blue, DEV green on localhost and
-`duty-scheduler-dev.vercel.app`, and PROD red only for localhost Production.
+`miko-dev.vercel.app`, and PROD red only for localhost Production.
 Deployed Production has no badge. Text contrasts against pastel backgrounds and
 both EN/HE layouts work on mobile. The URL/project and runtime origin determine
 the badge and policy. Unknown projects, URL paths/credentials, mode mismatches,
@@ -174,7 +550,7 @@ revokes only its own session, preserving other deployed/mobile sessions.
 
 Production keeps its existing Google redirects; no localhost redirect is added.
 For localhost inspection, Continue with Google opens a new tab and returns to
-`https://duty-scheduler-prod.vercel.app/?code=...`. Copy that return URL into the
+`https://miko-prod.vercel.app/?code=...`. Copy that return URL into the
 localhost login form promptly and submit. The one-time code is exchanged only
 with the originating localhost PKCE verifier, without copying access/refresh
 tokens. The deployed page may show a missing-verifier login error: the verifier
@@ -217,7 +593,7 @@ hosted project. See [intentional manual previews](DEPLOYMENT.md#feature-branches
    so no localhost Supabase callback or local Google secret is needed. Ensure
    Google is enabled in Supabase and your account is an allowed test user if
    the Google app is in testing. See [Google setup](https://supabase.com/docs/guides/auth/social-login/auth-google).
-4. Restart `pnpm dev` and open `http://localhost:5173`. In browser DevTools,
+4. Restart `pnpm start:dev` and open `http://localhost:5173`. In browser DevTools,
    confirm `/api/config` returns **200** and the new Frankfurt Development ref
    (do not copy its response into logs or chat), then choose **Continue with Google**
    using your real Development account; do not create hosted bootstrap test accounts.
@@ -230,6 +606,72 @@ is invalid for the validated project/origin (hosted keys must be `sb_publishable
 `NEXT_PUBLIC_` prefix is needed. The route reads the server environment per request
 and returns `Cache-Control: no-store` for both success and errors. Restart after
 changing local configuration. See [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables).
+
+### iPhone Safari through a static ngrok development domain
+
+Install the Windows agent from [ngrok](https://ngrok.com/download/windows), or put
+the standalone executable in ignored `work/ngrok/ngrok.exe`. Authenticate only in
+your local PowerShell terminal: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts/ngrok-auth.ps1`. It prompts for the token without echoing it or putting it
+in shell history, and stores it in ignored `work/ngrok/ngrok.yml`. A new config
+uses `version: 3` and `agent.web_addr: false`; request inspection stays disabled.
+Never paste the token into chat or commit the config.
+
+Set `DUTY_DEV_ORIGIN=https://<your-assigned-static-domain>` in ignored
+`.env.dev.local`. Use the free assigned domain from the ngrok dashboard, with no
+path, query, wildcard or nonstandard port. Run `pnpm start:dev`; it uses the
+DEV launcher, waits for DEV `/api/config`, then tunnels only
+`http://localhost:5173`. Next.js remains bound to `127.0.0.1`. Ctrl+C stops both
+process trees. Keep Windows awake and the command running for IntelliJ hot reload.
+
+Manually add the exact `https://<your-assigned-static-domain>/` (trailing slash)
+to **Redirect URLs** in Frankfurt DEV (`qhndiuahuxczujxxitsm`). Keep its Site URL
+and existing entries. The current redirect flow does not require Google's browser
+SDK or a new JavaScript origin. If following Supabase's recommended Google client
+setup, add `https://<your-assigned-static-domain>` (no slash) to the separate DEV
+client's **Authorized JavaScript origins**. The Google authorized redirect URI
+stays `https://qhndiuahuxczujxxitsm.supabase.co/auth/v1/callback`.
+The app uses the Supabase OAuth redirect flow, rather than Google's browser SDK;
+the Supabase redirect allowlist is what controls the return to this app.
+Do not add the tunnel as a Google redirect URI or change Production settings.
+
+Open the exact HTTPS URL in ordinary iPhone Safari, pass ngrok's free browser
+interstitial if shown, and confirm the DEV badge. Choose **Continue with Google**
+and return to that same origin. Reload, then close/reopen the tab to verify session
+persistence. PKCE verifiers and sessions stay in Safari storage for that origin;
+starting on localhost or changing browsers cannot complete the same PKCE flow.
+This requires a real iPhone check; automated configuration checks do not prove OAuth.
+
+The tunnel exception requires `next dev`, the explicit DEV launcher target and
+Frankfurt DEV URL, and is disabled on Vercel and production builds. Only the
+configured ngrok hostname is added to Next.js `allowedDevOrigins`; application
+environment resolution still checks the exact HTTPS origin and DEV project.
+No database permissions or session verification rules change.
+
+### Phone testing against LOCAL
+
+`pnpm start:local` uses the same `DUTY_DEV_ORIGIN`, `work/ngrok/ngrok.yml`,
+port check and served-CSS check as `pnpm start:dev`, but starts the LOCAL
+launcher (Docker setup, current-branch migrations, test accounts). The phone
+cannot reach the LOCAL API on `127.0.0.1:48321`, so the same tunnel carries it:
+under `next dev` only, Next rewrites `/auth/v1/*` and `/rest/v1/*` on the tunnel
+origin to that loopback API, and the browser uses the tunnel origin as its
+Supabase URL. Nothing else is forwarded (no Studio, mail, database or admin tools).
+The launcher waits for LOCAL `/api/config` and a proxied Auth health check
+before starting ngrok.
+
+The proxy is enabled only by the launcher's own `DUTY_LOCAL_TUNNEL_ORIGIN`
+together with `next dev`, target `local`, an `http://127.0.0.1:<port>` API, no
+DEV tunnel origin, no Production confirmation and no Vercel variables. Otherwise
+the rewrites do not exist (fail closed); DEV/PROD and builds never get them. The
+browser receives only the LOCAL public key; no service/secret key is configured
+or forwarded, and RLS and checked RPCs are unchanged. Anyone with the ngrok URL
+can reach the LOCAL Auth/REST API while it runs, like the DEV tunnel, so use it
+only with fictional LOCAL data and stop it when done.
+
+Open the HTTPS URL on the phone, pass ngrok's browser interstitial if shown,
+confirm the LOCAL badge and sign in with a local test account and its password
+(above). Google sign-in is not available on LOCAL.
 
 For Vercel hosting, retain the standard Next.js preset and configure
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as server environment variables.
@@ -266,12 +708,30 @@ Admins retain draft editing and can switch their calendar to Published to reques
 swaps using the authoritative publication instead of draft rows.
 
 Workflow: `awaiting_engineer` -> counterpart Accept -> `awaiting_admin` -> admin
-Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject yields
-`rejected`; requester Cancel in either pending state yields `cancelled`. Only final
+Approve -> `approved`. Counterpart Decline yields `declined`; admin Reject (at any
+pending stage) yields `rejected`; requester Cancel in either pending state yields
+`cancelled`.
+
+Admin proposals (migration `20261101202610_admin_proposed_swaps.sql`): an admin may
+pass any two members' duties to `duty_request_swap`; engineers still offer only their
+own primary duty. The request records `proposed_by` and stays `awaiting_engineer`
+until both members accepted their own side (`requester_accepted_at` for the
+requester, `accepted_by`/`accepted_at` for the counterpart); each answers once and
+either may decline. Only the proposing admin cancels. When the admin is one of the
+two, their side is normalized to the requester (`proposed_by` NULL), so their consent
+is implicit and only the other member is asked. Both consents then reach
+`awaiting_admin`: every swap, including one an admin proposed or takes part in, ends
+with an explicit admin approval, because admins first record each swap in an external
+system. Existing rows keep NULL in both new columns and their original meaning. RLS
+adds proposer visibility. Read-only `duty_swap_availability(p_from,p_to)` returns the
+same conflicts `validate_swap` refuses as `[{member,day}]`, never notes, and only to
+an approved admin or one of the two primaries. Members get emergency cover's conflicts
+with `member` NULL and only for a pair starting today or later. Only final
 approval copies the current publication into a new immutable version. Availability
 conflicts added after creation can be acknowledged at consent but require an
-explicit admin override reason at approval. Weekend caps follow the draft-swap
-rule: a swap cannot increase an engineer's weekend count above one. Secondary
+explicit admin override reason at approval. Published swap requests retain their
+weekend cap: a swap cannot increase an engineer's weekend count above one. Draft
+swaps can instead explicitly approve weekend exceptions in the manager dialog. Secondary
 cover, special date points/spans, draft rows/status and historical versions remain
 intact. Constraint notes are never copied into requests.
 
@@ -279,10 +739,15 @@ Original dates and exclusive ends identify slots across publication copies. Ever
 live publication-pointer change (including ordinary publication or live-version
 deletion) reconciles pending requests under the existing workspace lock. If the
 counterpart duty changes from B to C, `other_id` becomes C, status returns to
-`awaiting_engineer` and `accepted_by`/`accepted_at` are cleared. C must explicitly
-accept. If the requester loses their original slot, a slot disappears/changes span,
-a date expires on revalidation, or no live publication remains, the request becomes
-`invalidated`. Unrelated slot changes preserve consent. Resolution revalidates
+`awaiting_engineer` and `accepted_by`/`accepted_at` (and an admin proposal's
+`requester_accepted_at`) are cleared: both members answer the new pairing. C must
+explicitly accept. If the requester loses their original slot, a slot disappears/changes
+span or points (compared with the immutable requested copy, migration
+`20261101202611_swap_consent_points.sql`), a date expires on revalidation, or no live
+publication remains, the request becomes `invalidated`. Unrelated slot changes preserve
+consent. Approval posts the swap's point difference to the ledger once as a `change`
+between the two members; swapping back nets it to zero, and a swapped duty that carried a
+repayment cancels that reservation with a counter-transfer, so nobody is charged twice. Resolution revalidates
 current owners and uses the current publication; global revision checks reject
 stale concurrent actions before any writes. Deleting the original source version
 sets its historical FKs to NULL but retains dates/members and does not destroy a
@@ -293,10 +758,97 @@ request while older duplicates become Invalidated.
 
 RLS allows engineers to read initiated requests and incoming requests currently
 requiring their consent; approved admins additionally see requests awaiting admin
-approval. A former counterpart immediately loses incoming visibility on reassignment.
+approval, and a proposing admin keeps seeing their proposals. Temporary members have
+no account, so admins see and answer (accept or decline) a temporary member's open side,
+and only that side (migration `20261101215234_temporary_swap_answers.sql`); the
+requester's side is answered before the other's when both are temporary, and the explicit
+final approval stays a separate step. A former counterpart
+immediately loses incoming visibility on reassignment. The approval and consent dialogs
+always show the latest copy of a request; one that changed while open shows why and cannot
+be approved from the stale view. Nobody waits on a member who can no longer sign in:
+deactivating a party, or withdrawing their approval, invalidates their pending swaps
+(trigger `duty_reconcile_member_swaps`; the migration does the same for existing ones).
+Inactive emergency cover still blocks consent and approval with "An engineer is no longer
+active and approved"; an admin rejects it.
 The compact list spans all months, puts the current user's actions first and is
 entirely absent when that user has no visible requests. Polling/focus refresh uses
 the existing 30-second mechanism; no push/email notifications are sent.
+
+## Published duty edit
+
+Migration `20261105134825_published_duty_edit.sql` adds the admin-only checked RPC
+`duty_edit_published_duty(p_publication uuid,p_day date,p_primary uuid,p_extra_points numeric,
+p_saturday_extra_points numeric,p_kind text,p_revision bigint,p_override_reason text)`.
+It requires an active approved admin and the last accepted revision, and refuses a
+publication that is no longer the month's current one, or a month with an open
+(reopened) draft: that draft was copied from the earlier version, so publishing it
+would silently undo the edit. Publish or cancel the draft first. The duty must belong to that
+month, start today or later in Asia/Jerusalem and have a primary; the new primary
+must be an active approved member who is not that duty's emergency cover. Extra
+points are 0–20 in half points (Saturday's only on a combined weekend). Availability
+is re-checked for the new primary: a conflict needs a reason that is not blank,
+including Unicode spaces (≤500 characters), and marks the row as an override. An unchanged edit is refused.
+
+The edit copies the current publication into a new version with only that row
+changed, carrying an existing allocation snapshot like an approved swap (locks follow
+the new engineer; approvals for the changed dates or the two engineers' weekends are
+dropped). Accounting is recorded in the same transaction before the pointer moves.
+**Temporary** keeps the ordinary publication transition: the old engineer owes the
+new one each date's shared units (a published repayment on that duty routes through
+its creditor as for any replacement). **Permanent** means the engineer being replaced,
+whoever holds the duty now, gives it away for good (decision 2026-11-06): the permanent
+intent `edit/<publication>` from that holder covers exactly the shared units, so no
+debt for anyone. Earlier swaps, Temporary edits and the plan's own Temporary changes keep
+their own balances (a swapped duty stays swapped; its holder just does one duty fewer),
+and a published repayment on the duty is cancelled, so its debt stays. One exception (H1):
+giving the duty back to someone who held it before a Temporary change still in effect is
+that change's undo, so its debt cancels; it is booked as a Temporary `edit/<publication>`
+intent. `duty_private.edit_returns` finds those engineers by replaying the duty's versions
+(a Temporary edit adds its previous holder, a return drops the undone changes, a swap,
+Permanent edit or plan starts again); the manager-only read `duty_edit_returns` gives Edit
+duty the same answer, so its text and summary say what is booked. Migration
+`20261106104700_ledger_current_holder_exact_undo.sql` replaced the earlier owner walk,
+which routed a Temporary "return" to the last permanent holder and so made a swap partner
+owe the old owner; events it already recorded replay unchanged. `compensation_publication`
+gained an optional server-built `edit` argument for this; existing callers are
+unchanged. The ledger event's manager-only reason records the kind and any override
+reason; `duty_balance` never returns it.
+
+The copied allocation's targets follow the edit (and, for new points, its calendar
+fingerprint), so a reopened copy of an edited version republishes unchanged without
+double counting. Edit duty names a pending swap request of the duty before saving ("Pending swap
+with Dana. Saving cancels it."), and saving invalidates it, for a new engineer as well as new points:
+consent was given for the earlier engineer and points. A
+later month that already repays a debt keeps its version. Editing the duty back (or deleting
+the edited version) undoes the debt, so that repayment is released and its planned work is owed
+the other way, booked once (decision 2026-11-07): no double charge, and nothing lost. Plan the month on a reopened edited month plans without that
+month's own entries, so the edit's debt is not shown as an earlier debt; publishing a new
+plan replaces the edit with the plan. Migration `20261105134826_published_edit_lifecycle.sql`
+adds these lifecycle rules. Deleting the live version is that version's exact undo, a
+Permanent edit included (no debt comes back). A weighted swap moves the copied plan's targets
+like an edit, and Plan the month on a month whose points an edit changed takes the new plan's
+ordinary baseline once the stored one no longer fits those points. Regressions: `supabase/tests/published-edit.sql`,
+`supabase/tests/published-edit-lifecycle.mjs` and the generator-based
+`supabase/tests/ledger-hunt.mjs` (empty disposable LOCAL, rolled back): random publish, swap,
+Temporary/Permanent edit, undo, reopen, delete and re-plan sequences over two months, checked
+after every step against a model whose only causes are Temporary replacements and planned
+repayments, with Plan the month starting from the other month only and SQL equal to the core.
+
+Split a published weekend (migration `20261107172842_split_published_weekend.sql`, decision
+2026-11-07): the checked, admin-only RPC `duty_edit_published_weekend(p_publication, p_friday,
+p_friday_primary, p_friday_extra, p_saturday_primary, p_saturday_extra, p_kind, p_revision,
+p_override_reason)` saves one published weekend as one Friday–Sunday row (same primary) or two day
+rows (different primaries), each date's extra exactly as typed, with the same revision,
+current-publication, open-draft and availability-reason checks as `duty_edit_published_duty`, and
+only while Friday is today or later. Covers stay with their date; joining keeps the cover of a date
+that kept its engineer (else Friday's, else Saturday's), and a cover moved onto a date it marked
+unavailable needs the reason too. The ledger stays per date: Temporary is the ordinary transition,
+Permanent adds one `edit/<publication>/<date>` intent per changed date, and `edit_returns` now
+follows each date through split and joined versions, so H1 undoes a half's Temporary change and
+`duty_edit_published_duty` gives each date of a whole weekend its own intent when their histories
+differ. An approved swap that hands someone both halves joins them (`join_weekend_halves`,
+internal, refuses published versions). Pending swaps of either date are invalidated. Regression:
+`supabase/tests/published-split.sql` (empty disposable LOCAL, rolled back).
 
 ### Empty local Supabase database (PowerShell)
 
@@ -314,6 +866,9 @@ docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f
 docker exec supabase_db_duty-scheduler psql -U postgres -q -v ON_ERROR_STOP=1 -f /tmp/duty-tests/swap-upgrade.sql
 node supabase/tests/first-admin.mjs supabase_db_duty-scheduler
 node supabase/tests/swap-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-races.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-upgrade.mjs supabase_db_duty-scheduler
+node supabase/tests/lifecycle-release.mjs supabase_db_duty-scheduler
 pnpm dlx supabase@2.119.0 stop --project-id duty-scheduler --no-backup
 ```
 
@@ -321,7 +876,7 @@ These are LOCAL commands. Never pass `--linked`, a hosted URL or hosted credenti
 For full local services use `supabase start`; Next.js still runs on port 5173.
 On Windows, if Docker cannot bind the default ports, copy config/migrations to a
 disposable work directory, assign available API/DB/shadow/Studio/mail ports there
-(e.g. 58321/58322/58320/58323/58324), change the local project ID and use its actual
+(e.g. 48321/48322/48320/48323/48324), change the local project ID and use its actual
 `supabase_db_<id>` container. Keep hosted project links out of that directory.
 `tests/schema.sql` must pass before onboarding/fixtures. The canonical verification
 builds application objects in temporary LOCAL schemas, compares catalog/permission
@@ -385,7 +940,8 @@ engineer C in an isolated development project. Do not use real member data.
    admin's approval list. C explicitly accepts; only then can admin approve A's
    request. Verify X/Y current owners, a new version, unchanged secondary cover,
    points/spans/draft and all earlier versions. Unrelated publication changes must
-   keep consent; reassignment of A's source duty must show Invalidated.
+   keep consent; reassignment of A's source duty, or new points on either duty, must
+   show Invalidated.
 5. From two profiles act on the same revision concurrently: only one resolution
    commits, the other must refresh. Test approval before consent via RPC, another
    engineer's consent attempt, inactive/pending users, second weekends, duplicate

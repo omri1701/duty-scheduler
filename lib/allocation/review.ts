@@ -1,0 +1,113 @@
+import {context, validTargets} from './model.ts';
+import {permanentCeiling, permanentFloor, validateDraft} from './edits.ts';
+import {proposeAllocation, retainedChanges, unevenTransfers} from './planner.ts';
+import {inferHand} from './derive.ts';
+import {canonicalDuties} from '../scheduling/calendar.ts';
+import {inputKey} from '../scheduling/domain.ts';
+import type {AllocationDraft, AllocationInput, Change} from './types.ts';
+import type {Approval, GenerationInput} from '../scheduling/types.ts';
+import type {PrimaryAssignments} from '../scheduling/validate.ts';
+
+/** Refresh source identity only after checking the original numbers and sources.
+ * This never calculates a proposal or repairs/changes a manager target. */
+export function reviewAllocation(input: AllocationInput, saved: AllocationDraft) {
+  const c = context(input), draft = {...structuredClone(saved), sourceKey: c.key};
+  // Uneven-month credit is derived, never chosen: it is refreshed with the source
+  // identity, so a seniority reorder after confirmation re-pairs the credit under
+  // the current order instead of trapping the month.
+  if (draft.changes && typeof draft.changes === 'object' && draft.baselineUnits && typeof draft.baselineUnits === 'object') {
+    // A split weekend counts as the weekend it came from (decision 2026-11-07).
+    draft.uneven = unevenTransfers(input.seniority, c.weights, draft.baselineUnits, draft.changes);
+    // A plan saved before hand edits were stored: infer them, so reopening keeps
+    // automatic points automatic instead of freezing every changed member.
+    if (draft.hand === undefined && Array.isArray(draft.pairs)) draft.hand = inferHand(c, input.seniority, draft);
+  }
+  validateDraft(c, input.seniority, draft);
+  return draft;
+}
+
+/** A confirmed plan whose repayments today's ledger no longer offers (review of #62): a month
+ * published since repays the same debt, or deleting the month's only version reversed what it
+ * booked (decision 2026-11-07). Publish waits with this before the click instead of
+ * failing after it; opening the plan proposes again. A copy keeps its provenance (the RPC decides). */
+export function repaymentsTaken(input: AllocationInput, saved: AllocationDraft) {
+  try {reviewAllocation(input, saved); return false;}
+  catch (e) {return /repayment-source/.test((e as Error).message);}
+}
+
+/** Whether a plan copied from a publication (restored, or reopened to change it) still
+ * fits the month, so it keeps its stored provenance unreviewed (the checked RPC
+ * revalidates it): the current per-person format, the same members and the month's
+ * total, with every lock's points. A copy from an older team, calendar or format is
+ * replaced by a new proposal like any saved plan that no longer fits. */
+export function copyFits(input: AllocationInput, saved: AllocationDraft | null) {
+  if (!saved?.changes || typeof saved.changes !== 'object' || !Array.isArray(saved.pairs) || !Array.isArray(saved.transfers)) return false;
+  try {
+    const c = context(input);
+    const members = (t: unknown): t is Record<string, unknown> => !!t && typeof t === 'object' &&
+      Object.keys(t).length === c.ids.length && c.ids.every(id => Object.hasOwn(t, id));
+    const total = (t: unknown) => members(t) && c.ids.every(id => Number.isSafeInteger(t[id])) &&
+      c.ids.reduce((n, id) => n + (t[id] as number), 0) === c.total;
+    return total(saved.baselineUnits) && total(saved.offeredUnits) && validTargets(c, saved.targetsUnits) && members(saved.changes);
+  } catch {return false;}
+}
+
+/** A published plan reopened to change it (decision 2026-11-01): reviewed against the
+ * ledger without the month's own entries. Its repayments may name debts that net
+ * differently there; then the plan is proposed again keeping its per-person changes
+ * and drags, so the controls never lock. */
+export function reopenAllocation(input: AllocationInput, saved: AllocationDraft) {
+  try {return reviewAllocation(input, saved);}
+  catch {return proposeAllocation(input, retainedChanges(saved)).draft;}
+}
+
+/** A member's net change. A copied snapshot from before per-person changes
+ * (display only; the checked RPC revalidates it) is read from its transfers. */
+export function changeOf(draft: Pick<AllocationDraft, 'changes' | 'transfers'> | null, id: string): Change {
+  if (draft?.changes?.[id]) return {...draft.changes[id]};
+  const change: Change = {temporary: 0, permanent: 0};
+  for (const t of draft?.transfers ?? []) if (t.toId === id || t.fromId === id) change[t.kind] += t.toId === id ? t.units : -t.units;
+  return change;
+}
+
+export function allocationTotals(input: AllocationInput, draft: AllocationDraft | null, assignments: PrimaryAssignments) {
+  const duties = canonicalDuties(input.schedule.month, input.schedule.calendar), total = duties.reduce((n, d) => n + d.units, 0);
+  const rows = input.seniority.map(id => {
+    const assigned = duties.reduce((n, d) => n + (assignments[d.id]?.primary === id ? d.units : 0), 0);
+    const locked = duties.reduce((n, d) => n + (input.schedule.locks?.some(l => l.dutyId === d.id && l.engineer === id) ? d.units : 0), 0);
+    const {temporary, permanent} = changeOf(draft, id), target = draft?.targetsUnits[id] ?? 0;
+    const permanentMin = draft?.baselineUnits && draft.offeredUnits ? permanentFloor(draft, id) : 0;
+    const permanentMax = draft?.baselineUnits ? permanentCeiling(total, draft, id) : total;
+    return {id, target, assigned, locked, temporary, permanent, permanentMin, permanentMax, generate: target - locked, missing: Math.max(0, target - assigned)};
+  });
+  return {rows, total, configured: rows.reduce((n, r) => n + r.target, 0),
+    uncovered: duties.filter(d => !assignments[d.id]?.primary).flatMap(d => d.dates)};
+}
+
+/** Exact fixed scopes for an explicit lock review. These are suggestions only;
+ * each requires the manager's own reason/approval before becoming an input. */
+type WithoutReason<T> = T extends unknown ? Omit<T, 'reason'> : never;
+export type ApprovalScope = WithoutReason<Approval>;
+/** PostgreSQL JSONB can reorder keys. Scope identity must survive that round trip. */
+export const approvalScopeKey = (approval: ApprovalScope | Approval) => inputKey({...approval, reason: undefined});
+export function lockExceptions(schedule: AllocationInput['schedule'], locks: NonNullable<GenerationInput['locks']>): ApprovalScope[] {
+  const duties = canonicalDuties(schedule.month, schedule.calendar), result: ApprovalScope[] = [];
+  for (const l of locks) {
+    const d = duties.find(d => d.id === l.dutyId);
+    if (!d) continue;
+    const dates = d.dates.filter(date => schedule.constraints?.[l.engineer]?.[date] === 'no');
+    if (dates.length) result.push({rule: 'availability', dutyId: d.id, engineer: l.engineer, dates} as Approval);
+    for (const n of schedule.neighbors ?? []) if (n.engineer === l.engineer && (n.end === d.startDate || n.start === d.endDate)) {
+      result.push({rule: 'boundary', dutyId: d.id, neighborId: n.id} as Approval);
+    }
+    for (const other of locks) {
+      const next = duties.find(d => d.id === other.dutyId);
+      if (other.engineer === l.engineer && next && d.endDate === next.startDate) result.push({rule: 'consecutive', duties: [d.id, next.id]} as Approval);
+    }
+  }
+  for (const id of new Set(locks.map(l => l.engineer))) {
+    const weekends = [...new Set(duties.filter(d => d.weekendId && locks.some(l => l.dutyId === d.id && l.engineer === id)).map(d => d.weekendId!))].sort();
+    if (weekends.length > 1) result.push({rule: 'weekends', engineer: id, weekends} as Approval);
+  }
+  return result;
+}

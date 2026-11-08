@@ -2,21 +2,24 @@ CREATE FUNCTION duty_private.restore_publication(p_publication uuid, p_revision 
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare v public.duty_publications; first_day date; last_day date;
+declare v public.duty_publications;
 begin
  if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
  perform duty_private.check_revision(p_revision);
+ if not duty_private.is_manager() then raise exception 'Admin access required' using errcode='42501'; end if;
  select * into v from public.duty_publications where id=p_publication;
  if v.id is null then raise exception 'Version no longer exists'; end if;
- select min(day),max(end_day) into first_day,last_day from public.duty_assignments where publication_id=p_publication;
- -- Restoring boundary weekends may also reopen the adjacent month's draft.
- update public.duty_months set status='draft' where (month||'-01')::date<last_day and (month||'-01')::date+interval '1 month'>first_day;
- -- Preserve the Friday half when restoring a version that starts on a split Saturday.
- update public.duty_months set status='draft' where month in (select to_char(day,'YYYY-MM') from public.duty_assignments where publication_id is null and day<first_day and end_day>first_day);
- update public.duty_assignments set end_day=first_day where publication_id is null and day<first_day and end_day>first_day;
- delete from public.duty_assignments where publication_id is null and day<last_day and end_day>first_day;
- insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points)
- select day,end_day,primary_id,secondary_id,manager_override,title,extra_points from public.duty_assignments where publication_id=p_publication;
+ -- A version from before a re-plan can't come back: its ledger entries were reversed (decision 2026-11-01).
+ if duty_private.compensation_replanned(duty_private.compensation_state(),v.month,v.id) then raise exception '% was re-planned after this version, so its points can''t come back. Reopen the month and change its plan instead.',to_char(to_date(v.month||'-01','YYYY-MM-DD'),'FMMonth YYYY'); end if;
+ -- Old versions may contain adjacent coverage. Only Friday-owned rows belong
+ -- to this draft; retain the original historical publication byte-for-byte.
+ delete from public.duty_assignments where publication_id is null and duty_private.duty_owner(day)=v.month;
+ insert into public.duty_assignments(day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked)
+ select day,end_day,primary_id,secondary_id,manager_override,title,extra_points,saturday_extra_points,locked
+ from public.duty_assignments where publication_id=p_publication and duty_private.duty_owner(day)=v.month;
+ delete from public.duty_allocations where month=v.month and publication_id is null;
+ insert into public.duty_allocations(month,publication_id,allocation_id,allocation,locks,approvals,accounting_fingerprint,calendar_fingerprint,source_publication_id,generation,origin)
+ select month,null,allocation_id,allocation,locks,approvals,md5((duty_private.compensation_state()->'events')::text),calendar_fingerprint,p_publication,generation,'restored' from public.duty_allocations where publication_id=p_publication;
  update public.duty_months set status='draft',generated=true where month=v.month;
  update public.duty_workspace set revision=revision+1 where id;
 end $$;

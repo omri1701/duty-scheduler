@@ -18,12 +18,17 @@ GRANT ALL ON FUNCTION duty_private.is_member() TO authenticated;
 REVOKE ALL ON FUNCTION duty_private.join_team(p_name text) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.join_team(p_name text) TO authenticated;
 
+REVOKE ALL ON FUNCTION duty_private.reconcile_member_swaps() FROM PUBLIC, anon, authenticated, service_role;
+
 REVOKE ALL ON FUNCTION duty_private.reconcile_publication_swaps() FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.reconcile_swaps(p_month text) FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION duty_private.rename_self(p_name text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.rename_self(p_name text, p_revision bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_color(p_color text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT ALL ON FUNCTION duty_private.set_color(p_color text, p_revision bigint) TO authenticated;
 
 REVOKE ALL ON FUNCTION duty_private.request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION duty_private.request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) TO authenticated;
@@ -64,6 +69,10 @@ REVOKE ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) F
 GRANT ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) TO authenticated;
 GRANT ALL ON FUNCTION public.duty_rename_self(p_name text, p_revision bigint) TO service_role;
 
+REVOKE ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) TO authenticated;
+GRANT ALL ON FUNCTION public.duty_set_color(p_color text, p_revision bigint) TO service_role;
+
 REVOKE ALL ON FUNCTION public.duty_request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION public.duty_request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) TO service_role;
 GRANT ALL ON FUNCTION public.duty_request_swap(p_from uuid, p_to uuid, p_explanation text, p_revision bigint) TO authenticated;
@@ -91,3 +100,222 @@ GRANT ALL ON FUNCTION public.duty_set_constraints(p_member uuid, p_days date[], 
 REVOKE ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
 GRANT ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) TO authenticated;
 GRANT ALL ON FUNCTION public.duty_set_role(p_member uuid, p_role text, p_revision bigint) TO service_role;
+
+REVOKE ALL ON FUNCTION duty_private.cancel_draft(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.cancel_draft(text, bigint) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_cancel_draft(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_cancel_draft(text, bigint) TO authenticated, service_role;
+
+-- Compensation persistence privileges.
+REVOKE ALL ON FUNCTION duty_private.compensation(jsonb, text, text, bigint, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.compensation(jsonb, text, text, bigint, text, bigint) TO authenticated;
+REVOKE ALL ON FUNCTION duty_private.compensation_append(jsonb, jsonb, text, bigint, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_apply(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_atoms(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_consume(jsonb, jsonb, bigint, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_exclude(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_immutable() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_locate(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_lot(jsonb, jsonb, text, text, text, bigint, jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_members() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_normalize(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_now() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_publication(text, uuid, jsonb, boolean, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_reconcile(jsonb, bigint, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_record(jsonb, text, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replan(jsonb, text, bigint, boolean, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replanned(jsonb, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_replan_step(jsonb, jsonb, text, bigint, text, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.compensation_release_held(before jsonb, s jsonb, prefix text, instant bigint, actor text, reason text, commit boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_reserve(jsonb, jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_segment(jsonb, jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_slice(jsonb, bigint, bigint) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_snapshot(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_state() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_transition(jsonb, jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_units(jsonb, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.compensation_view(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.duty_compensation(jsonb, text, text, bigint, text, bigint) TO service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_bind(f jsonb, draft jsonb, s jsonb, allocation_id uuid, publication jsonb, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_compile(f jsonb, draft jsonb, actual jsonb, s jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_part(t jsonb, amount bigint, off bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_take(atoms jsonb, engineer text, amount bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.compensation_candidates(s jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.generation_context(p_month text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.generation_context(p_month text, p_revision bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.generation_duties(p_month text) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.generation_facts(p_month text) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.generation_validate(f jsonb, targets jsonb, assignments jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_confirm_allocation(p_month text, p_allocation jsonb, p_locks jsonb, p_approvals jsonb, p_revision bigint, p_fingerprint text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_generation_context(p_month text, p_revision bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_generation_context(p_month text, p_revision bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_save_generation(p_month text, p_assignments jsonb, p_revision bigint, p_fingerprint text, p_seed integer) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_baseline(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_kept_baseline(f jsonb, baseline jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_better_baseline(weights integer[], bins integer[], ceiling_cost bigint, quantum integer, total integer) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_fit(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_uneven(f jsonb, baseline jsonb, changes jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_partition(weights integer[], capacities integer[]) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_rebind(s jsonb, publication jsonb, source_publication uuid, allocation_id uuid, instant bigint) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.allocation_transfers(seniority jsonb, changes jsonb, pairs jsonb) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.add_temporary_member(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.add_temporary_member(text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.rename_temporary_member(uuid, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.rename_temporary_member(uuid, text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_add_temporary_member(text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_add_temporary_member(text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_rename_temporary_member(uuid, text, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.current_member_id() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.current_member_id() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.link_temporary_member(uuid, uuid, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.link_temporary_member(uuid, uuid, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_link_temporary_member(uuid, uuid, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_link_temporary_member(uuid, uuid, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.balance() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.balance() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_balance() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_balance() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_published_duty(uuid, date, uuid, numeric, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_published_weekend(uuid, date, uuid, numeric, uuid, numeric, text, bigint, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.join_weekend_halves(uuid, date) FROM PUBLIC, anon, authenticated, service_role;
+
+REVOKE ALL ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.swap_availability(p_from uuid, p_to uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_swap_availability(p_from uuid, p_to uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.edit_returns(p_publication uuid, p_day date) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.edit_returns(p_publication uuid, p_day date) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_edit_returns(p_publication uuid, p_day date) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_edit_returns(p_publication uuid, p_day date) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.replanned_versions(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_replanned_versions(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_replanned_versions(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_no_weekends(uuid, boolean, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_no_weekends(uuid, boolean, bigint) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_no_weekends(uuid, boolean, bigint) TO authenticated;
+
+-- Personal calendar feed (decision 2026-11-06). The feed lookup is the only application
+-- function the anonymous role may execute: calendar apps cannot sign in, so the route
+-- handler calls it with the publishable key and the URL's raw token. The rest are the
+-- caller's own create/reset, status and language, for signed-in approved members.
+REVOKE ALL ON FUNCTION duty_private.calendar_feed(p_token text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_feed(p_token text) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_feed(p_token text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_feed(p_token text) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_reset(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_reset(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_reset(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_reset(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_status() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_status() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_status() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_status() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.calendar_language(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.calendar_language(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.duty_calendar_language(p_language text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_calendar_language(p_language text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_language(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_language(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_set_language(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_language(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.notification_settings() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.notification_settings() TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_notification_settings() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_notification_settings() TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.set_notification_settings(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.set_notification_settings(jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_set_notification_settings(jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_set_notification_settings(jsonb) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.save_push_subscription(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.save_push_subscription(text, text, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_save_push_subscription(text, text, text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_save_push_subscription(text, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION duty_private.delete_push_subscription(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION duty_private.delete_push_subscription(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.duty_delete_push_subscription(text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.duty_delete_push_subscription(text) TO authenticated;
+
+-- Internal: triggers and the pg_cron scheduler (runs as the owner). No client access.
+REVOKE ALL ON FUNCTION duty_private.push_enqueue(uuid, text, text, jsonb, text) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_month_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_swap_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_member_events() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_schedule(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_settle(bigint, integer, text, boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_reconcile(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_dispatch(timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_tick() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION duty_private.push_dispatch_now() FROM PUBLIC, anon, authenticated, service_role;

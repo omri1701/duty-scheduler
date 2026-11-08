@@ -1,19 +1,20 @@
 # Database and application releases
 
 GitHub Actions is the single release orchestrator. Quality uses disposable LOCAL
-Supabase only. After it passes, reusable `deploy.yml` applies pending SQL, verifies
+Supabase only. After full Quality passes, reusable `deploy.yml` applies pending SQL, verifies
 the database contract, then deploys the exact application SHA. Normal releases
 need no SQL Editor execution. Application behavior and visual snapshots are unchanged.
 
 | Branch | GitHub Environment | Vercel target / domain | Supabase (Frankfurt) |
 |---|---|---|---|
-| `develop` | Development | Preview / `duty-scheduler-dev.vercel.app` | `qhndiuahuxczujxxitsm` |
-| `master` | Production | Production / `duty-scheduler-prod.vercel.app` | `hpszwgnwxtxyxpcaivgj` |
+| `develop` | Development | Preview / `miko-dev.vercel.app` | `qhndiuahuxczujxxitsm` |
+| `master` | Production | Production / `miko-prod.vercel.app` | `hpszwgnwxtxyxpcaivgj` |
 
-Read-only inspection on 12 October 2026 confirmed both projects are healthy in
-`eu-central-1`, PostgreSQL 17, with exactly `20261011212413_clean_baseline` and
-`20261011212421_required_reference_data` applied. This CI/CD PR has no real
-migration and writes to neither hosted database. Never replay Frankfurt baselines
+The initial Production release completed on 12 October 2026. Both environments
+use Frankfurt (`eu-central-1`), PostgreSQL 17 and the baselines
+`20261011212413_clean_baseline` / `20261011212421_required_reference_data`.
+Read current migration history before a release; this historical baseline is not
+a claim about later hosted state. Never replay Frankfurt baselines
 into Tokyo's archived history or repair history to resemble another environment.
 
 One Vercel project: `prj_Jl2PBhK8DsvK183rKKWesr0821OY`, team
@@ -24,14 +25,14 @@ No paid custom environment or additional service is needed.
 
 ## Feature branches: localhost and intentional previews
 
-Feature branches may run `pnpm dev` at `http://localhost:5173` using the existing
+Feature branches may run `pnpm start:dev` at `http://localhost:5173` using the existing
 Git-ignored `.env.local`: `SUPABASE_URL=https://qhndiuahuxczujxxitsm.supabase.co`
 and its publishable key. Branch selection never switches this configuration to
 Production. Keep Development's localhost OAuth origin/redirect as documented in
 [Supabase setup](SUPABASE_SETUP.md#local-development-with-the-separate-development-project).
 Normal application/RPC access to shared Development remains subject to existing
 approval, RLS and revision checks; it grants no migration permission.
-`pnpm dev:prod` is an explicit, confirmed localhost inspection exception: it
+`pnpm start:prod` is an explicit, confirmed localhost inspection exception: it
 blocks team data writes and membership onboarding, adds a red warning/badge, and never
 changes hosted schemas, permissions or OAuth redirects. It does not grant
 database-enforced read-only access. See [the selector runbook](SUPABASE_SETUP.md#localhost-environment-selector).
@@ -39,7 +40,7 @@ database-enforced read-only access. See [the selector runbook](SUPABASE_SETUP.md
 Test new canonical SQL and incremental migrations on disposable LOCAL Supabase,
 using the existing `schemas/`, `reference-data/`, `migrations/` and SQL tests.
 When the feature requires unapplied database changes, test that path locally with
-`pnpm dev:local`, which starts an isolated Auth/API stack and uses its public key
+`pnpm start:local`, which starts an isolated Auth/API stack and uses its public key
 without changing the existing Development `.env.local`. Do not copy canonical schemas into
 another maintained tree or push unmerged migrations to shared Development.
 Only `develop` releases migrate hosted Development; only approved `master` releases
@@ -105,7 +106,8 @@ secret is needed. The database credential is privileged DDL access to **one proj
 not a runtime identity: the postgres-owned baseline needs owner-level DDL. Restrict
 it to protected release jobs, rotate it and audit access.
 
-Both Quality release callers use `secrets: inherit`, as required by
+Quality's Development caller and the manual Production caller use `secrets: inherit`,
+as required by
 [GitHub's reusable-workflow secret forwarding](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow).
 The called deployment job selects Development or Production; that Environment's
 secrets take precedence. Its early credential check reports missing secret names
@@ -127,8 +129,11 @@ deployment of that head. Prefer merge commits. The workflow token stays read-onl
 
 **Production starts disabled:** leave repository variable
 `PRODUCTION_DEPLOYMENT_ENABLED` unset. Only after owner approval, configure the
-protections/secrets and set it to `true`. This PR does not activate it, change live
-settings, merge a release or apply hosted SQL.
+protections/secrets and temporarily set it to `true` for an intentional manual
+release; unset it afterward. Quality passing or a `master` push never deploys
+Production, even with the switch enabled. This infrastructure change does not
+activate it or modify hosted settings. Cancel a pending release if activation is
+revoked while approval is waiting; workflow variables are captured by the run.
 
 `vercel.json` disables all automatic Git deployments, including feature branches.
 Retain the linked Git repository, existing ignored-build filter (`master|develop`
@@ -138,7 +143,7 @@ explicitly set the non-secret build flag `ENABLE_EXPERIMENTAL_COREPACK=1`
 so Vercel installs the exact `packageManager` version, including pnpm 12's lockfile.
 Development is bound to `develop`. After a verified READY Preview and another
 branch-head check, Actions explicitly calls the team-scoped Vercel Alias API for
-`duty-scheduler-dev.vercel.app` in the existing team. Metadata alone is not the
+`miko-dev.vercel.app` in the existing team. Metadata alone is not the
 promotion mechanism. Production retains automatic assignment through the
 Production deployment; its domain has no branch binding. Both releases require
 the domain's Alias API record to match the verified deployment ID and project,
@@ -210,18 +215,39 @@ and before Development alias assignment after the build.
 No hosted identities/notes/schedules are reset or used as test fixtures.
 
 For Production, open a **maintainer-reviewed `develop` -> `master` release PR** after verifying
-Development. Merge only with owner authorization. `master` Quality must pass;
-with activation enabled, Actions checks the merged PR, protected branch and
-Development deployment, then waits for **explicit Production Environment approval**.
+Development. Merge only with owner authorization. `master` Quality must pass in a
+complete trusted branch run. After owner-authorized
+activation, run **Deploy Production** on **master**, supplying that successful
+Quality run's numeric ID (from its Actions URL). Actions checks Quality evidence,
+the merged PR, protected branch and Development deployment, then waits for
+**explicit Production Environment approval**.
 Only after approval can it use Production credentials, migrate/verify Production
 and deploy the corresponding `master` app. Its custom domain updates automatically;
 Actions verifies that its Alias API record points to that exact deployment. It
 never manually aliases a Preview or Development artifact onto Production.
 Feature PRs cannot enter hosted jobs. The workflow never merges or approves PRs.
 
-To retry, run **Quality** with **Run workflow** on the current `develop`/`master`
-branch, or rerun its failed deploy job. All gates apply again; Quality recreates the
-SHA contract. Stale releases/expired artifacts need a current Quality run.
+Production dispatch reuses Quality without rerunning tests. The gate requires the
+canonical `quality.yml` workflow, same repository/head repository, exact current
+`master` SHA, push/manual event, completed successful run and successful scope,
+application, all eight `browser N/8` shards, `browser-report`, database and
+`quality` jobs from the current attempt. PR runs may select fewer checks and can
+never authorize a release. It rejects PR,
+fork, skipped, failed, cancelled, stale and incomplete runs. The immutable artifact
+must belong to that run/repository/branch/SHA and attempt, be unexpired and less
+than seven days old. It is downloaded by ID from the specified run, not by a
+PR-supplied URL. The contract's SHA, SQL source hash and migration list must match
+the checked-out commit; hosted schema/RLS/RPC/history/reference checks still run.
+Evidence/branch/approval gates repeat after Environment approval and the release
+lock, before hosted writes. An expired or superseded artifact never falls back to
+a PR artifact or a different commit. Old pre-optimization contracts cannot qualify.
+
+For Development retry, rerun its failed deploy job when its Quality jobs and current
+attempt artifact are still valid, or run **Quality** on current **develop**. If a
+partial rerun changes the attempt without recreating its artifact, run all Quality
+jobs. For Production retry, dispatch **Deploy Production** again with valid evidence;
+if missing/expired, run **Quality** on **master** first (validation only). All release
+gates and manual approval apply again; no automatic retry or deployment occurs.
 
 If only Development alias assignment failed after a READY Preview, an authorized
 operator can reuse that deployment without rebuilding. Confirm the release SHA is
@@ -237,6 +263,65 @@ Release errors include classified Vercel CLI failures or sanitized API errors wi
 status and endpoint. Credentials and database URL/password variants are redacted;
 SQL diagnostics and unrelated build output remain suppressed. The original release
 error may be unrecoverable if an older runner discarded its subprocess stderr.
+
+## Draft/publication lifecycle release gate
+
+The lifecycle chain is `20261017185214_cancel_month_draft.sql`,
+`20261017211958_today_inclusive_published_swaps.sql`, then
+`20261018183148_draft_publication_lifecycle.sql`. Use the pinned CLI and these
+committed filenames so history records their exact versions and names. Do not use
+timestamp-generating SQL tools, repair history or replay a manually applied file.
+An exact matching history makes the normal Development release skip all three;
+Production, if still on the two baselines, applies them in order before the app.
+Both paths must match Quality's fresh-install catalog/RLS/RPC/reference contract.
+Never change an applied migration; any correction needs a new reviewed migration.
+
+On 2026-10-19 the owner authorized a one-time PR #28 DEV maintenance exception.
+The pinned CLI applied this exact chain to `qhndiuahuxczujxxitsm`; no fallback
+deletion was needed. Successful database CI, fresh LOCAL replay and hosted
+schema/RLS/RPC/reference contracts matched. The compatible `9bd1b3e` feature
+Preview was verified READY and explicitly assigned only to the stable DEV domain,
+with its actual feature branch/SHA metadata. Existing Vercel Authentication,
+the domain's `develop` binding and the `master` release mechanism were preserved.
+The normal release function subsequently verified zero pending migrations.
+
+This local exception checked the unchanged `develop` head, active release runs
+and DEV alias before cutover stages; it did not acquire Actions' `release-develop`
+concurrency lock. Retain that distinction in its release evidence. This was a
+single authorized maintenance operation, not an alternative release workflow.
+No repository protections, workflow gates or Production settings were changed.
+Visual baseline approval and deployed Google/browser acceptance remain separate
+gates recorded in PR #28. Do not infer merge readiness from this DEV deployment.
+
+Before **each** hosted conversion, including the future Production release, repeat
+a read-only, single-snapshot data preflight using the migration's exact
+`duty_owner` and JSON comparison rules. Check publication pointers/history, working
+row disposition, draft differences, request/approval references, overlaps and
+Friday-owned adjacent-month coverage. Report only sanitized counts/reasons. DEV
+results do not establish Production safety. Any ambiguous ownership or Published
+working-row divergence blocks release; obtain a separate approved repair plan.
+Production still requires explicit release authorization, current trusted Quality
+evidence and protected Environment approval; this preflight grants no write access.
+
+The client at `30926dcdcad2e4038c31a52980de57803ffe41f3` is incompatible with the
+final migration: manager reads require working copies, Reopen toggles status
+through Save, and Save submits every month. The final schema removes Published
+working copies and requires the Restore RPC for Reopen. **Do not apply this chain
+while that client must keep serving.** The owner accepted DEV downtime for the
+completed coordinated cutover above. For any remaining environment, authorize a compatible staged
+transition or a coordinated maintenance cutover covering old browser sessions,
+application build failure and rollback before proceeding. A migration's data
+preflight passing does not waive this compatibility gate.
+
+For schema-only recovery, retain the selected project's application routine
+definitions plus owners, grants/RLS and catalog fingerprint; no Auth or operational
+rows are needed. Rehearse a new forward repair using `CREATE OR REPLACE` for the
+affected routines, retain security attributes/ACLs, compare the full contract and
+reload/discover PostgREST RPCs. Do not drop application schemas or rewrite migration
+history. Obtain explicit approval for the recovery SQL before hosted execution.
+This repairs definitions only: it cannot restore removed working rows or make the
+old client compatible. Data recovery requires the separately approved backup and
+reconciliation procedure below; do not reverse the lifecycle with schema SQL.
 
 ## Failure and recovery
 
@@ -265,13 +350,35 @@ nontransactional effects under a separately approved recovery plan.
 Vercel rollback chooses an older **same-environment** app compatible with the current
 expanded schema; it does **not** reverse SQL. Never promote a Development artifact
 to Production. For data loss, preserve evidence/data, stop writes and obtain owner
-approval before restoration. Free projects need a separately secured off-site
+approval before restoration. Record the failing release SHA, migration versions,
+last known good deployment and backup timestamp; coordinate a maintenance window.
+Free projects need a separately secured off-site
 operator-managed backup before destructive changes; do not assume paid PITR exists
 or put private backups in GitHub artifacts. Restore into an isolated project first,
 validate identities/permissions/history and reconcile later writes before cutover.
 
+The LOCAL rehearsal (`scripts/database-upgrade.mjs`) uses container-only `pg_dump`
+(custom format), `createdb --template=template0` and `pg_restore --exit-on-error`.
+Restore uses the existing LOCAL container superuser to preserve managed ownership
+and grants; it does not grant additional rights or use hosted credentials.
+Its disposable restore DB/archive are removed even on failure. It proves synthetic
+logical recovery with existing cluster roles, not hosted disaster recovery. An
+operator-managed hosted backup must be encrypted, access-restricted, kept outside
+Git/Actions artifacts and periodically restored into an isolated project under a
+separately approved plan. Include application schemas/private data, Auth identities,
+migration history and role/grant requirements; verify reference rows, RLS/RPCs and
+publication integrity. Account for Supabase-managed roles/extensions and separate
+Storage objects/provider settings, which a logical DB dump alone cannot recover.
+Record recovery-point/recovery-time expectations and reconcile writes after the
+backup before switching traffic. Never run reset, clean, repair or restore commands
+against a hosted target as part of routine release/retry.
+
 ## Supplied verification
 
+`tests/quality.test.mjs` covers strict PR scope and spec selection, the executed
+fail-closed selection/gate scripts, full-suite job evidence, trusted
+run/attempt/artifact provenance, stale/expired/forged evidence, source identity and
+the disabled/manual Production gates without hosted connections.
 `tests/release.test.mjs` covers credential isolation, migration policy/history,
 contract failures, approval gates, ordering, explicit Development alias assignment
 and rejection of stale/cross-project/redirected domain bindings. Production tests
@@ -280,7 +387,15 @@ uses the **actual CLI** in a temporary local work directory: no-op release, safe
 additive private test table, then an intentionally failing migration. A synthetic
 application hook runs only after DB verification; failure must block it and roll
 back the failing file. Probes never enter committed history; the disposable DB is
-reset afterward. This is isolated end-to-end verification, not a claimed live
+reset afterward locally; CI discards the disposable container without another
+replay. The upgrade harness also restores a synthetic logical dump into a second
+LOCAL database and compares data, migration history and catalog/reference contracts.
+`supabase/tests/lifecycle-release.mjs` additionally runs the exact lifecycle chain
+through the same release function and real CLI on populated LOCAL fixtures. It
+checks the pending Production path, already-applied Development skip, exact history,
+fresh/upgrade contracts, preserved drafts/history/approvals, legacy Reopen refusal
+and schema-only routine repair. Every fixture is synthetic and reset afterward.
+This is isolated end-to-end verification, not a claimed live
 Vercel rollout. Live domain/OAuth acceptance needs an authorized post-merge
 Development release with configured Environment secrets.
 

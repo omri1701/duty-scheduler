@@ -1,4 +1,4 @@
-import {defineConfig} from '@playwright/test';
+import {defineConfig, devices} from '@playwright/test';
 
 const external = process.env.DUTY_E2E_URL;
 export default defineConfig({
@@ -12,7 +12,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: {timeout: 8_000, toHaveScreenshot: {animations: 'disabled', caret: 'hide', maxDiffPixels: 0}},
   snapshotPathTemplate: '{testDir}/snapshots/{platform}/{projectName}/{arg}{ext}',
-  reporter: [['list'], ['html', {open: 'never'}]],
+  // Sharded CI writes blob-report/report-N.zip; Quality merges the shards into one HTML report.
+  reporter: [['list'], process.env.DUTY_E2E_BLOB ? ['blob'] : ['html', {open: 'never'}], ['./scripts/visual-review-reporter.mjs']],
   use: {
     baseURL: external ?? 'http://127.0.0.1:8787',
     locale: 'en-GB', timezoneId: 'Asia/Jerusalem', colorScheme: 'light',
@@ -20,10 +21,13 @@ export default defineConfig({
     trace: 'retain-on-failure', screenshot: 'only-on-failure',
   },
   projects: [
-    {name: 'desktop', use: {browserName: 'chromium', viewport: {width: 1440, height: 1000}}},
-    {name: 'mobile', use: {browserName: 'chromium', viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, deviceScaleFactor: 1}},
+    {name: 'desktop', testIgnore: '**/iphone-*.spec.ts', use: {browserName: 'chromium', viewport: {width: 1440, height: 1000}}},
+    {name: 'mobile', testIgnore: '**/iphone-*.spec.ts', use: {browserName: 'chromium', viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true, deviceScaleFactor: 1}},
+    // Safari's engine on iPhone sizes, for layout that Chromium emulation does not catch.
+    {name: 'iphone', testMatch: '**/iphone-*.spec.ts', use: {...devices['iPhone 13'], browserName: 'webkit', deviceScaleFactor: 1}},
   ],
   webServer: external ? undefined : {
+    env: {DUTY_SOLVER_SPIKE: '1'},
     command: 'node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 8787', url: 'http://127.0.0.1:8787',
     reuseExistingServer: false, timeout: 120_000,
   },

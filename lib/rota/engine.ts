@@ -1,35 +1,76 @@
-export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string };
+import {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
+export {addDays,dayOf,monthNext,dates} from './calendar-dates.ts';
+export type Engineer = { id: string; name: string; color: string; active: boolean; role?: string; /** Skips weekends (an admin setting): placing them on one needs manager approval. */ noWeekends?: boolean };
 export type Special = { id: string; title: string; start: string; end: string; extra: number };
-export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string };
+export type Duty = { id: string; start: string; end: string; points: number; kind: 'day'|'weekend'|'special'; title?: string; weekendId?: string; specialId?: string; /** Dates of this duty covered by a special range (a combined weekend may have one or both). */ specialDates?: string[] };
 export type Assignment = { primary: string; secondary?: string; locked?: boolean; override?: boolean };
 export type Constraints = Record<string, Record<string, 'no'|'prefer'>>;
 export type State = { team: Engineer[]; splitWeekends?: string[]; specials: Special[]; constraints: Constraints; constraintNotes?: Record<string, Record<string,string>>; assignments: Record<string, Assignment>; months: Record<string, { deadline: string; status: 'draft'|'published'; generated?: boolean }>; version: number };
-export const addDays = (s:string,n:number) => {const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
-export const dayOf = (s:string) => new Date(s+'T12:00:00Z').getUTCDay();
-export const monthNext = (m:string,n=1) => {const d=new Date(m+'-15T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,7)};
-export function dates(start:string,end:string){const result:string[]=[];for(let d=start;d<end;d=addDays(d,1))result.push(d);return result;}
 export const overlap=(a:{start:string;end:string},b:{start:string;end:string})=>a.start<b.end&&b.start<a.end;
 export const ownerMonth=(b:Duty)=>(b.weekendId??b.start).slice(0,7);
+export const specialAt=(specials:Special[],date:string)=>specials.find(s=>s.start<=date&&date<s.end);
 export function blocks(month:string,specials:Special[],splitWeekends:string[]=[]):Duty[]{
  const begin=month+'-01',end=monthNext(month)+'-01',all:Duty[]=[];
  for(let d=addDays(begin,-2);d<addDays(end,2);d=addDays(d,1)){
   const dow=dayOf(d),weekendId=dow===5?d:dow===6?addDays(d,-1):undefined;
-  const sp=specials.find(s=>s.start<=d&&d<s.end);
-  const split=weekendId&&(splitWeekends.includes(weekendId)||specials.some(s=>overlap(s,{start:weekendId,end:addDays(weekendId,2)})));
-  if(weekendId&&!split){if(dow===6)continue;all.push({id:d,start:d,end:addDays(d,2),points:1,kind:'weekend',weekendId});}
-  else all.push({id:d,start:d,end:addDays(d,1),points:(weekendId?0.5:1)+(sp?.extra??0),kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),...(sp?{title:sp.title,specialId:sp.id}:{})});
+  const combined=!!weekendId&&!splitWeekends.includes(weekendId);
+  if(combined&&dow===6)continue;
+  // Every holiday date adds its own extra: weekday 1 + extra, Friday or Saturday 0.5 + extra.
+  // A weekend touched by a special stays one combined Friday–Sunday duty worth the sum of
+  // its two dates; only a hand split separates the halves, each keeping its own date's points.
+  const covered=combined?[d,addDays(d,1)]:[d],sps=covered.map(x=>specialAt(specials,x)),sp=sps.find(Boolean);
+  const points=covered.reduce((v,_,i)=>v+(weekendId?0.5:1)+(sps[i]?.extra??0),0);
+  all.push({id:d,start:d,end:addDays(d,covered.length),points,kind:sp?'special':weekendId?'weekend':'day',...(weekendId?{weekendId}:{}),
+   ...(sp?{title:sp.title,specialId:sp.id,specialDates:covered.filter((_,i)=>sps[i])}:{})});
  }
  return all.filter(b=>(b.start<end&&b.end>begin)||ownerMonth(b)===month);
 }
-export function normalizeWeekends(s:State):State{
+/** Remove the extra points from every date of one duty: each covering special range is cut
+ * around that date. A combined weekend stays combined and a hand split stays split. */
+export function removeSpecialDates(s:State,duty:Duty):State{
+ let specials=s.specials;
+ for(const date of dates(duty.start,duty.end)){
+  const sp=specialAt(specials,date);
+  if(!sp)continue;
+  // Deterministic ids (no Web Crypto: insecure origins lack randomUUID); a later cut of the
+  // remainder nests another date, so ids stay unique.
+  specials=specials.flatMap(x=>x.id!==sp.id?[x]:[{...x,end:date},{...x,id:`${x.id}/${addDays(date,1)}`,start:addDays(date,1)}].filter(x=>x.start<x.end));
+ }
+ return {...s,specials};
+}
+export function normalizeWeekends(s:State,reviewedWeekend?:string):State{
  const assignments={...s.assignments};
  const splitWeekends=(s.splitWeekends??[]).filter(f=>{
-  if(s.specials.some(sp=>overlap(sp,{start:f,end:addDays(f,2)})))return true;
   const a=assignments[f],b=assignments[addDays(f,1)];
-  if(!a?.primary||a.primary!==b?.primary||a.secondary!==b.secondary)return true;
-  assignments[f]={...a,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
+  // Only an explicit edit of this weekend can change a locked duty's shape.
+  if((a?.locked||b?.locked)&&f!==reviewedWeekend)return true;
+  // A weekend emptied on both days is one empty weekend again, never two empty halves.
+  const empty=(x?:Assignment)=>!x?.primary&&!x?.secondary&&!x?.locked;
+  if(empty(a)&&empty(b)){if(a)assignments[f]={...a,override:undefined};delete assignments[addDays(f,1)];return false;}
+  // Joined back to one person, a weekend is one ordinary duty again (decision 2026-11-07): no
+  // cover is the same however it was cleared.
+  if(!a?.primary||a.primary!==b?.primary||(a.secondary||'')!==(b.secondary||'')||!!a.locked!==!!b.locked)return true;
+  assignments[f]={...a,secondary:a.secondary||undefined,override:a.override||b.override||undefined};delete assignments[addDays(f,1)];return false;
  });
  return {...s,assignments,splitWeekends};
+}
+/** Generate's calendar (decision 2026-11-07): an unlocked hand split is a one-off edit, so
+ * Generate fills that weekend again as one Friday–Sunday duty for one member. A split with
+ * a lock on either half stays split: a locked half keeps its person and Generate fills an
+ * unlocked half like any unlocked duty. The joined weekend keeps Friday's emergency cover
+ * (else Saturday's); Generate picks its primary. */
+export function joinUnlockedSplits(s:State,month:string):State{
+ const assignments={...s.assignments};
+ const splitWeekends=(s.splitWeekends??[]).filter(f=>{
+  if(f.slice(0,7)!==month)return true;
+  const a=assignments[f],b=assignments[addDays(f,1)];
+  if(a?.locked||b?.locked)return true;
+  const secondary=a?.secondary||b?.secondary;
+  assignments[f]={primary:a?.primary??'',...(secondary?{secondary}:{})};
+  delete assignments[addDays(f,1)];
+  return false;
+ });
+ return splitWeekends.length===(s.splitWeekends??[]).length?s:{...s,assignments,splitWeekends};
 }
 export function setWeekendAssignment(s:State,friday:string,scope:'all'|'fri'|'sat',assignment:Assignment):State{
  const saturday=addDays(friday,1),assignments={...s.assignments};
@@ -37,7 +78,7 @@ export function setWeekendAssignment(s:State,friday:string,scope:'all'|'fri'|'sa
  if(!alreadySplit)assignments[saturday]={...(assignments[friday]??{primary:''})};
  if(scope!=='sat')assignments[friday]={...assignment};
  if(scope!=='fri')assignments[saturday]={...assignment};
- return normalizeWeekends({...s,assignments,splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
+ return normalizeWeekends({...s,assignments,splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]},friday);
 }
 /** Expand the displayed weekend into two editable days without changing saved state. */
 export function weekendAssignments(s:State,friday:string):[Assignment,Assignment]{
@@ -47,13 +88,13 @@ export function weekendAssignments(s:State,friday:string):[Assignment,Assignment
 }
 /** Save both days atomically; never merge halfway through an edit. */
 export function setWeekendAssignments(s:State,friday:string,fri:Assignment,sat:Assignment):State{
- return normalizeWeekends({...s,assignments:{...s.assignments,[friday]:{...fri},[addDays(friday,1)]:{...sat}},splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]});
+ return normalizeWeekends({...s,assignments:{...s.assignments,[friday]:{...fri},[addDays(friday,1)]:{...sat}},splitWeekends:[...new Set([...(s.splitWeekends??[]),friday])]},friday);
 }
 export function weekendCounts(s:State,month:string){
  const bs=blocks(month,s.specials,s.splitWeekends).filter(b=>ownerMonth(b)===month&&b.weekendId);
- return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id||s.assignments[b.id]?.secondary===p.id).map(b=>b.weekendId)).size]));
+ return Object.fromEntries(s.team.map(p=>[p.id,new Set(bs.filter(b=>s.assignments[b.id]?.primary===p.id).map(b=>b.weekendId)).size]));
 }
-export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9'];
+export const COLORS=['#adc9ee','#f0ba95','#c9b1de','#9bcfbe','#e9a2aa','#e7d88f','#dfb4d2','#c1cf98','#94cad7','#cfb39b','#b1c1ca','#aaa8d9','#dbb677','#f1c3ba','#a5dfac'];
 export function ink(color:string){const rgb=color.slice(1).match(/../g)?.map(v=>{const n=parseInt(v,16)/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4})??[0,0,0];return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>0.179?'#101827':'#fff'}
 export function migrate(s:State):State{
  if(s.version>=3)return s;
@@ -67,7 +108,7 @@ export function migrate(s:State):State{
 export const unavailable=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).filter(d=>c[id]?.[d]==='no');
 export const preferred=(b:Duty,id:string,c:Constraints)=>dates(b.start,b.end).some(d=>c[id]?.[d]==='prefer');
 export function allKnownBlocks(s:State):Duty[]{const map=new Map<string,Duty>();for(const m of Object.keys(s.months))for(const b of blocks(m,s.specials,s.splitWeekends))map.set(b.id,b);return [...map.values()].sort((a,b)=>a.start.localeCompare(b.start));}
-export function totals(s:State,bs:Duty[]){return Object.fromEntries(s.team.map(p=>[p.id,bs.reduce((v,b)=>{const a=s.assignments[b.id];return v+(a?.primary===p.id||a?.secondary===p.id?b.points:0)},0)]));}
+export function totals(s:State,bs:Duty[]){return Object.fromEntries(s.team.map(p=>[p.id,bs.reduce((v,b)=>v+(s.assignments[b.id]?.primary===p.id?b.points:0),0)]));}
 const distance=(a:string,b:string)=>Math.abs((Date.parse(a)-Date.parse(b))/86400000);
 export function generate(s:State,month:string,seed=1):{assignments:State['assignments'];warnings:string[]}{
  const team=s.team.filter(p=>p.active);if(!team.length)return{assignments:s.assignments,warnings:['no-team']};
@@ -137,7 +178,15 @@ export function applyConstraints(s:State,person:string,selected:string[],kind:'n
  for(const d of selected){if(kind==='clear'){delete c[d];delete notes[d];}else{c[d]=kind;if(note.trim())notes[d]=note.trim().slice(0,300);else delete notes[d];}}
  return {...s,constraints:{...s.constraints,[person]:c},constraintNotes:{...s.constraintNotes,[person]:notes}};
 }
-export type SwapResult = {ok:true;assignments:State['assignments'];conflicts:{person:string;date:string}[]}|{ok:false;reason:string;conflicts?:{person:string;date:string}[]};
+/** No-weekends members newly placed on a weekend duty (a half counts), primary or cover: like an
+ * availability conflict, a manual placement needs manager approval. Generate never does it. */
+export function noWeekendPlacements(s:State,changed:{duty:Duty;assignment:Assignment;before?:Assignment}[]){
+ const skips=new Set(s.team.filter(p=>p.noWeekends).map(p=>p.id));
+ return changed.flatMap(({duty,assignment,before})=>duty.weekendId?[assignment.primary,assignment.secondary]
+  .filter((id):id is string=>!!id&&skips.has(id)&&id!==before?.primary&&id!==before?.secondary).map(person=>({person,date:duty.start})):[]);
+}
+type SwapConflicts = {conflicts:{person:string;date:string}[];weekendConflicts:{person:string;count:number;month:string}[];noWeekendConflicts:{person:string;date:string}[]};
+export type SwapResult = ({ok:true;assignments:State['assignments']} & SwapConflicts)|({ok:false;reason:string} & Partial<SwapConflicts>);
 export function swapDraft(s:State,month:string,from:string,to:string,allowOverride=false):SwapResult{
  if(s.months[month]?.status==='published')return{ok:false,reason:'published'};
  if(from===to)return{ok:false,reason:'same-duty'};
@@ -145,14 +194,22 @@ export function swapDraft(s:State,month:string,from:string,to:string,allowOverri
  if(!a||!b||ownerMonth(a)!==month||ownerMonth(b)!==month)return{ok:false,reason:'other-month'};
  const x=s.assignments[from],y=s.assignments[to];
  if(!x?.primary||!y?.primary)return{ok:false,reason:'unassigned'};
+ if(x.locked||y.locked)return{ok:false,reason:'locked'};
  if(x.primary===y.primary)return{ok:false,reason:'same-person'};
  if(y.primary===x.secondary||x.primary===y.secondary)return{ok:false,reason:'duplicate'};
- if([x.primary,y.primary].some(id=>!s.team.some(p=>p.id===id&&p.active)))return{ok:false,reason:'inactive'};
- const changed=[{duty:a,assignment:{...x,primary:y.primary,override:undefined}},{duty:b,assignment:{...y,primary:x.primary,override:undefined}}];
+ if([x.primary,y.primary,x.secondary,y.secondary].filter(Boolean).some(id=>!s.team.some(p=>p.id===id&&p.active)))return{ok:false,reason:'inactive'};
+ const changed=[{duty:a,assignment:{...x,primary:y.primary}},{duty:b,assignment:{...y,primary:x.primary}}];
  const conflicts=changed.flatMap(({duty,assignment})=>[assignment.primary,assignment.secondary].filter((id):id is string=>!!id).flatMap(id=>unavailable(duty,id,s.constraints).map(date=>({person:id,date}))));
- if(conflicts.length&&!allowOverride)return{ok:false,reason:'availability',conflicts};
- const assignments={...s.assignments};for(const {duty,assignment} of changed)assignments[duty.id]={...assignment,override:conflicts.some(c=>duty.start<=c.date&&c.date<duty.end)?true:undefined};
+ const assignments={...s.assignments};for(const {duty,assignment} of changed)assignments[duty.id]=assignment;
  const counts=weekendCounts({...s,assignments},month),before=weekendCounts(s,month);
- if(Object.keys(counts).some(id=>counts[id]>1&&counts[id]>before[id]))return{ok:false,reason:'weekend-limit'};
- return{ok:true,assignments,conflicts};
+ const weekendConflicts=Object.keys(counts).filter(id=>counts[id]>1&&counts[id]>before[id]).map(person=>({person,count:counts[person],month}));
+ const noWeekendConflicts=noWeekendPlacements(s,[{duty:a,assignment:changed[0].assignment,before:x},{duty:b,assignment:changed[1].assignment,before:y}]);
+ if(!allowOverride&&(conflicts.length||weekendConflicts.length||noWeekendConflicts.length))return{ok:false,reason:conflicts.length?'availability':weekendConflicts.length?'weekend-limit':'no-weekends',conflicts,weekendConflicts,noWeekendConflicts};
+ for(const {duty,assignment} of changed){
+  const availability=conflicts.some(c=>duty.start<=c.date&&c.date<duty.end);
+  const weekend=duty.weekendId&&weekendConflicts.some(c=>c.person===assignment.primary||c.person===assignment.secondary);
+  const skipped=noWeekendConflicts.some(c=>c.date===duty.start);
+  assignments[duty.id]={...assignment,override:assignment.override||availability||weekend||skipped?true:undefined};
+ }
+ return{ok:true,assignments,conflicts,weekendConflicts,noWeekendConflicts};
 }

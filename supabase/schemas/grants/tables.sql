@@ -32,3 +32,25 @@ GRANT ALL ON TABLE public.duty_constraints TO service_role;
 REVOKE ALL ON TABLE public.duty_swap_requests FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.duty_swap_requests TO authenticated;
 GRANT ALL ON TABLE public.duty_swap_requests TO service_role;
+
+-- Compensation audit privileges. Even service_role cannot rewrite history.
+REVOKE ALL ON TABLE public.duty_compensation_events FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_compensation_events TO authenticated, service_role;
+
+REVOKE ALL ON TABLE public.duty_allocations FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_allocations TO authenticated;
+
+-- Own row only (RLS); writes only through duty_private.calendar_reset/calendar_language.
+REVOKE ALL ON TABLE public.duty_calendar_feeds FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_calendar_feeds TO authenticated;
+GRANT ALL ON TABLE public.duty_calendar_feeds TO service_role;
+-- Web push: members read only their own rows (RLS); writes go through checked RPCs,
+-- the event triggers and the scheduler.
+REVOKE ALL ON TABLE public.duty_notification_settings FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_notification_settings TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_subscriptions FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_subscriptions TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_notifications FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_notifications TO authenticated;
+REVOKE ALL ON TABLE public.duty_push_deliveries FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.duty_push_deliveries TO authenticated;

@@ -1,16 +1,18 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { TeamWorkspace } from '@/hooks/use-team-workspace';
 import type { Translate, UpdateDraft } from '@/components/rota/workspace-types';
-import { prepareWorkspaceUpdate } from '@/lib/rota/workspace-data';
+import { prepareWorkspaceUpdate, clearableAssignments, clearBoard, restoreCleared } from '@/lib/rota/workspace-data';
+import {userMessage} from '@/lib/messages';
 import {
   addDays,
   dates,
-  monthNext,
-  generate,
   allKnownBlocks,
   overlap,
+  ownerMonth,
+  dayOf,
+  removeSpecialDates,
   swapDraft,
   type State,
   type Duty,
@@ -36,11 +38,15 @@ export function useWorkspaceDraft({
   const [specialTitle, setSpecialTitle] = useState(''),
     [specialStart, setSpecialStart] = useState(month + '-01'),
     [specialEnd, setSpecialEnd] = useState(month + '-02'),
-    [extra, setExtra] = useState('1'),
-    [busy, setBusy] = useState(false);
+    [extra, setExtra] = useState('1');
   const [swap, setSwap] = useState<{ from: string; to: string } | null>(null),
     [swapOverride, setSwapOverride] = useState(false);
-  async function update(fn: (s: State) => State, draft = true) {
+  const [swapSaving, setSwapSaving] = useState(false);
+  function selectSwap(selection: typeof swap) {
+    setSwapOverride(false);
+    setSwap(selection);
+  }
+  async function update(fn: (s: State) => State, draft = true, notifyError = true, reviewedLocks?: string[]) {
     if (!isManager) return false;
     const s = state,
       n = prepareWorkspaceUpdate(s, fn(s), month, monthDetails, draft);
@@ -48,43 +54,41 @@ export function useWorkspaceDraft({
       const published = Object.keys(n.months).find(
         (m) => n.months[m].status === 'published' && s.months[m]?.status !== 'published',
       );
-      await remote.save(n, published);
+      await remote.save(n, published, month, reviewedLocks);
       return true;
     } catch (e) {
-      toast.error((e as Error).message);
+      if (!notifyError) throw e;
+      toast.error(userMessage((e as Error).message, t));
       return false;
     }
   }
-  function runGenerate() {
-    if (!isManager) return;
-    setBusy(true);
-    setTimeout(async () => {
-      try {
-        const r = generate(state, month, crypto.getRandomValues(new Uint32Array(1))[0]);
-        const saved = await update((s) => ({
-          ...s,
-          assignments: r.assignments,
-          months: { ...s.months, [month]: { ...monthDetails, generated: true, status: 'draft' } },
-        }));
-        if (saved)
-          toast.success(
-            r.warnings.length
-              ? t(
-                  `${r.warnings.length} duties need your decision.`,
-                  'יש תורנויות שממתינות להחלטה שלך.',
-                )
-              : t(
-                  'Draft ready. Review, adjust, then publish.',
-                  'הטיוטה מוכנה לבדיקה, עריכה ופרסום.',
-                ),
-          );
-      } finally {
-        setBusy(false);
-      }
-    }, 40);
+  // Undo runs after later renders, so it saves against the newest state, never the cleared one.
+  const latest = useRef(update);
+  useEffect(() => {latest.current = update;});
+  // Undo belongs to the cleared draft: leaving the month or its draft drops the offer.
+  const clearToast = useRef<string | number | undefined>(undefined);
+  useEffect(() => () => {if (clearToast.current !== undefined) toast.dismiss(clearToast.current);}, [month, monthDetails.status]);
+  const [clearOpen, setClearOpen] = useState(false);
+  const clearable = useMemo(() => isManager && monthDetails.status === 'draft' ? Object.keys(clearableAssignments(state, month)).length : 0,
+    [isManager, monthDetails.status, state, month]);
+  async function confirmClear() {
+    const cleared = clearableAssignments(state, month), count = Object.keys(cleared).length, generated = monthDetails.generated;
+    if (!count || !(await update((s) => clearBoard(s, month)))) return;
+    setClearOpen(false);
+    setSelected(null);
+    selectSwap(null);
+    clearToast.current = toast.success(count === 1 ? t('Cleared 1 duty.', 'כוננות אחת נוקתה.') : t(`Cleared ${count} duties.`, `${count} כוננויות נוקו.`), {
+      duration: 10000,
+      action: {
+        label: t('Undo', 'שחזור'),
+        onClick: async () => {
+          if (await latest.current((s) => restoreCleared(s, month, cleared, generated))) toast.success(t('Duties restored.', 'הכוננויות שוחזרו.'));
+        },
+      },
+    });
   }
   function openDuty(b: Duty) {
-    if (isManager) setSelected(b);
+    if (isManager && monthDetails.status === 'draft' && ownerMonth(b) === month) setSelected(b);
   }
   async function addSpecial() {
     if (
@@ -99,7 +103,7 @@ export function useWorkspaceDraft({
     const end = addDays(specialEnd, 1),
       x = {
         id: crypto.randomUUID(),
-        title: specialTitle.trim() || t('Special duty', 'תורנות מיוחדת'),
+        title: specialTitle.trim() || t('Special duty', 'כוננות מיוחדת'),
         start: specialStart,
         end,
         extra: Number(extra),
@@ -111,7 +115,7 @@ export function useWorkspaceDraft({
       dates(x.start, end).length > 14 ||
       !Number.isFinite(x.extra) ||
       x.extra < 0 ||
-      x.extra > 20
+      x.extra > 20 || !Number.isInteger(x.extra * 2)
     ) {
       toast.error(
         t(
@@ -119,6 +123,10 @@ export function useWorkspaceDraft({
           'יש לבחור עד 14 ימים שמתחילים בחודש זה ו־0–20 נקודות נוספות.',
         ),
       );
+      return;
+    }
+    if (dates(x.start, x.end).some(d => (dayOf(d) === 6 ? addDays(d, -1) : d).slice(0, 7) !== month)) {
+      toast.error(t('Special blocks must stay within this month’s owned duties.', 'מקטעים מיוחדים חייבים להישאר בכוננויות השייכות לחודש זה.'));
       return;
     }
     if (state.specials.some((s) => overlap(s, x))) {
@@ -131,7 +139,7 @@ export function useWorkspaceDraft({
       return;
     }
     const touched = allKnownBlocks(state).filter((b) => overlap(b, x));
-    if (touched.some((b) => b.start.slice(0, 7) !== month && state.assignments[b.id]?.primary)) {
+    if (touched.some((b) => ownerMonth(b) !== month && state.assignments[b.id]?.primary)) {
       toast.error(
         t(
           'This overlaps an assigned duty from another month. Edit that month first.',
@@ -140,40 +148,35 @@ export function useWorkspaceDraft({
       );
       return;
     }
-    const saved = await update((s) => {
-      const assignments = { ...s.assignments };
-      touched.forEach((b) => delete assignments[b.id]);
-      const months = { ...s.months };
-      for (const m of Object.keys(months))
-        if (m + '-01' < end && monthNext(m) + '-01' > x.start)
-          months[m] = { ...months[m], status: 'draft' };
-      return { ...s, assignments, months, specials: [...s.specials, x] };
-    });
+    // Adding extra points keeps every assignment and the duties' shape (decision 2026-11-07):
+    // only the points change, and Plan the month shows the difference. A locked duty's points
+    // change, so it is reviewed explicitly, as removing extra points does.
+    const reviewed = touched.filter(b => state.assignments[b.id]?.locked)
+      .flatMap(b => b.weekendId ? [b.weekendId, addDays(b.weekendId, 1)] : [b.id]);
+    const saved = await update((s) => ({ ...s, specials: [...s.specials, x] }), true, true, reviewed.length ? reviewed : undefined);
     if (!saved) return;
     setSpecialOpen(false);
     toast.success(
-      t(
-        'Special block added. Generate to fill its assignment.',
-        'המקטע נוסף. ניתן ליצור שיבוץ חדש.',
-      ),
+      touched.some(b => state.assignments[b.id]?.primary)
+        ? t('Special block added. The assigned people stay; check the points in Plan the month.', 'המקטע נוסף. המשובצים נשארים; כדאי לבדוק את הנקודות בתכנון החודש.')
+        : t('Special block added. Generate to fill its assignment.', 'המקטע נוסף. ניתן ליצור שיבוץ חדש.'),
     );
   }
   function startSwap(from: string, to: string) {
-    if (from === to) return;
-    setSwapOverride(false);
-    setSwap({ from, to });
+    if (!isManager || swapSaving || from === to) return;
+    selectSwap({ from, to });
   }
   const swapPreview = swap ? swapDraft(state, month, swap.from, swap.to, swapOverride) : null;
   const swapReason = (reason: string) =>
     ({
       published: t('Reopen the draft first.', 'יש לפתוח טיוטה תחילה.'),
-      'same-duty': t('Choose another duty.', 'יש לבחור תורנות אחרת.'),
+      'same-duty': t('Choose another duty.', 'יש לבחור כוננות אחרת.'),
       'other-month': t('Swap within the starting month.', 'ניתן להחליף בתוך חודש ההתחלה.'),
-      unassigned: t('Both duties need an engineer.', 'יש לשבץ מהנדס בשתי התורנויות.'),
+      unassigned: t('Both duties need an engineer.', 'יש לשבץ מהנדס בשתי הכוננויות.'),
       locked: t('Unlock these duties before swapping.', 'יש לבטל נעילה לפני החלפה.'),
       'same-person': t(
         'These duties already have the same engineer.',
-        'שתי התורנויות משובצות לאותו מהנדס.',
+        'שתי הכוננויות משובצות לאותו מהנדס.',
       ),
       duplicate: t(
         'A primary engineer cannot also be the emergency cover.',
@@ -181,47 +184,43 @@ export function useWorkspaceDraft({
       ),
       inactive: t('Choose active engineers.', 'יש לבחור מהנדסים פעילים.'),
       'weekend-limit': t(
-        'This would give an engineer a second weekend. Edit an assignment manually if an exception is needed.',
-        'ההחלפה תיצור סוף שבוע שני למהנדס. במקרה חריג יש לערוך שיבוץ ידנית.',
+        'This swap adds another weekend. Manager approval is required.',
+        'ההחלפה מוסיפה סוף שבוע נוסף. נדרש אישור מנהל.',
       ),
       availability: t('This swap conflicts with availability.', 'ההחלפה מתנגשת עם אילוצים.'),
+      'no-weekends': t(
+        'This swap puts a No weekends member on a weekend. Manager approval is required.',
+        'ההחלפה משבצת בסוף שבוע חבר שמסומן „ללא סופי שבוע”. נדרש אישור מנהל.',
+      ),
     })[reason] ?? reason;
   async function confirmSwap() {
-    if (!swap) return;
+    if (!isManager || !swap || swapSaving) return;
     const result = swapDraft(state, month, swap.from, swap.to, swapOverride);
     if (!result.ok) {
       toast.error(swapReason(result.reason));
       return;
     }
-    if (!(await update((s) => ({ ...s, assignments: result.assignments })))) return;
-    setSwap(null);
-    toast.success(t('Duties swapped.', 'התורנויות הוחלפו.'));
+    setSwapSaving(true);
+    try {
+      if (!(await update((s) => ({ ...s, assignments: result.assignments })))) return;
+      selectSwap(null);
+      toast.success(t('Duties swapped.', 'הכוננויות הוחלפו.'));
+    } finally {
+      setSwapSaving(false);
+    }
   }
-  const saveDuty: (fn: Parameters<UpdateDraft>[0]) => Promise<void> = async (fn) => {
-    if (!(await update(fn))) return;
+  const saveDuty = async (fn: Parameters<UpdateDraft>[0], reviewedLocks?: string[]): Promise<void> => {
+    if (!(await update(fn, true, true, reviewedLocks))) return;
     setSelected(null);
     toast.success(t('Assignment saved to draft.', 'השיבוץ נשמר בטיוטה.'));
   };
   const removeSpecial = async () => {
     const b = selected;
     if (!b) return;
-    if (
-      !(await update((s) => {
-        const specials = s.specials.flatMap((x) =>
-          x.id !== b.specialId
-            ? [x]
-            : [
-                { ...x, end: b.start },
-                { ...x, id: crypto.randomUUID(), start: addDays(b.start, 1) },
-              ].filter((x) => x.start < x.end),
-        );
-        const splitWeekends = b.weekendId
-          ? [...new Set([...(s.splitWeekends ?? []), b.weekendId])]
-          : s.splitWeekends;
-        return { ...s, specials, splitWeekends };
-      }))
-    )
-      return;
+    // Every date of this duty loses its extra; a combined weekend stays combined and a hand
+    // split stays split. The points change, so a locked duty is reviewed explicitly.
+    const reviewed = b.weekendId ? [b.weekendId, addDays(b.weekendId, 1)] : [b.id];
+    if (!(await update((s) => removeSpecialDates(s, b), true, true, reviewed))) return;
     setSelected(null);
   };
   function resetSpecialDates(month: string) {
@@ -230,10 +229,9 @@ export function useWorkspaceDraft({
   }
   return {
     update,
-    runGenerate,
-    busy,
     resetSpecialDates,
     editor: { selected, setSelected, openDuty, save: saveDuty, removeSpecial },
+    clear: { open: clearOpen, setOpen: setClearOpen, count: clearable, confirm: confirmClear },
     special: {
       open: specialOpen,
       setOpen: setSpecialOpen,
@@ -249,7 +247,8 @@ export function useWorkspaceDraft({
     },
     swap: {
       selection: swap,
-      setSelection: setSwap,
+      setSelection: selectSwap,
+      saving: swapSaving,
       override: swapOverride,
       setOverride: setSwapOverride,
       preview: swapPreview,
