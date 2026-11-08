@@ -223,6 +223,8 @@ test('selector: the scope script and workflows can never narrow their own checks
   const scope = workflow.split('\n  scope:')[1].split('\n  application:')[0];
   assert.match(scope, /git show "\$PR_BASE:scripts\/quality-scope\.mjs" > "\$RUNNER_TEMP\/quality-scope\.mjs"/);
   assert.match(scope, /node "\$RUNNER_TEMP\/quality-scope\.mjs"/);
+  // A base without the selector selects nothing, so normalization falls back to every check.
+  assert.match(scope, /git cat-file -e "\$PR_BASE:scripts\/quality-scope\.mjs"/);
   assert(!/node scripts\/quality-scope\.mjs/.test(workflow), 'PR-controlled selector must not run');
 });
 
