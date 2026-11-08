@@ -58,7 +58,11 @@ for (const lang of ['en', 'he'] as const) {
     const request = page.locator('.membership-request').filter({hasText: 'Dana Levi'});
     await expect(request.getByRole('button')).toHaveText([t('Approve', 'אישור'), t('Link to a temporary member…', 'קישור לחבר צוות זמני…'), t('Decline', 'דחייה')]);
     const before = await request.boundingBox();
-    await request.scrollIntoViewIfNeeded();
+    // A full-page capture shows the whole team anyway; only the floating tab bar follows the scroll,
+    // which a late layout shift made vary between runs. Capture from the top, once layout is settled.
+    await page.evaluate(() => Promise.all([...document.images].map(img => img.decode().catch(() => {}))));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => new Promise<number>(done => requestAnimationFrame(() => requestAnimationFrame(() => done(scrollY)))))).toBe(0);
     await both(page, `link-request-${lang}`);
 
     // The picker: active temporary members, then the inactive ones in their own group. Keyboard only.

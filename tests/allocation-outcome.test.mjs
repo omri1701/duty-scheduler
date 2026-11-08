@@ -327,9 +327,17 @@ test('several creditors: each creditor has its own turns, newest first', () => {
 });
 
 /** Generate and publish a month into the ledger; returns the plan's input with the new events. */
+// These tests check the ledger, not schedule quality: any complete schedule that meets the targets
+// binds the same debts. The solver always spends its whole budget (it proves feasibility in
+// milliseconds, then keeps improving spacing), so a short budget and reusing an identical request's
+// result keep these tests well inside CI's per-test limit without changing what they check.
+const solved = new Map();
 async function publishMonth(i, d, seed = 7) {
-  const r = solveGeneration(solver, createGenerationRequest({...i.schedule, targets: Object.fromEntries(i.seniority.map(id => [id, d.targetsUnits[id] / 2]))},
-    {now: i.now, seed, seconds: 30}));
+  const request = createGenerationRequest({...i.schedule, targets: Object.fromEntries(i.seniority.map(id => [id, d.targetsUnits[id] / 2]))},
+    {now: i.now, seed, seconds: 3});
+  const key = JSON.stringify(request);
+  if (!solved.has(key)) solved.set(key, solveGeneration(solver, request));
+  const r = solved.get(key);
   assert.equal(r.complete, true, i.schedule.month);
   const bound = await bindAllocation(i, d, r.assignments, {publicationId: `pub-${i.schedule.month}-${i.events.length}`, sourceKey: `publish/${i.schedule.month}/${i.events.length}`, actor: 'm'});
   assert.equal(bound.bindable && bound.publishable, true, `${i.schedule.month}: ${bound.diagnostics.at(-1)?.code}`);
