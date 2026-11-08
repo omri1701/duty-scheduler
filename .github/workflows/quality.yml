@@ -43,8 +43,14 @@ jobs:
         env:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          git show "$PR_BASE:scripts/quality-scope.mjs" > "$RUNNER_TEMP/quality-scope.mjs"
-          node "$RUNNER_TEMP/quality-scope.mjs"
+          # A base without the selector (the first release after it was added) selects
+          # nothing here, so the next step falls back to every check (fail closed).
+          if git cat-file -e "$PR_BASE:scripts/quality-scope.mjs" 2>/dev/null; then
+            git show "$PR_BASE:scripts/quality-scope.mjs" > "$RUNNER_TEMP/quality-scope.mjs"
+            node "$RUNNER_TEMP/quality-scope.mjs"
+          else
+            echo "Base commit has no scripts/quality-scope.mjs: running every check."
+          fi
       - name: Normalize selection (fail closed)
         id: select
         env:
